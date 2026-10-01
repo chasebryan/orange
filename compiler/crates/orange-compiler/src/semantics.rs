@@ -2303,10 +2303,22 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Conversion(conversion) => {
                 silent_type(self.source, &self.types, &conversion.target)
             }
-            ExpressionKind::Index(index) => self
-                .leaf_type(&index.base, context, scope)?
-                .as_array()
-                .map(ArrayType::element),
+            ExpressionKind::Index(index) => {
+                // Chained selections grow height without delimiter nesting.
+                // Walk their spine in one frame, then apply each exact
+                // element type. Rank bounds stop invalid extra selections.
+                let mut base = &index.base;
+                let mut selections = 1_usize;
+                while let ExpressionKind::Index(inner) = &base.kind {
+                    selections = selections.saturating_add(1);
+                    base = &inner.base;
+                }
+                let mut ty = self.leaf_type(base, context, scope)?;
+                for _ in 0..selections {
+                    ty = ty.as_array()?.element();
+                }
+                Some(ty)
+            }
             ExpressionKind::Project(project) => self
                 .leaf_type(&project.base, context, scope)?
                 .as_tuple()?
@@ -2435,9 +2447,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        let Some(base_type) = self.leaf_type(&index.base, context, scope) else {
-            // The base's own check reports why it has no type and stops
-            // before comparing with the type passed here.
+        let mut expression = expression;
+        let mut index = index;
+        let base_type = loop {
+            if let Some(ty) = self.leaf_type(&index.base, context, scope) {
+                break ty;
+            }
+            // Invalid extra selections have no type. Descend to the first
+            // diagnosable suffix without a checker frame per suffix.
+            if let ExpressionKind::Index(inner) = &index.base.kind {
+                expression = &index.base;
+                index = inner;
+                continue;
+            }
             self.check_untyped(&index.base, expected, context, scope, output);
             return false;
         };

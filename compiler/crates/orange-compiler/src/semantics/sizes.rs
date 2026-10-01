@@ -1082,13 +1082,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 _ => TypeArgument::NotAType,
             },
-            // An array of a word, `Int`, `Bool`, or residue type, `T^n`.
+            // An array of a scalar or scalar-row type, `T^n`.
             ExpressionKind::Binary(binary)
                 if matches!(binary.operator, BinaryOperator::Xor)
                     && matches!(binary.right.kind, ExpressionKind::Literal(_)) =>
             {
                 match self.type_argument(&binary.left) {
-                    TypeArgument::Type(element) if element.is_scalar() => {
+                    TypeArgument::Type(element)
+                        if element.is_scalar()
+                            || matches!(binary.left.kind, ExpressionKind::Name(_)) =>
+                    {
                         size_bound(self.source, binary.right.span)
                             .and_then(|length| ArrayType::new(&element, length))
                             .map_or(TypeArgument::NotAType, |array| {

@@ -1,0 +1,10 @@
+edition 2026;
+module domains {
+  type Row = Mod[7]^2;
+  type OtherRow = Mod[5]^2;
+  type Matrix = Row^2;
+  type OtherMatrix = OtherRow^2;
+  spec wrong_domain(x: OtherMatrix) -> Matrix { x }
+  spec wrong_row(x: Matrix, row: OtherRow) -> Matrix { x with [0] = row }
+  spec ordered(x: Matrix, y: Matrix) -> Bool { x < y }
+}

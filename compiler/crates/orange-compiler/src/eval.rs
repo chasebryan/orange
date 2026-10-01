@@ -660,7 +660,7 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                 ));
             }
             for element in array.elements() {
-                if matches!(element, CoreValue::Array(_) | CoreValue::Tuple(_)) {
+                if element.ty() != array.ty().element() {
                     return Err(Stop::InconsistentCore);
                 }
                 elements.push(host_value(element, reservations)?);
@@ -677,7 +677,8 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                     "evaluation tuple storage could not be reserved",
                 ));
             }
-            // A tuple holds no tuple, so this recursion is one level deep.
+            // A tuple holds scalars and arrays of rank at most two, so
+            // recursion descends through at most three aggregate levels.
             for element in tuple.elements() {
                 if matches!(element, CoreValue::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
@@ -1306,7 +1307,7 @@ impl<'core> Machine<'core> {
     /// every other part what its own comparison costs.
     ///
     /// Recursion is bounded by the depth of types: a tuple holds arrays and
-    /// scalars, and an array holds scalars.
+    /// scalars, and an array holds scalars or scalar rows.
     fn equal_values(&mut self, ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
         match (ty, left, right) {
             (CoreType::Array(array), Value::Array(left), Value::Array(right)) => {
@@ -2944,8 +2945,8 @@ fn result_value(
                     "evaluated tuple storage could not be reserved",
                 ));
             }
-            // A tuple's elements are scalars and arrays, so this recursion
-            // is one level deep.
+            // A tuple holds scalars and arrays of rank at most two, so
+            // recursion descends through at most three aggregate levels.
             for (element, element_type) in tuple.elements.iter().zip(tuple_type.elements()) {
                 if matches!(element, Value::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
@@ -2960,13 +2961,14 @@ fn result_value(
     }
 }
 
-/// Copies one scalar array element; arrays have no array elements.
+/// Copies one array element, either a scalar or a scalar row.
 fn result_element(
     element: &Value,
     ty: &CoreType,
     reservations: Reservations,
 ) -> Result<CoreValue, Stop> {
     match (element, ty) {
+        (Value::Array(_), CoreType::Array(_)) => result_value(element.clone(), ty, reservations),
         (Value::Int(value), CoreType::Int) => value
             .try_clone_with_reservation(reservations.value_limbs)
             .map(CoreValue::Int)
@@ -3066,23 +3068,13 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     Some(shared)
 }
 
-/// Returns the evaluator's value of a scalar element of an array literal,
-/// or `None` when storage cannot be reserved or the element is not a
-/// scalar.
+/// Returns the evaluator's value of an element of an array literal, or
+/// `None` when storage cannot be reserved or the element is a tuple.
 fn shared_element(element: &CoreValue) -> Option<Value> {
-    Some(match element {
-        CoreValue::Int(value) => Value::Int(Rc::new(
-            value.try_clone_with_reservation(reserve_value_limbs)?,
-        )),
-        CoreValue::Mod(residue) => Value::Mod(Rc::new(
-            residue
-                .value()
-                .try_clone_with_reservation(reserve_value_limbs)?,
-        )),
-        CoreValue::Bool(value) => Value::Bool(*value),
-        CoreValue::Array(_) | CoreValue::Tuple(_) => return None,
-        word => Value::Word(word.word_as_u64()?),
-    })
+    if matches!(element, CoreValue::Tuple(_)) {
+        return None;
+    }
+    host_value(element, Reservations::DEFAULT).ok()
 }
 
 fn stopped(
@@ -6078,6 +6070,44 @@ mod tests {
         );
     }
 
+    /// Index suffixes can reach the full tree-height budget without nested
+    /// delimiters. Every later traversal must reject their excess axes on
+    /// the same bounded host stack as nested source expressions.
+    #[test]
+    fn maximum_chained_indices_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_HEIGHT;
+        let text = format!(
+            "edition 2026; module m {{ spec f(a: Word[32]^1) -> Word[32] {{ a{} }} }}\n",
+            "[0]".repeat(MAX_EXPRESSION_HEIGHT - 1)
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let mut sources = SourceMap::new();
+                let id = sources.add("evaluate.or", text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                assert_eq!(lexed.diagnostics(), []);
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), []);
+                let analyzed = analyze(source, parsed.ast().unwrap());
+                assert!(analyzed.core().is_none());
+                analyzed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code(), diagnostic.message().to_owned()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            [(
+                DiagnosticCode::NotAnArray,
+                String::from("only an array can be indexed, but this has type `Word[32]`")
+            )]
+        );
+    }
+
     /// A chain of joins as long as an expression's height admits is checked
     /// in one frame, so a rejected chain reports once within 1 MiB of stack
     /// wherever its offending operand is.
@@ -6199,6 +6229,253 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn byte_matrix(rows: &[&[u8]]) -> CoreValue {
+        let elements = rows.iter().map(|row| bytes(row)).collect::<Vec<_>>();
+        let ty = ArrayType::new(&elements[0].ty(), u32::try_from(rows.len()).unwrap()).unwrap();
+        CoreValue::Array(CoreArray::new(ty, elements).unwrap())
+    }
+
+    const MATRICES: &str = concat!(
+        "edition 2026; module matrices {\n",
+        "  type Row = Word[8]^3;\n",
+        "  type Matrix = Row^2;\n",
+        "  spec identity(x: Matrix) -> Matrix { x }\n",
+        "  spec replace(x: Matrix) -> Matrix { x with [1] = [9, 8, 7] }\n",
+        "  spec pick(x: Matrix) -> Word[8] { x[1][2] }\n",
+        "  spec reverse(x: Matrix) -> Matrix { x[1..2] ++ x[0..1] }\n",
+        "  spec literal() -> Matrix { [[1, 2, 3], [4, 5, 6]] }\n",
+        "  spec fill() -> Matrix { [[1, 2, 3]; 2] }\n",
+        "  spec pair(x: (Bool, Matrix)) -> (Bool, Matrix) { x }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn matrix_calls_preserve_shapes_rows_and_host_values() {
+        let core = core(MATRICES);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let original = byte_matrix(&[&[1, 2, 3], &[4, 5, 6]]);
+        for (name, expected) in [
+            ("identity", original.clone()),
+            ("replace", byte_matrix(&[&[1, 2, 3], &[9, 8, 7]])),
+            ("pick", CoreValue::Word8(6)),
+            ("reverse", byte_matrix(&[&[4, 5, 6], &[1, 2, 3]])),
+        ] {
+            let function = evaluator.function(name).unwrap();
+            let result = evaluator
+                .call(function, std::slice::from_ref(&original), 100)
+                .unwrap();
+            assert_eq!(result.diagnostics(), [], "{name}");
+            assert_eq!(result.value(), Some(&expected), "{name}");
+        }
+        let identity = evaluator.function("identity").unwrap();
+        let wrong_shape = byte_matrix(&[&[1, 2], &[3, 4], &[5, 6]]);
+        assert!(evaluator.call(identity, &[wrong_shape], 100).is_none());
+        assert!(
+            evaluator
+                .call(identity, &[bytes(&[1, 2, 3])], 100)
+                .is_none()
+        );
+        for (name, expected) in [
+            ("literal", original.clone()),
+            ("fill", byte_matrix(&[&[1, 2, 3], &[1, 2, 3]])),
+        ] {
+            let function = evaluator.function(name).unwrap();
+            let result = evaluator.call(function, &[], 100).unwrap();
+            assert_eq!(result.diagnostics(), []);
+            assert_eq!(result.value(), Some(&expected));
+        }
+        let pair = CoreValue::Tuple(
+            CoreTuple::new(
+                TupleType::new(&[CoreType::Bool, original.ty()]).unwrap(),
+                vec![CoreValue::Bool(true), original],
+            )
+            .unwrap(),
+        );
+        let function = evaluator.function("pair").unwrap();
+        let result = evaluator
+            .call(function, std::slice::from_ref(&pair), 1)
+            .unwrap();
+        assert_eq!(result.diagnostics(), []);
+        assert_eq!(result.value(), Some(&pair));
+        assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn matrix_row_storage_failures_return_no_partial_host_or_result_value() {
+        let core = core(MATRICES);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let function = evaluator.function("identity").unwrap();
+        let original = byte_matrix(&[&[1, 2, 3], &[4, 5, 6]]);
+        for (reservations, label, steps) in [
+            (
+                Reservations {
+                    array: |elements, count| count != 3 && reserve_array(elements, count),
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+                0,
+            ),
+            (
+                Reservations {
+                    result_array: |elements, count| {
+                        count != 3 && reserve_result_array(elements, count)
+                    },
+                    ..Reservations::DEFAULT
+                },
+                "evaluated array storage could not be reserved",
+                1,
+            ),
+        ] {
+            evaluator.machine.reservations = reservations;
+            let first = evaluator
+                .call(function, std::slice::from_ref(&original), 100)
+                .unwrap();
+            let second = evaluator
+                .call(function, std::slice::from_ref(&original), 100)
+                .unwrap();
+            assert_eq!(first, second);
+            assert_eq!(first.value(), None);
+            assert_eq!(first.steps(), steps);
+            let [diagnostic] = first.diagnostics() else {
+                panic!(
+                    "expected one allocation diagnostic: {:?}",
+                    first.diagnostics()
+                );
+            };
+            assert_eq!(diagnostic.label(), label);
+            evaluator.machine.reservations = Reservations::DEFAULT;
+            let recovered = evaluator
+                .call(function, std::slice::from_ref(&original), 1)
+                .unwrap();
+            assert_eq!(recovered.diagnostics(), []);
+            assert_eq!(recovered.value(), Some(&original));
+        }
+    }
+
+    #[test]
+    fn residue_matrix_host_calls_keep_their_exact_modular_domain() {
+        let core = core(concat!(
+            "edition 2026; module fields {\n",
+            "  type F = Mod[7];\n",
+            "  type Row = F^2;\n",
+            "  type Matrix = Row^2;\n",
+            "  spec identity(x: Matrix) -> Matrix { x }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let function = evaluator.function("identity").unwrap();
+        let matrix = |modulus: u64| {
+            let modulus =
+                Modulus::new(&ExactInteger::from_u64(modulus, reserve_value_limbs).unwrap())
+                    .unwrap();
+            let row = ArrayType::new(&CoreType::Mod(modulus), 2).unwrap();
+            let ty = ArrayType::new(&CoreType::Array(row), 2).unwrap();
+            let rows = [[1, 2], [3, 4]]
+                .into_iter()
+                .map(|values| {
+                    CoreValue::Array(
+                        CoreArray::new(
+                            row,
+                            values
+                                .into_iter()
+                                .map(|value| {
+                                    CoreValue::Mod(
+                                        Residue::new(
+                                            modulus,
+                                            ExactInteger::from_u64(value, reserve_value_limbs)
+                                                .unwrap(),
+                                        )
+                                        .unwrap(),
+                                    )
+                                })
+                                .collect(),
+                        )
+                        .unwrap(),
+                    )
+                })
+                .collect();
+            CoreValue::Array(CoreArray::new(ty, rows).unwrap())
+        };
+        let original = matrix(7);
+        let result = evaluator
+            .call(function, std::slice::from_ref(&original), 1)
+            .unwrap();
+        assert_eq!(result.diagnostics(), []);
+        assert_eq!(result.value(), Some(&original));
+        assert!(evaluator.call(function, &[matrix(11)], 1).is_none());
+    }
+
+    #[test]
+    fn nested_array_literals_share_rows_and_export_exact_shapes() {
+        let mut core = core(MATRICES);
+        let original = byte_matrix(&[&[1, 2, 3], &[4, 5, 6]]);
+        let literal = core
+            .functions
+            .iter_mut()
+            .find(|function| function.name == "literal")
+            .unwrap();
+        let mut node = literal.body.nodes.last().unwrap().clone();
+        node.kind = CoreNodeKind::Literal(original.clone());
+        literal.body.nodes = vec![node];
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let function = evaluator.function("literal").unwrap();
+        let result = evaluator.call(function, &[], 1).unwrap();
+        assert_eq!(result.diagnostics(), []);
+        assert_eq!(result.value(), Some(&original));
+        assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn inconsistent_matrix_nodes_fail_without_partial_values() {
+        let base = core(MATRICES);
+        let mutations: [fn(&mut CoreFunction); 5] = [
+            |function| {
+                function.body.nodes.last_mut().unwrap().kind = CoreNodeKind::Array { elements: 1 };
+            },
+            |function| {
+                let row = function
+                    .body
+                    .nodes
+                    .iter_mut()
+                    .find(|node| matches!(node.kind, CoreNodeKind::Array { elements: 3 }))
+                    .unwrap();
+                row.ty = CoreType::Array(ArrayType::new(&CoreType::Word8, 2).unwrap());
+            },
+            |function| {
+                function.result_type =
+                    CoreType::Array(ArrayType::new(&CoreType::Word8, 6).unwrap());
+            },
+            |function| {
+                let row = CoreType::Array(ArrayType::new(&CoreType::Word8, 2).unwrap());
+                function.body.nodes.last_mut().unwrap().ty =
+                    CoreType::Array(ArrayType::new(&row, 3).unwrap());
+            },
+            |function| {
+                let mut node = function.body.nodes.last().unwrap().clone();
+                node.kind = CoreNodeKind::Literal(byte_matrix(&[&[1, 2, 3], &[4, 5, 6]]));
+                node.ty = CoreType::Array(ArrayType::new(&CoreType::Word8, 6).unwrap());
+                function.body.nodes = vec![node];
+            },
+        ];
+        for (index, mutate) in mutations.into_iter().enumerate() {
+            let mut core = base.clone();
+            let function = core
+                .functions
+                .iter_mut()
+                .find(|function| function.name == "literal")
+                .unwrap();
+            mutate(function);
+            let first = evaluate(&core);
+            assert_eq!(first, evaluate(&core), "case {index}");
+            assert_eq!(first.values(), None, "case {index}");
+            assert_eq!(
+                first.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
     }
 
     const CALLS: &str = concat!(
@@ -7200,6 +7477,48 @@ mod tests {
             call("pairs", pair(8, [1, 2]), pair(9, [1, 2])),
             (false, 2 + 1 + 2 + 2)
         );
+    }
+
+    #[test]
+    fn matrix_equality_visits_every_row_with_shape_bounded_costs() {
+        let core = core(concat!(
+            "edition 2026; module equal {\n",
+            "  type Row = Word[8]^65;\n",
+            "  type Matrix = Row^2;\n",
+            "  spec same(x: Matrix, y: Matrix) -> Bool { x == y }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let function = evaluator.function("same").unwrap();
+        let row = vec![0; 65];
+        let original = byte_matrix(&[&row, &row]);
+        let mut first_row = row.clone();
+        first_row[0] = 1;
+        let first_difference = byte_matrix(&[&first_row, &row]);
+        let mut last_row = row.clone();
+        last_row[64] = 1;
+        let last_difference = byte_matrix(&[&row, &last_row]);
+        // Parameter loads cost two steps and each row costs ceil(65 / 64).
+        // A difference in either row does not skip any later comparison.
+        let steps = 2 + 2 * 2;
+        for (other, expected) in [
+            (original.clone(), true),
+            (first_difference, false),
+            (last_difference, false),
+        ] {
+            let arguments = [original.clone(), other];
+            let result = evaluator.call(function, &arguments, steps).unwrap();
+            assert_eq!(result.diagnostics(), []);
+            assert_eq!(result.value(), Some(&CoreValue::Bool(expected)));
+            assert_eq!(result.steps(), steps);
+            let stopped = evaluator.call(function, &arguments, steps - 1).unwrap();
+            assert_eq!(stopped.value(), None);
+            assert_eq!(stopped.steps(), steps - 2, "the second row is not charged");
+            assert_eq!(
+                stopped.diagnostics()[0].message(),
+                "reference evaluation step limit exceeded"
+            );
+        }
     }
 
     const TESTED: &str = concat!(

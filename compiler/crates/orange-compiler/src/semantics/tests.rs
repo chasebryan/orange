@@ -6583,10 +6583,10 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
         "  type K = Mod[11];\n",
         "  type L = M;\n",
         "  type M = Word[8];\n",
-        "  type Block = Word[32]^16;\n",
-        "  type Blocks = Block^2;\n",
+        "  type Block = Word[32]^16; type Grid = Block^2;\n",
+        "  type Blocks = Grid^2;\n",
         "  type N = Mod[1];\n",
-        "  spec f(x: Block^2) -> K { 0 }\n",
+        "  spec f(x: Grid^2) -> K { 0 }\n",
         "  spec g(x: Unknown) -> K { 0 }\n",
         "  spec h(x: K[3]) -> K { 0 }\n",
         "  spec i(x: N) -> K { 0 }\n",
@@ -6633,13 +6633,13 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
             ),
             (
                 DiagnosticCode::UnsupportedType,
-                "Block^2",
-                String::from("`Block` is an array type, so this is an array of arrays")
+                "Grid^2",
+                String::from("`Grid` already has two array dimensions")
             ),
             (
                 DiagnosticCode::UnsupportedType,
-                "Block^2",
-                String::from("`Block` is an array type, so this is an array of arrays")
+                "Grid^2",
+                String::from("`Grid` already has two array dimensions")
             ),
             (
                 DiagnosticCode::UnsupportedType,

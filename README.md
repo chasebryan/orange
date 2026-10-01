@@ -1065,6 +1065,29 @@ does. This slice, S3r, is implemented and tested; its specification is in
 review as
 [OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md).
 
+### States and polynomial vectors as rows
+
+A matrix is an array of scalar rows, with both dimensions in its type:
+
+```orange
+edition 2026;
+module rows {
+  type Row = Word[32]^4;
+  type Matrix = Row^4;
+  spec diagonal(m: Matrix) -> Row {
+    for i in 0..4 with out: Row = [0; 4] { out with [i] = m[i][i] }
+  }
+  test "diagonal" { diagonal([[1, 2, 3, 4]; 4]) == [1, 2, 3, 4] }
+}
+```
+
+Each index is checked against its own axis. Rows must have identical types,
+and a matrix holds at most 65,536 scalar elements. Updates, slices, joins,
+tuples, and finite specialization retain the whole shape; a byte-order
+conversion requires an explicitly selected row. S3s is implemented and
+tested, with its specification in review as
+[OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1086,6 +1109,7 @@ cryptography.
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
+| Rectangular arrays of scalar rows, with both axes checked and a bounded scalar product | Working; specification in review ([OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |

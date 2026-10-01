@@ -34,7 +34,7 @@ const MAX_EVALUATION_STEP_LIMIT: usize = 1 << 30;
 const MAX_SELECTED_SPECS: usize = 64;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 /// The latest implemented language slice, not an acceptance or release status.
-const IMPLEMENTED_SLICE: &str = "S3r";
+const IMPLEMENTED_SLICE: &str = "S3s";
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
     "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
@@ -1012,7 +1012,7 @@ fn write_test_report(output: &mut impl Write, outcomes: &[TestOutcome]) -> io::R
 
 /// Names the first element, or tuple part, in which two unequal values of
 /// one array or tuple type differ: `[i]` or `.k`, followed into a tuple's
-/// arrays; `None` for scalars, whose whole value is the difference.
+/// arrays and nested rows; `None` for scalars, whose whole value is the difference.
 fn first_difference(left: &CoreValue, right: &CoreValue) -> Option<String> {
     let (elements, other, tuple) = match (left, right) {
         (CoreValue::Array(left), CoreValue::Array(right)) => {

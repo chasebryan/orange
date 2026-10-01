@@ -73,13 +73,17 @@ only convenient notation.
 
 ## Scope and non-goals
 
-The current accepted foothold is S3a. S3b through S3r are implemented and in
-owner review under OEP-0005 through OEP-0021; implementation is not semantic
+The current accepted foothold is S3a. S3b through S3s are implemented and in
+owner review under OEP-0005 through OEP-0021 and OEP-0023; implementation is not semantic
 acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
-`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays of length 1 through 65,536,
+`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays and rank-two arrays with
+at most 65,536 scalar elements,
 tuples, transparent type aliases, array concatenation and slicing, and bounded
-size and type parameters within those proposed slices. It has no nested
-arrays, refined representation types, typed implementation bodies, proof
+size and type parameters within those proposed slices.
+[OEP-0023](OEP-0023-orange-2026-nested-arrays.md) supplies bounded scalar-row
+arrays and chained indexing as one P1/P6 vocabulary slice; arrays of matrices
+and tuples remain unsupported. It has no refined representation types,
+typed implementation bodies, proof
 checking, or native output. The
 [compiler guide](../../../compiler/README.md) and proposed
 [modular arithmetic specification](../../MODULAR_2026.md) describe those limits.
@@ -272,8 +276,9 @@ to small, explicit semantic boundaries with reusable algebraic lemmas.
 Use the ML-KEM coefficient field modulo q = 3329, with prime evidence where
 field laws are used, and the quotient ring R = F_q[X] / (X^256 + 1). The
 quotient ring does not inherit field division laws from its coefficients.
-Nested collections or structured elements require a language slice; today's
-scalar-array surface cannot silently represent the full matrix vocabulary.
+The bounded scalar-row surface of S3s supports polynomial vectors and
+scalar matrices. Matrices whose entries are polynomials need a further
+collection slice; rank three and structured array elements remain unsupported.
 
 Acceptance criteria:
 

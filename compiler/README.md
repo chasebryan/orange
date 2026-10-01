@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3r proposed under OEP-0005 through OEP-0021, in owner review
+S3s proposed under OEP-0005 through OEP-0021 and OEP-0023, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -97,8 +97,12 @@ computed from data, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`,
 with a meaning at every amount: a shift is multiplication or division by a
 power of two kept to the word, so a shift by the width or more gives 0 and a
 negative amount shifts the other way, and a rotation turns by its amount
-modulo the width. All eighteen lower to a noncanonical Typed Reference Core and are
-reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+modulo the width. The S3s slice, proposed in
+[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md) and in owner
+review under OEP-0023, adds arrays of scalar rows with exact shapes, at most
+65,536 scalar elements, and chained indices. Rows retain their types through
+updates, slicing, concatenation, tuples, and finite specialization. All nineteen
+lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -140,7 +144,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3r)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3s)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
@@ -1029,7 +1033,7 @@ and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3r rules, limits, and non-claims are in
+through S3s rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -1045,8 +1049,9 @@ through S3r rules, limits, and non-claims are in
 [`docs/ORDER_2026.md`](../docs/ORDER_2026.md),
 [`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
 [`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md),
-[`docs/TESTS_2026.md`](../docs/TESTS_2026.md), and
-[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md). None of them defines
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md),
+[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md), and
+[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1357,7 +1362,8 @@ compute constants in the rings their standards define: ML-KEM's zeta^128 and
 on its curve. The rejected programs cover moduli that are too small, negative,
 too wide, not constant, missing, or too large to compute; `type` declarations
 out of order, naming built-in types, repeated, used before they are declared,
-or making arrays of arrays; residue literals out of range; order, remainder,
+or adding a third array dimension (the former rank-two rejection is extended
+by S3s); residue literals out of range; order, remainder,
 and bitwise operators on residues; two moduli in one operator or call; `as`
 to `Bool` or an array type; and a residue used directly as an index.
 
@@ -1672,6 +1678,18 @@ sign, which are refused, and the same amounts grouped, which are computed.
 This corpus establishes the tested behavior of one implementation; it does
 not accept OEP-0021, prove the rules sound, or complete S3.
 
+## S3s nested-array conformance
+
+`fixtures/s3s/` and `crates/orangec/tests/s3s_conformance.rs` cover exact
+rectangular shapes, nested literals and fills, both index axes, row updates,
+row slices and joins, matrices in tuples, finite specialization, recursive
+equality, and rejected implicit flattening. Generated cases reach the scalar
+product limit, exceed it, vary row widths and modular domains, and compare
+equal costs at different mismatch positions. The 12-rule index in
+`docs/NESTED_ARRAYS_2026.md` binds these checks to proposed S3s behavior.
+They establish implementation behavior and do not accept OEP-0023 or prove
+ML-KEM, transformation, leakage, or refinement properties.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1727,6 +1745,8 @@ not accept OEP-0021, prove the rules sound, or complete S3.
   rule-index, test-run, and report runner;
 - `crates/orangec/tests/s3r_conformance.rs`: exact repeatable S3r corpus,
   rule-index, reference-amount, and amount-cost runner;
+- `crates/orangec/tests/s3s_conformance.rs`: repeatable nested-array corpus,
+  rule-index, shape-limit, and recursive-cost runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1749,6 +1769,7 @@ not accept OEP-0021, prove the rules sound, or complete S3.
 - `fixtures/s3q/`: exact two-positive/one-failing/two-negative S3q CLI fixture
   corpus;
 - `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
+- `fixtures/s3s/`: nested-array positive, negative, and failed-equality corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

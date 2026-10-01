@@ -149,23 +149,29 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     /// Returns the type of an array literal or a fill as the operand of a
     /// conversion, without reporting: its elements' type, from the first
-    /// element with a typed leaf, and its length.
+    /// element with a known type, and its length. Nested literals preserve
+    /// their row type; the rank and scalar-product bounds are enforced by
+    /// the array constructor at every level.
     pub(super) fn literal_array_type(
         &self,
         leaf: &Expression,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
     ) -> Option<CoreType> {
+        let element_type = |element| {
+            let typed = first_typed_leaf(element)?;
+            match &typed.kind {
+                ExpressionKind::Array(_) | ExpressionKind::Fill(_) => {
+                    self.literal_array_type(typed, context, scope)
+                }
+                _ => self.leaf_type(typed, context, scope),
+            }
+        };
         let element = match &leaf.kind {
-            ExpressionKind::Array(array) => array
-                .elements
-                .iter()
-                .find_map(|element| first_typed_leaf(element)),
-            ExpressionKind::Fill(fill) => first_typed_leaf(&fill.element),
+            ExpressionKind::Array(array) => array.elements.iter().find_map(element_type),
+            ExpressionKind::Fill(fill) => element_type(&fill.element),
             _ => None,
-        }
-        .and_then(|element| self.leaf_type(element, context, scope))
-        .filter(CoreType::is_scalar)?;
+        }?;
         let length = self.array_length_of(leaf, context, scope)?;
         ArrayType::new(&element, length).map(CoreType::Array)
     }

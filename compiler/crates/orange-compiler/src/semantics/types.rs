@@ -15,9 +15,11 @@ pub(super) enum TypeClass {
     /// A length written with sizes that has no value.
     Size(SizeFault),
     MissingModulus,
-    /// A declared name whose element type is already an array, followed by
-    /// the span of `^LENGTH`.
+    /// A declared name whose type already has two array dimensions,
+    /// followed by the span of `^LENGTH`.
     ArrayOfArrays(Span),
+    /// An admitted pair of axis lengths whose scalar product is too large.
+    ArrayShape(Span, u32, u32),
     /// A declared name whose type is a tuple, followed by the span of
     /// `^LENGTH`.
     ArrayOfTuples(Span),
@@ -100,7 +102,7 @@ pub(super) fn classify_type(
     }
     let scalar = classify_scalar_type(source, table, syntax);
     match (scalar, syntax.length.as_ref()) {
-        (TypeClass::Resolved(CoreType::Array(_)), Some(length)) => {
+        (TypeClass::Resolved(CoreType::Array(row)), Some(length)) if !row.element().is_scalar() => {
             TypeClass::ArrayOfArrays(length.span)
         }
         (TypeClass::Resolved(CoreType::Tuple(_)), Some(length)) => {
@@ -108,10 +110,14 @@ pub(super) fn classify_type(
         }
         (TypeClass::Resolved(element), Some(length)) => {
             match table.sizes.array_length(source, length) {
-                Length::Admitted(count) => ArrayType::new(&element, count)
-                    .map_or(TypeClass::UnsupportedArrayLength(length.span), |array| {
-                        TypeClass::Resolved(CoreType::Array(array))
-                    }),
+                Length::Admitted(count) => match ArrayType::new(&element, count) {
+                    Some(array) => TypeClass::Resolved(CoreType::Array(array)),
+                    None => element
+                        .as_array()
+                        .map_or(TypeClass::UnsupportedArrayLength(length.span), |row| {
+                            TypeClass::ArrayShape(length.span, row.length(), count)
+                        }),
+                },
                 Length::Literal => TypeClass::UnsupportedArrayLength(length.span),
                 Length::Value(value) => TypeClass::ArrayLengthValue(length.span, value),
                 Length::Fault(fault) => TypeClass::Size(fault),
@@ -616,15 +622,32 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedType,
-                            format!("`{name}` is an array type, so this is an array of arrays"),
+                            format!("`{name}` already has two array dimensions"),
                             syntax.span,
                         )
-                        .with_label("arrays of arrays are not part of Orange 2026")
-                        .with_secondary_span(
-                            length_span,
-                            "this length would make each element an array",
+                        .with_label("arrays have at most two dimensions")
+                        .with_secondary_span(length_span, "this length would add a third dimension")
+                        .with_note("a row holds scalars; a matrix holds rows of the same type"),
+                    );
+                }
+                None
+            }
+            TypeClass::ArrayShape(length_span, columns, rows) => {
+                if self.begin_report(syntax.span) {
+                    let cells = u64::from(columns).saturating_mul(u64::from(rows));
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedArrayLength,
+                            format!(
+                                "an array shape has {cells} scalar elements, exceeding {MAX_ARRAY_LENGTH}"
+                            ),
+                            syntax.span,
                         )
-                        .with_note("an array's elements are `Int`, `Bool`, words, or residues"),
+                        .with_label("array shape exceeds the scalar element limit")
+                        .with_secondary_span(length_span, "outer axis length")
+                        .with_note(format!(
+                            "both axes are positive and their product is at most {MAX_ARRAY_LENGTH}"
+                        )),
                     );
                 }
                 None

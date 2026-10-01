@@ -1,0 +1,10 @@
+edition 2026;
+module dimensions {
+  type Row = Word[8]^3;
+  type WideRow = Word[8]^4;
+  type Matrix = Row^2;
+  type WideMatrix = WideRow^2;
+  spec wrong_rows(x: Row^3) -> Matrix { x }
+  spec wrong_columns(x: WideMatrix) -> Matrix { x }
+  spec wrong_update(x: Matrix, row: WideRow) -> Matrix { x with [0] = row }
+}

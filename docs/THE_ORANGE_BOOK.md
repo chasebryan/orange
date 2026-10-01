@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-09-30
+Snapshot: 2026-10-01
 
-Manuscript version: 0.20
+Manuscript version: 0.21
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -1738,7 +1738,7 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [lengths specification](LENGTHS_2026.md) of S3p, the
 [tests specification](TESTS_2026.md) of S3q, and the
 [computed amounts specification](AMOUNTS_2026.md) of S3r. S3b through
-S3r are implemented and tested, but their specifications are **proposed**:
+S3s are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -4626,7 +4626,7 @@ reads only the source it is given.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3r)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3s)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4743,6 +4743,43 @@ complete or that the parser is correct. That caution is not modesty. It is the
 same discipline Chapter 2 applied to claims, applied to the project's own
 compiler.
 
+### Arrays of rows
+
+A cryptographic state or polynomial vector often has two dimensions. S3s
+makes that shape a type, using the aliases Orange already has:
+
+```orange
+edition 2026;
+module rows {
+  type Row = Word[32]^4;
+  type Matrix = Row^4;
+  spec diagonal(m: Matrix) -> Row {
+    for i in 0..4 with out: Row = [0; 4] { out with [i] = m[i][i] }
+  }
+  test "diagonal" { diagonal([[1, 2, 3, 4]; 4]) == [1, 2, 3, 4] }
+}
+```
+
+The outer index chooses a row; the inner index chooses its scalar. Each is
+proved in range on its own axis. The rows have one exact type, so a short row,
+a different word width, or another residue modulus is rejected. A matrix
+holds at most 65,536 scalars, including the product of both dimensions. A
+third dimension and arrays of tuples remain outside this bounded slice.
+
+Rows are immutable values. Updating one row can share every other row, and
+slices and joins preserve the row type. Equality visits every row and every
+scalar with deterministic interpreter costs; those costs are not a timing
+guarantee. A byte-order conversion must select a row explicitly, because a
+matrix has no implicit flattening order.
+
+The [nested-array specification](NESTED_ARRAYS_2026.md) and
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md) record S3s as
+implemented and in owner review. It supplies vocabulary for the polynomial
+vectors of the development plan, without accepting a ring transformation,
+proof rule, machine layout, or backend. The conformance corpus includes
+quadratic-pair arithmetic with hand-derived answers; it makes no complete
+ML-KEM claim.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
@@ -4752,7 +4789,7 @@ that take modules as parameters, attributes, visibility, type parameters of
 about for all their values at once, lists of types named once for several
 functions, sizes found from anything
 but the lengths of a call's arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
+shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
 tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
 arrays of more than 65,536 elements, step budgets written in a source,
@@ -4786,10 +4823,11 @@ S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
 through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
-which builds on S3q, through OEP-0021.
+which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
+through OEP-0023.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All seventeen migrations so far are small: every source
+documented migration. All eighteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4811,7 +4849,8 @@ S3p, in the same steps, since its arrays hold at most 256 elements, every
 source S3p accepted does the same under S3q, since none began a member with
 `test` or compared arrays or tuples, and every source S3q accepted does the
 same under S3r, in the same steps, since each of its amounts was a literal
-below the width.
+below the width. Every source S3r accepted retains its values and costs
+under S3s; rank-two type aliases and chained indices are newly admitted.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6164,7 +6203,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3r in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3s in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -7156,6 +7195,12 @@ Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
 run against the compiler at the revision that introduced it. That check is
 not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
+
+Manuscript version 0.21 updates Chapter 8, the current slice marker, and the
+status ledger for S3s nested arrays, with the executable "Arrays of rows"
+example. Codex using GPT-6.1 prepared these changes under Chase Bryan's
+2026-10-01 direction. Their implementation tests are solo-produced evidence;
+they do not supply independent review or semantic acceptance.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

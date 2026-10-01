@@ -4,6 +4,12 @@ Status: proposed S3d semantics under OEP-0007, in owner review; not accepted
 
 Edition: `2026`
 
+> S3s, proposed in [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md) under
+> OEP-0023, extends this slice with rank-two arrays through row aliases and
+> chained index selections. Its shape limits and diagnostics replace the
+> blanket rejection of arrays of arrays below. Repeated `^` type syntax
+> remains rejected.
+
 Snapshot: 2026-09-28
 
 This document defines slice S3d of Orange 2026: fixed-length arrays of `Int`

@@ -1,0 +1,40 @@
+// Finite size and type parameters can instantiate row and matrix types.
+edition 2026;
+module parameters {
+  type Bytes = Word[8]^3;
+  type Integers = Int^3;
+  type WideRow = Word[16]^3;
+
+  spec repeat[n in 1..4, R in {Bytes, Integers}](row: R) -> R^n { [row; n] }
+  spec identity[T in {Bytes^2, Integers^2}](m: T) -> T { m }
+  spec matrix_identity[T in {Bytes^2, WideRow^2}](m: T) -> T { m }
+  spec narrow_row() -> Bytes { [1, 2, 3] }
+
+  spec total[n in 1..4](m: Bytes^n) -> Int {
+    for r in 0..n with sum: Int = 0 {
+      sum + (for c in 0..3 with row_sum: Int = 0 { row_sum + (m[r][c] as Int) })
+    }
+  }
+
+  spec rows() -> Bytes^2 { repeat[2, Bytes]([1, 2, 3]) }
+  spec inferred() -> Bytes^2 { identity(rows()) }
+  spec selected() -> Integers { repeat[1, Integers]([4, 5, 6])[0] }
+  spec sum() -> Int { total(rows()) }
+
+  spec literal_inferred() -> Bytes^2 { matrix_identity([narrow_row(), narrow_row()]) }
+  spec fill_inferred() -> Bytes^2 { matrix_identity([narrow_row(); 2]) }
+  spec scalar_inferred() -> Bytes^2 {
+    let b: Word[8] = 1;
+    matrix_identity([[b, 2, 3], [4, 5, 6]])
+  }
+  spec shape_named() -> Bytes^2 { matrix_identity[Bytes^2]([[1, 2, 3], [4, 5, 6]]) }
+
+  test "an explicit row type yields a matrix" { rows() == [[1, 2, 3], [1, 2, 3]] }
+  test "a matrix argument selects its finite type instance" { inferred() == rows() }
+  test "size specialization checks nested loop indices" { sum() == 12 }
+  test "another scalar domain retains its row type" { selected() == [4, 5, 6] }
+  test "typed row literals select a matrix instance" { literal_inferred() == rows() }
+  test "typed row fills select a matrix instance" { fill_inferred() == rows() }
+  test "a typed scalar leaf retains both axes during inference" { scalar_inferred() == [[1, 2, 3], [4, 5, 6]] }
+  test "an explicit array type selects a matrix instance" { shape_named() == scalar_inferred() }
+}

@@ -3848,7 +3848,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses an optional `.k` and then an optional `[index]` after a name
+    /// Parses an optional `.k` and then `[index]` selections after a name
     /// or a call.
     ///
     /// An index that is one integer token opens no nesting level, exactly as
@@ -3862,9 +3862,21 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         if self.current_kind() == TokenKind::Dot {
             return self.parse_projection(base, base_height, level);
         }
-        if self.current_kind() != TokenKind::LeftBracket {
-            return Some((base, base_height));
+        let mut selected = (base, base_height);
+        // Each selection increases the checked tree height; a chain uses
+        // one parser frame rather than one frame per dimension.
+        while self.current_kind() == TokenKind::LeftBracket {
+            selected = self.parse_array_index(selected, level)?;
         }
+        Some(selected)
+    }
+
+    #[inline(never)]
+    fn parse_array_index(
+        &mut self,
+        (base, base_height): (Expression, usize),
+        level: usize,
+    ) -> Option<(Expression, usize)> {
         let left_bracket = self.bump()?.span;
         let (index, index_height) = if self.current_kind() == TokenKind::Integer
             && self.next_kind() == TokenKind::RightBracket
@@ -3899,13 +3911,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return None;
         }
         let right_bracket = self.bump()?.span;
-        if self.current_kind() == TokenKind::LeftBracket {
-            self.expected(
-                "an operator or the end of the expression",
-                "an array element is an `Int` or a word, so it cannot be indexed again",
-            );
-            return None;
-        }
         if self.current_kind() == TokenKind::Dot {
             self.expected(
                 "an operator or the end of the expression",
@@ -4978,8 +4983,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             if self.current_kind() == TokenKind::Caret {
                 self.expected(
                     "the end of the type after its array length",
-                    "an array's elements are `Int`, `Bool`, words, or residues; arrays of \
-                     arrays are not part of Orange 2026",
+                    "name the row type with a `type` declaration, then write `Row^LENGTH`; \
+                     repeated `^` dimensions are not type syntax",
                 );
                 return None;
             }
@@ -6999,8 +7004,13 @@ mod tests {
     fn bounds_expression_tree_height_for_operator_chains() {
         let message =
             format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
-        let chains: [(&str, &str); 4] =
-            [(" ^ a", "^"), (" + a", "+"), (" * a", "*"), (" - 1", "-")];
+        let chains: [(&str, &str); 5] = [
+            (" ^ a", "^"),
+            (" + a", "+"),
+            (" * a", "*"),
+            (" - 1", "-"),
+            ("[0]", "["),
+        ];
         for (link, operator) in chains {
             let chain = |count: usize| format!("a{}", link.repeat(count));
             let (_, expression) = body_expression(&spec_source(&chain(MAX_EXPRESSION_HEIGHT - 1)));
@@ -7726,7 +7736,7 @@ mod tests {
             ("a[0, 1]", "expected `]` after the index"),
             ("a[0", "expected `]` after the index"),
             (
-                "a[0][1]",
+                "a[0].0",
                 "expected an operator or the end of the expression",
             ),
             ("(a)[0]", "expected `}` after the body expression"),
@@ -7784,8 +7794,8 @@ mod tests {
         assert_eq!(
             parsed.diagnostics[0].notes(),
             [
-                "an array's elements are `Int`, `Bool`, words, or residues; arrays of arrays are \
-                 not part of Orange 2026"
+                "name the row type with a `type` declaration, then write `Row^LENGTH`; \
+                 repeated `^` dimensions are not type syntax"
             ]
         );
     }
@@ -8450,7 +8460,7 @@ mod tests {
             "]]]]]",
             "a[a[a[",
             "[a,[b,[c,",
-            "a[0][0][0]",
+            "a[0][0][",
             "[][][]",
             "for for for",
             "for i in 0..",
