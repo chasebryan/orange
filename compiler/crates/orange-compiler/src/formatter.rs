@@ -494,16 +494,6 @@ fn gap(tokens: &[Token], plan: &Plan, index: usize) -> Result<Gap, Failure> {
     if previous == T::Semicolon && !prior.fill_separator {
         return Ok(Gap::Line);
     }
-    if previous == T::RightBrace && !prior.domain {
-        // An else branch belongs to the closing conditional branch.
-        return Ok(if current == T::Identifier {
-            Gap::Space
-        } else if current == T::Semicolon {
-            Gap::None
-        } else {
-            Gap::Line
-        });
-    }
     if role.infix || prior.infix {
         return Ok(Gap::Space);
     }
@@ -537,9 +527,21 @@ fn gap(tokens: &[Token], plan: &Plan, index: usize) -> Result<Gap, Failure> {
     }
     if current == T::LeftBracket
         && !prior.following_space
-        && matches!(previous, T::Identifier | T::RightBracket | T::RightParen)
+        && matches!(
+            previous,
+            T::Identifier | T::RightBracket | T::RightParen | T::RightBrace
+        )
     {
         return Ok(Gap::None);
+    }
+    if previous == T::RightBrace && !prior.domain {
+        // Specific expression continuations above retain their own spacing;
+        // an else branch stays attached to the closing conditional branch.
+        return Ok(if current == T::Identifier {
+            Gap::Space
+        } else {
+            Gap::Line
+        });
     }
     Ok(Gap::Space)
 }
@@ -896,6 +898,173 @@ mod tests {
         assert!(output.contains("if (1 == 1) {\n"));
         assert!(output.contains("} else {\n"));
         assert!(output.contains("\n\n  test \"x\""));
+    }
+
+    fn assert_body_layout(expression: &str, body: &str) {
+        let source = format!("edition 2026;module m{{spec f()->Int{{{expression}}}}}");
+        let expected =
+            format!("edition 2026;\nmodule m {{\n  spec f() -> Int {{\n{body}\n  }}\n}}\n");
+        assert_eq!(formatted(&source), expected);
+    }
+
+    #[test]
+    fn block_operands_keep_infix_continuations_on_the_closing_line() {
+        for (expression, expected) in [
+            (
+                "if true{1}else{2}+3",
+                "    if true {\n      1\n    } else {\n      2\n    } + 3",
+            ),
+            (
+                "3+if true{1}else{2}",
+                "    3 + if true {\n      1\n    } else {\n      2\n    }",
+            ),
+            (
+                "for i in 0..1 with s:Int=0{s+1}+3",
+                "    for i in 0..1 with s: Int = 0 {\n      s + 1\n    } + 3",
+            ),
+            (
+                "(for i in 0..1 with s:Int=0{s+1})*3",
+                "    (for i in 0..1 with s: Int = 0 {\n      s + 1\n    }) * 3",
+            ),
+            (
+                "if true{1}else{2}==3",
+                "    if true {\n      1\n    } else {\n      2\n    } == 3",
+            ),
+            (
+                "if true{[1]}else{[2]}++[3]",
+                "    if true {\n      [1]\n    } else {\n      [2]\n    } ++ [3]",
+            ),
+        ] {
+            assert_body_layout(expression, expected);
+        }
+    }
+
+    #[test]
+    fn block_elements_keep_commas_and_closing_delimiters_tight() {
+        for (expression, expected) in [
+            (
+                "(if true{1}else{2},for i in 0..1 with s:Int=0{s})",
+                "    (if true {\n      1\n    } else {\n      2\n    }, for i in 0..1 with s: Int = 0 {\n      s\n    })",
+            ),
+            (
+                "g(for i in 0..1 with s:Int=0{s},if true{1}else{2})",
+                "    g(for i in 0..1 with s: Int = 0 {\n      s\n    }, if true {\n      1\n    } else {\n      2\n    })",
+            ),
+            (
+                "[if true{1}else{2},for i in 0..1 with s:Int=0{s}]",
+                "    [if true {\n      1\n    } else {\n      2\n    }, for i in 0..1 with s: Int = 0 {\n      s\n    }]",
+            ),
+            (
+                "[for i in 0..1 with s:Int=0{s};2]",
+                "    [for i in 0..1 with s: Int = 0 {\n      s\n    }; 2]",
+            ),
+            (
+                "(if true{1}else{2})",
+                "    (if true {\n      1\n    } else {\n      2\n    })",
+            ),
+        ] {
+            assert_body_layout(expression, expected);
+        }
+    }
+
+    #[test]
+    fn selections_of_block_valued_calls_stay_tight() {
+        let source = "edition 2026;module m{spec a()->Word[8]^2{if true{[1,2]}else{[3,4]}}spec p()->(Int,Int){for i in 0..1 with s:(Int,Int)=(1,2){s}}spec f()->Int{(a()[0] as Int)+p().0}}";
+        assert_eq!(
+            formatted(source),
+            "edition 2026;\nmodule m {\n  spec a() -> Word[8]^2 {\n    if true {\n      [1, 2]\n    } else {\n      [3, 4]\n    }\n  }\n\n  spec p() -> (Int, Int) {\n    for i in 0..1 with s: (Int, Int) = (1, 2) {\n      s\n    }\n  }\n\n  spec f() -> Int {\n    (a()[0] as Int) + p().0\n  }\n}\n"
+        );
+    }
+
+    #[test]
+    fn brace_postfix_spacing_does_not_expand_the_parsed_grammar() {
+        for (suffix, kind) in [("[0]", TokenKind::LeftBracket), (".0", TokenKind::Dot)] {
+            let mut sources = SourceMap::new();
+            let id = sources
+                .add("postfix-tokens.or", format!("}}{suffix}"))
+                .unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::E2026);
+            assert!(!lexed.has_errors());
+            assert_eq!(lexed.tokens()[1].kind, kind);
+            let plan = Plan {
+                roles: vec![Role::default(); lexed.tokens().len()],
+            };
+            assert_eq!(gap(lexed.tokens(), &plan, 1), Ok(Gap::None));
+        }
+        for expression in [
+            "if true{[1]}else{[2]}[0]",
+            "for i in 0..1 with s:(Int,Int)=(1,2){s}.0",
+        ] {
+            let output = result(&format!(
+                "edition 2026;module m{{spec f()->Int{{{expression}}}}}"
+            ));
+            assert!(output.has_errors());
+            assert!(output.formatted().is_none());
+            assert!(
+                output
+                    .diagnostics()
+                    .iter()
+                    .any(|diagnostic| diagnostic.code() == DiagnosticCode::ExpectedSyntax)
+            );
+        }
+    }
+
+    #[test]
+    fn block_continuation_comments_keep_their_anchors_and_layout() {
+        for (expression, expected) in [
+            (
+                "if true{1}else{2}/* arithmetic */+3",
+                "    if true {\n      1\n    } else {\n      2\n    } /* arithmetic */ + 3",
+            ),
+            (
+                "(for i in 0..1 with s:Int=0{s}/* comma */,4)",
+                "    (for i in 0..1 with s: Int = 0 {\n      s\n    } /* comma */ , 4)",
+            ),
+            (
+                "g(if true{1}else{2}/* closing */)",
+                "    g(if true {\n      1\n    } else {\n      2\n    } /* closing */ )",
+            ),
+            (
+                "[for i in 0..1 with s:Int=0{s}/* closing */]",
+                "    [for i in 0..1 with s: Int = 0 {\n      s\n    } /* closing */ ]",
+            ),
+            (
+                "if true{1}else{2}// arithmetic\n+3",
+                "    if true {\n      1\n    } else {\n      2\n    } // arithmetic\n    + 3",
+            ),
+            (
+                "a()/* index */[0]+p()/* projection */.0",
+                "    a() /* index */ [0] + p() /* projection */ .0",
+            ),
+        ] {
+            assert_body_layout(expression, expected);
+        }
+    }
+
+    #[test]
+    fn block_continuation_comment_arrangements_are_idempotent() {
+        let text = "edition 2026;module m{spec f()->Int{let x:Int=if true{1}else{2};g(if true{1}else{2},for i in 0..1 with s:Int=0{s})+(if true{1}else{2})}spec a()->Int{[if true{1}else{2},for i in 0..1 with s:Int=0{s}]}}";
+        let mut sources = SourceMap::new();
+        let id = sources.add("continuation-gaps.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        for pair in lexed.tokens().windows(2) {
+            if pair[0].kind != TokenKind::RightBrace {
+                continue;
+            }
+            let offset = usize::try_from(pair[1].span.start().bytes()).unwrap();
+            for comment in [
+                "/* inline */",
+                "\n/* standalone */\n",
+                "// trailing\n",
+                "/* a */ // b\n /* c */",
+                "// a\n/* b */ /* c */",
+                "/* nested /* inner */ */",
+            ] {
+                formatted(&format!("{}{comment}{}", &text[..offset], &text[offset..]));
+            }
+        }
     }
 
     #[test]
