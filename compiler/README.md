@@ -137,6 +137,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --steps 2097152
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-rc6.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- fmt compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3b_conformance --locked --offline
@@ -170,6 +171,41 @@ compiler/target/release/orangec --version
 Run the example with `compiler/target/release/orangec` to use that build
 directly. An older binary elsewhere on your path does not change when the
 checkout is rebuilt.
+
+## Formatting sources
+
+`orangec fmt FILE` prints the complete formatted source on standard output.
+`orangec fmt --check FILE...` compares each source with that output, prints no
+formatted source, and changes no files. Both accept `-` for standard input;
+`--check` admits at most 256 operands and standard input at most once. Without
+`--check`, exactly one operand is required. `--edition 2026` and `--` retain
+their ordinary meanings; no output-path or write option is provided.
+
+The formatter uses the parsed syntax to lay out the gaps between tokens. It
+preserves each token's spelling and each comment's bytes, order and anchor
+between tokens, then re-lexes and re-parses the result before returning it.
+Formatting is deterministic and idempotent. It checks syntax only: missing
+imports and semantic errors do not prevent formatting a syntactically valid
+source. It performs no module loading or evaluation.
+
+```sh
+orangec fmt source.or
+orangec fmt --check source.or other.or
+orangec fmt - < source.or
+```
+
+The [formatter contract](../docs/FORMATTER_2026.md) gives the layout and bounded
+validation boundary. `ORC0250` reports the formatter's resource limit,
+`ORC0251` an inconsistent formatting result, and `ORC0252` a source that
+requires formatting under `--check`. Syntax, input and host-output faults keep
+their existing diagnostics. Exit status is 0 for successful formatting or
+when every checked source is canonical, 1 for a diagnosed failure or a source
+that differs, and 2 for invalid command usage. Validation finishes before any
+formatted bytes are written; an output failure can leave a prefix already
+accepted by the host and returns status 1.
+
+This permanent W3 frontend tool does not change the S3t language marker,
+accept a semantic OEP, complete S8, or create a release.
 
 ## Sealing files
 
@@ -551,7 +587,7 @@ declares a module of another name is kept, so that the module graph reports
 the `use` that read it, but its own uses are not followed. A module that
 cannot be read is `ORC1001` with a note naming the `use` and its module; any
 failure to read, decode, lex, or parse a module stops that program before
-semantic analysis. `lex` reads no module, and each operand of an invocation is
+semantic analysis. `lex` and `fmt` read no module, and each operand of an invocation is
 the root of its own program. A scheme program given to the sealing commands by
 path reads its modules the same way, under one 64 MiB budget shared with its
 own bytes.
@@ -590,8 +626,8 @@ operands; because the diagnostic channel itself is exhausted, an already
 accepted prefix can end without a final limit notice. After any detected stream
 failure, retained buffered standard output is discarded instead of being
 flushed as later command output.
-Compilation standard output is explicitly flushed only after successful token
-or evaluation bytes have been queued; untouched output and diagnostic streams
+Compilation standard output is explicitly flushed only after successful token,
+formatted-source or evaluation bytes have been queued; untouched output and diagnostic streams
 are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger

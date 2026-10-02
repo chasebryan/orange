@@ -10,6 +10,7 @@ pub mod core;
 pub mod diagnostic;
 pub mod edition;
 pub mod eval;
+pub mod formatter;
 pub mod lexer;
 pub mod parser;
 pub mod semantics;
@@ -26,6 +27,9 @@ pub use edition::{Edition, ParseEditionError};
 pub use eval::{
     CallResult, EvaluatedFunction, EvaluationResult, Evaluator, MAX_CALL_DEPTH,
     MAX_EVALUATION_STEPS_PER_SOURCE, TestOutcome, TestRun, evaluate, evaluate_selected, run_tests,
+};
+pub use formatter::{
+    FormatResult, MAX_FORMAT_EVENTS_PER_SOURCE, MAX_FORMATTED_SOURCE_BYTES, format_source,
 };
 pub use lexer::{
     Lexed, MAX_DIAGNOSTICS_PER_SOURCE as MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_TOKENS_PER_SOURCE,

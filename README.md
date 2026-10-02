@@ -1129,6 +1129,7 @@ cryptography.
 | --- | --- |
 | Source model, UTF-8 byte spans, stable diagnostic codes | Working |
 | Deterministic lexer (`orangec lex`) | Working |
+| Syntax-only formatter (`orangec fmt` and `fmt --check`), preserving token spellings and comments | Working; [tool contract](docs/FORMATTER_2026.md) |
 | Orange 2026 grammar: one edition, one module per file, `spec` and `impl` declarations | Working |
 | Typed `spec` functions: parameters, calls, `Int`, and `Word[8]` through `Word[64]` | Working; specification in review ([OEP-0005](docs/governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md)) |
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
@@ -1184,6 +1185,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- fmt compiler/fixtures/hello.or
 
 # Run the compiler test suite
 cargo test --manifest-path compiler/Cargo.toml --workspace
@@ -1207,6 +1209,8 @@ Markdown lint, workflow audits, and link checks run only in CI.
 Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
        orangec test [--steps <N>] [--stats] <FILE>
+       orangec fmt <FILE>
+       orangec fmt --check <FILE>...
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1216,11 +1220,19 @@ Commands:
   eval     Reference-evaluate one source after complete validation
   lex      Print the deterministic token stream
   test     Run one source's known-answer tests after complete validation
+  fmt      Format one source, or check source formatting with --check
   keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
   enc      Seal a file with the scheme its key belongs to
   dec      Open a sealed file, writing nothing unless all of it is authentic
   schemes  List the built-in sealing schemes, or describe the named ones
 ```
+
+`orangec fmt FILE` prints one complete formatted source. `orangec fmt --check
+FILE...` reports sources that differ from that format and changes no files.
+Both accept `-` for standard input and validate syntax without loading imports
+or checking types. The [formatter contract](docs/FORMATTER_2026.md) describes
+comment preservation, bounds and diagnostics. This is permanent frontend
+tooling; it does not close S8 or authorize a release.
 
 `orangec enc FILE` seals any file with an authenticated cipher written in
 Orange, and `orangec dec FILE.orange` opens it again. XChaCha20-Poly1305 (the

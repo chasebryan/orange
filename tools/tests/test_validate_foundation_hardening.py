@@ -2652,11 +2652,13 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/crates/orange-compiler/src/source.rs",
         "compiler/crates/orange-compiler/src/lexer.rs",
         "compiler/crates/orange-compiler/src/parser.rs",
+        "compiler/crates/orange-compiler/src/formatter.rs",
         "compiler/crates/orange-compiler/src/semantics.rs",
         "compiler/crates/orange-compiler/src/eval.rs",
         "compiler/crates/orangec/src/main.rs",
         "compiler/README.md",
         "docs/LANGUAGE_2026.md",
+        "docs/FORMATTER_2026.md",
         "docs/SEMANTICS_2026.md",
         "docs/operations/CI_DEPENDENCIES.md",
         "policy/README.md",
@@ -2682,6 +2684,36 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             root = Path(directory)
             self._copy_boundary(root)
             self.assertFalse(self._codes(root))
+
+    def test_formatter_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 * 1024 * 1024", "16 * 1024 * 1025"),
+            ("4 * 262_144", "4 * 262_145"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/crates/orange-compiler/src/formatter.rs"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_formatter_documented_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 MiB (`16 * 1024 * 1024` output bytes)", "17 MiB (`17 * 1024 * 1024` output bytes)"),
+            ("at most 1,048,576 formatting work items", "at most 1,048,577 formatting work items"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/FORMATTER_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
 
     def test_installer_shell_budget_drift_is_rejected(self) -> None:
         mutations = (

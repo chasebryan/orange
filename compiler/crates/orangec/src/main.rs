@@ -12,8 +12,8 @@ use std::process::ExitCode;
 use orange_compiler::{
     CoreValue, Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
     MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile,
-    SourceId, SourceMap, SyntaxTree, TestOutcome, analyze_program, evaluate_selected, lex, parse,
-    render_diagnostics, run_tests,
+    SourceId, SourceMap, SyntaxTree, TestOutcome, TextOffset, analyze_program, evaluate_selected,
+    format_source, lex, parse, render_diagnostics, run_tests,
 };
 
 mod crypt;
@@ -39,6 +39,8 @@ const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
     "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
     "       orangec test [--steps <N>] [--stats] <FILE>\n",
+    "       orangec fmt <FILE>\n",
+    "       orangec fmt --check <FILE>...\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -48,6 +50,7 @@ const USAGE: &str = concat!(
     "  eval     Reference-evaluate one source after complete validation\n",
     "  lex      Print the deterministic token stream\n",
     "  test     Run one source's known-answer tests after complete validation\n",
+    "  fmt      Format one source, or check source formatting with --check\n",
     "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
     "  enc      Seal a file with the scheme its key belongs to\n",
     "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
@@ -58,6 +61,7 @@ const USAGE: &str = concat!(
     "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
     "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
     "      --stats           Report the steps each function or test used, on stderr\n",
+    "      --check           Check formatting without source changes [fmt only]\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -507,6 +511,85 @@ fn compile_with_limits(
             );
             continue;
         };
+        if options.command == CompilerCommand::Fmt {
+            let formatted = format_source(source, options.edition);
+            let text = match classify_phase_result(formatted.formatted(), formatted.diagnostics()) {
+                PhaseResult::Complete(text) => text,
+                PhaseResult::Diagnosed(diagnostics) => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_diagnostics(&sources, diagnostics),
+                    );
+                    continue;
+                }
+                PhaseResult::Missing => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::MissingPhaseArtifact,
+                            "formatter returned neither a complete source nor a diagnostic",
+                            "this is an internal compiler or resource failure",
+                        ),
+                    );
+                    continue;
+                }
+            };
+            if options.formatting_check {
+                if text != source.text() {
+                    compilation_failed = true;
+                    let rendered = formatting_required(source, text).map_or_else(
+                        || {
+                            render_cli_error(
+                                CliDiagnosticCode::MissingPhaseArtifact,
+                                "formatter could not identify the source formatting difference",
+                                "this is an internal compiler or resource failure",
+                            )
+                        },
+                        |diagnostic| render_diagnostics(&sources, &[diagnostic]),
+                    );
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &rendered,
+                    );
+                }
+            } else {
+                // Validate the complete result against the output budget before
+                // any bytes can escape. Argument parsing permits one source.
+                let written = if text.len() > buffered_output.remaining {
+                    Err(output_limit_error())
+                } else {
+                    buffered_output.write_all(text.as_bytes())
+                };
+                match written {
+                    Ok(()) => standard_output_written = true,
+                    Err(error) => {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         let result = lex(source, options.edition);
 
         if options.command == CompilerCommand::Lex && standard_output_available {
@@ -920,6 +1003,32 @@ fn compile_with_limits(
     }
 }
 
+/// Locate the first differing character boundary, including a missing final
+/// newline at EOF. Diagnostic rendering retains the original source identity.
+fn formatting_required(source: &SourceFile, formatted: &str) -> Option<Diagnostic> {
+    let mut offset = source
+        .text()
+        .bytes()
+        .zip(formatted.bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while !source.text().is_char_boundary(offset) {
+        offset = offset.checked_sub(1)?;
+    }
+    let offset = TextOffset::new(u32::try_from(offset).ok()?);
+    Some(
+        Diagnostic::error(
+            DiagnosticCode::FormattingRequired,
+            "source does not match the canonical formatter output",
+            source.span(offset, offset)?,
+        )
+        .with_label("formatting differs here")
+        .with_note(
+            "run `orangec fmt FILE` to print the formatted source; this command changes no files",
+        ),
+    )
+}
+
 /// Adds to each step-limit diagnostic the option of `command` that raises
 /// the budget, while `budget` is below the most `--steps` admits; `None` when
 /// the copy cannot be allocated.
@@ -1230,6 +1339,7 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
         _ => Some(Cow::Borrowed(match command {
             CompilerCommand::Eval => "orangec: could not write evaluation output\n",
             CompilerCommand::Test => "orangec: could not write test report\n",
+            CompilerCommand::Fmt => "orangec: could not write formatted source\n",
             _ => "orangec: could not write token output\n",
         })),
     }
@@ -1783,6 +1893,7 @@ define_compiler_commands! {
     Eval => "eval",
     Lex => "lex",
     Test => "test",
+    Fmt => "fmt",
     Keygen => "keygen",
     Enc => "enc",
     Dec => "dec",
@@ -1802,6 +1913,8 @@ struct Options {
     edition: Edition,
     paths: Vec<PathBuf>,
     evaluation: Evaluation,
+    /// Check every source without printing its formatted representation.
+    formatting_check: bool,
 }
 
 /// How `eval` evaluates: its step budget, the functions it names, and
@@ -1858,6 +1971,7 @@ fn parse_arguments_with_path_reservation(
     let mut output = None;
     let mut evaluation = Evaluation::default();
     let mut steps_seen = false;
+    let mut formatting_check = false;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -1883,6 +1997,15 @@ fn parse_arguments_with_path_reservation(
                 }
                 Some("--stats") => {
                     evaluation.stats = true;
+                    continue;
+                }
+                Some("--check") => {
+                    if formatting_check {
+                        return Err(String::from(
+                            "option `--check` may be specified at most once",
+                        ));
+                    }
+                    formatting_check = true;
                     continue;
                 }
                 Some(name @ ("--steps" | "--spec")) => {
@@ -1983,6 +2106,9 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
+    if formatting_check && command != CompilerCommand::Fmt {
+        return Err(String::from("option `--check` applies only to fmt"));
+    }
     // `--steps` and `--stats` serve both commands that evaluate; `--spec`
     // selects functions, which only `eval` runs.
     let evaluates = matches!(command, CompilerCommand::Eval | CompilerCommand::Test);
@@ -2025,11 +2151,17 @@ fn parse_arguments_with_path_reservation(
             command.as_str()
         ));
     }
+    if command == CompilerCommand::Fmt && !formatting_check && paths.len() != 1 {
+        return Err(String::from(
+            "command `fmt` requires exactly one source file unless `--check` is given",
+        ));
+    }
     Ok(Action::Compile(Options {
         command,
         edition,
         paths,
         evaluation,
+        formatting_check,
     }))
 }
 
@@ -2349,6 +2481,7 @@ mod tests {
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
             evaluation: Evaluation::default(),
+            formatting_check: false,
         };
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
@@ -2401,6 +2534,7 @@ mod tests {
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
             evaluation: Evaluation::default(),
+            formatting_check: false,
         };
         let mut input = b"abcd".as_slice();
         let mut output = Vec::new();
@@ -2441,6 +2575,7 @@ mod tests {
             edition: Edition::CURRENT,
             paths: vec![path.clone(), path],
             evaluation: Evaluation::default(),
+            formatting_check: false,
         };
         let mut input = b"".as_slice();
         let mut output = Vec::new();
@@ -2494,7 +2629,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "check", "eval", "lex", "test", "keygen", "enc", "dec", "schemes"
+                "check", "eval", "lex", "test", "fmt", "keygen", "enc", "dec", "schemes"
             ]
         );
         assert_eq!(
@@ -3369,6 +3504,7 @@ mod tests {
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
+                formatting_check: false,
             }))
         );
         assert_eq!(
@@ -3378,6 +3514,7 @@ mod tests {
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
+                formatting_check: false,
             }))
         );
         assert_eq!(
@@ -3387,8 +3524,105 @@ mod tests {
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
+                formatting_check: false,
             }))
         );
+    }
+
+    #[test]
+    fn formatter_preflights_the_entire_output_budget() {
+        let source = b"edition 2026;module m{}";
+        let options = parse_arguments(os_arguments(&["fmt", "-"]))
+            .unwrap()
+            .compile_options();
+        let mut expected = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut diagnostics,
+                source.len(),
+                MAX_STANDARD_OUTPUT_BYTES,
+            ),
+            SUCCESS
+        );
+        assert!(!expected.is_empty());
+        assert!(diagnostics.is_empty());
+
+        let mut actual = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut actual,
+                &mut diagnostics,
+                source.len(),
+                expected.len() - 1,
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(actual.is_empty());
+        assert!(
+            String::from_utf8(diagnostics)
+                .unwrap()
+                .contains("error[ORC1007]")
+        );
+
+        let mut exact = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut exact,
+                &mut diagnostics,
+                source.len(),
+                expected.len(),
+            ),
+            SUCCESS
+        );
+        assert_eq!(exact, expected);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn formatter_checks_do_not_consume_the_output_budget() {
+        let options = parse_arguments(os_arguments(&["fmt", "--check", "-"]))
+            .unwrap()
+            .compile_options();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        let source = b"edition 2026;module m{}";
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics,
+                source.len(),
+                0,
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.is_empty());
+        let diagnostics = String::from_utf8(diagnostics).unwrap();
+        assert!(diagnostics.contains("error[ORC0252]"));
+        assert!(!diagnostics.contains("ORC1007"));
+    }
+
+    #[test]
+    fn formatter_difference_spans_keep_utf8_boundaries_and_eof() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("sample.or", "é").unwrap();
+        let source = sources.get(id).unwrap();
+        let changed = formatting_required(source, "ê").unwrap();
+        assert_eq!(source.slice(changed.primary_span()), Some(""));
+        assert_eq!(changed.primary_span().start(), TextOffset::new(0));
+        let newline = formatting_required(source, "é\n").unwrap();
+        assert_eq!(newline.primary_span().start(), source.byte_len());
+        assert_eq!(source.slice(newline.primary_span()), Some(""));
     }
 
     #[test]
