@@ -25,6 +25,12 @@ syntax-only stdout formatting and check-only comparison, with bounded
 re-lexing/re-parsing and token/comment preservation. This admission does not
 advance semantic acceptance, S8 closure or release authority.
 
+The permanent source documentation generator and CLI harness likewise have
+an exact admitted inventory. Its [contract](../docs/DOCUMENTATION_2026.md)
+fixes syntax-only, bounded standalone HTML with escaped source and no import
+loading, type checking or inferred proof/test status. Claim/ABI documentation
+and release authority remain their separate product obligations.
+
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
 privileged shell mode suppresses inherited interpreter startup files before the
 script executes. It rejects a symbolic link in the script's final path

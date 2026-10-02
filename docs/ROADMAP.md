@@ -362,11 +362,13 @@ The W3 syntax-only formatter is implemented as permanent frontend tooling:
 `orangec fmt` prints one source and `fmt --check` checks sources without writing
 them. Its [contract](FORMATTER_2026.md) preserves token spellings and comments,
 and validates bounded output by re-lexing and re-parsing. This completes that
-tool boundary, not S8. LSP, documentation generation, package/evidence tools,
-and the complete developer journeys remain required.
+tool boundary, not S8. The permanent [source documentation generator](DOCUMENTATION_2026.md)
+adds standalone offline HTML for written declarations and escaped source,
+without loading imports or checking types. Resolved-interface, claim/ABI
+documentation, LSP, package/evidence tools and complete journeys remain required.
 
 Add immutable resolution, manifests and locks, offline bundles, LSP,
-documentation generator, evidence inspector, and source archives. A solo preview
+claim/ABI documentation, evidence inspector, and source archives. A solo preview
 release requires an explicit release decision, exact source and artifact
 digests, reproducible owner build instructions, known limitations, and support
 dates. It cannot claim independent rebuild or multi-party release controls.

@@ -12,8 +12,8 @@ use std::process::ExitCode;
 use orange_compiler::{
     CoreValue, Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
     MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile,
-    SourceId, SourceMap, SyntaxTree, TestOutcome, TextOffset, analyze_program, evaluate_selected,
-    format_source, lex, parse, render_diagnostics, run_tests,
+    SourceId, SourceMap, SyntaxTree, TestOutcome, TextOffset, analyze_program, document_source,
+    evaluate_selected, format_source, lex, parse, render_diagnostics, run_tests,
 };
 
 mod crypt;
@@ -41,6 +41,7 @@ const USAGE: &str = concat!(
     "       orangec test [--steps <N>] [--stats] <FILE>\n",
     "       orangec fmt <FILE>\n",
     "       orangec fmt --check <FILE>...\n",
+    "       orangec doc <FILE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -51,6 +52,7 @@ const USAGE: &str = concat!(
     "  lex      Print the deterministic token stream\n",
     "  test     Run one source's known-answer tests after complete validation\n",
     "  fmt      Format one source, or check source formatting with --check\n",
+    "  doc      Document one parsed source as standalone HTML\n",
     "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
     "  enc      Seal a file with the scheme its key belongs to\n",
     "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
@@ -511,6 +513,65 @@ fn compile_with_limits(
             );
             continue;
         };
+        if options.command == CompilerCommand::Doc {
+            let documentation = document_source(source, options.edition);
+            let html = match classify_phase_result(
+                documentation.html(),
+                documentation.diagnostics(),
+            ) {
+                PhaseResult::Complete(html) => html,
+                PhaseResult::Diagnosed(diagnostics) => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_diagnostics(&sources, diagnostics),
+                    );
+                    continue;
+                }
+                PhaseResult::Missing => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::MissingPhaseArtifact,
+                            "documentation returned neither a complete HTML document nor a diagnostic",
+                            "this is an internal compiler or resource failure",
+                        ),
+                    );
+                    continue;
+                }
+            };
+            // The engine has completed and validated its entire result before
+            // the stdout budget or the host writer can receive any HTML.
+            let written = if html.len() > buffered_output.remaining {
+                Err(output_limit_error())
+            } else {
+                buffered_output.write_all(html.as_bytes())
+            };
+            match written {
+                Ok(()) => standard_output_written = true,
+                Err(error) => {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+            }
+            continue;
+        }
         if options.command == CompilerCommand::Fmt {
             let formatted = format_source(source, options.edition);
             let text = match classify_phase_result(formatted.formatted(), formatted.diagnostics()) {
@@ -1340,6 +1401,7 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
             CompilerCommand::Eval => "orangec: could not write evaluation output\n",
             CompilerCommand::Test => "orangec: could not write test report\n",
             CompilerCommand::Fmt => "orangec: could not write formatted source\n",
+            CompilerCommand::Doc => "orangec: could not write documentation output\n",
             _ => "orangec: could not write token output\n",
         })),
     }
@@ -1894,6 +1956,7 @@ define_compiler_commands! {
     Lex => "lex",
     Test => "test",
     Fmt => "fmt",
+    Doc => "doc",
     Keygen => "keygen",
     Enc => "enc",
     Dec => "dec",
@@ -2149,6 +2212,11 @@ fn parse_arguments_with_path_reservation(
         return Err(format!(
             "command `{}` requires exactly one source file",
             command.as_str()
+        ));
+    }
+    if command == CompilerCommand::Doc && paths.len() != 1 {
+        return Err(String::from(
+            "command `doc` requires exactly one source file",
         ));
     }
     if command == CompilerCommand::Fmt && !formatting_check && paths.len() != 1 {
@@ -2629,7 +2697,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "check", "eval", "lex", "test", "fmt", "keygen", "enc", "dec", "schemes"
+                "check", "eval", "lex", "test", "fmt", "doc", "keygen", "enc", "dec", "schemes"
             ]
         );
         assert_eq!(
@@ -3623,6 +3691,139 @@ mod tests {
         let newline = formatting_required(source, "é\n").unwrap();
         assert_eq!(newline.primary_span().start(), source.byte_len());
         assert_eq!(source.slice(newline.primary_span()), Some(""));
+    }
+
+    #[test]
+    fn documentation_preflights_the_complete_stdout_budget() {
+        let options = parse_arguments(os_arguments(&["doc", "-"]))
+            .unwrap()
+            .compile_options();
+        let source = b"edition 2026;module m{}";
+        let mut expected = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut diagnostics,
+                source.len(),
+                MAX_STANDARD_OUTPUT_BYTES,
+            ),
+            SUCCESS
+        );
+        assert!(!expected.is_empty());
+        assert!(diagnostics.is_empty());
+        for budget in [0, expected.len() - 1] {
+            let mut output = Vec::new();
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile_with_limits(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics,
+                    source.len(),
+                    budget,
+                ),
+                COMPILATION_ERROR
+            );
+            assert!(output.is_empty());
+            assert!(
+                String::from_utf8(diagnostics)
+                    .unwrap()
+                    .contains("error[ORC1007]")
+            );
+        }
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics,
+                source.len(),
+                expected.len(),
+            ),
+            SUCCESS
+        );
+        assert_eq!(output, expected);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn documentation_host_output_failures_report_only_the_accepted_prefix() {
+        let options = parse_arguments(os_arguments(&["doc", "-"]))
+            .unwrap()
+            .compile_options();
+        let source = b"edition 2026;module m{}";
+        for kind in [io::ErrorKind::Other, io::ErrorKind::BrokenPipe] {
+            let mut output = AcceptPrefixThenFail::new(2, kind);
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics
+                ),
+                COMPILATION_ERROR
+            );
+            assert_eq!(output.bytes, b"<!");
+            assert_eq!(output.attempts, 2);
+            if kind == io::ErrorKind::BrokenPipe {
+                assert!(diagnostics.is_empty());
+            } else {
+                assert_eq!(
+                    diagnostics,
+                    b"orangec: could not write documentation output\n"
+                );
+            }
+        }
+        let mut output = FailFlush::default();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(!output.bytes.is_empty());
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(
+            diagnostics,
+            b"orangec: could not write documentation output\n"
+        );
+    }
+
+    #[test]
+    fn documentation_arguments_retain_the_bounded_option_contract() {
+        for arguments in [
+            &["doc", "source.or"][..],
+            &["--edition", "2026", "doc", "source.or"],
+            &["doc", "--edition=2026", "--", "--check"],
+        ] {
+            let options = parse_arguments(os_arguments(arguments))
+                .unwrap()
+                .compile_options();
+            assert_eq!(options.command, CompilerCommand::Doc);
+            assert_eq!(options.edition, Edition::E2026);
+            assert_eq!(options.paths.len(), 1);
+            assert!(!options.formatting_check);
+        }
+        assert!(
+            parse_arguments_with_path_reservation(
+                os_arguments(&["doc", "long-source-name.or"]),
+                8,
+                |paths| paths.try_reserve(1).is_ok(),
+            )
+            .unwrap_err()
+            .contains("command-line arguments exceed")
+        );
     }
 
     #[test]
