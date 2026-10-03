@@ -181,6 +181,7 @@ struct Role {
     declaration: bool,
     condition_group: bool,
     following_space: bool,
+    postfix_index: bool,
 }
 
 struct Plan {
@@ -326,9 +327,20 @@ impl<'a> Planner<'a> {
         self.push(Work::Expression(expression))
     }
 
+    fn postfix_index(&mut self, base: Span) -> Result<(), Failure> {
+        let index = self.after(base);
+        if self.tokens.get(index).map(|token| token.kind) != Some(TokenKind::LeftBracket) {
+            return Err(Failure::Inconsistent);
+        }
+        self.role(index)?.postfix_index = true;
+        Ok(())
+    }
+
     fn visit(&mut self, work: Work<'a>) -> Result<(), Failure> {
         match work {
             Work::Binding(binding) => {
+                let index = self.index(binding.span)?;
+                self.role(index)?.following_space = true;
                 self.pattern(&binding.pattern)?;
                 self.push(Work::Expression(&binding.value))?;
             }
@@ -407,6 +419,7 @@ impl<'a> Planner<'a> {
                     self.push(Work::Size(&fill.length))?;
                 }
                 ExpressionKind::Index(index) => {
+                    self.postfix_index(index.base.span)?;
                     self.push(Work::Expression(&index.base))?;
                     self.push(Work::Expression(&index.index))?;
                 }
@@ -419,6 +432,7 @@ impl<'a> Planner<'a> {
                     self.push(Work::Expression(&update.value))?;
                 }
                 ExpressionKind::Slice(slice) => {
+                    self.postfix_index(slice.base.span)?;
                     self.push(Work::Expression(&slice.base))?;
                     self.range(&slice.range)?;
                 }
@@ -497,7 +511,7 @@ fn gap(tokens: &[Token], plan: &Plan, index: usize) -> Result<Gap, Failure> {
     if role.infix || prior.infix {
         return Ok(Gap::Space);
     }
-    if role.array_caret || prior.array_caret || prior.prefix {
+    if role.array_caret || prior.array_caret || prior.prefix || role.postfix_index {
         return Ok(Gap::None);
     }
     if matches!(
@@ -973,6 +987,29 @@ mod tests {
         assert_eq!(
             formatted(source),
             "edition 2026;\nmodule m {\n  spec a() -> Word[8]^2 {\n    if true {\n      [1, 2]\n    } else {\n      [3, 4]\n    }\n  }\n\n  spec p() -> (Int, Int) {\n    for i in 0..1 with s: (Int, Int) = (1, 2) {\n      s\n    }\n  }\n\n  spec f() -> Int {\n    (a()[0] as Int) + p().0\n  }\n}\n"
+        );
+    }
+
+    #[test]
+    fn tuple_projections_keep_following_indices_and_slices_tight() {
+        let source = "edition 2026;module m{spec f()->(Int,Int^2,Int^2,Int^3){let p:(Int^3,Int)=([1,2,3],4);(p.0[1],p.0[1..],p.0[..2],p.0[0..3])}}";
+        assert_eq!(
+            formatted(source),
+            "edition 2026;\nmodule m {\n  spec f() -> (Int, Int^2, Int^2, Int^3) {\n    let p: (Int^3, Int) = ([1, 2, 3], 4);\n    (p.0[1], p.0[1..], p.0[..2], p.0[0..3])\n  }\n}\n"
+        );
+        let output = formatted(
+            "edition 2026;module m{spec f()->(Int,Int^1){let p:(Int^2,Int)=([1,2],3);(p.0/* index anchor */[0],p.0/* slice anchor */[..1])}}",
+        );
+        assert_eq!(output.matches("/* index anchor */").count(), 1);
+        assert_eq!(output.matches("/* slice anchor */").count(), 1);
+    }
+
+    #[test]
+    fn tuple_bindings_keep_a_space_after_the_let_keyword() {
+        let source = "edition 2026;module m{spec f()->Int{let(a:Int,b:Int)=(1,2);for i in 0..1 with s:Int=a{let(c:Int,d:Int)=(s,b);if true{let(e:Int,f:Int)=(c,d);e+f}else{c}}}}";
+        assert_eq!(
+            formatted(source),
+            "edition 2026;\nmodule m {\n  spec f() -> Int {\n    let (a: Int, b: Int) = (1, 2);\n    for i in 0..1 with s: Int = a {\n      let (c: Int, d: Int) = (s, b);\n      if true {\n        let (e: Int, f: Int) = (c, d);\n        e + f\n      } else {\n        c\n      }\n    }\n  }\n}\n"
         );
     }
 
