@@ -658,13 +658,15 @@ its moduli. Global aliases and finite type lists remain concrete. The
 [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) record the
 implemented slice in owner review; they add no proof, primality or native claim.
 
-OEP-0022 P2 also has permanent executable five-limb definitions in
+OEP-0022 P2 has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,
-carrying and canonicalization. Boundary and generated mathematical-reference
-tests check these observations; transparent aliases do not enforce an invariant
-or establish refinement. Wide multiplication, checked P3 contracts and full
-X25519 implementation refinement remain later obligations.
+carrying and canonicalization. The same source supplies partial P4 mathematical
+preparation: exact `Int` product accumulators and three-pass normalization.
+Boundary and generated mathematical-reference tests check coefficients and
+every carry stage; transparent aliases do not enforce an invariant or establish
+refinement. P4 is incomplete. Native wide multiplication, checked P3 contracts
+and full X25519 implementation refinement remain later obligations.
 
 Lists of types named once for several functions, positions given as parameters,
 so that one quarter round can act on

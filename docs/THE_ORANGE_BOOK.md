@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-10-02
 
-Manuscript version: 0.25
+Manuscript version: 0.26
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -4868,12 +4868,15 @@ and [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) remain
 in owner review.
 
 The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
-take the next mathematical step of OEP-0022: reconstruction, abstraction and
-tight/loose/canonical predicates, followed by addition, carrying and
-canonicalization. Exact `Int` arithmetic records what the limbs mean without
-pretending a wrapping machine product is wide multiplication. Boundary and
-generated reference tests check observations. Transparent type aliases do
-not enforce the predicates, and these tests are not checked refinement proofs.
+implement OEP-0022 P2: reconstruction, abstraction and tight/loose/canonical
+predicates, followed by addition, carrying and canonicalization. Partial P4
+mathematical preparation adds multiplication. Five exact `Int` accumulators hold the
+folded products, and three normalization passes expose each digit array and
+top carry before canonicalization. Boundary and generated binary-reference
+tests check coefficients and every carry stage; the third pass can be needed
+to keep every output digit below 2^51. These definitions supply no native wide
+multiplication primitive and do not complete P4. Transparent type aliases do
+not enforce the predicates, and these tests are not P3 checked refinement proofs.
 The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
 later proof, compiler, corpus and release obligations explicit.
 
@@ -7167,6 +7170,9 @@ Version 0.24 adds the permanent [source documentation contract](DOCUMENTATION_20
 and its syntax-only, offline rendering and product documentation boundaries.
 Version 0.25 adds the permanent [local witness replay contract](WITNESS_REPLAY_2026.md),
 its typed value boundary, numeric instance selection and reference-only outcomes.
+Version 0.26 adds partial P4 mathematical product preparation alongside the
+existing P2 representation definitions, with exact accumulators and three
+normalization passes; it adds no P3 proof or P4 completion claim.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and

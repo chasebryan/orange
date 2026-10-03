@@ -1,4 +1,4 @@
-// OEP-0022 P2: mathematical radix-2^51 representations of the field
+// OEP-0022 P2 representations and partial P4 mathematical products of the field
 // p = 2^255 - 19. Limb order is least significant first. This radix and
 // carry schedule are original executable definitions, not an RFC 7748
 // storage requirement. The aliases are transparent; none enforces a range.
@@ -7,6 +7,7 @@
 edition 2026;
 module field25519 {
   type Limbs = Word[64]^5;
+  type ProductAccumulators = Int^5;
   type Field = Mod[57896044618658097711785492504343953926634992332820282019728792003956564819949];
 
   spec radix() -> Int { 2251799813685248 }
@@ -41,6 +42,39 @@ module field25519 {
     }
   }
 
+  // Fold the exact convolution using B^5 = p + 19. Intended input
+  // contract: tight(x) && tight(y). Each scalar product is at most
+  // M = (B - 1)^2 < 2^102. Coefficient k has k + 1 ordinary terms and
+  // 4 - k terms weighted by 19, so its exact maximum is respectively
+  // [77, 59, 41, 23, 5] * M, below 2^109. No accumulator is narrowed
+  // to Word[64]; a wrapping word product would not implement this sum.
+  spec product_accumulators(x: Limbs, y: Limbs) -> ProductAccumulators {
+    for k in 0..5 with product: ProductAccumulators = [0; 5] {
+      let coefficient: Int = for i in 0..5 with sum: Int = 0 {
+        let weight: Int = if i > k { 19 } else { 1 };
+        sum + weight * (x[i] as Int) * (y[(k + 5 - i) % 5] as Int)
+      };
+      product with [k] = coefficient
+    }
+  }
+
+  // Under bounded_product(h), this reconstruction is below 6B^6,
+  // less than 2^309, well inside the existing exact Int magnitude limit.
+  spec reconstruct_product(h: ProductAccumulators) -> Int {
+    for i in 0..5 with n: Int = 0 { n * radix() + h[4 - i] }
+  }
+
+  // This ordinary predicate records the intended normalization contract.
+  // The transparent alias does not enforce it, even for a value whose
+  // residue happens to agree with an independently computed product.
+  spec bounded_product(h: ProductAccumulators) -> Bool {
+    let weights: Int^5 = [77, 59, 41, 23, 5];
+    let maximum: Int = (radix() - 1) * (radix() - 1);
+    for i in 0..5 with valid: Bool = true {
+      valid && (h[i] >= 0) && (h[i] <= (weights[i] * maximum))
+    }
+  }
+
   // One exact carry pass; the tuple retains both the digits and overflow.
   // The returned digits are below B and its carry records the coefficient
   // of B^5. No Word[64] addition or multiplication is used for carries.
@@ -49,6 +83,52 @@ module field25519 {
       let digit: Int = (x[i] as Int) + state.1;
       (state.0 with [i] = (digit % radix()) as Word[64], digit / radix())
     }
+  }
+
+  // Intended input contract: every h[i] and incoming is nonnegative.
+  // Every narrowing is of digit % B, which is in [0, B), below 2^51.
+  // Products and carries remain exact Int values throughout this pass.
+  spec carry_accumulators(h: ProductAccumulators, incoming: Int) -> (Limbs, Int) {
+    for i in 0..5 with state: (Limbs, Int) = ([0; 5], incoming) {
+      let digit: Int = h[i] + state.1;
+      (state.0 with [i] = (digit % radix()) as Word[64], digit / radix())
+    }
+  }
+
+  // Intended input contract: bounded_product(h). With incoming zero,
+  // successive first-pass carries are at most
+  // [77B-154, 59B-42, 41B-24, 23B-6, 5B+12]. All sums are below 2^109.
+  // Thus the first fold adds at most 95B+228, below 2^58. The second
+  // pass's low carry is at most 96, all later carries at most 1, and
+  // its top carry is at most 1. Its digits are each below B.
+  // If that top carry is 1, the reconstructed second digits are below
+  // 95B+228; folding its 19 therefore stays below B^5. If it is zero,
+  // no further input is added. The third top carry is consequently zero.
+  // The third pass is required: adding 19 only to the second low digit
+  // can exceed B even though it fits Word[64] and has the right residue.
+  // This tuple exposes all three digit arrays and their exact top carries.
+  spec product_carry_trace(h: ProductAccumulators) -> (Limbs, Int, Limbs, Int, Limbs, Int) {
+    let first: (Limbs, Int) = carry_accumulators(h, 0);
+    let second: (Limbs, Int) = carry_pass(first.0, 19 * first.1);
+    let third: (Limbs, Int) = carry_pass(second.0, 19 * second.1);
+    (first.0, first.1, second.0, second.1, third.0, third.1)
+  }
+
+  // Under bounded_product(h), the discarded final top carry is zero,
+  // the result is tight, and reconstruction retains its residue modulo p.
+  spec carry_product(h: ProductAccumulators) -> Limbs { product_carry_trace(h).4 }
+
+  // Intended input contract: tight(x) && tight(y), without requiring
+  // canonical inputs. These are executable definitions, not checked
+  // representation contracts or a native wide multiplication primitive.
+  spec multiply_tight(x: Limbs, y: Limbs) -> Limbs {
+    carry_product(product_accumulators(x, y))
+  }
+
+  // A tight result reconstructs below B^5 = p + 19, so the existing
+  // single subtraction and digit extraction yield the canonical result.
+  spec multiply_canonical(x: Limbs, y: Limbs) -> Limbs {
+    canonicalize_tight(multiply_tight(x, y))
   }
 
   // Intended input contract: loose(x). Fold B^5 into 19 twice, using
@@ -146,6 +226,40 @@ module field25519 {
   }
   spec second_fold_expected() -> Limbs { [37, 0, 0, 0, 0] }
 
+  spec product_accumulator_maxima() -> ProductAccumulators {
+    product_accumulators(maximum_tight(), maximum_tight())
+  }
+  spec product_accumulator_maxima_expected() -> ProductAccumulators {
+    [390436384870294308883813279727693, 299165541653861873040843941609531,
+     207894698437429437197874603491369, 116623855220997001354905265373207,
+     25353012004564565511935927255045]
+  }
+
+  spec product_maximum_trace() -> (Limbs, Int, Limbs, Int, Limbs, Int) {
+    product_carry_trace(product_accumulator_maxima())
+  }
+  spec product_maximum_trace_expected() -> (Limbs, Int, Limbs, Int, Limbs, Int) {
+    ([77, 2251799813685153, 2251799813685247, 2251799813685247, 2251799813685247],
+     11258999068426252, [305, 0, 0, 0, 0], 1, [324, 0, 0, 0, 0], 0)
+  }
+
+  spec product_maximum() -> Limbs { multiply_canonical(maximum_tight(), maximum_tight()) }
+  spec product_maximum_expected() -> Limbs { [324, 0, 0, 0, 0] }
+
+  spec product_third_pass() -> Limbs {
+    multiply_tight(maximum_tight(), [125099989649181, 0, 0, 0, 0])
+  }
+  spec product_third_pass_expected() -> Limbs { [10, 1, 0, 0, 0] }
+
+  spec product_boundaries() -> (Limbs, Limbs, Limbs, Limbs, Limbs) {
+    (multiply_canonical(zero(), maximum_tight()), multiply_canonical(p_minus_one(), p_minus_one()),
+     multiply_canonical(p_limbs(), p_limbs()), multiply_canonical(p_plus_one(), p_plus_one()),
+     multiply_canonical(maximum_tight(), maximum_tight()))
+  }
+  spec product_boundaries_expected() -> (Limbs, Limbs, Limbs, Limbs, Limbs) {
+    (zero(), [1, 0, 0, 0, 0], zero(), [1, 0, 0, 0, 0], [324, 0, 0, 0, 0])
+  }
+
   test "tight does not imply canonical" { tight(p_limbs()) && !canonical(p_limbs()) }
   test "distinct admitted representations can denote zero" {
     loose(p_limbs()) && (alpha(p_limbs()) == alpha(zero()))
@@ -158,5 +272,22 @@ module field25519 {
   test "canonicalization retains the p plus one field value" {
     canonical(canonicalize_tight(p_plus_one())) &&
     (alpha(canonicalize_tight(p_plus_one())) == alpha(p_plus_one()))
+  }
+  test "maximum exact product satisfies its accumulator bound" {
+    bounded_product(product_accumulator_maxima()) && tight(product_maximum()) && canonical(product_maximum())
+  }
+  test "the third product carry preserves the tight output bound" {
+    tight(product_third_pass()) &&
+    (alpha(product_third_pass()) == (alpha(maximum_tight()) * alpha([125099989649181, 0, 0, 0, 0])))
+  }
+  test "correct multiplication residue does not admit a nontight input" {
+    let x: Limbs = [2251799813685248, 0, 0, 0, 0];
+    let y: Limbs = [1, 0, 0, 0, 0];
+    !tight(x) && tight(y) && (alpha(multiply_tight(x, y)) == (alpha(x) * alpha(y)))
+  }
+  test "correct carry residue does not establish the accumulator contract" {
+    let h: ProductAccumulators = [390436384870294308883813279727694, 0, 0, 0, 0];
+    !bounded_product(h) && !bounded_product([-1, 0, 0, 0, 0]) &&
+    (alpha(carry_product(h)) == (reconstruct_product(h) as Field))
   }
 }
