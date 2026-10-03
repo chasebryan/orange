@@ -30,8 +30,9 @@ specialization. S3t extends those finite size instances to modulus expressions.
 S3b through S3t remain in owner review; the accepted semantic boundary is S3a.
 
 The algorithm directories contain executable mathematical specifications and
-tested vectors. The P2 five-limb field definitions add representation predicates
-and executable arithmetic observations; a predicate returning `true` is not a
+tested vectors. The P2 five-limb field definitions add representation predicates,
+exact `Int` product accumulators and three-pass normalization observations;
+a predicate returning `true` is not a
 checked refinement proof. The CLI also has file-sealing commands that run
 Orange specifications through the reference evaluator. Neither these commands
 nor their vectors establish verified native cryptography or a release claim.
@@ -85,9 +86,10 @@ completion from another area's tests.
 1. Complete proof-neutral S3/P1/P2 work in the permanent frontend and corpus.
    S3t supplies modulus expressions over finite size instances. P2 supplies
    five-limb reconstruction, abstraction, tight/loose/canonical predicates,
-   addition, carrying, and canonicalization observations. Define exact wide
-   multiplication and accumulation before writing machine limb multiplication:
-   wrapping `Word[64]` multiplication cannot stand in for a wide product.
+   addition, carrying, canonicalization, and exact `Int` multiplication with
+   three-pass normalization observations. Machine limb multiplication and
+   checked representation contracts remain later work: wrapping `Word[64]`
+   multiplication cannot stand in for these exact accumulators.
    Review the existing pure slices and define remaining shapes and parameter
    domains without claiming universal proof from finite specialization.
 2. Close the semantic/assurance foundation with actual decision evidence.

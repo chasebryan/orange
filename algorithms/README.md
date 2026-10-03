@@ -25,8 +25,8 @@ cryptographic vectors or refinement proofs.
 
 ## The entries
 
-Twenty entries, 240 published cryptographic vectors and seven mathematical
-representation pairs, for 247 recorded answer pairs. Each row links the
+Twenty entries, 240 published cryptographic vectors and twelve mathematical
+representation pairs, for 252 recorded answer pairs. Each row links the
 entry's README; its vector count covers the published cryptographic pairs.
 The X25519 source count also includes the P2 five-limb definitions; their
 seven hand-derived pairs are separate. Standing is the entry's own summary
@@ -111,7 +111,7 @@ chacha20::rfc8439_2_4_2: Word[8]^114 = [0x6e, 0x2e, 0x35, 0x9a, ...]
 chacha20::rfc8439_2_4_2_expected: Word[8]^114 = [0x6e, 0x2e, 0x35, 0x9a, ...]
 ```
 
-The same pair convention records the seven mathematical P2 boundaries in
+The same pair convention records the twelve mathematical P2 boundaries in
 [`field25519-limbs.or`](x25519/field25519-limbs.or). Those expected values
 are hand-derived from the documented radix and prime, rather than imported
 from a standard's cryptographic vector corpus.

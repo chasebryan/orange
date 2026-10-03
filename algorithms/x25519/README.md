@@ -228,8 +228,9 @@ chapter 12.
 
 [`field25519-limbs.or`](field25519-limbs.or) implements the executable
 definitions of [OEP-0022 P2](../../docs/governance/oeps/OEP-0022-crypto-language-development-plan.md).
-It is separate from the existing ladder: no field multiplication, inversion,
-coordinate decoding, or full X25519 refinement is supplied by this source.
+It is separate from the existing ladder. It supplies exact mathematical field
+products, while inversion, coordinate decoding, and full X25519 refinement
+remain absent from this source.
 The five `Word[64]` limbs are least significant first, with B = 2^51 and
 p = B^5 - 19. This radix and carry schedule are original definitions;
 RFC 7748 does not require this storage format.
@@ -256,8 +257,22 @@ when needed, and splits the resulting integer into five digits.
 These mathematical bounds describe the schedule; they have not been checked
 by an Orange proof checker.
 
-Seven computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum tight
-storage, componentwise addition, and a case needing both top-carry folds.
+`product_accumulators` folds the five-by-five convolution with B^5 = p + 19
+into five exact `Int` coefficients. For tight inputs, their respective maxima
+are [77, 59, 41, 23, 5] times (B - 1)^2, each below 2^109. The ordinary
+`bounded_product` predicate records these nonnegative bounds. Products and
+carries retain exact `Int` values; only radix digits below B are narrowed to
+`Word[64]`. `product_carry_trace` exposes all three digit arrays and top carries.
+Under the stated coefficient bounds, the first top carry is at most 5B + 12,
+the second at most 1, and the third zero. The third pass preserves tightness:
+adding 19 only to the second low digit can exceed B despite the right residue.
+`multiply_tight` uses this schedule, and `multiply_canonical` applies the
+existing single-subtraction canonicalization. Tight inputs need not be
+canonical. These intended contracts remain unchecked predicates.
+
+Twelve computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum tight
+storage, componentwise addition, both addition folds, exact product coefficient
+maxima, every product carry stage, and a product requiring the third pass.
 The expected values follow directly from B^5 = p + 19, rather than from a
 published X25519 vector. The external
 [`field25519_limbs.rs`](../../compiler/crates/orangec/tests/field25519_limbs.rs)
@@ -266,7 +281,11 @@ a 320-bit integer, reduces by binary long division, and extracts canonical
 digits. Its 118 inputs include below/at/above both bounds at every limb,
 the four p boundaries, maximum `Word[64]` storage, carry chains, and 80
 deterministic generated tight/loose inputs. Addition tests compare exact limb
-sums and canonical residues for 50 tight-input pairs.
+sums and canonical residues for 50 tight-input pairs. Product tests use 129
+tight-input pairs and an independent 640-bit binary product/reference carry
+calculation to check coefficients, each carry stage, tight output and canonical
+residues. Forty-one boundary observations separate the intended input and
+accumulator predicates from a coincidentally correct residue outside them.
 
 The following are exact reference-evaluator step counts for the named
 parameterless specs, including construction of their inputs. They describe
@@ -281,11 +300,17 @@ this source and evaluator cost model, not native execution time.
 | `carried_addition` | 477 |
 | `canonical_boundaries` | 1,165 |
 | `second_fold` | 380 |
+| `product_accumulator_maxima` | 1,019 |
+| `product_maximum_trace` | 1,572 |
+| `product_maximum` | 1,768 |
+| `product_third_pass` | 1,474 |
+| `product_boundaries` | 8,824 |
 
-Default `eval --stats` takes 5,232 steps including constants and expected
-values. The six executable test blocks take 4,445 steps. The external tests
-also check the exact 380-step budget for `second_fold`: 380 succeeds and 379
-returns ORC0301 with no partial value output. All loops have five iterations;
+Default `eval --stats` takes 19,999 steps including constants and expected
+values. The ten executable test blocks take 15,751 steps. The external tests
+check the exact 380-step budget for `second_fold` and 1,474-step budget for
+`product_third_pass`: each succeeds at its stated budget and returns ORC0301
+with no partial value output one step below it. All loops have five iterations;
 no array is larger than twelve scalar elements. Boolean examples and test
 results establish no checked refinement type, universal theorem, timing,
 machine layout, or native security guarantee.

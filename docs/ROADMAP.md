@@ -661,10 +661,11 @@ implemented slice in owner review; they add no proof, primality or native claim.
 OEP-0022 P2 also has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,
-carrying and canonicalization. Boundary and generated mathematical-reference
-tests check these observations; transparent aliases do not enforce an invariant
-or establish refinement. Wide multiplication, checked P3 contracts and full
-X25519 implementation refinement remain later obligations.
+carrying, canonicalization, exact `Int` product accumulators and three-pass
+product normalization. Boundary and generated mathematical-reference tests
+check coefficients and every carry stage; transparent aliases do not enforce
+an invariant or establish refinement. Native wide multiplication, checked P3
+contracts and full X25519 implementation refinement remain later obligations.
 
 Lists of types named once for several functions, positions given as parameters,
 so that one quarter round can act on
