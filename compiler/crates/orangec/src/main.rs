@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    CoreValue, Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
-    MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile,
-    SourceId, SourceMap, SyntaxTree, TestOutcome, TextOffset, analyze_program, document_source,
-    evaluate_selected, format_source, lex, parse, render_diagnostics, run_tests,
+    CoreFunction, CoreModule, CoreType, CoreValue, Diagnostic, DiagnosticCode, Edition, Evaluator,
+    Lexed, MAX_EVALUATION_STEPS_PER_SOURCE, MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES,
+    RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap, SyntaxTree, TestOutcome,
+    TextOffset, WitnessReplayOutcome, analyze_program, decode_arguments, document_source,
+    evaluate_selected, format_source, lex, parse, render_diagnostics, replay_witness, run_tests,
 };
 
 mod crypt;
@@ -32,6 +33,7 @@ const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const MAX_EVALUATION_STEP_LIMIT: usize = 1 << 30;
 /// The most functions one `eval` names with `--spec`.
 const MAX_SELECTED_SPECS: usize = 64;
+const MAX_REPLAY_INSTANCE_VALUES: usize = orange_compiler::parser::MAX_SIZES_PER_FUNCTION;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 /// The latest implemented language slice, not an acceptance or release status.
 const IMPLEMENTED_SLICE: &str = "S3t";
@@ -42,6 +44,8 @@ const USAGE: &str = concat!(
     "       orangec fmt <FILE>\n",
     "       orangec fmt --check <FILE>...\n",
     "       orangec doc <FILE>\n",
+    "       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]\n",
+    "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -53,6 +57,7 @@ const USAGE: &str = concat!(
     "  test     Run one source's known-answer tests after complete validation\n",
     "  fmt      Format one source, or check source formatting with --check\n",
     "  doc      Document one parsed source as standalone HTML\n",
+    "  replay   Replay one exact Boolean function instance on typed witness values\n",
     "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
     "  enc      Seal a file with the scheme its key belongs to\n",
     "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
@@ -64,6 +69,9 @@ const USAGE: &str = concat!(
     "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
     "      --stats           Report the steps each function or test used, on stderr\n",
     "      --check           Check formatting without source changes [fmt only]\n",
+    "      --function <M::N> Select exactly this module and function [replay only]\n",
+    "      --instance <N,...> Complete numeric size/type-index vector [replay only]\n",
+    "      --witness <FILE>  Canonical argument vector; `-` reads stdin [replay only]\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -701,7 +709,10 @@ fn compile_with_limits(
             );
         } else if matches!(
             options.command,
-            CompilerCommand::Check | CompilerCommand::Eval | CompilerCommand::Test
+            CompilerCommand::Check
+                | CompilerCommand::Eval
+                | CompilerCommand::Test
+                | CompilerCommand::Replay
         ) {
             let parsed = parse(source, &result);
             let ast = match classify_phase_result(parsed.ast(), parsed.diagnostics()) {
@@ -807,7 +818,75 @@ fn compile_with_limits(
                 }
             };
 
-            if options.command == CompilerCommand::Eval {
+            if options.command == CompilerCommand::Replay {
+                let report = match prepare_replay(
+                    options,
+                    core,
+                    &mut sources,
+                    standard_input,
+                    &mut remaining_source_bytes,
+                ) {
+                    Ok(report) => report,
+                    Err(group) => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                        continue;
+                    }
+                };
+                // The complete report has been built before any result bytes
+                // are committed. Even a smaller invocation budget emits none.
+                let written = if report.output.len() > buffered_output.remaining {
+                    Err(output_limit_error())
+                } else {
+                    buffered_output.write_all(report.output.as_bytes())
+                };
+                match written {
+                    Ok(()) => standard_output_written = true,
+                    Err(error) => {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                }
+                if options.evaluation.stats && standard_output_available {
+                    if let Err(error) = flush_retry_interrupted(&mut buffered_output) {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                    if standard_output_available {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &report.statistics,
+                        );
+                    }
+                }
+            } else if options.command == CompilerCommand::Eval {
                 let evaluation = &options.evaluation;
                 if let Some(missing) = unmatched_spec(core, &evaluation.specs) {
                     compilation_failed = true;
@@ -1088,6 +1167,217 @@ fn formatting_required(source: &SourceFile, formatted: &str) -> Option<Diagnosti
             "run `orangec fmt FILE` to print the formatted source; this command changes no files",
         ),
     )
+}
+
+struct ReplayReport {
+    output: String,
+    statistics: String,
+}
+
+/// Build one complete observation, using the selected function's exact checked
+/// types for decoding and its pointer for replay. Source-spelled instance names
+/// are never selectors or report metadata.
+fn prepare_replay(
+    options: &Options,
+    core: &CoreModule,
+    sources: &mut SourceMap,
+    standard_input: &mut impl Read,
+    remaining_source_bytes: &mut usize,
+) -> Result<ReplayReport, String> {
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "witness replay returned no complete artifact",
+            "this is an internal compiler or resource failure",
+        )
+    };
+    let replay = options.replay.as_ref().ok_or_else(missing)?;
+    let (module, name) = replay.function.split_once("::").ok_or_else(missing)?;
+    let mut matches = core.functions().iter().filter(|function| {
+        function.module() == module
+            && function.name() == name
+            && function.sizes() == replay.instance
+            && function.title().is_none()
+    });
+    let selected = matches.next().ok_or_else(|| render_cli_error(
+        CliDiagnosticCode::EntryPoint,
+        format_args!("no function `{}` has the selected numeric instance", replay.function),
+        "`--function` names a linked module's function; `--instance` supplies every size value and zero-based type-domain index, in declaration order",
+    ))?;
+    if matches.next().is_some() {
+        return Err(render_cli_error(
+            CliDiagnosticCode::EntryPoint,
+            "the replay function selector is ambiguous",
+            "select one exact module, function, and complete numeric instance",
+        ));
+    }
+    if selected.result_type() != CoreType::Bool {
+        return Err(render_cli_error(
+            CliDiagnosticCode::EntryPoint,
+            "witness replay requires a Boolean function result",
+            "select a function whose checked result type is Bool",
+        ));
+    }
+    let display_name = stable_source_name(&replay.witness).map_err(source_name_error)?;
+    let bytes = read_source(&replay.witness, standard_input, remaining_source_bytes)
+        .map_err(|error| render_read_source_error(&display_name, error))?;
+    let text = String::from_utf8(bytes).map_err(|error| {
+        render_cli_error(
+            CliDiagnosticCode::InvalidUtf8,
+            format_args!("source file `{display_name}` is not valid UTF-8"),
+            format_args!(
+                "invalid byte sequence begins at byte offset {}",
+                error.utf8_error().valid_up_to()
+            ),
+        )
+    })?;
+    let id = sources
+        .add_with_rendered_name(display_name, text)
+        .map_err(source_limit_error_without_name)?;
+    let witness = sources.get(id).ok_or_else(missing)?;
+    let decoded = decode_arguments(witness, selected.parameters());
+    let arguments = match classify_phase_result(decoded.arguments(), decoded.diagnostics()) {
+        PhaseResult::Complete(arguments) => arguments,
+        PhaseResult::Diagnosed(diagnostics) => {
+            return Err(render_diagnostics(sources, diagnostics));
+        }
+        PhaseResult::Missing => return Err(missing()),
+    };
+    let mut evaluator = Evaluator::new(core).ok_or_else(missing)?;
+    let result = replay_witness(
+        &mut evaluator,
+        selected,
+        arguments,
+        options.evaluation.steps,
+    );
+    if !std::ptr::eq(result.function(), selected) {
+        return Err(missing());
+    }
+    if result.has_errors() || result.outcome() == WitnessReplayOutcome::Failed {
+        return if result.diagnostics().is_empty() {
+            Err(missing())
+        } else {
+            let hinted = with_budget_hint(
+                result.diagnostics(),
+                options.evaluation.steps,
+                options.command,
+            );
+            Err(render_diagnostics(
+                sources,
+                hinted.as_deref().unwrap_or(result.diagnostics()),
+            ))
+        };
+    }
+    let outcome = match result.outcome() {
+        WitnessReplayOutcome::Falsified => "falsified",
+        WitnessReplayOutcome::HoldsForThisWitness => "holds_for_this_witness",
+        WitnessReplayOutcome::Failed => return Err(missing()),
+    };
+    let mut output = ReplayText::new(MAX_STANDARD_OUTPUT_BYTES);
+    let rendered = (|| {
+        write_numeric_function(&mut output, selected)?;
+        writeln!(output, ": {outcome}")?;
+        output.write_str("parameter_types: [")?;
+        for (index, parameter) in selected.parameters().iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            write!(output, "{parameter}")?;
+        }
+        output.write_str("]\narguments: [")?;
+        for (index, value) in arguments.values().iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            write!(output, "{value}")?;
+        }
+        output.write_str("]\n")
+    })();
+    if rendered.is_err() {
+        return Err(output.failure());
+    }
+    let mut statistics = ReplayText::new(MAX_STANDARD_ERROR_BYTES);
+    if options.evaluation.stats {
+        let rendered = (|| {
+            write_numeric_function(&mut statistics, selected)?;
+            let steps = result.steps();
+            let unit = if steps == 1 { "step" } else { "steps" };
+            writeln!(statistics, ": {steps} {unit}")?;
+            writeln!(
+                statistics,
+                "total: {steps} of {} steps",
+                options.evaluation.steps
+            )
+        })();
+        if rendered.is_err() {
+            return Err(statistics.failure());
+        }
+    }
+    Ok(ReplayReport {
+        output: output.text,
+        statistics: statistics.text,
+    })
+}
+
+fn write_numeric_function(output: &mut impl fmt::Write, function: &CoreFunction) -> fmt::Result {
+    write!(output, "{}::{}[", function.module(), function.name())?;
+    for (index, size) in function.sizes().iter().enumerate() {
+        if index != 0 {
+            output.write_str(", ")?;
+        }
+        write!(output, "{size}")?;
+    }
+    output.write_str("]")
+}
+
+/// A fallible, bounded complete buffer; no partial report reaches stdout.
+struct ReplayText {
+    text: String,
+    limit: usize,
+    exceeded: bool,
+}
+
+impl ReplayText {
+    const fn new(limit: usize) -> Self {
+        Self {
+            text: String::new(),
+            limit,
+            exceeded: false,
+        }
+    }
+
+    fn failure(&self) -> String {
+        if self.exceeded {
+            render_cli_error(
+                CliDiagnosticCode::OutputTooLarge,
+                "witness replay report exceeds the output limit",
+                "orangec writes at most 64 MiB per output stream per invocation",
+            )
+        } else {
+            render_cli_error(
+                CliDiagnosticCode::MissingPhaseArtifact,
+                "could not allocate the complete witness replay report",
+                "this is an internal compiler or resource failure",
+            )
+        }
+    }
+}
+
+impl fmt::Write for ReplayText {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        if self
+            .text
+            .len()
+            .checked_add(text.len())
+            .is_none_or(|length| length > self.limit)
+        {
+            self.exceeded = true;
+            return Err(fmt::Error);
+        }
+        self.text.try_reserve(text.len()).map_err(|_| fmt::Error)?;
+        self.text.push_str(text);
+        Ok(())
+    }
 }
 
 /// Adds to each step-limit diagnostic the option of `command` that raises
@@ -1402,6 +1692,7 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
             CompilerCommand::Test => "orangec: could not write test report\n",
             CompilerCommand::Fmt => "orangec: could not write formatted source\n",
             CompilerCommand::Doc => "orangec: could not write documentation output\n",
+            CompilerCommand::Replay => "orangec: could not write witness replay output\n",
             _ => "orangec: could not write token output\n",
         })),
     }
@@ -1957,6 +2248,7 @@ define_compiler_commands! {
     Test => "test",
     Fmt => "fmt",
     Doc => "doc",
+    Replay => "replay",
     Keygen => "keygen",
     Enc => "enc",
     Dec => "dec",
@@ -1978,6 +2270,14 @@ struct Options {
     evaluation: Evaluation,
     /// Check every source without printing its formatted representation.
     formatting_check: bool,
+    replay: Option<Replay>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct Replay {
+    function: String,
+    instance: Vec<u32>,
+    witness: PathBuf,
 }
 
 /// How `eval` evaluates: its step budget, the functions it names, and
@@ -2035,6 +2335,9 @@ fn parse_arguments_with_path_reservation(
     let mut evaluation = Evaluation::default();
     let mut steps_seen = false;
     let mut formatting_check = false;
+    let mut replay_function = None;
+    let mut replay_instance = None;
+    let mut replay_witness = None;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -2079,6 +2382,20 @@ fn parse_arguments_with_path_reservation(
                     set_evaluation_option(name, &value, &mut evaluation, &mut steps_seen)?;
                     continue;
                 }
+                Some(name @ ("--function" | "--instance" | "--witness")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_replay_option(
+                        name,
+                        value,
+                        &mut replay_function,
+                        &mut replay_instance,
+                        &mut replay_witness,
+                    )?;
+                    continue;
+                }
                 Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
                     let value = arguments
                         .next()
@@ -2116,6 +2433,18 @@ fn parse_arguments_with_path_reservation(
                         )?;
                         continue;
                     }
+                    if let Some((name @ ("--function" | "--instance" | "--witness"), value)) =
+                        value.split_once('=')
+                    {
+                        set_replay_option(
+                            name,
+                            OsString::from(value),
+                            &mut replay_function,
+                            &mut replay_instance,
+                            &mut replay_witness,
+                        )?;
+                        continue;
+                    }
                     if value.starts_with('-') && value != "-" {
                         return Err(format!("unknown option `{}`", escape_display_text(value)));
                     }
@@ -2130,6 +2459,9 @@ fn parse_arguments_with_path_reservation(
                     b"--output=",
                     b"--steps=",
                     b"--spec=",
+                    b"--function=",
+                    b"--instance=",
+                    b"--witness=",
                 ]
                 .iter()
                 .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
@@ -2172,12 +2504,15 @@ fn parse_arguments_with_path_reservation(
     if formatting_check && command != CompilerCommand::Fmt {
         return Err(String::from("option `--check` applies only to fmt"));
     }
-    // `--steps` and `--stats` serve both commands that evaluate; `--spec`
+    // `--steps` and `--stats` serve the commands that evaluate; `--spec`
     // selects functions, which only `eval` runs.
-    let evaluates = matches!(command, CompilerCommand::Eval | CompilerCommand::Test);
+    let evaluates = matches!(
+        command,
+        CompilerCommand::Eval | CompilerCommand::Test | CompilerCommand::Replay
+    );
     if !evaluates && steps_seen {
         return Err(String::from(
-            "option `--steps` applies only to eval and test",
+            "option `--steps` applies only to eval, test, and replay",
         ));
     }
     if command != CompilerCommand::Eval && !evaluation.specs.is_empty() {
@@ -2185,8 +2520,17 @@ fn parse_arguments_with_path_reservation(
     }
     if !evaluates && evaluation.stats {
         return Err(String::from(
-            "option `--stats` applies only to eval and test",
+            "option `--stats` applies only to eval, test, and replay",
         ));
+    }
+    for (present, name) in [
+        (replay_function.is_some(), "--function"),
+        (replay_instance.is_some(), "--instance"),
+        (replay_witness.is_some(), "--witness"),
+    ] {
+        if present && command != CompilerCommand::Replay {
+            return Err(format!("option `{name}` applies only to replay"));
+        }
     }
     if command.seals() {
         return sealing_action(command, edition, scheme, key, output, paths);
@@ -2224,13 +2568,105 @@ fn parse_arguments_with_path_reservation(
             "command `fmt` requires exactly one source file unless `--check` is given",
         ));
     }
+    let replay = if command == CompilerCommand::Replay {
+        let function = replay_function
+            .ok_or_else(|| String::from("command `replay` requires `--function MODULE::NAME`"))?;
+        let witness = replay_witness
+            .ok_or_else(|| String::from("command `replay` requires `--witness FILE`"))?;
+        if paths.first().is_some_and(|path| path == Path::new("-")) && witness == Path::new("-") {
+            return Err(String::from(
+                "source and witness cannot both read standard input",
+            ));
+        }
+        Some(Replay {
+            function,
+            instance: replay_instance.unwrap_or_default(),
+            witness,
+        })
+    } else {
+        None
+    };
     Ok(Action::Compile(Options {
         command,
         edition,
         paths,
         evaluation,
         formatting_check,
+        replay,
     }))
+}
+
+fn set_replay_option(
+    name: &str,
+    value: OsString,
+    function: &mut Option<String>,
+    instance: &mut Option<Vec<u32>>,
+    witness: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let duplicate = match name {
+        "--function" => function.is_some(),
+        "--instance" => instance.is_some(),
+        _ => witness.is_some(),
+    };
+    if duplicate {
+        return Err(format!("option `{name}` may be specified at most once"));
+    }
+    match name {
+        "--function" => {
+            let invalid =
+                || String::from("option `--function` takes exactly MODULE::NAME identifiers");
+            let text = value.to_str().ok_or_else(invalid)?;
+            let (module, selected) = text.split_once("::").ok_or_else(invalid)?;
+            let identifier = |text: &str| {
+                let mut bytes = text.bytes();
+                bytes
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+                    && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            };
+            if !identifier(module) || !identifier(selected) {
+                return Err(invalid());
+            }
+            let mut stored = String::new();
+            stored
+                .try_reserve_exact(text.len())
+                .map_err(|_| String::from("could not allocate the replay function selector"))?;
+            stored.push_str(text);
+            *function = Some(stored);
+        }
+        "--instance" => {
+            let invalid = || {
+                String::from(
+                    "option `--instance` takes one to four canonical decimal u32 values separated by commas",
+                )
+            };
+            let text = value.to_str().ok_or_else(invalid)?;
+            let mut sizes = Vec::new();
+            sizes
+                .try_reserve_exact(MAX_REPLAY_INSTANCE_VALUES)
+                .map_err(|_| String::from("could not allocate the replay instance selector"))?;
+            for item in text.split(',') {
+                if sizes.len() == MAX_REPLAY_INSTANCE_VALUES
+                    || item.is_empty()
+                    || (item.len() > 1 && item.starts_with('0'))
+                    || !item.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(invalid());
+                }
+                sizes.push(item.parse::<u32>().map_err(|_| invalid())?);
+            }
+            *instance = Some(sizes);
+        }
+        _ => {
+            if value.is_empty() {
+                return Err(String::from(
+                    "option `--witness` requires a nonempty file name",
+                ));
+            }
+            *witness = Some(PathBuf::from(value));
+        }
+    }
+    Ok(())
 }
 
 /// Records `--steps`, at most once, or one more `--spec` name.
@@ -2550,6 +2986,7 @@ mod tests {
             paths: vec![PathBuf::from("-")],
             evaluation: Evaluation::default(),
             formatting_check: false,
+            replay: None,
         };
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
@@ -2603,6 +3040,7 @@ mod tests {
             paths: vec![PathBuf::from("-")],
             evaluation: Evaluation::default(),
             formatting_check: false,
+            replay: None,
         };
         let mut input = b"abcd".as_slice();
         let mut output = Vec::new();
@@ -2644,6 +3082,7 @@ mod tests {
             paths: vec![path.clone(), path],
             evaluation: Evaluation::default(),
             formatting_check: false,
+            replay: None,
         };
         let mut input = b"".as_slice();
         let mut output = Vec::new();
@@ -2697,7 +3136,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "check", "eval", "lex", "test", "fmt", "doc", "keygen", "enc", "dec", "schemes"
+                "check", "eval", "lex", "test", "fmt", "doc", "replay", "keygen", "enc", "dec",
+                "schemes"
             ]
         );
         assert_eq!(
@@ -3573,6 +4013,7 @@ mod tests {
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
                 formatting_check: false,
+                replay: None,
             }))
         );
         assert_eq!(
@@ -3583,6 +4024,7 @@ mod tests {
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
                 formatting_check: false,
+                replay: None,
             }))
         );
         assert_eq!(
@@ -3593,6 +4035,7 @@ mod tests {
                 paths: vec![PathBuf::from("one.or")],
                 evaluation: Evaluation::default(),
                 formatting_check: false,
+                replay: None,
             }))
         );
     }
@@ -3826,6 +4269,274 @@ mod tests {
         );
     }
 
+    struct ReplayScratch(PathBuf);
+
+    impl ReplayScratch {
+        fn new(name: &str) -> Self {
+            // Unit-test Cargo builds have no CARGO_TARGET_TMPDIR. This root is
+            // fixed by the build-time manifest, as for existing CLI unit IO.
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/orangec-tests");
+            std::fs::create_dir_all(&root).unwrap();
+            let path = root.join(format!("replay-{name}-{}", std::process::id()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
+            let path = self.0.join(name);
+            let mut file = std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(bytes).unwrap();
+            path
+        }
+
+        fn options(&self, stats: bool) -> Options {
+            let mut arguments = os_arguments(&["replay", "--function", "m::p", "--witness"]);
+            arguments.push(self.0.join("input.values").into_os_string());
+            if stats {
+                arguments.push(OsString::from("--stats"));
+            }
+            arguments.push(OsString::from("-"));
+            parse_arguments(arguments).unwrap().compile_options()
+        }
+    }
+
+    impl Drop for ReplayScratch {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn replay_preflights_complete_stdout_and_buffers_fallibly() {
+        let scratch = ReplayScratch::new("output-budgets");
+        scratch.write("input.values", b"[7]");
+        let source = b"edition 2026;module m{spec p(x:Int)->Bool{x == 7}}";
+        let options = scratch.options(true);
+        let mut expected = Vec::new();
+        let mut statistics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut statistics,
+                source.len() + 3,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            SUCCESS
+        );
+        assert_eq!(
+            expected,
+            b"m::p[]: holds_for_this_witness\nparameter_types: [Int]\narguments: [7]\n"
+        );
+        assert!(statistics.starts_with(b"m::p[]: "));
+        for limit in [0, expected.len() - 1] {
+            let mut output = Vec::new();
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile_with_limits(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics,
+                    source.len() + 3,
+                    limit
+                ),
+                COMPILATION_ERROR
+            );
+            assert!(output.is_empty());
+            let diagnostics = String::from_utf8(diagnostics).unwrap();
+            assert!(diagnostics.contains("error[ORC1007]"));
+            assert!(!diagnostics.contains("\ntotal:"));
+        }
+        let mut output = Vec::new();
+        let mut actual_statistics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut actual_statistics,
+                source.len() + 3,
+                expected.len()
+            ),
+            SUCCESS
+        );
+        assert_eq!(output, expected);
+        assert_eq!(actual_statistics, statistics);
+        let mut buffer = ReplayText::new(4);
+        buffer.write_str("1234").unwrap();
+        assert!(buffer.write_str("5").is_err());
+        assert_eq!(buffer.text, "1234");
+        assert!(buffer.failure().contains("ORC1007"));
+    }
+
+    #[test]
+    fn replay_charges_source_imports_and_witness_to_one_envelope() {
+        let scratch = ReplayScratch::new("source-envelope");
+        let root = b"edition 2026;module m{use helper;spec p(x:Int)->Bool{helper::p(x)}}";
+        let helper = b"edition 2026;module helper{spec p(x:Int)->Bool{x == 7}}";
+        scratch.write("subject.or", root);
+        scratch.write("helper.or", helper);
+        scratch.write("input.values", b"[7]");
+        let mut options = scratch.options(false);
+        options.paths = vec![scratch.0.join("subject.or")];
+        let exact = root.len() + helper.len() + 3;
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut input,
+                &mut output,
+                &mut diagnostics,
+                exact,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            SUCCESS
+        );
+        assert!(!output.is_empty());
+        assert!(diagnostics.is_empty());
+        let mut output = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut input,
+                &mut output,
+                &mut diagnostics,
+                exact - 1,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.is_empty());
+        assert!(
+            String::from_utf8(diagnostics)
+                .unwrap()
+                .contains("error[ORC1008]")
+        );
+        assert_eq!(input.attempts, 0);
+    }
+
+    #[test]
+    fn replay_stats_follow_committed_output_and_transport_failures_stop_them() {
+        let scratch = ReplayScratch::new("transport");
+        scratch.write("input.values", b"[7]");
+        let options = scratch.options(true);
+        let source = b"edition 2026;module m{spec p(x:Int)->Bool{x == 7}}";
+        let transcript = Transcript::default();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut transcript.clone(),
+                &mut transcript.clone()
+            ),
+            SUCCESS
+        );
+        let text = String::from_utf8(transcript.0.borrow().clone()).unwrap();
+        assert!(text.starts_with(
+            "m::p[]: holds_for_this_witness\nparameter_types: [Int]\narguments: [7]\nm::p[]: "
+        ));
+        assert!(text.ends_with("of 1048576 steps\n"));
+        for kind in [io::ErrorKind::Other, io::ErrorKind::BrokenPipe] {
+            let mut output = AcceptPrefixThenFail::new(2, kind);
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics
+                ),
+                COMPILATION_ERROR
+            );
+            assert_eq!(output.bytes, b"m:");
+            assert_eq!(output.attempts, 2);
+            if kind == io::ErrorKind::BrokenPipe {
+                assert!(diagnostics.is_empty());
+            } else {
+                assert_eq!(
+                    diagnostics,
+                    b"orangec: could not write witness replay output\n"
+                );
+            }
+        }
+        let mut output = FailFlush::default();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.bytes.ends_with(b"arguments: [7]\n"));
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(
+            diagnostics,
+            b"orangec: could not write witness replay output\n"
+        );
+    }
+
+    #[test]
+    fn replay_arguments_share_exact_invocation_and_selector_bounds() {
+        let arguments = os_arguments(&[
+            "replay",
+            "--function=m::p",
+            "--instance=0,1,2,4294967295",
+            "--witness=input.values",
+            "--steps=1073741824",
+            "--stats",
+            "--",
+            "--source.or",
+        ]);
+        let bytes = arguments
+            .iter()
+            .map(|argument| argument.as_encoded_bytes().len())
+            .sum();
+        let options = parse_arguments_with_path_reservation(arguments.clone(), bytes, |paths| {
+            paths.try_reserve(1).is_ok()
+        })
+        .unwrap()
+        .compile_options();
+        assert_eq!(options.command, CompilerCommand::Replay);
+        assert_eq!(options.paths, [PathBuf::from("--source.or")]);
+        assert_eq!(options.evaluation.steps, MAX_EVALUATION_STEP_LIMIT);
+        assert_eq!(
+            options.replay.as_ref().unwrap().instance,
+            [0, 1, 2, u32::MAX]
+        );
+        assert!(
+            parse_arguments_with_path_reservation(arguments, bytes - 1, |paths| paths
+                .try_reserve(1)
+                .is_ok())
+            .unwrap_err()
+            .contains("command-line arguments exceed")
+        );
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            run(
+                os_arguments(&["replay", "--function=m::p", "--witness=-", "-"]),
+                &mut input,
+                &mut output,
+                &mut diagnostics
+            ),
+            USAGE_ERROR
+        );
+        assert_eq!(input.attempts, 0);
+        assert!(output.is_empty());
+    }
+
     #[test]
     fn evaluation_options_parse_with_exact_bounds_and_messages() {
         use std::os::unix::ffi::OsStringExt as _;
@@ -3929,11 +4640,11 @@ mod tests {
         for (arguments, message) in [
             (
                 &["check", "--steps", "5", "one.or"][..],
-                "`--steps` applies only to eval and test",
+                "`--steps` applies only to eval, test, and replay",
             ),
             (
                 &["check", "--steps", "1048576", "one.or"][..],
-                "`--steps` applies only to eval and test",
+                "`--steps` applies only to eval, test, and replay",
             ),
             (
                 &["lex", "--spec", "f", "one.or"][..],
@@ -3941,11 +4652,11 @@ mod tests {
             ),
             (
                 &["check", "--stats", "one.or"][..],
-                "`--stats` applies only to eval and test",
+                "`--stats` applies only to eval, test, and replay",
             ),
             (
                 &["--steps=5", "--spec=f", "--stats", "check", "one.or"][..],
-                "`--steps` applies only to eval and test",
+                "`--steps` applies only to eval, test, and replay",
             ),
             (
                 &["--spec=f", "--stats", "check", "one.or"][..],
@@ -3953,7 +4664,7 @@ mod tests {
             ),
             (
                 &["enc", "--stats", "one.or"][..],
-                "`--stats` applies only to eval and test",
+                "`--stats` applies only to eval, test, and replay",
             ),
             (
                 &["--steps=5", "--spec=f", "--stats", "test", "one.or"][..],

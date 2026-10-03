@@ -240,6 +240,38 @@ This is parsed-source documentation. It does not supply resolved interfaces,
 ABI/claim matrices, source-bound evidence identity, semantic acceptance, S8
 closure or release authority. The S3t language marker is unchanged.
 
+## Replaying a local witness
+
+`orangec replay --function MODULE::NAME --witness witness.txt source.or`
+validates one source program, selects a concrete Boolean specification and
+reference-evaluates the supplied arguments. `--instance N[,N...]` selects its
+complete numeric size/type-domain vector, required for every function with
+size/type parameters. Omitting it selects the empty vector. `--steps` and
+`--stats` retain their bounded
+evaluation meanings. Exactly one source root and one witness operand are
+required, and at most one may be `-` for standard input. `--spec` remains an
+`eval` option. The command provides no output-file or write mode.
+
+The witness is the complete outer list `[VALUE, VALUE]` or `[]`, with at most
+one final LF. Values use exact `CoreValue` display spelling: canonical decimal
+integers/residues, `true`/`false`, fixed-width lowercase hexadecimal words and
+recursively comma-space-separated arrays/tuples. The checked parameter types
+supply shape, width and exact modulus. The decoder accepts no source
+expressions, coercion or reduction. Witness input shares the existing source
+read and invocation budget; decoding has explicit node, limb and work limits.
+
+The [witness contract](../docs/WITNESS_REPLAY_2026.md) gives the exact grammar
+and failure boundary. `falsified` and `holds_for_this_witness` are both completed
+results with status 0; decode/binding/evaluation/output failures return 1 and
+usage errors return 2. `ORC0270`–`ORC0274` diagnose witness encoding, type,
+resource, binding and consistency faults; `ORC0301` retains evaluator resource
+meaning. Complete result construction precedes stdout writing. A detected
+host failure returns 1 even if the stream accepted a prefix.
+
+This permanent reference tool does not establish a universal claim, select a
+solver/model format, supply D-009 execution credit, or create canonical Core,
+proof/evidence identity or release authority. The S3t language marker remains.
+
 ## Sealing files
 
 `orangec keygen`, `enc`, `dec`, and `schemes` seal files with authenticated
@@ -609,8 +641,8 @@ comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
 A source whose module has `use` declarations is the root of a program. For
-`check`, `eval`, and `test`, each `use m;` reads the module `m` from the file `m.or` in
-the root file's directory, or in the current directory when the root is `-`.
+`check`, `eval`, `test` and `replay`, each `use m;` reads the module `m` from
+the file `m.or` in the root file's directory, or in the current directory when the root is `-`.
 A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
 `use` first names it, through the same regular-file boundary, 16 MiB
@@ -660,13 +692,14 @@ accepted prefix can end without a final limit notice. After any detected stream
 failure, retained buffered standard output is discarded instead of being
 flushed as later command output.
 Compilation standard output is explicitly flushed only after successful token,
-formatted-source, documentation or evaluation bytes have been queued; untouched output and diagnostic streams
-are not flushed for a silent `check` or empty `eval`. A source with lexical
+formatted-source, documentation, witness replay or evaluation bytes have been
+queued; untouched output and diagnostic streams are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger
 individual inputs fail with `ORC1003` before lexing. `orangec` buffers at most
 64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation;
-the first operand that would exceed the remaining total budget fails with
+witness operands and imported modules consume this same envelope. The
+first operand that would exceed the remaining total budget fails with
 `ORC1008`. Bytes consume that shared budget as soon as they are read into the
 bounded input buffer, even when the operand is later rejected. The one-byte
 probe used to diagnose per-source overflow is also charged whenever aggregate

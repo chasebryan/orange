@@ -367,6 +367,12 @@ adds standalone offline HTML for written declarations and escaped source,
 without loading imports or checking types. Resolved-interface, claim/ABI
 documentation, LSP, package/evidence tools and complete journeys remain required.
 
+The permanent [local witness replay](WITNESS_REPLAY_2026.md) adds typed argument
+files and bounded reference evaluation of one checked Boolean function/instance.
+Its false/true outcomes concern only the supplied witness. It does not accept
+S3 semantics, supply D-009 candidate-case runs or authoritative atomic claims,
+or settle canonical Core/proof/evidence identities.
+
 Add immutable resolution, manifests and locks, offline bundles, LSP,
 claim/ABI documentation, evidence inspector, and source archives. A solo preview
 release requires an explicit release decision, exact source and artifact

@@ -2654,6 +2654,8 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/crates/orange-compiler/src/parser.rs",
         "compiler/crates/orange-compiler/src/formatter.rs",
         "compiler/crates/orange-compiler/src/documentation.rs",
+        "compiler/crates/orange-compiler/src/arguments.rs",
+        "compiler/crates/orange-compiler/src/witness.rs",
         "compiler/crates/orange-compiler/src/semantics.rs",
         "compiler/crates/orange-compiler/src/eval.rs",
         "compiler/crates/orangec/src/main.rs",
@@ -2661,6 +2663,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "docs/LANGUAGE_2026.md",
         "docs/FORMATTER_2026.md",
         "docs/DOCUMENTATION_2026.md",
+        "docs/WITNESS_REPLAY_2026.md",
         "docs/SEMANTICS_2026.md",
         "docs/operations/CI_DEPENDENCIES.md",
         "policy/README.md",
@@ -2727,6 +2730,39 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 root = Path(directory)
                 self._copy_boundary(root)
                 path = root / "docs/DOCUMENTATION_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
+
+    def test_witness_decoder_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 * 262_144", "16 * 262_145"),
+            ("4 * 1_048_576", "4 * 1_048_577"),
+            ("64 * 1_048_576", "64 * 1_048_577"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/crates/orange-compiler/src/arguments.rs"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_witness_documented_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 MiB\n(`16 * 1024 * 1024` witness bytes)", "17 MiB\n(`17 * 1024 * 1024` witness bytes)"),
+            ("at most 4,194,304 value nodes", "at most 4,194,305 value nodes"),
+            ("at most 4,194,304 retained\nbinary integer limbs", "at most 4,194,305 retained\nbinary integer limbs"),
+            ("at most 67,108,864 decoding work items", "at most 67,108,865 decoding work items"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/WITNESS_REPLAY_2026.md"
                 source = path.read_text(encoding="utf-8")
                 self.assertIn(old, source)
                 path.write_text(source.replace(old, new, 1), encoding="utf-8")
