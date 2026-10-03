@@ -40,7 +40,10 @@ Tabula is an implemented local editor and reference-evaluation workbench.
 The syntax-only [formatter](FORMATTER_2026.md) is permanent W3 tooling. It
 preserves token spellings and comments, validates its output by re-lexing and
 re-parsing, and provides stdout formatting and check-only commands. It does
-not load imports, check types or change language semantics. The Orange Book
+not load imports, check types or change language semantics. The
+[documentation generator](DOCUMENTATION_2026.md) emits standalone offline HTML
+for written declarations and escaped source, with the same syntax-only scope.
+It supplies no resolved-interface, ABI or claim documentation. The Orange Book
 and manuals exist. Tabula is not a language server, and its
 run records are not proof-bearing product evidence. The current Typed Reference
 Core has no canonical product encoding or cross-revision proof identity.
@@ -55,7 +58,7 @@ tuples does not weaken any advertised claim.
 
 | Work boundary | Existing foundation | Required engineering and exit evidence |
 | --- | --- | --- |
-| Language and semantics | Parser, diagnostics, pure reference evaluation, fixed sequences, words, integers, modular arithmetic, finite instances, and syntax-only formatting | Version the complete reference and Core calculus; complete the selected specification, implementation, machine, game, and proof strata, algebraic data types, parameterized modules, contracts, documentation generator, and LSP; mechanize the advertised semantics and keep formatting compatible with each supported syntax boundary. |
+| Language and semantics | Parser, diagnostics, pure reference evaluation, fixed sequences, words, integers, modular arithmetic, finite instances, syntax-only formatting and source documentation | Version the complete reference and Core calculus; complete the selected specification, implementation, machine, game, and proof strata, algebraic data types, parameterized modules, contracts and LSP; mechanize advertised semantics, maintain frontend tools across supported syntax, and extend documentation to actual resolved interfaces, ABI contracts and claim matrices. |
 | Claims and proof | Non-product decision laboratories and proposed schemas | Canonical Core and Proof IR, stable identities, authoritative checker and implementation-diverse checker, interactive proofs and certificate automation, typed atomic claims, complete assumption/axiom/TCB closure, bounded offline replay, malformed-proof and forged-evidence rejection. |
 | Implementation and compilation | Mathematical algorithms and reference evaluator | Typed implementations with terminating control flow and invariants; selected stable IRs, checked functional and leakage preservation at every advertised transition, reference C output with explicit assurance scope, native code and checked final object connection. |
 | Memory, secrecy, targets, and ABI | Proposal and research envelopes | Regions, ownership, mutable buffers, initialization and zeroization obligations, public/secret effects, declassification, target features and vector intrinsics; selected leakage semantics, native instructions, ABI objects, generated C headers and safe Rust interfaces, adversarial caller tests. |
@@ -107,9 +110,9 @@ completion from another area's tests.
    performance/leakage evidence. Scalar coefficient rows or a quadratic-pair
    example alone do not establish full ML-KEM, NTT, or KEM conformance.
 6. Complete S8 and release operations alongside the later compiler/corpus
-   work: package locks and offline bundles, LSP/documentation,
+   work: package locks and offline bundles, LSP and resolved-interface/ABI/claim documentation,
    evidence inspector, migrations, release/recovery tooling, and clean scripted
-   journeys. Maintain the implemented formatter through the remaining language
+   journeys. Maintain the implemented formatter and source documentation through the remaining language
    work. Close every final release criterion before authorizing 1.0.
 
 ## Immediate foundational owner work

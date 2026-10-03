@@ -8,6 +8,7 @@
 
 pub mod core;
 pub mod diagnostic;
+pub mod documentation;
 pub mod edition;
 pub mod eval;
 pub mod formatter;
@@ -23,6 +24,10 @@ pub use core::{
     MAX_TUPLE_ELEMENTS, Modulus, Residue, TupleType,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
+pub use documentation::{
+    DocumentationResult, MAX_DOCUMENTATION_EVENTS_PER_SOURCE, MAX_DOCUMENTATION_HTML_BYTES,
+    document_source,
+};
 pub use edition::{Edition, ParseEditionError};
 pub use eval::{
     CallResult, EvaluatedFunction, EvaluationResult, Evaluator, MAX_CALL_DEPTH,

@@ -338,7 +338,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "fc375e622c6303f94d408848ff20effb5df9a51c4ff721cf796131a0b2d24772",
+        normalized_sha256: "1b3eb28ad3b8c573db10a05eb939ef6ebc571e24238f7655129184cd96e140e0",
     },
     SemanticBinding {
         id: SemanticBindingId::RoadmapS4,

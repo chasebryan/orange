@@ -138,6 +138,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-rc6.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- fmt compiler/fixtures/hello.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- doc compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3b_conformance --locked --offline
@@ -206,6 +207,38 @@ accepted by the host and returns status 1.
 
 This permanent W3 frontend tool does not change the S3t language marker,
 accept a semantic OEP, complete S8, or create a release.
+
+## Generating source documentation
+
+`orangec doc FILE` prints one complete standalone HTML document on standard
+output. `-` reads standard input; `--edition 2026` and `--` retain their normal
+meanings. Exactly one source is required. There is no check mode, output-file
+option or write mode, and no evaluation option applies.
+
+The generator uses the AST and source spans to describe imports, aliases,
+`spec`, `impl` and test declarations in source order. It retains written
+signatures and finite domains, gives duplicate-safe ordinal anchors and source
+locations, and includes an escaped full source listing with comments. It loads
+no imports, checks no types, expands no finite instances and runs no tests.
+Empty declarations retain their lack of type/execution meaning.
+
+```sh
+orangec doc source.or
+orangec doc - < source.or
+```
+
+The [documentation contract](../docs/DOCUMENTATION_2026.md) fixes this
+dependency-free W3 tool boundary. All source-derived text is escaped; the page
+contains no scripts or external assets and requires no network. Output is
+deterministic, adds no ambient filenames/host paths/dates and is bounded to 16 MiB.
+`ORC0260` reports a resource limit and `ORC0261` inconsistent construction.
+Existing source/syntax/transport diagnostics remain. Complete construction
+precedes stdout writing; a host failure returns status 1 even if it accepted a
+prefix. Usage errors return status 2, and successful generation returns 0.
+
+This is parsed-source documentation. It does not supply resolved interfaces,
+ABI/claim matrices, source-bound evidence identity, semantic acceptance, S8
+closure or release authority. The S3t language marker is unchanged.
 
 ## Sealing files
 
@@ -587,7 +620,7 @@ declares a module of another name is kept, so that the module graph reports
 the `use` that read it, but its own uses are not followed. A module that
 cannot be read is `ORC1001` with a note naming the `use` and its module; any
 failure to read, decode, lex, or parse a module stops that program before
-semantic analysis. `lex` and `fmt` read no module, and each operand of an invocation is
+semantic analysis. `lex`, `fmt` and `doc` read no module, and each operand of an invocation is
 the root of its own program. A scheme program given to the sealing commands by
 path reads its modules the same way, under one 64 MiB budget shared with its
 own bytes.
@@ -627,7 +660,7 @@ accepted prefix can end without a final limit notice. After any detected stream
 failure, retained buffered standard output is discarded instead of being
 flushed as later command output.
 Compilation standard output is explicitly flushed only after successful token,
-formatted-source or evaluation bytes have been queued; untouched output and diagnostic streams
+formatted-source, documentation or evaluation bytes have been queued; untouched output and diagnostic streams
 are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger

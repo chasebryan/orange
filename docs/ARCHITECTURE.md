@@ -798,7 +798,7 @@ The product is not complete if only its authors can use it.
 ### CLI
 
 The current pre-alpha CLI has `orangec check`, `orangec eval`, `orangec test`,
-`orangec lex`, `orangec fmt`, and reference-evaluator file-sealing commands.
+`orangec lex`, `orangec fmt`, `orangec doc`, and reference-evaluator file-sealing commands.
 `check` performs lexical, syntactic, and bounded semantic validation. `eval`
 accepts one source and prints each typed specification in source order as
 `module::name: Type = value`, using decimal `Int` and two-digit lowercase
@@ -812,8 +812,16 @@ without changing them. It loads no imports and performs no semantic analysis.
 The [formatter contract](FORMATTER_2026.md) fixes this W3 tool boundary; it
 does not close the wider S8 developer-tool stage.
 
+The permanent [documentation generator](DOCUMENTATION_2026.md) produces one
+standalone offline HTML reference for parsed source. Written headers and finite
+domains, source-order entries, ordinal anchors, locations and the full escaped
+listing come from the AST and source. It performs no import loading, semantic
+analysis or evaluation. Product claim matrices and ABI documentation must later
+come from their actual compiler/checker artifacts; source prose supplies no
+checked claim or proof identity.
+
 The intended command families additionally include
-proving, building, documentation, package operations, evidence replay, trust
+proving, building, package operations, evidence replay, trust
 inspection, target inspection, and conformance runs. Their exact names remain
 later CLI design, and the current evaluator output is not a canonical Core or
 evidence encoding.
