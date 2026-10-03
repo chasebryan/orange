@@ -31,6 +31,13 @@ fixes syntax-only, bounded standalone HTML with escaped source and no import
 loading, type checking or inferred proof/test status. Claim/ABI documentation
 and release authority remain their separate product obligations.
 
+The permanent typed argument decoder, local Boolean witness replayer and CLI
+harness have an exact admitted inventory. The
+[witness contract](../docs/WITNESS_REPLAY_2026.md) fixes canonical current-value
+spelling, checked type/instance binding and decoding budgets. This admission
+supplies no selected solver format, D-009 candidate execution, authoritative
+atomic claim, canonical Core/proof identity or owner acceptance.
+
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
 privileged shell mode suppresses inherited interpreter startup files before the
 script executes. It rejects a symbolic link in the script's final path

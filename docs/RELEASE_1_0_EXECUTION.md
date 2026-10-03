@@ -43,7 +43,11 @@ re-parsing, and provides stdout formatting and check-only commands. It does
 not load imports, check types or change language semantics. The
 [documentation generator](DOCUMENTATION_2026.md) emits standalone offline HTML
 for written declarations and escaped source, with the same syntax-only scope.
-It supplies no resolved-interface, ABI or claim documentation. The Orange Book
+It supplies no resolved-interface, ABI or claim documentation. The permanent
+[local witness replay](WITNESS_REPLAY_2026.md) adds exact typed argument decoding
+and bounded reference evaluation of a selected Boolean specification. A false
+or true result concerns one witness; it supplies no authoritative claim,
+solver selection, D-009 execution credit or proof identity. The Orange Book
 and manuals exist. Tabula is not a language server, and its
 run records are not proof-bearing product evidence. The current Typed Reference
 Core has no canonical product encoding or cross-revision proof identity.
@@ -59,7 +63,7 @@ tuples does not weaken any advertised claim.
 | Work boundary | Existing foundation | Required engineering and exit evidence |
 | --- | --- | --- |
 | Language and semantics | Parser, diagnostics, pure reference evaluation, fixed sequences, words, integers, modular arithmetic, finite instances, syntax-only formatting and source documentation | Version the complete reference and Core calculus; complete the selected specification, implementation, machine, game, and proof strata, algebraic data types, parameterized modules, contracts and LSP; mechanize advertised semantics, maintain frontend tools across supported syntax, and extend documentation to actual resolved interfaces, ABI contracts and claim matrices. |
-| Claims and proof | Non-product decision laboratories and proposed schemas | Canonical Core and Proof IR, stable identities, authoritative checker and implementation-diverse checker, interactive proofs and certificate automation, typed atomic claims, complete assumption/axiom/TCB closure, bounded offline replay, malformed-proof and forged-evidence rejection. |
+| Claims and proof | Non-product decision laboratories, proposed schemas, and typed local reference witness replay | Canonical Core and Proof IR, stable identities, authoritative checker and implementation-diverse checker, interactive proofs and certificate automation, typed atomic claims, complete assumption/axiom/TCB closure, bounded offline replay, malformed-proof and forged-evidence rejection. |
 | Implementation and compilation | Mathematical algorithms and reference evaluator | Typed implementations with terminating control flow and invariants; selected stable IRs, checked functional and leakage preservation at every advertised transition, reference C output with explicit assurance scope, native code and checked final object connection. |
 | Memory, secrecy, targets, and ABI | Proposal and research envelopes | Regions, ownership, mutable buffers, initialization and zeroization obligations, public/secret effects, declassification, target features and vector intrinsics; selected leakage semantics, native instructions, ABI objects, generated C headers and safe Rust interfaces, adversarial caller tests. |
 | Cryptographic corpus | Reference hash, symmetric, field, curve, and other algorithm fixtures | Owner-selected claim-complete symmetric, hash, field, elliptic-curve, and post-quantum workloads; exact standards/errata/rights provenance and clause maps, vectors and negative cases, interoperability, performance budgets, checked implementation claims; ACVP-compatible vector import/export. |
@@ -113,7 +117,8 @@ completion from another area's tests.
    work: package locks and offline bundles, LSP and resolved-interface/ABI/claim documentation,
    evidence inspector, migrations, release/recovery tooling, and clean scripted
    journeys. Maintain the implemented formatter and source documentation through the remaining language
-   work. Close every final release criterion before authorizing 1.0.
+   work; retain the local witness decoder/replayer when integrating the selected
+   proof path. Close every final release criterion before authorizing 1.0.
 
 ## Immediate foundational owner work
 

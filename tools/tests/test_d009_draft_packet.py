@@ -26,8 +26,8 @@ INDEX_PATH = RESEARCH_ROOT / "d009-v0.1-case-input-index.json"
 SUITE_PATH = Path("docs/SOLVER_TRUST_DECISION_SUITE.md")
 DECISIONS_PATH = Path("docs/DECISIONS.md")
 ROADMAP_PATH = Path("docs/ROADMAP.md")
-PACKET_CANONICAL_SHA256 = "511615796d36bfc6a2ddfd13a19b2ef5649514fe396e7cb50fb9a96b8a721e45"
-PACKET_RAW_SHA256 = "0c679a31215ae6d77e88b9f8cfdc8b21264f6e75cb9888f4b531a4ff36e4d4bc"
+PACKET_CANONICAL_SHA256 = "3e98fd3bfc49af6ff1bfdeae9b8005b762a9d6f6c5d9a3e109b815ec68ca8f78"
+PACKET_RAW_SHA256 = "df3aed843bad97dadc997ba6ab18f429aae4e3569b458d13c7b14e6ce8331ebf"
 INDEX_CANONICAL_SHA256 = "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e"
 INDEX_RAW_SHA256 = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"
 SUITE_RAW_SHA256 = "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"
@@ -206,7 +206,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "roadmap_document": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "1b3eb28ad3b8c573db10a05eb939ef6ebc571e24238f7655129184cd96e140e0"
+                        "dae9632f2a75da13d6a0414bf429c9e1a1480aa4b58516875842ba06d9deabbe"
                     ),
                     "path": "docs/ROADMAP.md",
                     "scope": "whole_document",

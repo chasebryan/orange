@@ -798,7 +798,8 @@ The product is not complete if only its authors can use it.
 ### CLI
 
 The current pre-alpha CLI has `orangec check`, `orangec eval`, `orangec test`,
-`orangec lex`, `orangec fmt`, `orangec doc`, and reference-evaluator file-sealing commands.
+`orangec lex`, `orangec fmt`, `orangec doc`, `orangec replay`, and
+reference-evaluator file-sealing commands.
 `check` performs lexical, syntactic, and bounded semantic validation. `eval`
 accepts one source and prints each typed specification in source order as
 `module::name: Type = value`, using decimal `Int` and two-digit lowercase
@@ -819,6 +820,17 @@ listing come from the AST and source. It performs no import loading, semantic
 analysis or evaluation. Product claim matrices and ABI documentation must later
 come from their actual compiler/checker artifacts; source prose supplies no
 checked claim or proof identity.
+
+The permanent [local witness replay](WITNESS_REPLAY_2026.md) decodes canonical
+current values against exact checked Core parameter types, including aggregate
+shape and residue modulus. A qualified function and numeric finite-instance
+vector select one Boolean specification. Reference evaluation reports
+`Falsified` or `HoldsForThisWitness` for those concrete arguments. The command
+loads and checks the source program, has bounded input/decoding/evaluation and
+prints a completed result only after construction. It supplies no universal
+proof, selected solver model format, atomic claim authority, canonical Core or
+source/proof/evidence identity. D-009 candidate execution and owner decision
+evidence remain separate.
 
 The intended command families additionally include
 proving, building, package operations, evidence replay, trust

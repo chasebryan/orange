@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-01
+Snapshot: 2026-10-02
 
-Manuscript version: 0.24
+Manuscript version: 0.25
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -138,6 +138,12 @@ The source documentation generator produces a standalone offline reference
 for written declarations and an escaped source listing. Its scope is likewise
 syntactic: resolved interfaces, ABI contracts and checked claim matrices must
 come from the later compiler and proof paths.
+
+The local witness replayer now decodes exact concrete values against a checked
+Boolean function's parameters and evaluates that function for the supplied
+arguments. `Falsified` and `HoldsForThisWitness` describe a single reference
+execution. They are not a universal proof, an authoritative atomic claim or
+solver-trust decision evidence.
 
 The manuscript uses four kinds of statements:
 
@@ -4597,7 +4603,7 @@ each use.
 
 ### The command line
 
-`orangec` has ten commands:
+`orangec` has eleven commands:
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
@@ -4606,6 +4612,8 @@ orangec test [--steps <N>] [--stats] <FILE>
 orangec fmt <FILE>
 orangec fmt --check <FILE>...
 orangec doc <FILE>
+orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
+               --witness <FILE> [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4629,6 +4637,9 @@ orangec schemes [<NAME>...]
 - `fmt FILE` prints one complete formatted source; `fmt --check FILE...`
   checks sources without printing formatted text or changing files.
 - `doc FILE` prints a standalone offline HTML reference for one parsed source.
+- `replay` validates one program and reference-evaluates one selected Boolean
+  function/instance for a typed local witness file; both completed Boolean
+  outcomes use status 0.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
   `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
@@ -4640,8 +4651,8 @@ orangec schemes [<NAME>...]
   ciphers run on the reference evaluator, which is not constant-time, nothing
   about them is verified, and keys are stored unencrypted.
 
-`check` and `eval` treat each source as the root of a program and read the
-modules it uses from beside it, as
+`check`, `eval`, `test` and `replay` treat each source as the root of a
+program and read the modules it uses from beside it, as
 [Standards built on standards](#standards-built-on-standards) describes; `lex`,
 `fmt` and `doc` read only the source they are given.
 
@@ -4665,6 +4676,16 @@ It describes parsed source, with no type checking, imported-module loading,
 evaluation or test pass status. It provides no proof/evidence identity or
 checked claim matrix. The remaining product documentation and complete 1.0
 obligations stay explicit in the [execution record](RELEASE_1_0_EXECUTION.md).
+
+The [local witness contract](WITNESS_REPLAY_2026.md) defines a complete outer
+argument list using exact current value spellings. Checked parameter types
+supply widths, shapes and residue moduli; no expression or implicit reduction
+is accepted. `--function MODULE::NAME` selects a Boolean specification and
+`--instance N[,N...]` names its numeric finite-instance vector. The command
+prints `falsified` or `holds_for_this_witness`, actual arguments and parameter
+types; it runs within bounded decoding and evaluation budgets. It establishes
+no universal property, selected solver format, authoritative atomic claim or
+source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
@@ -6838,6 +6859,12 @@ name's type, and each of its names follows the same rules.
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
 orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
+orangec test [--steps <N>] [--stats] <FILE>
+orangec fmt <FILE>
+orangec fmt --check <FILE>...
+orangec doc <FILE>
+orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
+               --witness <FILE> [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -6848,24 +6875,29 @@ orangec schemes [<NAME>...]
 | `check` | Lexical, syntactic, and semantic validation; silent on success |
 | `eval` | Validate one program, then print each typed `spec` without parameters of its root module as `module::name: Type = value`, and each instance of a sized one as `module::name[2]: Type = value` |
 | `lex` | Print the deterministic token stream with byte spans |
+| `fmt` | Print one formatted source or check sources without changing them |
+| `doc` | Print standalone offline HTML for one parsed source |
+| `replay` | Validate one program and reference-evaluate a Boolean specification for exact typed local arguments |
 | `test` | Validate one program, then run its root module's tests in source order, printing `test "TITLE" ... ok` or `... FAILED` for each and a count; status 1 when any fails |
 | `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
 | `enc` | Seal one file as `FILE.orange` with its key's scheme |
 | `dec` | Open one sealed file; output is published only if every chunk is authentic |
 | `schemes` | List the built-in schemes or check a scheme program |
 
-Options are `--edition <YEAR>` (only `2026`, at most once), for `eval` and
-`test` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
+Options are `--edition <YEAR>` (only `2026`, at most once), for `eval`,
+`test` and `replay` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
 once; default 1,048,576) and `--stats` (report each evaluated function's or
 test's steps and the total on standard error, after the values or the
 report), for `eval` only `--spec <NAME>` (evaluate only this function without
 parameters; up to 64 names), for `fmt` only `--check` (check one through 256
-sources without changing files; otherwise `fmt` requires exactly one source), `--scheme <NAME>`
+sources without changing files; otherwise `fmt` requires exactly one source),
+for `replay` `--function <MODULE::NAME>`, `--witness <FILE>` and optional
+`--instance <N[,N...]>` (an exact numeric finite-instance vector), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
 UTF-8 source from standard input, once per invocation. For `check`, `eval`,
-and `test`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
+`test` and `replay`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
 or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
@@ -6878,6 +6910,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0201`–`ORC0242` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated |
 | `ORC0250`–`ORC0252` | Formatting | Formatter resource limit, inconsistent result, source requiring formatting under `--check` |
 | `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
+| `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
 
@@ -7132,6 +7165,8 @@ Version 0.23 adds the permanent [formatter contract](FORMATTER_2026.md) and
 its command, identity and developer-tool status boundaries.
 Version 0.24 adds the permanent [source documentation contract](DOCUMENTATION_2026.md)
 and its syntax-only, offline rendering and product documentation boundaries.
+Version 0.25 adds the permanent [local witness replay contract](WITNESS_REPLAY_2026.md),
+its typed value boundary, numeric instance selection and reference-only outcomes.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7311,6 +7346,12 @@ generator, its standalone offline HTML, bounded rendering and source-display
 identity. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-01 direction. The semantic boundary remains S3t in review; generated
 source pages supply no checked claim, proof acceptance or release authority.
+
+Manuscript version 0.25 documents the typed local argument decoder and Boolean
+witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
+2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
+execution supplies no proof, solver selection, D-009 candidate credit, atomic
+claim authority or release acceptance.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

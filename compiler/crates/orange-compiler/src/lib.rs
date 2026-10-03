@@ -6,6 +6,7 @@
 //! fixed-length arrays, and bounded loops, Core construction, and
 //! deterministic reference evaluation.
 
+pub mod arguments;
 pub mod core;
 pub mod diagnostic;
 pub mod documentation;
@@ -16,6 +17,12 @@ pub mod lexer;
 pub mod parser;
 pub mod semantics;
 pub mod source;
+pub mod witness;
+
+pub use arguments::{
+    ArgumentDecodeResult, DecodedArguments, MAX_ARGUMENT_DECODE_WORK, MAX_ARGUMENT_INTEGER_LIMBS,
+    MAX_ARGUMENT_VALUE_NODES, decode_arguments,
+};
 
 pub use core::{
     ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
@@ -61,3 +68,4 @@ pub use source::{
     LineColumn, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap,
     Span, TextOffset,
 };
+pub use witness::{WitnessReplayOutcome, WitnessReplayResult, replay_witness};

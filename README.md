@@ -1153,6 +1153,7 @@ cryptography.
 | Known-answer tests `test "TITLE" { claim }` beside the functions, `==` on whole arrays and tuples, and `orangec test` | Working; specification in review ([OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md)) |
 | Shift and rotation amounts computed from data, `x <<< r` or `x >> (i % 8)`, with a value at every amount | Working; specification in review ([OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
+| Typed local argument decoding and Boolean witness replay (`orangec replay`) | Working; [tool contract](docs/WITNESS_REPLAY_2026.md) |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
@@ -1214,6 +1215,8 @@ Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec fmt <FILE>
        orangec fmt --check <FILE>...
        orangec doc <FILE>
+       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
+                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1225,6 +1228,7 @@ Commands:
   test     Run one source's known-answer tests after complete validation
   fmt      Format one source, or check source formatting with --check
   doc      Document one parsed source as standalone HTML
+  replay   Replay one exact Boolean function instance on typed witness values
   keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
   enc      Seal a file with the scheme its key belongs to
   dec      Open a sealed file, writing nothing unless all of it is authentic
@@ -1244,6 +1248,14 @@ no imports, checks no types and runs no tests. The
 [documentation contract](docs/DOCUMENTATION_2026.md) defines its bounded
 rendering and source-only scope; proof and ABI documentation remain later
 product obligations.
+
+`orangec replay` validates one program, decodes a local argument file against
+one selected function's concrete parameter types, and reports `falsified` or
+`holds_for_this_witness` from reference evaluation. Its
+[witness replay contract](docs/WITNESS_REPLAY_2026.md) fixes the numeric
+instance selection, canonical local values and resource boundary. A completed
+result describes that supplied witness; it supplies no proof or solver-trust
+decision evidence.
 
 `orangec enc FILE` seals any file with an authenticated cipher written in
 Orange, and `orangec dec FILE.orange` opens it again. XChaCha20-Poly1305 (the
