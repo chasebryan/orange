@@ -1,4 +1,4 @@
-// OEP-0022 P2: mathematical radix-2^51 representations of the field
+// OEP-0022 P2 representations and partial P4 mathematical products of the field
 // p = 2^255 - 19. Limb order is least significant first. This radix and
 // carry schedule are original executable definitions, not an RFC 7748
 // storage requirement. The aliases are transparent; none enforces a range.

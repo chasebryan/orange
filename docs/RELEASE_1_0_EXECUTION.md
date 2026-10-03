@@ -30,10 +30,11 @@ specialization. S3t extends those finite size instances to modulus expressions.
 S3b through S3t remain in owner review; the accepted semantic boundary is S3a.
 
 The algorithm directories contain executable mathematical specifications and
-tested vectors. The P2 five-limb field definitions add representation predicates,
-exact `Int` product accumulators and three-pass normalization observations;
-a predicate returning `true` is not a
-checked refinement proof. The CLI also has file-sealing commands that run
+tested vectors. The P2 five-limb field definitions supply representation
+predicates, addition, carrying and canonicalization. Partial P4 mathematical
+preparation adds exact `Int` product accumulators and three-pass normalization
+observations. A predicate returning `true` is not a checked refinement proof;
+P4 remains incomplete. The CLI also has file-sealing commands that run
 Orange specifications through the reference evaluator. Neither these commands
 nor their vectors establish verified native cryptography or a release claim.
 
@@ -83,11 +84,12 @@ completion from another area's tests.
 
 ## Dependency-ordered engineering sequence
 
-1. Complete proof-neutral S3/P1/P2 work in the permanent frontend and corpus.
-   S3t supplies modulus expressions over finite size instances. P2 supplies
-   five-limb reconstruction, abstraction, tight/loose/canonical predicates,
-   addition, carrying, canonicalization, and exact `Int` multiplication with
-   three-pass normalization observations. Machine limb multiplication and
+1. Complete proof-neutral S3/P1/P2 work and mathematical preparation for P4
+   in the permanent frontend and corpus. S3t supplies modulus expressions over
+   finite size instances. P2 supplies five-limb reconstruction, abstraction,
+   tight/loose/canonical predicates, addition, carrying and canonicalization.
+   Partial P4 preparation supplies exact `Int` multiplication with three-pass
+   normalization observations. Machine limb multiplication and
    checked representation contracts remain later work: wrapping `Word[64]`
    multiplication cannot stand in for these exact accumulators.
    Review the existing pure slices and define remaining shapes and parameter

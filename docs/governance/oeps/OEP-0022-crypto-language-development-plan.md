@@ -7,7 +7,7 @@ champion: Chase Bryan
 status: Draft
 type: Informational
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-02
 discussion: owner-direction-2026-09-30-crypto-language-development-plan
 related-decisions:
   - D-002
@@ -191,9 +191,9 @@ Acceptance criteria:
 - The definitions introduce no machine layout, timing guarantee, accepted
   refinement rule, or implicit enforcement through today's transparent aliases.
 
-The permanent P2 source
+The P2 definitions in the permanent source
 [`field25519-limbs.or`](../../../algorithms/x25519/field25519-limbs.or)
-now implements reconstruction, abstraction, the three predicates, exact limb
+implement reconstruction, abstraction, the three predicates, exact limb
 addition, two-pass carrying and canonicalization. Seven hand-derived answer
 pairs and generated 320-bit binary-reference tests exercise the boundary
 observations. Selected `second_fold` uses 380 reference steps and rejects a
@@ -255,6 +255,21 @@ Acceptance criteria:
   contract, separate from raw X25519 behavior.
 - Published vectors and boundary cases supplement the checked relation; they
   are not substituted for universal refinement evidence.
+
+The permanent source
+[`field25519-limbs.or`](../../../algorithms/x25519/field25519-limbs.or)
+now supplies **partial P4 mathematical preparation** alongside its P2
+representation definitions: five exact `Int` product accumulators, an explicit
+coefficient-bound predicate, three-pass normalization with each digit/carry
+stage exposed, and tight/canonical mathematical products. Five additional
+hand-derived answer pairs and 129 tight-input pairs checked against independent
+640-bit binary arithmetic exercise products and every carry stage. The selected
+`product_third_pass` uses 1,474 reference steps and rejects a 1,473-step budget
+without value output. This is proof-neutral preparation using existing S3
+specifications; it supplies no native wide primitive, P3 checked contract or
+P4 completion. P3/P4 dependencies and the acceptance criteria above remain
+unchanged. Subtraction, dedicated squaring and ladder-constant operations,
+checked bounds, and complete X25519 refinement remain later work.
 
 ### P5 Lowering effects secrecy and leakage
 

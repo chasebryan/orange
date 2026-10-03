@@ -1,4 +1,4 @@
-//! Executable evidence for the OEP-0022 P2 mathematical representations.
+//! Executable evidence for OEP-0022 P2 representations and partial P4 products.
 //!
 //! Independent binary multiplication and long division check reconstruction,
 //! residues, and canonical digits through the real CLI. These examples do not

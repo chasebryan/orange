@@ -226,8 +226,9 @@ chapter 12.
 
 ## Mathematical limb representations
 
-[`field25519-limbs.or`](field25519-limbs.or) implements the executable
-definitions of [OEP-0022 P2](../../docs/governance/oeps/OEP-0022-crypto-language-development-plan.md).
+[`field25519-limbs.or`](field25519-limbs.or) implements the executable P2
+representation definitions and partial P4 mathematical product preparation of
+[OEP-0022](../../docs/governance/oeps/OEP-0022-crypto-language-development-plan.md).
 It is separate from the existing ladder. It supplies exact mathematical field
 products, while inversion, coordinate decoding, and full X25519 refinement
 remain absent from this source.
@@ -257,7 +258,8 @@ when needed, and splits the resulting integer into five digits.
 These mathematical bounds describe the schedule; they have not been checked
 by an Orange proof checker.
 
-`product_accumulators` folds the five-by-five convolution with B^5 = p + 19
+The partial P4 preparation starts with `product_accumulators`, which folds the
+five-by-five convolution with B^5 = p + 19
 into five exact `Int` coefficients. For tight inputs, their respective maxima
 are [77, 59, 41, 23, 5] times (B - 1)^2, each below 2^109. The ordinary
 `bounded_product` predicate records these nonnegative bounds. Products and
@@ -268,11 +270,13 @@ the second at most 1, and the third zero. The third pass preserves tightness:
 adding 19 only to the second low digit can exceed B despite the right residue.
 `multiply_tight` uses this schedule, and `multiply_canonical` applies the
 existing single-subtraction canonicalization. Tight inputs need not be
-canonical. These intended contracts remain unchecked predicates.
+canonical. These intended contracts remain unchecked predicates; this
+mathematical preparation does not complete P4 or supply P3 checked proofs.
 
-Twelve computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum tight
-storage, componentwise addition, both addition folds, exact product coefficient
-maxima, every product carry stage, and a product requiring the third pass.
+Seven P2 computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum
+tight storage, componentwise addition and both addition folds. Five partial P4
+pairs add exact product coefficient maxima, every product carry stage, product
+boundaries and a product requiring the third pass.
 The expected values follow directly from B^5 = p + 19, rather than from a
 published X25519 vector. The external
 [`field25519_limbs.rs`](../../compiler/crates/orangec/tests/field25519_limbs.rs)
