@@ -911,7 +911,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "25d95120bef73976891eb72aeef543e1cf7a916a63c701552900a0b5a812462b"
+_PHD = "9efa7488e554cd50582d7adf5f6399f89ae09f1e6d7ee307c49536a7df5f11a5"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4969,7 +4969,7 @@ class FoundationValidator:
           retention-days: 14''',
                 "Upload result to code scanning": '''      - name: Upload result to code scanning
         if: ${{ always() && hashFiles('results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: results.sarif''',
             }
