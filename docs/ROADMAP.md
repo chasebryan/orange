@@ -658,6 +658,16 @@ its moduli. Global aliases and finite type lists remain concrete. The
 [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) record the
 implemented slice in owner review; they add no proof, primality or native claim.
 
+S3u follows S3t with arrays of three and four dimensions, so that ML-KEM's
+matrix of polynomials is one type, and update paths `x with [i][j] = v`, so
+that AES and Keccak update their states as the standards write them. Each
+dimension is a `type` declaration over the one before it; every axis and the
+product of all of them are checked, and a path means the nested updates it
+abbreviates. The [array dimensions proposal](DIMENSIONS_2026.md) and
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md) record
+the implemented slice in owner review; they add no proof, transform, backend,
+or target.
+
 OEP-0022 P2 has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,

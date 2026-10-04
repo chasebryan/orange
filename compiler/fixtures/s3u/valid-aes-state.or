@@ -1,0 +1,195 @@
+// S3u conformance: AES-128 of FIPS 197 (updated May 2023) with the state
+// as the standard draws it, a 4 x 4 array of bytes s[r][c], and the key
+// schedule as its words, each an array of four bytes w[i] = [a0, a1, a2, a3].
+// Every step is written as its section writes it: SubBytes replaces
+// s[r][c] with S(s[r][c]), ShiftRows takes s[r][(c + r) mod 4], MixColumns
+// multiplies each column by a fixed polynomial, and AddRoundKey adds word
+// c of the round key to column c. The S-box is derived as section 5.1.1
+// defines it. The cipher reproduces Appendix A.1's expanded key and the
+// examples of Appendix B and C.1, and the inverse cipher returns the
+// plaintext.
+edition 2026;
+module aes {
+  type Column = Word[8]^4;
+  type State = Column^4;
+  type Schedule = Column^44;
+  type RoundKey = Column^4;
+  type Constants = Column^10;
+
+  // Section 4.2: multiplication by x modulo x^8 + x^4 + x^3 + x + 1.
+  spec xtime(b: Word[8]) -> Word[8] {
+    (b << 1) ^ (if (b & 0x80) != 0 { 0x1b } else { 0 })
+  }
+
+  // Section 4.2: the product of a and b, adding a x^k for each bit k of b.
+  spec mul_walk(a: Word[8], b: Word[8]) -> (Word[8], Word[8]) {
+    for k in 0..8 with (p: Word[8], m: Word[8]) = (0, a) {
+      (if ((b >> k) & 1) == 1 { p ^ m } else { p }, xtime(m))
+    }
+  }
+
+  spec mul(a: Word[8], b: Word[8]) -> Word[8] { mul_walk(a, b).0 }
+
+  // Section 5.1.1: the multiplicative inverse, with 0 mapped to itself,
+  // then the affine transformation over GF(2).
+  spec sbox() -> Word[8]^256 {
+    let exp: Word[8]^256 = for i in 0..255 with t: Word[8]^256 = [1; 256] {
+      t with [i + 1] = t[i] ^ xtime(t[i])
+    };
+    let log: Word[8]^256 = for i in 0..255 with t: Word[8]^256 = [0; 256] {
+      t with [exp[i]] = i as Word[8]
+    };
+    for a in 0..256 with s: Word[8]^256 = [0; 256] {
+      let b: Word[8] = if a == 0 { 0 } else { exp[(255 - (log[a] as Int)) % 255] };
+      s with [a] = b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+    }
+  }
+
+  // Section 5.3.2: InvSubBytes undoes SubBytes.
+  spec inverse(s: Word[8]^256) -> Word[8]^256 {
+    for i in 0..256 with t: Word[8]^256 = [0; 256] { t with [s[i]] = i as Word[8] }
+  }
+
+  // Section 3.4: the input fills the state column by column,
+  // s[r][c] = in[r + 4c], and the output is read back the same way.
+  spec state(input: Word[8]^16) -> State {
+    for r in 0..4 with s: State = [[0; 4]; 4] {
+      for c in 0..4 with t: State = s { t with [r][c] = input[r + 4 * c] }
+    }
+  }
+
+  spec output(s: State) -> Word[8]^16 {
+    for i in 0..16 with out: Word[8]^16 = [0; 16] { out with [i] = s[i % 4][i / 4] }
+  }
+
+  // Section 5.1.1: SubBytes applies the S-box to each byte of the state.
+  spec sub_bytes(box: Word[8]^256, s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = box[s[r][c]] }
+    }
+  }
+
+  // Section 5.1.2: ShiftRows turns row r left by r places.
+  spec shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c + r) % 4] }
+    }
+  }
+
+  // Section 5.3.1: InvShiftRows turns row r right by r places.
+  spec inv_shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c - r) % 4] }
+    }
+  }
+
+  // Sections 5.1.3 and 5.3.3: each column times a fixed polynomial whose
+  // coefficients, from row r's own byte down the column, are m.
+  spec mix(s: State, m: Column) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t {
+        u with [r][c] = mul(m[0], s[r][c])
+          ^ mul(m[1], s[(r + 1) % 4][c])
+          ^ mul(m[2], s[(r + 2) % 4][c])
+          ^ mul(m[3], s[(r + 3) % 4][c])
+      }
+    }
+  }
+
+  // Section 5.1.4: AddRoundKey adds word c of the round key to column c.
+  spec add_round_key(s: State, k: RoundKey) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][c] ^ k[c][r] }
+    }
+  }
+
+  // Section 5.2: RotWord, SubWord, and the words added to them.
+  spec rot_word(a: Column) -> Column { [a[1], a[2], a[3], a[0]] }
+
+  spec sub_word(box: Word[8]^256, a: Column) -> Column {
+    [box[a[0]], box[a[1]], box[a[2]], box[a[3]]]
+  }
+
+  spec xor(a: Column, b: Column) -> Column { [a[0] ^ b[0], a[1] ^ b[1], a[2] ^ b[2], a[3] ^ b[3]] }
+
+  // Table 5: Rcon[j] = [rc_j, 0, 0, 0], with rc_1 = 1 and each next rc
+  // the one before it times x.
+  spec rcon() -> Constants {
+    for j in 1..10 with r: Constants = [[1, 0, 0, 0]; 10] {
+      r with [j][0] = xtime(r[j - 1][0])
+    }
+  }
+
+  // Algorithm 2: KeyExpansion for Nk = 4 and Nr = 10. The key fills the
+  // first four words, and each further word adds the word Nk before it.
+  spec expand(box: Word[8]^256, key: Word[8]^16) -> Schedule {
+    let round: Constants = rcon();
+    let first: Schedule = for i in 0..4 with w: Schedule = [[0; 4]; 44] {
+      w with [i] = key[4 * i..4 * i + 4]
+    };
+    for i in 4..44 with w: Schedule = first {
+      let temp: Column = if (i % 4) == 0 {
+        xor(sub_word(box, rot_word(w[i - 1])), round[(i / 4) - 1])
+      } else {
+        w[i - 1]
+      };
+      w with [i] = xor(w[i - 4], temp)
+    }
+  }
+
+  // Algorithm 1: Cipher, with round r adding words 4r through 4r + 3.
+  spec encrypt(box: Word[8]^256, key: Word[8]^16, input: Word[8]^16) -> Word[8]^16 {
+    let w: Schedule = expand(box, key);
+    let first: State = add_round_key(state(input), w[0..4]);
+    let middle: State = for round in 1..10 with s: State = first {
+      add_round_key(mix(shift_rows(sub_bytes(box, s)), [0x02, 0x03, 0x01, 0x01]), w[4 * round..4 * round + 4])
+    };
+    output(add_round_key(shift_rows(sub_bytes(box, middle)), w[40..44]))
+  }
+
+  // Algorithm 3: InvCipher, adding the round keys in reverse.
+  spec decrypt(box: Word[8]^256, key: Word[8]^16, input: Word[8]^16) -> Word[8]^16 {
+    let inv: Word[8]^256 = inverse(box);
+    let w: Schedule = expand(box, key);
+    let first: State = add_round_key(state(input), w[40..44]);
+    let middle: State = for round in 1..10 with s: State = first {
+      mix(
+        add_round_key(sub_bytes(inv, inv_shift_rows(s)), w[40 - 4 * round..44 - 4 * round]),
+        [0x0e, 0x0b, 0x0d, 0x09],
+      )
+    };
+    output(add_round_key(sub_bytes(inv, inv_shift_rows(middle)), w[0..4]))
+  }
+
+  spec appendix_b() -> Word[8]^16 {
+    encrypt(sbox(), hex"2b7e1516 28aed2a6 abf71588 09cf4f3c", hex"3243f6a8 885a308d 313198a2 e0370734")
+  }
+
+  test "Section 5.1.1: S(0x53) = 0xed" { sbox()[0x53] == 0xed }
+
+  test "Table 5: the round constants" {
+    rcon() == [
+      [0x01, 0, 0, 0], [0x02, 0, 0, 0], [0x04, 0, 0, 0], [0x08, 0, 0, 0], [0x10, 0, 0, 0],
+      [0x20, 0, 0, 0], [0x40, 0, 0, 0], [0x80, 0, 0, 0], [0x1b, 0, 0, 0], [0x36, 0, 0, 0],
+    ]
+  }
+
+  test "Appendix A.1: the first and last words of the expanded key" {
+    let w: Schedule = expand(sbox(), hex"2b7e1516 28aed2a6 abf71588 09cf4f3c");
+    (w[4] == hex"a0fafe17") && (w[43] == hex"b6630ca6")
+  }
+
+  test "Appendix B: the cipher example" {
+    appendix_b() == hex"3925841d 02dc09fb dc118597 196a0b32"
+  }
+
+  test "Appendix C.1: AES-128" {
+    encrypt(sbox(), hex"00010203 04050607 08090a0b 0c0d0e0f", hex"00112233 44556677 8899aabb ccddeeff")
+      == hex"69c4e0d8 6a7b0430 d8cdb780 70b4c55a"
+  }
+
+  test "Appendix C.1: the inverse cipher returns the plaintext" {
+    decrypt(sbox(), hex"00010203 04050607 08090a0b 0c0d0e0f", hex"69c4e0d8 6a7b0430 d8cdb780 70b4c55a")
+      == hex"00112233 44556677 8899aabb ccddeeff"
+  }
+}

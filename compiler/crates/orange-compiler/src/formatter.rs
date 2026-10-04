@@ -429,6 +429,9 @@ impl<'a> Planner<'a> {
                     self.role(index)?.following_space = true;
                     self.push(Work::Expression(&update.base))?;
                     self.push(Work::Expression(&update.index))?;
+                    for index in update.path() {
+                        self.push(Work::Expression(index))?;
+                    }
                     self.push(Work::Expression(&update.value))?;
                 }
                 ExpressionKind::Slice(slice) => {
@@ -912,6 +915,17 @@ mod tests {
         assert!(output.contains("if (1 == 1) {\n"));
         assert!(output.contains("} else {\n"));
         assert!(output.contains("\n\n  test \"x\""));
+    }
+
+    #[test]
+    fn update_paths_keep_each_index_and_its_operators() {
+        let output = formatted(
+            "edition 2026;module m{type R=Word[8]^2;type M=R^2;type C=M^2;spec f(c:C,i:Word[8])->C{c with [1][i%2][(i+1)%2]=c[0][0][1]+1}}",
+        );
+        assert!(
+            output.contains("c with [1][i % 2][(i + 1) % 2] = c[0][0][1] + 1"),
+            "{output}"
+        );
     }
 
     fn assert_body_layout(expression: &str, body: &str) {

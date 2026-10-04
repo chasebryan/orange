@@ -10,7 +10,7 @@ Snapshot: 2026-10-01
 The generator produces an offline reference for the declarations written in
 one parsed source. This is a tool boundary in
 [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`ROADMAP.md`](ROADMAP.md), separate
-from the proposed S3 semantics. The implemented language marker remains S3t.
+from the proposed S3 semantics. It leaves the implemented language marker unchanged.
 
 ## Command and source boundary
 

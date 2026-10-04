@@ -1022,6 +1022,10 @@ pub struct UpdateExpression {
     pub(crate) keyword_span: Span,
     /// The replaced element's index, excluding brackets.
     pub(crate) index: Expression,
+    /// The indices within that element, each excluding its brackets:
+    /// `x with [i][j] = v` replaces element j of row i. Empty when the
+    /// element itself is replaced.
+    pub(crate) path: Vec<Expression>,
     /// The new element.
     pub(crate) value: Expression,
 }
@@ -1043,6 +1047,13 @@ impl UpdateExpression {
     #[must_use]
     pub fn index(&self) -> &Expression {
         &self.index
+    }
+
+    /// Returns the indices within the replaced element, in order: `j` of
+    /// `x with [i][j] = v`.
+    #[must_use]
+    pub fn path(&self) -> &[Expression] {
+        &self.path
     }
 
     /// Returns the new element.
@@ -1910,9 +1921,19 @@ const SLICE_NOTE: &str = "a slice is written `x[a..b]`, the elements of `x` from
 /// What an update replaces: one element at an index, or the elements of a
 /// slice, with the height of the index or of the taller bound.
 enum UpdateTarget {
-    Index(Expression, usize),
+    /// An index, the indices within that element, and their tallest
+    /// height.
+    Index(Expression, Vec<Expression>, usize),
     Slice(SliceRange, usize),
 }
+
+/// Most indices of an update, one per dimension of an array.
+const UPDATE_INDICES: usize = 4;
+const _: () = assert!(crate::core::MAX_ARRAY_DIMENSIONS == 4);
+
+/// The note of a malformed update of an element of a row.
+const PATH_UPDATE_NOTE: &str = "an element of a row is updated with `x with [i][j] = v`, one \
+     index per dimension; a run of a row is updated as `x with [i] = (x[i] with [a..b] = v)`";
 
 /// The note of a malformed slice update.
 const SLICE_UPDATE_NOTE: &str = "a slice update is written `x with [a..b] = values`, the array `x` \
@@ -3647,18 +3668,48 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return Some(UpdateTarget::Slice(range, height));
         }
         // Without `..` first, an index was parsed.
-        let (index, height) = start?;
+        let (index, mut height) = start?;
         self.expect(
             TokenKind::RightBracket,
             "`]` after the index",
             "an update is written `x with [i] = value`",
         )?;
+        // Each further `[j]` selects within the element the one before it
+        // reached, one dimension deeper.
+        let mut path = Vec::new();
+        while self.current_kind() == TokenKind::LeftBracket {
+            if path.len() >= UPDATE_INDICES.saturating_sub(1) {
+                self.expected("`=` after the updated index", PATH_UPDATE_NOTE);
+                return None;
+            }
+            self.bump()?;
+            let (inner_index, inner_height) = self.parse_expression(inner)?;
+            if self.current_kind() == TokenKind::DotDot {
+                self.expected("`]` after the index", PATH_UPDATE_NOTE);
+                return None;
+            }
+            self.expect(
+                TokenKind::RightBracket,
+                "`]` after the index",
+                PATH_UPDATE_NOTE,
+            )?;
+            if path.try_reserve(1).is_err() {
+                self.resource_limit_at(
+                    "parser could not allocate update storage",
+                    inner_index.span,
+                );
+                return None;
+            }
+            height = height.max(inner_height);
+            path.push(inner_index);
+        }
         self.expect(
             TokenKind::Equal,
             "`=` after the updated index",
-            "an update is written `x with [i] = value`",
+            "an update is written `x with [i] = value`, or `x with [i][j] = value` for an \
+             element of a row",
         )?;
-        Some(UpdateTarget::Index(index, height))
+        Some(UpdateTarget::Index(index, path, height))
     }
 
     /// Builds the update of `base` at `target` with `value`.
@@ -3671,7 +3722,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         (value, value_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
         let target_height = match &target {
-            UpdateTarget::Index(_, height) | UpdateTarget::Slice(_, height) => *height,
+            UpdateTarget::Index(_, _, height) | UpdateTarget::Slice(_, height) => *height,
         };
         let height = self.node_height(
             base_height.max(target_height).max(value_height),
@@ -3679,12 +3730,15 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         )?;
         let span = self.join(base.span, value.span);
         let kind = match target {
-            UpdateTarget::Index(index, _) => ExpressionKind::Update(Box::new(UpdateExpression {
-                base,
-                keyword_span,
-                index,
-                value,
-            })),
+            UpdateTarget::Index(index, path, _) => {
+                ExpressionKind::Update(Box::new(UpdateExpression {
+                    base,
+                    keyword_span,
+                    index,
+                    path,
+                    value,
+                }))
+            }
             UpdateTarget::Slice(range, _) => {
                 ExpressionKind::SliceUpdate(Box::new(SliceUpdateExpression {
                     base,
@@ -6399,9 +6453,14 @@ mod tests {
                 shape(source, &index.index)
             ),
             ExpressionKind::Update(update) => format!(
-                "({} with [{}] = {})",
+                "({} with [{}]{} = {})",
                 shape(source, &update.base),
                 shape(source, &update.index),
+                update
+                    .path
+                    .iter()
+                    .map(|index| format!("[{}]", shape(source, index)))
+                    .collect::<String>(),
                 shape(source, &update.value)
             ),
             ExpressionKind::Loop(r#loop) => format!(
@@ -8113,6 +8172,74 @@ mod tests {
             (sources, parsed)
         };
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    }
+
+    #[test]
+    fn update_paths_parse_one_index_per_dimension_up_to_four() {
+        for (body, expected, path) in [
+            ("a with [0][1] = b", "(a with [0][1] = b)", 1),
+            (
+                "a with [b][c + 1][d] = 7",
+                "(a with [b][(c + 1)][d] = 7)",
+                2,
+            ),
+            (
+                "a with [0][1][2][3] = (b with [0] = c)",
+                "(a with [0][1][2][3] = [(b with [0] = c)])",
+                3,
+            ),
+        ] {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+            assert_eq!(source.slice(expression.span), Some(body));
+            let ExpressionKind::Update(update) = &expression.kind else {
+                panic!("expected an update in {body:?}");
+            };
+            assert_eq!(update.path().len(), path, "{body:?}");
+            // Each index keeps its own span, inside its own brackets.
+            for index in update.path() {
+                let text = source.slice(index.span).unwrap();
+                assert!(body.contains(&format!("[{text}]")), "{body:?}: {text:?}");
+            }
+        }
+        for (body, message, note) in [
+            (
+                "a with [0][1][2][3][4] = b",
+                "expected `=` after the updated index",
+                PATH_UPDATE_NOTE,
+            ),
+            (
+                "a with [0][1..2] = b",
+                "expected `]` after the index",
+                PATH_UPDATE_NOTE,
+            ),
+            (
+                "a with [0][1] b",
+                "expected `=` after the updated index",
+                "an update is written `x with [i] = value`, or `x with [i][j] = value` for an \
+                 element of a row",
+            ),
+        ] {
+            let (_, lexed, parsed) = parse_text(&spec_source(body));
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
+        // A slice update still takes one range, and no path follows it.
+        let (_, _, parsed) = parse_text(&spec_source("a with [0..1][0] = b"));
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed.diagnostics.first().unwrap().message(),
+            "expected `=` after the updated slice"
+        );
     }
 
     #[test]

@@ -2129,6 +2129,7 @@ fn expression_nodes<'text>(
                 CoreNodeKind::Index { index } => format!("index {index}"),
                 CoreNodeKind::Select => String::from("select"),
                 CoreNodeKind::Update => String::from("update"),
+                CoreNodeKind::UpdatePath { indices } => format!("update path of {indices}"),
                 CoreNodeKind::Fill => String::from("fill"),
                 CoreNodeKind::Fold(id) => format!("loop #{id}"),
                 CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
@@ -6583,10 +6584,10 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
         "  type K = Mod[11];\n",
         "  type L = M;\n",
         "  type M = Word[8];\n",
-        "  type Block = Word[32]^16; type Grid = Block^2;\n",
-        "  type Blocks = Grid^2;\n",
+        "  type Block = Word[32]^16; type Grid = Block^2; type Cube = Grid^2;\n",
+        "  type Hyper = Cube^2; type Blocks = Hyper^2;\n",
         "  type N = Mod[1];\n",
-        "  spec f(x: Grid^2) -> K { 0 }\n",
+        "  spec f(x: Hyper^2) -> K { 0 }\n",
         "  spec g(x: Unknown) -> K { 0 }\n",
         "  spec h(x: K[3]) -> K { 0 }\n",
         "  spec i(x: N) -> K { 0 }\n",
@@ -6633,13 +6634,13 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
             ),
             (
                 DiagnosticCode::UnsupportedType,
-                "Grid^2",
-                String::from("`Grid` already has two array dimensions")
+                "Hyper^2",
+                String::from("`Hyper` already has 4 array dimensions")
             ),
             (
                 DiagnosticCode::UnsupportedType,
-                "Grid^2",
-                String::from("`Grid` already has two array dimensions")
+                "Hyper^2",
+                String::from("`Hyper` already has 4 array dimensions")
             ),
             (
                 DiagnosticCode::UnsupportedType,
@@ -11202,4 +11203,119 @@ fn a_tests_moduli_and_types_are_resolved_with_the_modules() {
         "  test \"a field\" { let a: F = -1; let b: Mod[7] = 6; ((a + 1) == 0) && ((b + 1) == 0) }\n",
     ));
     assert_eq!(core.tests, 1);
+}
+
+#[test]
+fn update_paths_type_each_index_against_its_own_axis() {
+    let (fixture, core) = accepted(concat!(
+        "  type Row = Word[8]^4; type Plane = Row^3; type Cube = Plane^2;\n",
+        "  spec put(c: Cube, i: Word[8], v: Word[8]) -> Cube { c with [1][i % 3][2] = v }\n",
+        "  spec row(c: Cube, r: Row) -> Cube { c with [0][2] = r }\n",
+        "  spec one(c: Cube, p: Plane) -> Cube { c with [1] = p }\n",
+    ));
+    let byte = CoreType::Word8;
+    let row = CoreType::Array(ArrayType::new(&byte, 4).unwrap());
+    let plane = CoreType::Array(ArrayType::new(&row, 3).unwrap());
+    let cube = CoreType::Array(ArrayType::new(&plane, 2).unwrap());
+    let operations = |index: usize| {
+        core_nodes(&fixture, &core.functions[index])
+            .into_iter()
+            .map(|(operation, source, ty)| (operation, source.to_owned(), ty))
+            .collect::<Vec<_>>()
+    };
+    let put = operations(0);
+    assert_eq!(
+        put.last().unwrap(),
+        &(
+            String::from("update path of 3"),
+            String::from("c with [1][i % 3][2] = v"),
+            cube.clone()
+        )
+    );
+    // Postorder: the base, each index in order, then the value. A computed
+    // index is converted to a position, proved below its own axis's three.
+    let sources: Vec<_> = put
+        .iter()
+        .map(|(operation, source, _)| (operation.as_str(), source.as_str()))
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            ("parameter 0", "c"),
+            ("literal 1", "1"),
+            ("parameter 1", "i"),
+            ("literal 0x03", "3"),
+            ("infix %", "i % 3"),
+            ("convert from Word[8]", "i % 3"),
+            ("literal 2", "2"),
+            ("parameter 2", "v"),
+            ("update path of 3", "c with [1][i % 3][2] = v"),
+        ]
+    );
+    assert_eq!(
+        operations(1).last().unwrap().0,
+        "update path of 2",
+        "a shorter path ends at a row"
+    );
+    assert_eq!(operations(2).last().unwrap().0, "update");
+
+    let (fixture, result) = rejected(concat!(
+        "  type Row = Word[8]^4; type Plane = Row^3; type Cube = Plane^2;\n",
+        "  spec deep(c: Cube) -> Cube { c with [0][0][0][0] = 1 }\n",
+        "  spec far(c: Cube) -> Cube { c with [0][3][0] = 1 }\n",
+        "  spec wide(c: Cube, i: Word[8]) -> Cube { c with [0][0][i] = 1 }\n",
+        "  spec end(c: Cube) -> Cube { c with [0][0] = 1 }\n",
+        "  spec base(c: Cube) -> Plane { c with [0][0][0] = 1 }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::NotAnArray,
+                "0",
+                String::from("only an array can be indexed, but this selects within `Word[8]`")
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "3",
+                String::from("index 3 is out of range for `(Word[8]^4)^3`")
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "i",
+                String::from("this index runs from 0 through 255, out of range for `Word[8]^4`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1",
+                String::from("an integer literal cannot have type `Word[8]^4`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "c",
+                String::from(
+                    "`c` has type `((Word[8]^4)^3)^2`, but `(Word[8]^4)^3` is required here"
+                )
+            ),
+        ]
+    );
+    let deep = &result.diagnostics[0];
+    assert_eq!(deep.label(), "`Word[8]` has no elements");
+    assert_eq!(
+        deep.notes(),
+        [
+            "an update names one index per dimension it reaches; these 4 indices reach past the \
+          array's scalars"
+        ]
+    );
+    assert_eq!(
+        deep.secondary_spans()
+            .iter()
+            .map(|secondary| (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label()
+            ))
+            .collect::<Vec<_>>(),
+        [("c", "this array has fewer dimensions")]
+    );
 }

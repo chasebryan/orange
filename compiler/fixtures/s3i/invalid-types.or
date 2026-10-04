@@ -1,6 +1,6 @@
 // S3i conformance: `type` declarations name types for their module. A name
 // is declared once, is not a built-in type's, and is used after it is
-// declared; since S3s a row may form a matrix, but not a third dimension.
+// declared; since S3u rows may form up to four dimensions, but not a fifth.
 edition 2026;
 module names {
   type Int = Word[8];
@@ -9,9 +9,9 @@ module names {
   type K = Mod[11];
   type L = M;
   type M = Word[8];
-  type Block = Word[32]^16; type Grid = Block^2;
-  type Blocks = Grid^2;
+  type Block = Word[32]^16; type Grid = Block^2; type Cube = Grid^2; type Hyper = Cube^2;
+  type Blocks = Hyper^2;
 
-  spec f(x: Grid^2) -> K { 0 }
+  spec f(x: Hyper^2) -> K { 0 }
   spec g(x: Unknown) -> K { 0 }
 }

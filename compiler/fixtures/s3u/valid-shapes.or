@@ -1,0 +1,135 @@
+// S3u conformance: arrays of three and four dimensions, each named by a
+// `type` declaration over the one before it, and updates that name one
+// index per dimension they reach. A path `x with [i][j][k] = v` means the
+// nested updates it abbreviates, and every index is checked against its
+// own axis before evaluation.
+edition 2026;
+module shapes {
+  type Row = Word[8]^2;
+  type Plane = Row^3;
+  type Cube = Plane^2;
+  type Hyper = Cube^2;
+  type Signs = Int^2;
+  type Grid = Signs^2;
+  type Block = Grid^2;
+  type Zq = Mod[7];
+  type Coefficients = Zq^4;
+  type Vector = Coefficients^2;
+  type Matrix = Vector^2;
+
+  spec cube() -> Cube {
+    [[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]]]
+  }
+
+  spec hyper() -> Hyper { [cube(), [[[0; 2]; 3]; 2]] }
+
+  // Each index of a path is checked against its own axis.
+  spec set(c: Cube, i: Word[8], j: Word[8], k: Word[8], v: Word[8]) -> Cube {
+    c with [i % 2][j % 3][k % 2] = v
+  }
+
+  spec nested(c: Cube, i: Word[8], j: Word[8], k: Word[8], v: Word[8]) -> Cube {
+    c with [i % 2] = (c[i % 2] with [j % 3] = (c[i % 2][j % 3] with [k % 2] = v))
+  }
+
+  // Element (i, j, k) of the cube is 6i + 2j + k + 1.
+  spec counting() -> Cube {
+    for i in 0..2 with c: Cube = [[[0; 2]; 3]; 2] {
+      for j in 0..3 with d: Cube = c {
+        for k in 0..2 with e: Cube = d {
+          e with [i][j][k] = ((6 * i) + (2 * j) + k + 1) as Word[8]
+        }
+      }
+    }
+  }
+
+  spec same[T in {Cube, Hyper}](a: T, b: T) -> Bool { a == b }
+
+  spec stack[n in 1..4](p: Plane) -> Plane^n { [p; n] }
+
+  spec residues() -> Matrix {
+    [[[1, 2, 3, 4], [5, 6, 0, 1]], [[-1; 4], [0; 4]]]
+  }
+
+  spec packaged() -> (Hyper, Block) {
+    (hyper(), [[[1, -2], [3, 4]], [[-5, 6], [7, -8]]])
+  }
+
+  test "a rank-3 literal keeps every axis" {
+    let c: Cube = cube();
+    (c[1][2][0] == 11) && (c[0] == [[1, 2], [3, 4], [5, 6]]) && (c[1][1] == [9, 10])
+  }
+
+  test "a rank-4 value selects a cube, a plane, a row, and a scalar" {
+    let h: Hyper = hyper();
+    (h[0] == cube()) && (h[1][1] == [[0, 0], [0, 0], [0, 0]]) && (h[1][1][2] == [0, 0])
+      && (h[0][1][1][1] == 10)
+  }
+
+  test "a fill repeats a plane" {
+    let c: Cube = [[[7; 2]; 3]; 2];
+    c == [[[7, 7], [7, 7], [7, 7]], [[7, 7], [7, 7], [7, 7]]]
+  }
+
+  test "a path of three indices replaces one scalar" {
+    set(cube(), 1, 2, 0, 99) == [[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [99, 12]]]
+  }
+
+  test "a path means the nested updates it abbreviates" {
+    (set(cube(), 0, 1, 1, 40) == nested(cube(), 0, 1, 1, 40))
+      && (set(cube(), 255, 254, 253, 0) == nested(cube(), 255, 254, 253, 0))
+  }
+
+  test "a path of four indices reaches a scalar of a rank-4 array" {
+    let h: Hyper = hyper() with [1][0][2][1] = 5;
+    (h[1][0][2] == [0, 5]) && (h[0] == cube()) && (h[1][1] == hyper()[1][1])
+  }
+
+  test "a shorter path replaces a whole row or plane" {
+    let c: Cube = cube() with [0][1] = [8, 8];
+    let h: Hyper = hyper() with [1][0] = cube()[1];
+    (c[0] == [[1, 2], [8, 8], [5, 6]]) && (c[1] == cube()[1]) && (h[1][0] == cube()[1])
+  }
+
+  test "a two-index path updates a matrix element" {
+    let g: Grid = [[1, 2], [3, 4]];
+    (g with [1][0] = -5) == [[1, 2], [-5, 4]]
+  }
+
+  test "loops fill a cube through paths" { counting() == cube() }
+
+  test "slices and joins work at every level" {
+    let c: Cube = cube();
+    let front: Plane^1 = c[0..1];
+    let back: Plane^1 = c[1..2];
+    let plane: Plane = c[1];
+    let row: Row = c[1][2];
+    ((front ++ back) == c) && (plane[0..2] == [[7, 8], [9, 10]]) && (row[0..1] == [11])
+  }
+
+  test "slice updates replace whole planes" {
+    let h: Hyper = hyper();
+    let cleared: Hyper = h with [0..1] = [[[[0; 2]; 3]; 2]];
+    (cleared[0] == h[1]) && (cleared[1] == h[1])
+  }
+
+  test "residue leaves keep least-residue meaning in a rank-3 array" {
+    let m: Matrix = residues();
+    let n: Matrix = m with [1][1][2] = -5;
+    (m[0][1] == [5, 6, 0, 1]) && (m[1][0][3] == 6) && (n[1][1] == [0, 0, 2, 0])
+  }
+
+  test "a type parameter admits rank-3 and rank-4 aliases" {
+    same(cube(), counting()) && !same(hyper(), hyper() with [0][0][0][0] = 0)
+  }
+
+  test "a size parameter stacks planes into a cube" {
+    let p: Plane = cube()[0];
+    (stack[2](p) == [p, p]) && (stack[1](p)[0] == p)
+  }
+
+  test "a tuple carries a rank-4 array and a rank-3 array" {
+    let t: (Hyper, Block) = packaged();
+    (t.0[0][1][1][1] == 10) && (t.1[1][0][0] == -5) && (t.1[1][1] == [7, -8])
+  }
+}

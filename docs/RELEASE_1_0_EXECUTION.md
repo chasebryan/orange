@@ -26,8 +26,9 @@ typed pure specifications, a reference evaluator, known-answer tests, and
 acyclic multi-module programs. Its proposed S3 slices include exact integers,
 fixed-width words, residues, arrays and rectangular scalar rows, tuples,
 conditions, bounded folds, conversions, slices, and finite size and type
-specialization. S3t extends those finite size instances to modulus expressions.
-S3b through S3t remain in owner review; the accepted semantic boundary is S3a.
+specialization. S3t extends those finite size instances to modulus expressions,
+and S3u extends arrays to four dimensions with update paths. S3b through S3u
+remain in owner review; the accepted semantic boundary is S3a.
 
 The algorithm directories contain executable mathematical specifications and
 tested vectors. The P2 five-limb field definitions supply representation
@@ -86,7 +87,7 @@ completion from another area's tests.
 
 1. Complete proof-neutral S3/P1/P2 work and mathematical preparation for P4
    in the permanent frontend and corpus. S3t supplies modulus expressions over
-   finite size instances. P2 supplies five-limb reconstruction, abstraction,
+   finite size instances, and S3u matrices of polynomials. P2 supplies five-limb reconstruction, abstraction,
    tight/loose/canonical predicates, addition, carrying and canonicalization.
    Partial P4 preparation supplies exact `Int` multiplication with three-pass
    normalization observations. Machine limb multiplication and
