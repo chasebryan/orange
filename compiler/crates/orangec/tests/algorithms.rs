@@ -1,19 +1,24 @@
-//! Reproduction of the recorded vectors of every algorithm entry under
+//! Reproduction of the published vectors of every algorithm entry under
 //! `algorithms/`.
 //!
-//! Each `.or` source there carries pairs of parameterless specs `<name>` and
-//! `<name>_expected`: the first computes a value with the algorithm, the
-//! second states the value published with the standard or vector source that
-//! the file's comments cite. This test runs the real `orangec` binary over
-//! every source, requires `check` to pass without diagnostics and `eval` to
-//! succeed, and requires the two members of every pair to print the same type
-//! and value. `algorithms/verify.py` makes the same check from the command
-//! line.
+//! Each `.or` source there states its vectors in one of two forms. A `test`
+//! block claims that the algorithm reproduces one published value, as the
+//! title cites it; `orangec test` must pass every block. The first entries
+//! instead carry pairs of parameterless specs `<name>` and `<name>_expected`,
+//! the computed value and the published one, which `orangec eval` must print
+//! identically. A source with neither form must be a module that a sibling
+//! root `use`s. This test runs the real `orangec` binary over every source
+//! with the largest step budget it admits, requires `check` to pass without
+//! diagnostics, and requires every claim to hold. `algorithms/verify.py`
+//! makes the same check from the command line.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+
+/// The largest budget `orangec eval` and `orangec test` admit.
+const STEP_BUDGET: &str = "1073741824";
 
 fn algorithms_directory() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../algorithms")
@@ -41,9 +46,9 @@ fn entries() -> Vec<(PathBuf, Vec<PathBuf>)> {
         .collect()
 }
 
-fn orangec(command: &str, source: &Path) -> Output {
+fn orangec(arguments: &[&str], source: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_orangec"))
-        .arg(command)
+        .args(arguments)
         .arg(source)
         .output()
         .unwrap()
@@ -58,6 +63,97 @@ fn value_line(line: &str) -> Option<(String, String)> {
     let (qualified, rest) = line.split_once(": ")?;
     let (_module, name) = qualified.split_once("::")?;
     Some((name.to_owned(), rest.to_owned()))
+}
+
+/// Whether the source declares at least one `test "..."` block.
+fn declares_tests(source_text: &str) -> bool {
+    source_text
+        .lines()
+        .any(|line| line.trim_start().starts_with("test \""))
+}
+
+/// Whether the source declares a parameterless spec named `<name>_expected`.
+fn declares_pairs(source_text: &str) -> bool {
+    source_text.lines().any(|line| {
+        let line = line.trim_start();
+        line.strip_prefix("spec ")
+            .and_then(|rest| rest.split_once('('))
+            .is_some_and(|(name, _)| name.trim_end().ends_with("_expected"))
+    })
+}
+
+/// Whether a sibling source in the same folder declares `use <stem>;`.
+fn used_by_sibling(source: &Path, sources: &[PathBuf]) -> bool {
+    let stem = source.file_stem().unwrap().to_str().unwrap();
+    let declaration = format!("use {stem};");
+    sources
+        .iter()
+        .filter(|other| *other != source)
+        .any(|other| {
+            fs::read_to_string(other)
+                .unwrap()
+                .lines()
+                .any(|line| line.split_whitespace().collect::<Vec<_>>().join(" ") == declaration)
+        })
+}
+
+/// Runs the source's tests and returns how many passed; panics on any failure.
+fn passing_tests(source: &Path) -> usize {
+    let output = orangec(&["test", "--steps", STEP_BUDGET], source);
+    let stdout = text(&output.stdout);
+    assert!(
+        output.status.success() && output.stderr.is_empty(),
+        "{} has failing tests:\n{stdout}{}",
+        source.display(),
+        text(&output.stderr)
+    );
+    let summary = stdout.lines().last().unwrap_or_default();
+    let (count, rest) = summary
+        .split_once(' ')
+        .unwrap_or_else(|| panic!("{}: unrecognized test report {summary}", source.display()));
+    let passed: usize = count.parse().unwrap();
+    assert!(
+        rest.ends_with(" failed") && !stdout.contains("... FAILED"),
+        "{}: unrecognized test report {summary}",
+        source.display()
+    );
+    passed
+}
+
+/// Evaluates the source's `<name>` and `<name>_expected` pairs and returns how
+/// many agreed; panics on any difference.
+fn reproduced_pairs(source: &Path) -> usize {
+    let output = orangec(&["eval", "--steps", STEP_BUDGET], source);
+    assert!(
+        output.status.success() && output.stderr.is_empty(),
+        "{} does not evaluate:\n{}{}",
+        source.display(),
+        text(&output.stdout),
+        text(&output.stderr)
+    );
+    let mut values = BTreeMap::new();
+    for line in text(&output.stdout).lines() {
+        let (name, value) = value_line(line)
+            .unwrap_or_else(|| panic!("{}: unrecognized line {line}", source.display()));
+        values.insert(name, value);
+    }
+    let mut reproduced = 0usize;
+    for (name, expected) in &values {
+        let Some(computed_name) = name.strip_suffix("_expected") else {
+            continue;
+        };
+        let computed = values
+            .get(computed_name)
+            .unwrap_or_else(|| panic!("{}: {name} has no computed twin", source.display()));
+        assert_eq!(
+            computed,
+            expected,
+            "{}: {computed_name} differs from {name}",
+            source.display()
+        );
+        reproduced += 1;
+    }
+    reproduced
 }
 
 #[test]
@@ -82,7 +178,7 @@ fn every_algorithm_folder_has_a_readme_and_sources() {
 fn every_algorithm_source_checks_without_diagnostics() {
     for (_folder, sources) in entries() {
         for source in sources {
-            let output = orangec("check", &source);
+            let output = orangec(&["check"], &source);
             assert!(
                 output.status.success() && output.stderr.is_empty(),
                 "{} does not check:\n{}{}",
@@ -95,42 +191,32 @@ fn every_algorithm_source_checks_without_diagnostics() {
 }
 
 #[test]
-fn every_algorithm_source_reproduces_its_recorded_vectors() {
+fn every_algorithm_source_passes_its_tests_or_reproduces_its_vectors() {
     for (_folder, sources) in entries() {
-        for source in sources {
-            let output = orangec("eval", &source);
-            assert!(
-                output.status.success() && output.stderr.is_empty(),
-                "{} does not evaluate:\n{}{}",
-                source.display(),
-                text(&output.stdout),
-                text(&output.stderr)
-            );
-            let mut values = BTreeMap::new();
-            for line in text(&output.stdout).lines() {
-                let (name, value) = value_line(line)
-                    .unwrap_or_else(|| panic!("{}: unrecognized line {line}", source.display()));
-                values.insert(name, value);
-            }
-            let mut reproduced = 0usize;
-            for (name, expected) in &values {
-                let Some(computed_name) = name.strip_suffix("_expected") else {
-                    continue;
-                };
-                let computed = values
-                    .get(computed_name)
-                    .unwrap_or_else(|| panic!("{}: {name} has no computed twin", source.display()));
-                assert_eq!(
-                    computed,
-                    expected,
-                    "{}: {computed_name} differs from {name}",
+        for source in &sources {
+            let source_text = fs::read_to_string(source).unwrap();
+            let mut claims = 0usize;
+            if declares_tests(&source_text) {
+                let passed = passing_tests(source);
+                assert!(
+                    passed > 0,
+                    "{} declares tests but ran none",
                     source.display()
                 );
-                reproduced += 1;
+                claims += passed;
+            }
+            if declares_pairs(&source_text) {
+                let reproduced = reproduced_pairs(source);
+                assert!(
+                    reproduced > 0,
+                    "{} declares `_expected` specs but reproduced none",
+                    source.display()
+                );
+                claims += reproduced;
             }
             assert!(
-                reproduced > 0,
-                "{} records no `<name>` and `<name>_expected` pair",
+                claims > 0 || used_by_sibling(source, &sources),
+                "{} states no vector: no `test` block, no `<name>_expected` pair, and no sibling `use`s it",
                 source.display()
             );
         }
