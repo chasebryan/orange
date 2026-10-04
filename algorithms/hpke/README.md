@@ -30,13 +30,14 @@ and `Expand` (RFC 5869) with every input prefixed by the string `"HPKE-v1"`, a
 `suite_id` and a label. The Orange file is ordered as the RFC is: the
 primitives it needs, then section 4, then 5.1, 5.2 and 5.3.
 
-**The primitives.** Orange has no imports, so each file carries SHA-256
+**The primitives.** Orange has no imports, so the files carry, each as far as
+its vectors need them, SHA-256
 (FIPS 180-4, as the repository's S3e fixture writes it, with `hash_blocks`
 generalizing the fixture's fixed blocks to a message of any length up to 119
 bytes after the 64-byte HMAC key block, which covers every message HPKE hashes
 with this suite), HMAC-SHA256 (RFC 2104, `key_block`, `outer_block`,
 `hmac_sha256`), HKDF-SHA256 (RFC 5869, `extract` and `expand`), X25519
-(RFC 7748, as the S3f fixture and the `x25519` entry write it: field
+(RFC 7748, as the S3f fixture writes it: field
 arithmetic in `Int`, a Montgomery ladder whose conditional swap is a
 conditional), and ChaCha20-Poly1305 (RFC 8439, as the S3f AEAD fixture writes
 it, sized to the 29-byte plaintext and the 7- or 9-byte `aad` of Appendix A.2).
@@ -183,7 +184,7 @@ scalar bit, exactly as in the `x25519` entry; every KDF call, every
 concatenation and the whole key schedule are straight-line. The RFC's
 variable-length inputs, `ikm`, `info`, `exporter_context` and the labeled
 concatenations, become fixed 128-byte buffers with their lengths written as
-literals at the calls (`51`, `91`, `28`, `46`, `23`, `87`, `94`, `22 + len`),
+literals at the calls (`16`, `51`, `91`, `28`, `46`, `23`, `87`, `94`, `22 + len`),
 and SHA-256's padding is computed by `hash_blocks` from that length with
 comparisons rather than assumed as in the fixtures, so the file shows that
 the message lengths of this suite are fixed by the suite and the inputs, and
@@ -343,8 +344,8 @@ Book chapter 12.
 
 - The step budget of 1,048,576 steps per file holds one X25519 (about
   621,000 steps) and little more, and parameterless specs share no
-  computation, so the entry is four files with an identical algorithm part
-  rather than one: `hpke.or` cannot carry even the smallest key-schedule
+  computation, so the entry is four files whose algorithm parts are cut from
+  one text rather than one file: `hpke.or` cannot carry even the smallest key-schedule
   pair beyond `shared_secret`, the key-schedule file is full to within 2,800
   steps, `pkEm` is derived in a file of its own, and `Decap`, which would be
   a second X25519 beside `Encap`, is not written.

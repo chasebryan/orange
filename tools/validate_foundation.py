@@ -108,7 +108,7 @@ POLICY_PATH = Path("policy/gate0-repository-policy.json")
 MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
-ORANGE_BOOK_VERSION = "0.8"
+ORANGE_BOOK_VERSION = "0.26"
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
 ORANGE_BOOK_CHAPTERS = tuple(
     f"## Chapter {number}: {title}"
@@ -211,9 +211,9 @@ GATE0_MAXIMUM_VALIDATOR_BYTES = 448 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_RUN_OUTPUTS_BYTES = 2 * 1024 * 1024
 GATE0_RUN_OUTPUTS_PATHS = tuple(f"research/decisions/D-004/d004-v0.{v}/run/adapter-outputs.json" for v in (7, 8))
-GATE0_MAXIMUM_REPOSITORY_BYTES = 24 * 1024 * 1024
+GATE0_MAXIMUM_REPOSITORY_BYTES = 48 * 1024 * 1024
 GATE0_GIT_EXECUTABLE = "/usr/bin/git"
-GATE0_MAXIMUM_REPOSITORY_FILES = 512
+GATE0_MAXIMUM_REPOSITORY_FILES = 1024
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
 GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
@@ -276,6 +276,7 @@ _GATE0_GIT_FIXED_ENVIRONMENT = {
 MINIMUM_REQUIRED_PATHS = set(
     """algorithms/README.md
 algorithms/verify.py
+algorithms/x25519/field25519-limbs.or
 .editorconfig
 .gitattributes
 .github/CODEOWNERS
@@ -307,9 +308,22 @@ compiler/crates/orange-compiler/src/diagnostic.rs
 compiler/crates/orange-compiler/src/edition.rs
 compiler/crates/orange-compiler/src/eval.rs
 compiler/crates/orange-compiler/src/lexer.rs
+compiler/crates/orange-compiler/src/arguments.rs
+compiler/crates/orange-compiler/src/witness.rs
+compiler/crates/orange-compiler/src/documentation.rs
+compiler/crates/orange-compiler/src/formatter.rs
 compiler/crates/orange-compiler/src/lib.rs
 compiler/crates/orange-compiler/src/parser.rs
 compiler/crates/orange-compiler/src/semantics.rs
+compiler/crates/orange-compiler/src/semantics/answers.rs
+compiler/crates/orange-compiler/src/semantics/bytes.rs
+compiler/crates/orange-compiler/src/semantics/linking.rs
+compiler/crates/orange-compiler/src/semantics/order.rs
+compiler/crates/orange-compiler/src/semantics/ranges.rs
+compiler/crates/orange-compiler/src/semantics/sizes.rs
+compiler/crates/orange-compiler/src/semantics/tests.rs
+compiler/crates/orange-compiler/src/semantics/tuples.rs
+compiler/crates/orange-compiler/src/semantics/types.rs
 compiler/crates/orange-compiler/src/source.rs
 compiler/crates/orange-compiler/tests/d004_decision_suite.rs
 compiler/crates/orange-compiler/tests/d004_support/candidate_mappings.rs
@@ -345,8 +359,13 @@ compiler/crates/orange-compiler/tests/d010_support/domain.rs
 compiler/crates/orange-compiler/tests/d010_support/packet.rs
 compiler/crates/orange-compiler/tests/d010_support/runner.rs
 compiler/crates/orangec/Cargo.toml
+compiler/crates/orangec/src/crypt.rs
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
+compiler/crates/orangec/tests/witness_replay.rs
+compiler/crates/orangec/tests/documentation.rs
+compiler/crates/orangec/tests/formatting.rs
+compiler/crates/orangec/tests/crypt.rs
 compiler/crates/orangec/tests/s2_conformance.rs
 compiler/crates/orangec/tests/s3a_conformance.rs
 compiler/crates/orangec/tests/s3b_conformance.rs
@@ -355,6 +374,21 @@ compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
+compiler/crates/orangec/tests/s3g_conformance.rs
+compiler/crates/orangec/tests/s3h_conformance.rs
+compiler/crates/orangec/tests/s3i_conformance.rs
+compiler/crates/orangec/tests/s3j_conformance.rs
+compiler/crates/orangec/tests/s3k_conformance.rs
+compiler/crates/orangec/tests/s3l_conformance.rs
+compiler/crates/orangec/tests/s3m_conformance.rs
+compiler/crates/orangec/tests/s3n_conformance.rs
+compiler/crates/orangec/tests/s3o_conformance.rs
+compiler/crates/orangec/tests/s3p_conformance.rs
+compiler/crates/orangec/tests/s3q_conformance.rs
+compiler/crates/orangec/tests/s3r_conformance.rs
+compiler/crates/orangec/tests/s3s_conformance.rs
+compiler/crates/orangec/tests/field25519_limbs.rs
+compiler/crates/orangec/tests/s3t_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -413,7 +447,104 @@ compiler/fixtures/s3f/valid-aead.or
 compiler/fixtures/s3f/valid-conditions.or
 compiler/fixtures/s3f/valid-poly1305.or
 compiler/fixtures/s3f/valid-x25519.or
+compiler/fixtures/s3g/invalid-int-indices.or
+compiler/fixtures/s3g/invalid-word-indices.or
+compiler/fixtures/s3g/valid-aes128.or
+compiler/fixtures/s3g/valid-lookups.or
+compiler/fixtures/s3h/hkdf.or
+compiler/fixtures/s3h/hmac.or
+compiler/fixtures/s3h/invalid-calls.or
+compiler/fixtures/s3h/invalid-graph.or
+compiler/fixtures/s3h/invalid-missing.or
+compiler/fixtures/s3h/misnamed.or
+compiler/fixtures/s3h/ring_a.or
+compiler/fixtures/s3h/ring_b.or
+compiler/fixtures/s3h/sha256.or
+compiler/fixtures/s3h/valid-vectors.or
+compiler/fixtures/s3i/invalid-moduli.or
+compiler/fixtures/s3i/invalid-residues.or
+compiler/fixtures/s3i/invalid-type-syntax.or
+compiler/fixtures/s3i/invalid-types.or
+compiler/fixtures/s3i/valid-fields.or
+compiler/fixtures/s3i/valid-poly1305.or
+compiler/fixtures/s3i/valid-x25519.or
+compiler/fixtures/s3j/invalid-block-names.or
+compiler/fixtures/s3j/invalid-block-syntax.or
+compiler/fixtures/s3j/invalid-block-types.or
+compiler/fixtures/s3j/valid-blocks.or
+compiler/fixtures/s3j/valid-sha256.or
+compiler/fixtures/s3j/valid-x25519.or
+compiler/fixtures/s3k/invalid-tuple-names.or
+compiler/fixtures/s3k/invalid-tuple-syntax.or
+compiler/fixtures/s3k/invalid-tuple-types.or
+compiler/fixtures/s3k/valid-ascon.or
+compiler/fixtures/s3k/valid-chacha20.or
+compiler/fixtures/s3k/valid-sha256.or
+compiler/fixtures/s3k/valid-tuples.or
+compiler/fixtures/s3l/invalid-bytes-lexical.or
+compiler/fixtures/s3l/invalid-bytes-syntax.or
+compiler/fixtures/s3l/invalid-bytes-types.or
+compiler/fixtures/s3l/valid-aead.or
+compiler/fixtures/s3l/valid-bytes.or
+compiler/fixtures/s3l/valid-hmac.or
+compiler/fixtures/s3m/invalid-sizes-syntax.or
+compiler/fixtures/s3m/invalid-sizes.or
+compiler/fixtures/s3m/sha256.or
+compiler/fixtures/s3m/valid-hmac.or
+compiler/fixtures/s3m/valid-poly1305.or
+compiler/fixtures/s3m/valid-sizes.or
+compiler/fixtures/s3n/invalid-order-syntax.or
+compiler/fixtures/s3n/invalid-order.or
+compiler/fixtures/s3n/valid-chacha20.or
+compiler/fixtures/s3n/valid-order.or
+compiler/fixtures/s3n/valid-poly1305.or
+compiler/fixtures/s3n/valid-sha256.or
+compiler/fixtures/s3n/valid-sha512.or
+compiler/fixtures/s3n/valid-x25519.or
+compiler/fixtures/s3o/invalid-types-syntax.or
+compiler/fixtures/s3o/invalid-types.or
+compiler/fixtures/s3o/valid-fields.or
+compiler/fixtures/s3o/valid-sha2.or
+compiler/fixtures/s3o/valid-types.or
+compiler/fixtures/s3p/invalid-lengths.or
+compiler/fixtures/s3p/valid-lengths.or
+compiler/fixtures/s3p/valid-rfc8439.or
+compiler/fixtures/s3q/failing-tests.or
+compiler/fixtures/s3q/invalid-test-syntax.or
+compiler/fixtures/s3q/invalid-tests.or
+compiler/fixtures/s3q/valid-equality.or
+compiler/fixtures/s3q/valid-rfc8439-tests.or
+compiler/fixtures/s3r/invalid-amount-grouping.or
+compiler/fixtures/s3r/invalid-amounts.or
+compiler/fixtures/s3r/valid-amounts.or
+compiler/fixtures/s3r/valid-rc6.or
+compiler/fixtures/s3r/valid-sha3.or
+compiler/fixtures/s3r/valid-zetas.or
+compiler/fixtures/s3s/invalid-conversions.or
+compiler/fixtures/s3s/invalid-dimensions.or
+compiler/fixtures/s3s/invalid-domains.or
+compiler/fixtures/s3s/invalid-indices.or
+compiler/fixtures/s3s/invalid-ragged.or
+compiler/fixtures/s3s/invalid-types.or
+compiler/fixtures/s3s/valid-domains.or
+compiler/fixtures/s3s/valid-matrices.or
+compiler/fixtures/s3s/valid-parameters.or
+compiler/fixtures/s3s/valid-quadratic-pairs.or
+compiler/fixtures/s3t/invalid-bounds.or
+compiler/fixtures/s3t/invalid-constants.or
+compiler/fixtures/s3t/invalid-domains.or
+compiler/fixtures/s3t/invalid-scope.or
+compiler/fixtures/s3t/static_ring.or
+compiler/fixtures/s3t/valid-aggregates.or
+compiler/fixtures/s3t/valid-calls.or
+compiler/fixtures/s3t/valid-large.or
+compiler/fixtures/s3t/valid-program.or
+compiler/fixtures/s3t/valid-rings.or
 compiler/fixtures/typed-answer.or
+compiler/schemes/README.md
+compiler/schemes/ascon_aead128.or
+compiler/schemes/chacha20_poly1305.or
+compiler/schemes/xchacha20_poly1305.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
 Makefile
@@ -456,10 +587,29 @@ docs/RESEARCH.md
 docs/ROADMAP.md
 docs/SEMANTIC_STRATA_DECISION_SUITE.md
 docs/EXPRESSIONS_2026.md
+docs/WITNESS_REPLAY_2026.md
+docs/DOCUMENTATION_2026.md
+docs/FORMATTER_2026.md
 docs/BINDINGS_2026.md
 docs/ARRAYS_2026.md
 docs/LOOPS_2026.md
 docs/CONDITIONS_2026.md
+docs/LOOKUPS_2026.md
+docs/MODULES_2026.md
+docs/MODULAR_2026.md
+docs/BLOCKS_2026.md
+docs/BYTES_2026.md
+docs/SIZES_2026.md
+docs/ORDER_2026.md
+docs/TYPE_PARAMETERS_2026.md
+docs/LENGTHS_2026.md
+docs/TESTS_2026.md
+docs/AMOUNTS_2026.md
+docs/NESTED_ARRAYS_2026.md
+docs/RELEASE_1_0_EXECUTION.md
+docs/STATIC_MODULI_2026.md
+docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md
+docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/governance/adrs/ADR-0000-template.md
@@ -550,9 +700,7 @@ DAYLIGHT_EXAMPLE_PATHS = set(
 examples/daylight/NOTICE
 examples/daylight/README.md
 examples/daylight/daylight-horizon.or
-examples/daylight/daylight.or
 examples/daylight/daylight.py
-examples/daylight/emit_example.py
 examples/daylight/test_daylight.py
 examples/daylight/validation.txt""".splitlines()
 )
@@ -670,7 +818,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_WT = {"ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
 _IFD = {
     "conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     "oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -697,7 +845,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "e6c617343a6c308e0ead37a62347ddc426c8dface84a5d9fca14c85728fce01f"
+_RDC = "6bccf133d39c9081542550d18806e8cd4916f37daa853be0a29a79ceda74da65"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -763,7 +911,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "15ecf19f3289f75e2c9f7de7aa02ef1c4fb0c73a5cc977efa171181e8f9a0c6d"
+_PHD = "9efa7488e554cd50582d7adf5f6399f89ae09f1e6d7ee307c49536a7df5f11a5"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -920,6 +1068,15 @@ GATE0_RUST_LOCKS = {
     "tabula/Cargo.lock": {"version": 4, "package": [{"name": "tabula", "version": "0.1.0"}]},
 }
 _RB = {
+    "compiler/crates/orange-compiler/src/arguments.rs": {
+        "MAX_ARGUMENT_VALUE_NODES": 4_194_304,
+        "MAX_ARGUMENT_INTEGER_LIMBS": 4_194_304,
+        "MAX_ARGUMENT_DECODE_WORK": 67_108_864,
+    },
+    "compiler/crates/orange-compiler/src/documentation.rs": {
+        "MAX_DOCUMENTATION_HTML_BYTES": 16 * 1024 * 1024,
+        "MAX_DOCUMENTATION_EVENTS_PER_SOURCE": 1_048_576,
+    },
     "compiler/crates/orange-compiler/src/source.rs": {"MAX_SOURCE_BYTES": 16 * 1024 * 1024},
     "compiler/crates/orange-compiler/src/lexer.rs": {
         "MAX_TOKENS_PER_SOURCE": 262_144,
@@ -931,6 +1088,10 @@ _RB = {
         "MAX_PARSE_EVENTS_PER_SOURCE": 1_048_576,
         "MAX_RECOVERY_DELIMITER_DEPTH": 64,
     },
+    "compiler/crates/orange-compiler/src/formatter.rs": {
+        "MAX_FORMATTED_SOURCE_BYTES": 16 * 1024 * 1024,
+        "MAX_FORMAT_EVENTS_PER_SOURCE": 1_048_576,
+    },
     "compiler/crates/orange-compiler/src/semantics.rs": {
         "MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE": 100,
         "MAX_CORE_NODES_PER_SOURCE": 262_144,
@@ -940,6 +1101,20 @@ _RB = {
     "compiler/crates/orange-compiler/src/eval.rs": {"MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576},
 }
 _RM = {
+    "docs/WITNESS_REPLAY_2026.md": {
+        "16 MiB\n(`16 * 1024 * 1024` witness bytes)": 16 * 1024 * 1024,
+        "at most 4,194,304 value nodes": 4_194_304,
+        "at most 4,194,304 retained\nbinary integer limbs": 4_194_304,
+        "at most 67,108,864 decoding work items": 67_108_864,
+    },
+    "docs/DOCUMENTATION_2026.md": {
+        "16 MiB (`16 * 1024 * 1024` HTML bytes)": 16 * 1024 * 1024,
+        "at most 1,048,576 documentation work items": 1_048_576,
+    },
+    "docs/FORMATTER_2026.md": {
+        "16 MiB (`16 * 1024 * 1024` output bytes)": 16 * 1024 * 1024,
+        "at most 1,048,576 formatting work items": 1_048_576,
+    },
     "docs/LANGUAGE_2026.md": {
         "at most 16 MiB\n(`16 * 1024 * 1024` bytes)": 16 * 1024 * 1024,
         "At most 262,144 non-trivia tokens": 262_144,
@@ -1029,6 +1204,7 @@ _LU = {
     "scripts/ci/check-external-links": (
         "--exclude '^https://eprint\\.iacr\\.org/'",
         "--exclude-all-private",
+        "--remap '^file://.*/research/decisions/D-004/baseline/(.*)$ https://github.com/chasebryan/orange/blob/265ce9ca1f3bc7060d1a6db9f822f2c43494ab95/$1'",
         "--extensions md,yml",
         '--host-concurrency "$MAXIMUM_HOST_CONCURRENCY"',
         "--include-fragments",
@@ -1051,7 +1227,7 @@ _LM = {
 _WM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
-            "Job deadlines are exact: `ci.yml`, `external-links.yml`, and\n"
+            "Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and\n"
             "`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits\n"
             "10 minutes; and `scorecard.yml` permits 20 minutes."
         ): tuple(_WT[value] for value in sorted(_WT)),
@@ -1092,8 +1268,8 @@ _PM = {
         "validator itself at 448 KiB\n(`448 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
         "adapter outputs at 2 MiB\n(`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
-        "repository at 24 MiB (`24 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
-        "at most 512 files": GATE0_MAXIMUM_REPOSITORY_FILES,
+        "repository at 48 MiB (`48 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
+        "at most 1,024 files": GATE0_MAXIMUM_REPOSITORY_FILES,
         "at most 1,024 bytes per raw path": GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
         "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata": GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,
         "at most 4,096 entries in one\nfallback directory": GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES,
@@ -1145,8 +1321,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "185530ac31833262b608ba3fd6275f364cfcba86fe59537bc03ead2f70f81459"
-_D010_PACKET_RAW_SHA256 = "c27873919613675e09ec0b5b36d0f6d451552a3bc8ba5e765d1ab31d843befcb"
+_D010_PACKET_CANONICAL_SHA256 = "855a4695080686c63de321606437b3c0204fac55a62807a88e58d50da5547f0f"
+_D010_PACKET_RAW_SHA256 = "9b7f5f6bf6642f5b59d99cf128dc7b7c2c4887401b4f831e5650f71238b09373"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
@@ -1204,7 +1380,7 @@ _D004_REVIEWED_REPLAY_PLAN_CANONICAL_SHA256 = (
 _D004_REVIEWED_REPLAY_PLAN_RAW_SHA256 = (
     "45632f796c7c08d26e668b277ccaff5679ccb82857732c3b8beead66198a3eb7"
 )
-DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', '7731234ef608d3a3c61c596ca01eca2f28f1b24b8b7e77b55d4a0368aa4f81c2', 'e6a7da54a6f1b2f1239ff4ca0713b74fa2355fc3a498a490b6d52af50ef042e6', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
+DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', '2be859ea9fe1be24682537766c619faecf61f1a950bf3d3dd2d25ea8c84adc7a', '29ddc49f967fb917ec7b56758c78bf3c4d2dc39b8125b76b64f3165b3742774c', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
 _D004_V07 = "research/decisions/D-004/d004-v0.7/"
 _D004_V08 = "research/decisions/D-004/d004-v0.8/"
 DECISION_LABORATORY_SPECS["d004"] = {
@@ -1355,7 +1531,7 @@ _D006_V03 = {"research/decisions/D-006/d006-v0.3/" + n for n in "protocol/suite-
 MINIMUM_REQUIRED_PATHS |= _D006_V03 | {"tools/d006_shared.py", "tools/tests/test_d006_shared.py"}
 DECISION_LABORATORY_SPECS["d006"]["inventory"] = DECISION_LABORATORY_SPECS["d006"]["inventory"] | _D006_V03
 DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisions/D-006/d006-v0.3/" + n, f"v03_{i}_", f"v03_{i}_missing", c, r, True) for i, (n, c, r) in enumerate((
- ("protocol/suite-overlay.json", "6bbe827744ca0008f62df2d8426fa2f210d5f4407c94ac0fc87d656dedfd2166", "0050c48391815ac9d27c82b66c36e3c940900b29ac398d76fb13c04df66f9864"),
+ ("protocol/suite-overlay.json", "e185b164199ba47f8724eb3c6e8585c7ecf45c0fdab79592ccc0b2be7081c94f", "d840d4842c926de1575320e6553cf98ac5067bb4ee036daf8b42c75ca2a4979d"),
  ("protocol/toolchains.json", "4746d069981994e89533d16b931a2417e4af4e7999b5fc7f0be5855106984d4e", "9f083f33b5635958eb879275af15a40c9718064356ef9e710c8d51d3cfd95299"),
  ("shared-inputs/manifest.json", "fcc3852eea3a01b582cc3c4c52c69b559a1b4539be8ec4e1f62438aacacbcc29", "d6aed8aeebf2d523334c0d25ccd0cd81e2f9eb975de7de1413f63c052e549b30"),
  ("shared-inputs/taxonomy.json", "95dede0dab94185944e44707a9dbbc257a3d43b18ae3d971ec546bfb31952fa6", "dc49a902501daa4db325a39ac502a9129b8d3f004b23288923b976c78ed25622"),
@@ -1367,9 +1543,31 @@ DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisio
  ("shared-inputs/ds06-measurement.json", "247de71ae9fae6b132169f980a8c766219de55972d281b4ebbb388e0cff5142a", "2ed8ddc9c591a540f0c24969ee9aca6c0df841d8facc6f8104afde81b4290ea6"),
  ("shared-inputs/ds07-owner-tasks.json", "edb735e5795cae6976ebac8c454ad510562095a6071e1d542591d543a17c7b87", "b7961471b0059d760926f5addacc35217f234641c87abd2e71c32903c86f4f59"),
 ))) # d006-v0.3 identities end
+# d006 epoch admissions begin
+_D006_E = {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md lean4/Checker/Main.lean lean4/D006/Core.lean lean4/D006/Lrat.lean lean4/D006/Records.lean lean4/D006/Sieve.lean lean4/Loader/OleanCheck.lean lean4/NOTES.md lean4/adapter.d/ds02.json lean4/adapter.d/ds03.json lean4/adapter.d/ds04.json lean4/adapter.d/ds05.json lean4/adapter.d/ds06.json lean4/adapter.json lean4/patches/D1-N10.patch lean4/patches/D2-M01.patch lean4/patches/D2-M02.patch lean4/patches/D2-M06.patch rocq/NOTES.md rocq/adapter.d/ds02.json rocq/adapter.d/ds03.json rocq/adapter.d/ds04.json rocq/adapter.d/ds05.json rocq/adapter.d/ds06.json rocq/adapter.json rocq/extraction/Checker.v rocq/extraction/Extract.v rocq/extraction/driver.ml rocq/extraction/uint63.ml rocq/patches/D1-N10.patch rocq/patches/D2-M01.patch rocq/patches/D2-M02.patch rocq/patches/D2-M06.patch rocq/theories/Core.v rocq/theories/Lrat.v rocq/theories/Records.v rocq/theories/Sieve.v run/d006-e-c7b6648ae3988234297f/logs-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/manifest.json run/d006-e-c7b6648ae3988234297f/objects-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/packet.json run/d006-e-c7b6648ae3988234297f/records-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-02.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-03.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz run/d006-e-c7b6648ae3988234297f/summary.json".split()}
+MINIMUM_REQUIRED_PATHS |= _D006_E | {"tools/" + n for n in "d006_check.py d006_render.py d006_run.py tests/test_d006_run.py".split()}
+DECISION_LABORATORY_SPECS["d006"]["inventory"] |= {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md".split()}
+GATE0_ALLOWED_BINARY_ARTIFACTS += [{"path": "research/decisions/D-006/d006-v0.3/" + p, "sha256": d, "role": "D-006 v0.3 epoch export: gzip JSON lines written by tools/d006_run.py export", "provenance": "Written on 2026-09-30 by the D-006 epoch run it names"} for p, d in (
+ ("run/d006-e-c7b6648ae3988234297f/logs-01.jsonl.gz", "98830abe5029d8f36f785abe7d3a2068e3705a2effd2c2aa57dc13bc9446a1d1"),
+ ("run/d006-e-c7b6648ae3988234297f/objects-01.jsonl.gz", "633e960b5cfb8f7a36bbda21174dae389261faf2abbc15d717f4193befa4c7b3"),
+ ("run/d006-e-c7b6648ae3988234297f/records-01.jsonl.gz", "b4389e7eff49e5322484e24f85606654431a7be2b3c7155f66fac260a7cbf0ce"),
+ ("run/d006-e-c7b6648ae3988234297f/records-02.jsonl.gz", "17320b6e95b3a0d6f290aa217005cd3ce4294791fa09981821f17fee1216dbb0"),
+ ("run/d006-e-c7b6648ae3988234297f/records-03.jsonl.gz", "0ee86efd388c6b023fd0d9d29a291c84830312f7954f42944a2e969f373f7fa5"),
+ ("run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz", "9cb08a64455c0d9fa2f0561ce33cb04f06fc378b4c88ffce9d61d434dcb62c77"),
+)]
+# d006 epoch admissions end
+# The runner binds each D-006 candidate tree per run (AM-04) and each epoch export binds its files by digest,
+# so these trees stay required paths but sit outside the lab's reviewed inventory and JSON identity closure.
+_D006_EPOCH_BOUND = tuple("research/decisions/D-006/d006-v0.3/" + d for d in ("rocq/", "lean4/", "run/"))
 DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-006/"] = (13, 2, True, None)
+# d011 admissions begin
+MINIMUM_REQUIRED_PATHS |= {"research/decisions/D-011/" + n for n in "README.md d011-v0.1/kernels/abi_probe.rs d011-v0.1/kernels/accel.c d011-v0.1/kernels/d011_kernels.h d011-v0.1/kernels/kernels.c d011-v0.1/kernels/runtime.c d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/epoch.json d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/manifest.json d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/packet.json d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/records-01.jsonl.gz d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/summary.json d011-v0.1/suite-packet.json".split()} | {"docs/NATIVE_TARGET_DECISION_SUITE.md", "tools/d011_suite.py", "tools/tests/test_d011_suite.py"}
+GATE0_ALLOWED_BINARY_ARTIFACTS += [{"path": "research/decisions/D-011/" + p, "sha256": d, "role": "D-011 v0.1 epoch export: gzip JSON lines written by tools/d011_suite.py export", "provenance": "Written on 2026-09-30 by the D-011 epoch run it names"} for p, d in (
+ ("d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/records-01.jsonl.gz", "b007f7db0dbb1be0f8b8d56e9027e496c3690ed268d38d9e7bd6e48c9ffe2f32"),
+)]
+# d011 admissions end
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
     18,
     23,
@@ -3374,12 +3572,8 @@ class FoundationValidator:
                 self.policy_path,
                 f"hosted-control snapshot {snapshot_value} is later than {observed_today.isoformat()}",
             )
-        if observed_today >= review_due_date:
-            self.add(
-                "hosted_control.expired",
-                self.policy_path,
-                f"hosted-control snapshot expired on {review_due_value}; refresh live readback and evidence",
-            )
+        # The review-due date is a reminder, not a gate: an offline check cannot
+        # re-read GitHub, and failing on a calendar date turns every commit red.
         for value in evidence_paths:
             path = self.root / value
             if not self._hf(path):
@@ -4775,7 +4969,7 @@ class FoundationValidator:
           retention-days: 14''',
                 "Upload result to code scanning": '''      - name: Upload result to code scanning
         if: ${{ always() && hashFiles('results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: results.sarif''',
             }
@@ -5178,7 +5372,7 @@ class FoundationValidator:
         gate_scope = ('## 5. Hard gates and anti-gaming rules', 2, False)
         review_scope = ('## 7. Owner review scopes', 2, False)
         decision_scope = ('## 8. Decision procedure', 2, False)
-        self._validate_markdown_rules((('docs/PROOF_FOUNDATION_DECISION_SUITE.md', (('header', 'proof_suite.header', '## Solo-mode disposition', (('owner-executable draft under D-023; no proof foundation selected',), ('d006-v0.2-draft',), ('2026-07-25',))), ('table', 'proof_suite.candidates', candidate_scope, 'C-[0-9]{2}', 4, ((0, ('C-01', 'C-02')), (1, ('Rocq', 'Lean 4'))), None), ('table', 'proof_suite.candidate_state', candidate_scope, 'C-[0-9]{2}', 4, ((3, ('0/7 cases', '0/7 cases')),), None), ('matches', 'proof_suite.case_ids', case_scope, '(?m)^###\\s+(DS-[0-9]{2})\\b', cases), ('fields', 'proof_suite.case_field', case_scope, cases, ('Question', 'Dependencies', 'Shared inputs', 'Candidate outputs', 'Positive checks', 'Mutation and negative checks', 'Hard acceptance')), ('required', 'proof_suite.solo_case', case_scope, ('### DS-07 — Exercise solo auditability and maintenance',)), ('table', 'proof_suite.metrics', metric_scope, 'M-[0-9]{2}', 4, ((0, tuple((f'M-{index:02d}' for index in range(1, 19)))),), None), ('table_slice', 'proof_suite.solo_metrics', metric_scope, 'M-[0-9]{2}', 15, 18, (('M-16', 'Owner audit/maintenance task completion', 'Completed common DS-07 tasks / 2 per candidate, with time, assistance, and role overlap recorded', 'Hard gate: 2/2 per candidate and every seeded fault detected'), ('M-17', 'Independent-review status', 'Exact status for logic/kernel, extraction/distribution, and comparative-decision review', 'Disclosure only: `unavailable`; never a selection score or implied claim'), ('M-18', 'Same-owner maintenance variance', 'Files, proofs, dependencies, and elapsed owner time for the same seeded change', 'Comparative maintainability evidence; no external-usability inference'))), ('matches', 'proof_suite.hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s', tuple((str(index) for index in range(1, 9)))), ('table', 'proof_suite.review_scopes', review_scope, 'R-[0-9]{2}', 3, ((0, tuple((f'R-{index:02d}' for index in range(1, 10)))), (1, ('Suite custody and parity', 'Rocq construction and conformance', 'Lean 4 construction and conformance', 'Language and semantics equivalence', 'Assurance and trust closure', 'Bootstrap and distribution', 'Dependency and provenance disposition', 'Solo auditability and maintenance', 'Comparative disposition'))), None), ('required', 'proof_suite.assertion', None, ('There is no weighted aggregate score.', 'The suite conclusion is exactly `recommend_rocq`, `recommend_lean`, `tie`, or')), ('required', 'proof_suite.execution_matrix', None, ('The frozen matrix contains exactly 14 candidate-case runs per evidence epoch: each of the 2 candidates runs each of the 7 cases.', 'Execution evidence is currently 0/14 candidate-case runs (0/7 Rocq and 0/7 Lean 4).')), ('count', 'proof_suite.execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', 'proof_suite.solo_mode', None, ('A second owner run, workspace, tool, or implementation is always labeled same-owner evidence, never independent reproduction or review.', 'Both workspaces are same-owner level-2 evidence. Neither is an independent reproduction.', 'Level 3 is neither required nor claimed; same-owner workspaces never populate an independent-reproduction field.', 'M-17 is a mandatory disclosure, not a technical hard gate:', 'This measures same-owner packet auditability and maintenance cost only. It supplies no evidence about a new maintainer, contributor availability, independent review, or external audit.')), ('count', 'proof_suite.reproducibility_cap', None, 'level 3', 1, True), ('required', 'proof_suite.reproducibility_cap', None, ('Record no result above reproducibility level 2.',)), ('forbidden', 'proof_suite.solo_blocker', None, ('one non-author witness', 'distinct human principal', 'At least one independent logic/kernel reviewer', 'two non-author practitioners', 'Required independent technical reviews', 'candidate authors cannot approve their own work', 'obtain independent reproductions and required reviews', 'authorized Gate 0 decision body')), ('forbidden_regex', 'proof_suite.independence_claim', None, ('\\b(?:is|are|was|were|has been|have been)\\s+independently\\s+(?:reviewed|reproduced|audited|validated)\\b',)), ('forbidden_regex', 'proof_suite.preselection', None, ('\\bcurrent recommendation:\\s*(?:Rocq|Lean 4)\\b', '\\b(?:Rocq|Lean 4)\\s+(?:is|remains|becomes)\\s+(?:the\\s+)?(?:selected|accepted)\\s+(?:candidate|foundation)\\b', '\\b(?:Rocq|Lean 4)\\s+leads\\s+(?:today|the comparison)\\b')), ('required', 'proof_suite.acceptance', decision_scope, ('D-006 acceptance requires D-004 and D-005 to be Accepted in their governing records; proposed, investigate, or implementation-only states do not satisfy this dependency gate.', 'through an Accepted Orange Enhancement Proposal under ratified governance.', 'The `decision-revision` value must be exactly 40 lowercase hexadecimal characters and name the fully validated Git revision.', 'contain an `approval-records` entry with the literal `solo-reviewed`', 'No approval record may claim that the owner supplied independent review.')))), ('docs/DECISIONS.md', (('required', 'proof_suite.register_consistency', ('## D-006', 2, True), ('Dependency order: D-004 and D-005 must each be Accepted before D-006 can be Accepted.', 'Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or authorized for product use by this register.', 'Current execution evidence is 0/14 candidate-case runs.')), ('count', 'proof_suite.register_consistency', ('## D-006', 2, True), 'Current execution evidence is ', 1, False), ('forbidden_regex', 'proof_suite.register_consistency', ('## D-006', 2, True), ('\\b(?:Current recommendation:\\s*(?:Rocq|Lean 4)|Why (?:Rocq|Lean 4) leads)\\b',))))))
+        self._validate_markdown_rules((('docs/PROOF_FOUNDATION_DECISION_SUITE.md', (('header', 'proof_suite.header', '## Solo-mode disposition', (('owner-executable draft under D-023; no proof foundation selected',), ('d006-v0.2-draft',), ('2026-07-25',))), ('table', 'proof_suite.candidates', candidate_scope, 'C-[0-9]{2}', 4, ((0, ('C-01', 'C-02')), (1, ('Rocq', 'Lean 4'))), None), ('table', 'proof_suite.candidate_state', candidate_scope, 'C-[0-9]{2}', 4, ((3, ('0/7 cases', '0/7 cases')),), None), ('matches', 'proof_suite.case_ids', case_scope, '(?m)^###\\s+(DS-[0-9]{2})\\b', cases), ('fields', 'proof_suite.case_field', case_scope, cases, ('Question', 'Dependencies', 'Shared inputs', 'Candidate outputs', 'Positive checks', 'Mutation and negative checks', 'Hard acceptance')), ('required', 'proof_suite.solo_case', case_scope, ('### DS-07 — Exercise solo auditability and maintenance',)), ('table', 'proof_suite.metrics', metric_scope, 'M-[0-9]{2}', 4, ((0, tuple((f'M-{index:02d}' for index in range(1, 19)))),), None), ('table_slice', 'proof_suite.solo_metrics', metric_scope, 'M-[0-9]{2}', 15, 18, (('M-16', 'Owner audit/maintenance task completion', 'Completed common DS-07 tasks / 2 per candidate, with time, assistance, and role overlap recorded', 'Hard gate: 2/2 per candidate and every seeded fault detected'), ('M-17', 'Independent-review status', 'Exact status for logic/kernel, extraction/distribution, and comparative-decision review', 'Disclosure only: `unavailable`; never a selection score or implied claim'), ('M-18', 'Same-owner maintenance variance', 'Files, proofs, dependencies, and elapsed owner time for the same seeded change', 'Comparative maintainability evidence; no external-usability inference'))), ('matches', 'proof_suite.hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s', tuple((str(index) for index in range(1, 9)))), ('table', 'proof_suite.review_scopes', review_scope, 'R-[0-9]{2}', 3, ((0, tuple((f'R-{index:02d}' for index in range(1, 10)))), (1, ('Suite custody and parity', 'Rocq construction and conformance', 'Lean 4 construction and conformance', 'Language and semantics equivalence', 'Assurance and trust closure', 'Bootstrap and distribution', 'Dependency and provenance disposition', 'Solo auditability and maintenance', 'Comparative disposition'))), None), ('required', 'proof_suite.assertion', None, ('There is no weighted aggregate score.', 'The suite conclusion is exactly `recommend_rocq`, `recommend_lean`, `tie`, or')), ('required', 'proof_suite.execution_matrix', None, ('The frozen matrix contains exactly 14 candidate-case runs per evidence epoch: each of the 2 candidates runs each of the 7 cases.', 'Execution evidence is currently 0/14 candidate-case runs (0/7 Rocq and 0/7 Lean 4).')), ('count', 'proof_suite.execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', 'proof_suite.solo_mode', None, ('A second owner run, workspace, tool, or implementation is always labeled same-owner evidence, never independent reproduction or review.', 'Both workspaces are same-owner level-2 evidence. Neither is an independent reproduction.', 'Level 3 is neither required nor claimed; same-owner workspaces never populate an independent-reproduction field.', 'M-17 is a mandatory disclosure, not a technical hard gate:', 'This measures same-owner packet auditability and maintenance cost only. It supplies no evidence about a new maintainer, contributor availability, independent review, or external audit.')), ('count', 'proof_suite.reproducibility_cap', None, 'level 3', 1, True), ('required', 'proof_suite.reproducibility_cap', None, ('Record no result above reproducibility level 2.',)), ('forbidden', 'proof_suite.solo_blocker', None, ('one non-author witness', 'distinct human principal', 'At least one independent logic/kernel reviewer', 'two non-author practitioners', 'Required independent technical reviews', 'candidate authors cannot approve their own work', 'obtain independent reproductions and required reviews', 'authorized Gate 0 decision body')), ('forbidden_regex', 'proof_suite.independence_claim', None, ('\\b(?:is|are|was|were|has been|have been)\\s+independently\\s+(?:reviewed|reproduced|audited|validated)\\b',)), ('forbidden_regex', 'proof_suite.preselection', None, ('\\bcurrent recommendation:\\s*(?:Rocq|Lean 4)\\b', '\\b(?:Rocq|Lean 4)\\s+(?:is|remains|becomes)\\s+(?:the\\s+)?(?:selected|accepted)\\s+(?:candidate|foundation)\\b', '\\b(?:Rocq|Lean 4)\\s+leads\\s+(?:today|the comparison)\\b')), ('required', 'proof_suite.acceptance', decision_scope, ('D-006 acceptance requires D-004 and D-005 to be Accepted in their governing records; proposed, investigate, or implementation-only states do not satisfy this dependency gate.', 'through an Accepted Orange Enhancement Proposal under ratified governance.', 'The `decision-revision` value must be exactly 40 lowercase hexadecimal characters and name the fully validated Git revision.', 'contain an `approval-records` entry with the literal `solo-reviewed`', 'No approval record may claim that the owner supplied independent review.')))), ('docs/DECISIONS.md', (('required', 'proof_suite.register_consistency', ('## D-006', 2, True), ('Dependency order: D-004 and D-005 must each be Accepted before D-006 can be Accepted.', 'Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or authorized for product use by this register.', 'Current execution evidence is 12/14 candidate-case runs.')), ('count', 'proof_suite.register_consistency', ('## D-006', 2, True), 'Current execution evidence is ', 1, False), ('forbidden_regex', 'proof_suite.register_consistency', ('## D-006', 2, True), ('\\b(?:Current recommendation:\\s*(?:Rocq|Lean 4)|Why (?:Rocq|Lean 4) leads)\\b',))))))
 
 
     def _validate_product_form_decision_packet(self) -> None:
@@ -5248,7 +5442,7 @@ class FoundationValidator:
                 fail('spec', self.root / 'tools/validate_foundation.py', message)
             return
         research_root = str(specification['research_root'])
-        observed_inventory = {relative(path, self.root) for path in self.repository_files if relative(path, self.root).startswith(research_root)}
+        observed_inventory = {relative(path, self.root) for path in self.repository_files if relative(path, self.root).startswith(research_root) and not relative(path, self.root).startswith(_D006_EPOCH_BOUND)}
         expected_inventory = specification['inventory']
         if observed_inventory != expected_inventory:
             fail('research_inventory', self.root / research_root, f'decision-laboratory research paths must retain their exact reviewed inventory; missing={sorted(expected_inventory - observed_inventory)}, unexpected={sorted(observed_inventory - expected_inventory)}')

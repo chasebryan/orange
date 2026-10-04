@@ -1,0 +1,78 @@
+// S3i conformance: the constants of four standards, computed in the rings
+// their standards define. ML-KEM's modulus q = 3329, Ed25519's field of
+// 2^255 - 19 elements, and P-256's field are named with `type`; each
+// constant below is the value its standard prints. Residues of a composite
+// modulus, literals, negation, conversions, and a residue used as an index
+// follow.
+edition 2026;
+module fields {
+  // FIPS 203: q = 3329.
+  type Zq = Mod[3329];
+  // RFC 8032 section 5.1: p = 2^255 - 19.
+  type F = Mod[(1 << 255) - 19];
+  // FIPS 186-5 and SEC 2: p = 2^256 - 2^224 + 2^192 + 2^96 - 1.
+  type P256 = Mod[(1 << 256) - (1 << 224) + (1 << 192) + (1 << 96) - 1];
+  type Byte = Mod[256];
+
+  // FIPS 203 takes zeta = 17, a primitive 256th root of unity modulo q, so
+  // 17^128 = -1: seven squarings of 17.
+  spec zeta_128() -> Zq { for i in 0..7 with z: Zq = 17 { z * z } }
+
+  // FIPS 203's inverse NTT scales by 3303, which is 128^-1 modulo q.
+  spec scale() -> Zq { 1 / 128 }
+
+  // RFC 8032 section 5.1: d = -121665/121666.
+  spec d() -> F { -121665 / 121666 }
+
+  // RFC 8032 section 5.1.3: a square root of -1 is 2^((p - 1) / 4). The
+  // exponent 2^253 - 5 has every bit set but bit 2, so the squarings from
+  // bit 252 down multiply by 2 at every bit but that one.
+  spec sqrt_m1() -> F {
+    for i in 0..253 with r: F = 1 { if i == 250 { r * r } else { r * r * 2 } }
+  }
+
+  spec sqrt_m1_squared() -> F { sqrt_m1() * sqrt_m1() }
+
+  // The generator of P-256 lies on y^2 = x^3 - 3x + b.
+  spec p256_generator_on_curve() -> Bool {
+    let x: P256 = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296;
+    let y: P256 = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5;
+    let b: P256 = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b;
+    (y * y) == (x * x * x - 3 * x + b)
+  }
+
+  spec p256_minus_three() -> P256 { -3 }
+
+  // Modulo 256, 2 has no inverse, so 1 / 2 is 0; 3 * 171 = 513 = 1.
+  spec bytes() -> Byte^4 {
+    let x: Byte = 255;
+    [x + 1, x * x, 1 / 2, 1 / 3]
+  }
+
+  // A negative literal stands for m minus its magnitude; `-` negates.
+  spec negatives() -> Mod[7]^4 {
+    let x: Mod[7] = 3;
+    [-1, -6, -0, -x]
+  }
+
+  // `as` reduces into a ring and gives the least residue out of one.
+  spec conversions() -> Int^4 {
+    let n: Int = -10;
+    let w: Word[8] = 0xff;
+    let x: Mod[7] = -1;
+    [(n as Mod[7]) as Int, (w as Mod[7]) as Int, x as Int, (x as Word[8]) as Int]
+  }
+
+  spec wrapped() -> Word[8] {
+    let y: Mod[257] = -1;
+    y as Word[8]
+  }
+
+  // `x as Int` ranges over 0 through 6, so it indexes seven elements.
+  spec select(x: Mod[7]) -> Word[8] {
+    let t: Word[8]^7 = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+    t[x as Int]
+  }
+
+  spec selected() -> Word[8]^2 { [select(-1), select(3 + 4)] }
+}

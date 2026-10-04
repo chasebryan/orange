@@ -1,0 +1,10 @@
+edition 2026;
+module indices {
+  type Row = Word[8]^3;
+  type Matrix = Row^2;
+  spec outer(x: Matrix) -> Row { x[2] }
+  spec inner(x: Matrix) -> Word[8] { x[0][3] }
+  spec computed_outer(x: Matrix, i: Word[8]) -> Row { x[i] }
+  spec computed_inner(x: Matrix, i: Word[8]) -> Word[8] { x[0][i] }
+  spec runtime_int(x: Matrix, i: Int) -> Row { x[i] }
+}

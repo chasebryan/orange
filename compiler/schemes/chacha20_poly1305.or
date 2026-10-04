@@ -1,0 +1,194 @@
+// ChaCha20-Poly1305, the authenticated cipher of RFC 8439, behind the sealing
+// interface of `orangec enc` and `orangec dec`.
+//
+// Key 256 bits, nonce 96 bits, tag 128 bits. A chunk is 240 bytes of
+// plaintext, sealed with 64 bytes of associated data; both are whole
+// multiples of sixteen bytes, so Poly1305 reads them with no padding
+// (section 2.8).
+//
+// Reference code: the Orange evaluator is not constant-time, and nothing here
+// is verified.
+edition 2026;
+module chacha20_poly1305 {
+  // Poly1305's field, the integers modulo p = 2^130 - 5 (RFC 8439 section
+  // 2.5.1).
+  type P = Mod[1361129467683753853853498429727072845819];
+
+  // ---- ChaCha20, section 2 ----
+
+  // Section 2.1.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  // Section 2.3: a column round, then a diagonal round.
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  // Section 2.3: the block function. The state is the constant
+  // "expand 32-byte k", the key, the block counter and the nonce, read as
+  // sixteen little-endian words.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
+    for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] }
+  }
+
+  // Section 2.4: the keystream of a chunk, blocks 1 through 4 serialized
+  // little-endian (section 2.3) and read as 32 little-endian 64-bit words, so
+  // that a chunk's 240 bytes are its first 30.
+  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[64]^32 {
+    (block(key, 1, nonce) ++ block(key, 2, nonce) ++ block(key, 3, nonce) ++ block(key, 4, nonce))
+      as little Word[64]^32
+  }
+
+  // Section 2.4: a chunk exclusive-ored with its keystream, eight bytes at a
+  // time.
+  spec xor_stream(key: Word[8]^32, nonce: Word[8]^12, text: Word[8]^240) -> Word[8]^240 {
+    let s: Word[64]^32 = keystream(key, nonce);
+    let t: Word[64]^30 = text as little Word[64]^30;
+    let x: Word[64]^30 = for i in 0..30 with x: Word[64]^30 = t { x with [i] = x[i] ^ s[i] };
+    x as little Word[8]^240
+  }
+
+  // ---- Poly1305, section 2.5 ----
+
+  // Section 2.5.1: a whole block is its sixteen bytes, little-endian, with
+  // the byte 0x01 above them.
+  spec poly_block(b: Word[8]^16) -> P { (b ++ hex"01") as little P }
+
+  // ---- The AEAD construction, section 2.8 ----
+
+  // Section 2.6: the one-time Poly1305 key is the first 32 bytes of block 0.
+  spec one_time_key(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
+    block(key, 0, nonce)[..8] as little Word[8]^32
+  }
+
+  // Section 2.8: Poly1305 (section 2.5) under the one-time key of the
+  // associated data, the ciphertext, and both lengths as 64-bit
+  // little-endian integers: four blocks, fifteen blocks, and the lengths 64
+  // and 240, with no padding. r is the key's first sixteen bytes,
+  // little-endian, with r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, and s the
+  // other sixteen.
+  spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, ciphertext: Word[8]^240) -> Word[8]^16 {
+    let otk: Word[64]^4 = one_time_key(key, nonce) as little Word[64]^4;
+    let r: P = [otk[0] & 0x0ffffffc0fffffff, otk[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = otk[2..] as little Int;
+    let a: P = for j in 0..4 with a: P = 0 { (a + poly_block(ad[16 * j..16 * j + 16])) * r };
+    let c: P = for j in 0..15 with c: P = a {
+      (c + poly_block(ciphertext[16 * j..16 * j + 16])) * r
+    };
+    let lengths: Word[64]^2 = [64, 240];
+    let l: P = (c + poly_block(lengths as little Word[8]^16)) * r;
+    ((l as Int) + s) as little Word[8]^16
+  }
+
+  // Interface.
+
+  // Section 2.8: the plaintext is encrypted from counter 1 (section 2.4),
+  // and the tag follows the ciphertext.
+  spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
+    let ciphertext: Word[8]^240 = xor_stream(key, nonce, plaintext);
+    ciphertext ++ tag(key, nonce, ad, ciphertext)
+  }
+
+  // The tag is recomputed and compared as two 64-bit words with no early
+  // exit.
+  spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
+    let t: Word[64]^2 = tag(key, nonce, ad, sealed[..240]) as little Word[64]^2;
+    let u: Word[64]^2 = sealed[240..] as little Word[64]^2;
+    ((t[0] ^ u[0]) | (t[1] ^ u[1])) == 0
+  }
+
+  // Section 2.4: decryption is the same exclusive-or with the keystream.
+  spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
+    xor_stream(key, nonce, sealed[..240])
+  }
+
+  // Known answers.
+
+  // Section 2.3.2: the block function on the key 00 01 ... 1f, counter 1, and
+  // the nonce 00 00 00 09 00 00 00 4a 00 00 00 00.
+  spec rfc8439_2_3_2() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = i as Word[8] };
+    let got: Word[8]^64 = block(key, 1, hex"000000090000004a00000000") as little Word[8]^64;
+    let expected: Word[8]^64 = [
+      0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4,
+      0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e,
+      0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa, 0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2,
+      0xb5, 0x12, 0x9c, 0xd1, 0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e,
+    ];
+    (for i in 0..64 with d: Word[8] = 0 { d | (got[i] ^ expected[i]) }) == 0
+  }
+
+  // Section 2.6.2: the one-time key for the key 80 81 ... 9f and the nonce
+  // 00 00 00 00 00 01 02 03 04 05 06 07.
+  spec rfc8439_2_6_2() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = 0x80 + (i as Word[8]) };
+    let got: Word[8]^32 = one_time_key(key, [0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+    let expected: Word[8]^32 = [
+      0x8a, 0xd5, 0xa0, 0x8b, 0x90, 0x5f, 0x81, 0xcc, 0x81, 0x50, 0x40, 0x27, 0x4a, 0xb2, 0x94, 0x71,
+      0xa8, 0x33, 0xb6, 0x37, 0xe3, 0xfd, 0x0d, 0xa5, 0x08, 0xdb, 0xb8, 0xe2, 0xfd, 0xd1, 0xa6, 0x46,
+    ];
+    (for i in 0..32 with d: Word[8] = 0 { d | (got[i] ^ expected[i]) }) == 0
+  }
+
+  // A whole chunk: the key and nonce of section 2.8.2, the associated data
+  // 00 01 ... 3f, and the plaintext 00 01 ... ef. The expected sealed chunk
+  // was computed by pycryptodome 3.23.0. `seal` must give it, `authentic`
+  // must accept it and reject it with one bit flipped, and `open` must
+  // recover the plaintext.
+  spec chunk() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = 0x80 + (i as Word[8]) };
+    let nonce: Word[8]^12 = [0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47];
+    let ad: Word[8]^64 = for i in 0..64 with a: Word[8]^64 = [0; 64] { a with [i] = i as Word[8] };
+    let plaintext: Word[8]^240 = for i in 0..240 with p: Word[8]^240 = [0; 240] { p with [i] = i as Word[8] };
+    let expected: Word[8]^256 = [
+      0x9f, 0x7a, 0xeb, 0x5e, 0x05, 0xf8, 0x46, 0xbd, 0x1d, 0xeb, 0x85, 0xf0, 0x3a, 0x8c, 0x04, 0xa1,
+      0xd1, 0xd1, 0x9a, 0x2c, 0x1d, 0x14, 0x78, 0xc9, 0xc5, 0x93, 0xca, 0x9c, 0x49, 0x9f, 0x1d, 0xba,
+      0x6e, 0xbf, 0xe9, 0x1b, 0x88, 0xab, 0x78, 0x0c, 0x90, 0xf3, 0x98, 0x24, 0xd6, 0xf6, 0x7c, 0xc7,
+      0x45, 0x35, 0x80, 0x5d, 0x8a, 0x5c, 0x5b, 0x78, 0x58, 0x9d, 0xbf, 0xf4, 0x2d, 0x85, 0x25, 0x66,
+      0xbc, 0xf0, 0x86, 0x1c, 0x06, 0x5c, 0xa8, 0xeb, 0xa4, 0x23, 0x94, 0x88, 0x02, 0x2b, 0x27, 0x37,
+      0xde, 0x8a, 0x13, 0x97, 0xc8, 0xf6, 0x57, 0xb6, 0x7f, 0xb9, 0xf6, 0xf0, 0x67, 0x19, 0xe7, 0x90,
+      0x3c, 0xe7, 0xd9, 0xf6, 0x84, 0x0e, 0x6b, 0x95, 0xf8, 0x73, 0xdc, 0x2e, 0x88, 0xc6, 0x88, 0x4d,
+      0x65, 0x49, 0x7e, 0x70, 0xba, 0x40, 0x1a, 0xa0, 0xde, 0x0f, 0x19, 0x80, 0xa1, 0x92, 0x81, 0x1b,
+      0xf5, 0x75, 0xfd, 0xd5, 0xfd, 0x1b, 0x4b, 0x44, 0xd7, 0xe5, 0xac, 0xd4, 0xdd, 0xce, 0xfe, 0xac,
+      0x50, 0x18, 0x86, 0xd5, 0x8f, 0x4d, 0x76, 0xcd, 0x6d, 0x8e, 0x4f, 0x35, 0xa5, 0x3b, 0x64, 0x2b,
+      0x27, 0xec, 0xd0, 0x53, 0x7d, 0x1f, 0x9f, 0x6c, 0xd7, 0xf1, 0xce, 0x50, 0x57, 0x76, 0xd7, 0xd7,
+      0xe6, 0x10, 0xec, 0xa8, 0x89, 0xa6, 0x7f, 0xbd, 0xd2, 0x13, 0xdc, 0x38, 0x6b, 0xb4, 0x38, 0x09,
+      0x43, 0xb3, 0x08, 0xd0, 0x3d, 0xd6, 0xe4, 0xab, 0x46, 0x5e, 0xf1, 0xa8, 0x14, 0x89, 0x58, 0xdc,
+      0x55, 0xc0, 0x68, 0x8b, 0x7f, 0x4b, 0x05, 0x94, 0x27, 0x21, 0x2a, 0x0d, 0x6c, 0x89, 0x3c, 0xcd,
+      0xf4, 0xdf, 0xfa, 0xac, 0xe2, 0x38, 0x93, 0x14, 0xc3, 0x56, 0xa8, 0xbd, 0x0a, 0xed, 0x17, 0xb5,
+      0x37, 0x59, 0x09, 0xfa, 0xd9, 0x59, 0x40, 0xcb, 0x43, 0x5b, 0x25, 0x94, 0xc6, 0x8b, 0xa8, 0xdc,
+    ];
+    let sealed: Word[8]^256 = seal(key, nonce, ad, plaintext);
+    let opened: Word[8]^240 = open(key, nonce, ad, expected);
+    let seals: Bool = (for i in 0..256 with d: Word[8] = 0 { d | (sealed[i] ^ expected[i]) }) == 0;
+    let opens: Bool = (for i in 0..240 with d: Word[8] = 0 { d | (opened[i] ^ plaintext[i]) }) == 0;
+    let tampered: Word[8]^256 = expected with [100] = expected[100] ^ 0x01;
+    seals && opens && authentic(key, nonce, ad, expected) && !authentic(key, nonce, ad, tampered)
+  }
+}

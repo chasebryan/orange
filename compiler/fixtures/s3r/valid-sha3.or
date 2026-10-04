@@ -1,0 +1,112 @@
+// S3r conformance: SHA3-256 of FIPS 202 (August 2015) for messages of 1
+// through 133 bytes, one block of the sponge. Two of its step mappings turn
+// words by amounts computed from data, as the standard computes them: rho
+// turns lane (x, y) by (t + 1)(t + 2)/2 bits, taken modulo the lane size
+// w = 64 by the rotation itself, and iota places rc(j + 7 i_r) at bit
+// 2^j - 1 of the round constant. Lane (x, y) of the state is A[x + 5y].
+edition 2026;
+module sha3 {
+  type State = Word[64]^25;
+  type Z5 = Mod[5];
+
+  // Algorithm 1, theta: each lane takes in the parities of the columns
+  // x - 1 and x + 1, the second turned by one bit.
+  spec theta(a: State) -> State {
+    let c: Word[64]^5 = for x in 0..5 with c: Word[64]^5 = [0; 5] {
+      c with [x] = a[x] ^ a[x + 5] ^ a[x + 10] ^ a[x + 15] ^ a[x + 20]
+    };
+    for i in 0..25 with b: State = a {
+      b with [i] = a[i] ^ c[(i + 4) % 5] ^ (c[(i + 1) % 5] <<< 1)
+    }
+  }
+
+  // Algorithm 2, rho: from (x, y) = (1, 0), step t turns lane (x, y) by
+  // (t + 1)(t + 2)/2 and moves to (y, 2x + 3y), coordinates modulo 5.
+  // Lane (0, 0) is never visited, and is not turned.
+  spec rho_walk(a: State) -> (State, Z5, Z5) {
+    for t in 0..24 with (b: State, x: Z5, y: Z5) = (a, 1, 0) {
+      (
+        b with [(x as Int) + 5 * (y as Int)] =
+          a[(x as Int) + 5 * (y as Int)] <<< (((t + 1) * (t + 2)) / 2),
+        y,
+        2 * x + 3 * y,
+      )
+    }
+  }
+
+  spec rho(a: State) -> State { rho_walk(a).0 }
+
+  // Algorithm 3, pi: lane (x, y) is lane (x + 3y, x) of its input.
+  spec pi(a: State) -> State {
+    for i in 0..25 with b: State = a {
+      b with [i] = a[(((i % 5) + 3 * (i / 5)) % 5) + 5 * (i % 5)]
+    }
+  }
+
+  // Algorithm 4, chi: each bit takes in the next two of its row.
+  spec chi(a: State) -> State {
+    for i in 0..25 with b: State = a {
+      b with [i] = a[i] ^ (~a[5 * (i / 5) + ((i + 1) % 5)] & a[5 * (i / 5) + ((i + 2) % 5)])
+    }
+  }
+
+  // Algorithms 5 and 6, the constants of iota: rc(t) is bit 0 of an 8-bit
+  // linear feedback shift register after t steps, and round i_r's constant
+  // has bit 2^j - 1 equal to rc(j + 7 i_r), for j from 0 through 6.
+  spec rc_walk(places: Word[8]^7) -> (Word[64]^24, Word[16]) {
+    for t in 0..168 with (rc: Word[64]^24, r: Word[16]) = ([0; 24], 1) {
+      let next: Word[16] = r << 1;
+      (
+        rc with [t / 7] = rc[t / 7] | (((r & 1) as Word[64]) << places[t % 7]),
+        if (next & 0x100) == 0 { next } else { next ^ 0x171 },
+      )
+    }
+  }
+
+  spec round_constants() -> Word[64]^24 { rc_walk([0, 1, 3, 7, 15, 31, 63]).0 }
+
+  // Algorithm 7, Keccak-p[1600, 24]: the rounds Rnd(A, i_r) =
+  // iota(chi(pi(rho(theta(A)))), i_r).
+  spec keccak_f(a: State) -> State {
+    let rc: Word[64]^24 = round_constants();
+    for round in 0..24 with s: State = a {
+      let b: State = chi(pi(rho(theta(s))));
+      b with [0] = b[0] ^ rc[round]
+    }
+  }
+
+  // Sections 4, 5.1 and 6.1: SHA3-256 is KECCAK[512](M || 01, 256), whose
+  // rate is 1088 bits, 136 bytes. A message of at most 133 bytes and its
+  // padding, the bits 01 1 0...0 1, fill one block: the byte 06, zeros,
+  // and the byte 80. The digest is the state's first 32 bytes.
+  spec sha3_256[len in 1..134](m: Word[8]^len) -> Word[8]^32 {
+    let block: Word[64]^17 = (m ++ hex"06" ++ [0; (134 - len)] ++ hex"80") as little Word[64]^17;
+    let absorbed: State = for i in 0..17 with s: State = [0; 25] { s with [i] = block[i] };
+    keccak_f(absorbed)[..4] as little Word[8]^32
+  }
+
+  spec abc() -> Word[8]^32 { sha3_256("abc") }
+
+  // The two SHA3-256 examples of NIST's Cryptographic Standards and
+  // Guidelines, and a message of the longest length one block holds.
+  test "FIPS 202 example: SHA3-256 of abc" {
+    sha3_256("abc") ==
+      hex"3a985da7 4fe225b2 045c172d 6bd390bd 855f086e 3e9d525b 46bfe245 11431532"
+  }
+
+  test "FIPS 202 example: SHA3-256 of the 448-bit message" {
+    sha3_256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+      hex"41c0dba2 a9d62408 49100376 a8235e2c 82e1b999 8a999e21 db32dd97 496d3376"
+  }
+
+  test "133 bytes of a, the longest message of one block" {
+    sha3_256([0x61; 133]) ==
+      hex"f8f09870 991e79e4 114708ef a14c671a 73e8cd6d f6071806 e8f3362d 6cc5d771"
+  }
+
+  // Keccak's first round constant is 1, and its last 0x8000000080008008.
+  test "the round constants of iota" {
+    let rc: Word[64]^24 = round_constants();
+    (rc[0] == 1) && (rc[1] == 0x0000000000008082) && (rc[23] == 0x8000000080008008)
+  }
+}

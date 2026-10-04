@@ -1,0 +1,93 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads=1",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Records.olean",
+        "-c",
+        ".lake/build/ir/D006/Records.c",
+        "D006/Records.lean"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads={jobs}",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Records.olean",
+        "-c",
+        ".lake/build/ir/D006/Records.c",
+        "D006/Records.lean"
+      ]
+    ]
+  },
+  "preamble": {
+    "DS-03": "import D006.Core\nimport D006.Records"
+  },
+  "symbols": {
+    "R-T01": "D006.Records.Record",
+    "R-T02": "D006.Records.ErrorCode",
+    "R-T03": "D006.Records.Failure",
+    "R-C01": "D006.Records.ErrorCode.oversized",
+    "R-C02": "D006.Records.ErrorCode.bad_magic",
+    "R-C03": "D006.Records.ErrorCode.unknown_version",
+    "R-C04": "D006.Records.ErrorCode.truncated",
+    "R-C05": "D006.Records.ErrorCode.malformed_number",
+    "R-C06": "D006.Records.ErrorCode.noncanonical_number",
+    "R-C07": "D006.Records.ErrorCode.unknown_field",
+    "R-C08": "D006.Records.ErrorCode.invalid_name",
+    "R-C09": "D006.Records.ErrorCode.invalid_utf8",
+    "R-C10": "D006.Records.ErrorCode.duplicate_name",
+    "R-C11": "D006.Records.ErrorCode.noncanonical_order",
+    "R-C12": "D006.Records.ErrorCode.reference_escape",
+    "R-C13": "D006.Records.ErrorCode.cyclic_reference",
+    "R-C14": "D006.Records.ErrorCode.reference_kind",
+    "R-C15": "D006.Records.ErrorCode.invalid_level",
+    "R-C16": "D006.Records.ErrorCode.trailing_data",
+    "R-C17": "D006.Records.Record.rdef",
+    "R-C18": "D006.Records.Record.rthm",
+    "R-C19": "D006.Records.Record.rclaim",
+    "R-C20": "D006.Records.Failure.failure",
+    "R-F01": "D006.Records.decode_records",
+    "R-F02": "D006.Records.encode_records",
+    "R-F03": "D006.Records.records_valid",
+    "R-F04": "D006.Records.utf8_valid"
+  },
+  "theorems": {
+    "D3-TH01": "D006.Records.encoding_round_trips",
+    "D3-TH02": "D006.Records.accepted_bytes_are_canonical",
+    "D3-TH03": "D006.Records.accepted_values_are_valid",
+    "D3-TH04": "D006.Records.accepted_inputs_are_bounded",
+    "D3-TH05": "D006.Records.one_value_has_one_encoding"
+  },
+  "trust": {
+    "inventory": [
+      {
+        "name": "the built D006.Records (.olean)",
+        "kind": "library",
+        "reason": "imported by the DS-03 check file without re-checking at lean's default trust level; the same kernel checks every declaration in it when the build compiles D006/Records.lean"
+      },
+      {
+        "name": "kernel String literal reduction",
+        "kind": "evaluator",
+        "reason": "DS-03 observations compare failure paths with String literals; under `decide +kernel` the kernel itself reduces `String.decEq`, unfolding each literal into the UTF-8 bytes of its characters and computing the decoder's constructed path (`String.append`, `Nat.repr`); no compiled or native code is involved"
+      },
+      {
+        "name": "propext (DS-03)",
+        "kind": "axiom",
+        "reason": "already allowed by the base, and the only axiom in the DS-03 observation audits; it enters through proof fields, never through computation: core's `String.append` carries a proof that the result is valid UTF-8 (failure paths are built with `++`), and the structural-recursion encoding of `increasing` and the list lookup in `is_theorem` use it. The D3-TH proofs use propext and Quot.sound through simp and omega; Classical.choice does not appear"
+      }
+    ]
+  }
+}

@@ -21,6 +21,36 @@ requires OEP-0008. At that point it replaces the S3e clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, extends this
+> document with indices that depend on data, such as the S-box lookup of AES,
+> each proved in range from its type, and cheaper updates,
+> [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
+> use others and call their functions by module name,
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds the
+> integers modulo a constant, whose division is total in the same spirit: `x /
+> y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
+> proposed under OEP-0013, lets each branch begin with `let` bindings, which are
+> evaluated only when their branch is chosen, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> which a conditional may choose between as it chooses any value, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds `++`, whose
+> group mixes with no comparison or logical operator without parentheses, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, computes sizes with
+> the same total, Euclidean `/` and `%`, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, adds conversions in a byte order, which are total and
+> have no failure, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md),
+> proposed under OEP-0018, lets a conditional's branches have a function's type
+> parameter as their type, each instance checked with its own type.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, adds one
+> run-time failure, a conversion of words to a number of more than 16,384
+> significant bits, which stops evaluation as every oversized integer does.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, defines `==` and
+> `!=` for arrays and tuples, which section 5 rejects, comparing every part at
+> the sum of the parts' costs, lets an array or tuple written out take its
+> type from the other operand, and replaces section 5's notes for an order on
+> them. Every source this document accepts keeps its meaning under all eleven.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea
@@ -113,15 +143,18 @@ applies first.
 
 - `if` starts a conditional only where its next token could begin a
   condition and the conditional can complete:
-  - before an identifier, unless the identifier is the word `as`, or the word
+  - before an identifier other than the word `as`, and other than the word
     `with` followed by `[`;
   - before an integer literal, `!`, or `~`; and
-  - before `(`, `-`, or `[`, only when a `}` that returns to the depth of that
-    token is followed directly by `else`, before a `;` or `,` at that depth or
-    a closing delimiter that leaves it.
+  - before `(`, `-`, `[`, the word `as`, or the word `with` followed by `[`,
+    only when a `}` that returns to the depth of that token is followed
+    directly by `else`, before a `;` or `,` at that depth or a closing
+    delimiter that leaves it.
 
   Everywhere else `if` is a name, so `if(x)`, `if - x`, `if[0]`, `if as Int`,
-  and `if with [0] = 1` keep their S3e meaning.
+  and `if with [0] = 1` keep their S3e meaning, while `if as { 1 } else { 0 }`
+  and `if with[0] { 1 } else { 0 }` are conditionals on names spelled `as`
+  and `with`.
 - `else` is read as a word only after the `}` that closes a conditional's
   value. After `else`, `{` begins the last value and `if` begins another arm;
   anything else is `ORC0101`, "expected `{` or `if` after `else`".
@@ -363,8 +396,8 @@ names groups, calls, arrays, indices, loops, conditionals, updates, and prefix
 operators. A conditional adds one to the height of its tallest part, so a
 chain of any length has the height of its tallest arm plus one. Chains are
 parsed and checked by iteration, not recursion. When an `if` is followed by
-`(`, `-`, or `[`, the scan of section 3 that looks for `else` costs one parse
-event for each token it examines, so it draws on the per-source parse-event
+`(`, `-`, `[`, `as`, or `with [`, the scan of section 3 that looks for `else`
+costs one parse event for each token it examines, so it draws on the per-source parse-event
 budget like every other step of parsing.
 
 **Semantic events.** Each arm of a conditional, that is each `if`, is one

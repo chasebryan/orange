@@ -53,6 +53,8 @@ define_diagnostic_codes! {
     TooManyLexicalErrors => "ORC0007",
     /// The lexer could not retain its bounded token-stream representation.
     LexicalResourceLimit => "ORC0008",
+    /// A hex string holds something other than pairs of hex digits and spaces.
+    MalformedHexString => "ORC0009",
     /// A token required by the active grammar production was not present.
     ExpectedSyntax => "ORC0101",
     /// The source edition declaration is not exactly `edition 2026;`.
@@ -81,7 +83,7 @@ define_diagnostic_codes! {
     IntegerMagnitudeLimit => "ORC0205",
     /// A fixed-width word literal is negative.
     NegativeWordLiteral => "ORC0206",
-    /// A fixed-width word literal is outside its admitted unsigned range.
+    /// A word literal, or a literal of `Mod[m]`, is outside its admitted range.
     WordLiteralOutOfRange => "ORC0207",
     /// Further semantic errors were suppressed after the reporting budget.
     TooManySemanticErrors => "ORC0208",
@@ -109,7 +111,7 @@ define_diagnostic_codes! {
     DuplicateBinding => "ORC0219",
     /// The operand of `as` has no type of its own, such as a bare literal.
     UntypedConversionOperand => "ORC0220",
-    /// An array type's length is not a decimal integer from 1 through 256.
+    /// An array type's length is not a decimal integer from 1 through 65536.
     UnsupportedArrayLength => "ORC0221",
     /// An array literal's element count differs from the required length.
     ArrayLengthMismatch => "ORC0222",
@@ -123,6 +125,56 @@ define_diagnostic_codes! {
     NonStaticIndex => "ORC0226",
     /// The operands of a comparison have no type of their own.
     UntypedComparison => "ORC0227",
+    /// A `use` declaration names no module of the program.
+    UnknownModule => "ORC0228",
+    /// A call is qualified by a module its module does not use.
+    ModuleNotUsed => "ORC0229",
+    /// A module uses itself, directly or through other modules.
+    ModuleCycle => "ORC0230",
+    /// Two modules of a program share a name, or a module uses one twice.
+    DuplicateModule => "ORC0231",
+    /// A modulus is not a constant from 2 through 2^521 - 1.
+    InvalidModulus => "ORC0232",
+    /// A `type` declaration repeats a type name or names a built-in type.
+    DuplicateTypeName => "ORC0233",
+    /// A value selected by position with `.k` is not a tuple.
+    NotATuple => "ORC0234",
+    /// A byte string holds a character that is not printable ASCII.
+    UnprintableByteString => "ORC0235",
+    /// A slice's bounds do not differ by the same positive number at every step.
+    SliceLength => "ORC0236",
+    /// A size uses something other than integer literals and size parameters.
+    NonStaticSize => "ORC0237",
+    /// A size parameter's range is malformed, or a size lies outside it.
+    SizeRange => "ORC0238",
+    /// A call gives a different number of sizes than its function declares.
+    SizeCount => "ORC0239",
+    /// Words converted in a byte order do not have the same number of bits.
+    PackedWidth => "ORC0240",
+    /// A type parameter lists a type twice, or a call gives no listed type for one.
+    TypeParameter => "ORC0241",
+    /// A test's title is empty, too long, or unprintable, or repeats another's.
+    TestTitle => "ORC0242",
+    /// A deterministic syntax-formatting resource budget was exhausted.
+    FormatResourceLimit => "ORC0250",
+    /// A formatter output failed source, token or comment preservation checks.
+    FormattingInconsistency => "ORC0251",
+    /// A source differs from its canonical syntax formatting.
+    FormattingRequired => "ORC0252",
+    /// A deterministic documentation-generation resource budget was exhausted.
+    DocumentationResourceLimit => "ORC0260",
+    /// Documentation could not establish consistent source-owned declaration spans.
+    DocumentationInconsistency => "ORC0261",
+    /// A host argument does not have canonical Core value spelling.
+    NoncanonicalArgumentValue => "ORC0270",
+    /// A host argument count, aggregate shape or residue domain is incorrect.
+    ArgumentValueMismatch => "ORC0271",
+    /// A deterministic typed argument decoding resource budget was exhausted.
+    ArgumentDecodeResourceLimit => "ORC0272",
+    /// Witness replay received a foreign function or incompatible typed arguments.
+    InvalidWitnessReplayBinding => "ORC0273",
+    /// Witness replay could not preserve its checked Boolean function binding.
+    WitnessReplayInconsistency => "ORC0274",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -231,6 +283,11 @@ impl Diagnostic {
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
+    }
+
+    /// Appends an explanatory note to a diagnostic already built.
+    pub(crate) fn add_note(&mut self, note: impl Into<String>) {
+        self.notes.push(note.into());
     }
 
     /// Returns the severity.
@@ -685,11 +742,14 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC0001", "ORC0002", "ORC0003", "ORC0004", "ORC0005", "ORC0006", "ORC0007", "ORC0008",
-            "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0108",
-            "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
-            "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
-            "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223", "ORC0224",
-            "ORC0225", "ORC0226", "ORC0227", "ORC0301",
+            "ORC0009", "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107",
+            "ORC0108", "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207",
+            "ORC0208", "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215",
+            "ORC0216", "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223",
+            "ORC0224", "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231",
+            "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0237", "ORC0238", "ORC0239",
+            "ORC0240", "ORC0241", "ORC0242", "ORC0250", "ORC0251", "ORC0252", "ORC0260", "ORC0261",
+            "ORC0270", "ORC0271", "ORC0272", "ORC0273", "ORC0274", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

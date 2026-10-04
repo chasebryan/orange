@@ -69,8 +69,8 @@ re-identifies six subject classes to its seven. That result is
 contributor-produced and unreviewed, and it is not a D-004 recommendation until
 the owner disposes every candidate and hard gate. Integrity parsing and
 structural oracles ratify no semantic boundary. D-004 remains proposed, S3b
-through S3f are implemented and await owner review under OEP-0005 through
-OEP-0009, and Orange remains at 3 of 10 binary gate closure (30%); that
+through S3t are implemented and await owner review under OEP-0005 through
+OEP-0021, OEP-0023 and OEP-0024, and Orange remains at 3 of 10 binary gate closure (30%); that
 mechanical score is not release readiness.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
@@ -797,14 +797,43 @@ The product is not complete if only its authors can use it.
 
 ### CLI
 
-The current pre-alpha CLI has `orangec check`, `orangec eval`, and `orangec lex`.
+The current pre-alpha CLI has `orangec check`, `orangec eval`, `orangec test`,
+`orangec lex`, `orangec fmt`, `orangec doc`, `orangec replay`, and
+reference-evaluator file-sealing commands.
 `check` performs lexical, syntactic, and bounded semantic validation. `eval`
 accepts one source and prints each typed specification in source order as
 `module::name: Type = value`, using decimal `Int` and two-digit lowercase
 hexadecimal `Word[8]` values.
 
-The intended command families additionally include formatting, testing,
-proving, building, documentation, package operations, evidence replay, trust
+The permanent formatter rewrites whitespace between tokens using parsed
+syntax, preserving token spellings and comment bytes, order and inter-token
+anchors. It re-lexes and re-parses its bounded output, and is deterministic and
+idempotent. `fmt FILE` prints one source; `fmt --check FILE...` checks sources
+without changing them. It loads no imports and performs no semantic analysis.
+The [formatter contract](FORMATTER_2026.md) fixes this W3 tool boundary; it
+does not close the wider S8 developer-tool stage.
+
+The permanent [documentation generator](DOCUMENTATION_2026.md) produces one
+standalone offline HTML reference for parsed source. Written headers and finite
+domains, source-order entries, ordinal anchors, locations and the full escaped
+listing come from the AST and source. It performs no import loading, semantic
+analysis or evaluation. Product claim matrices and ABI documentation must later
+come from their actual compiler/checker artifacts; source prose supplies no
+checked claim or proof identity.
+
+The permanent [local witness replay](WITNESS_REPLAY_2026.md) decodes canonical
+current values against exact checked Core parameter types, including aggregate
+shape and residue modulus. A qualified function and numeric finite-instance
+vector select one Boolean specification. Reference evaluation reports
+`Falsified` or `HoldsForThisWitness` for those concrete arguments. The command
+loads and checks the source program, has bounded input/decoding/evaluation and
+prints a completed result only after construction. It supplies no universal
+proof, selected solver model format, atomic claim authority, canonical Core or
+source/proof/evidence identity. D-009 candidate execution and owner decision
+evidence remain separate.
+
+The intended command families additionally include
+proving, building, package operations, evidence replay, trust
 inspection, target inspection, and conformance runs. Their exact names remain
 later CLI design, and the current evaluator output is not a canonical Core or
 evidence encoding.

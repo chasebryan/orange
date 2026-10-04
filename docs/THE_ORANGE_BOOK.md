@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-09-29
+Snapshot: 2026-10-02
 
-Manuscript version: 0.8
+Manuscript version: 0.26
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -98,11 +98,52 @@ slice adds fixed-length arrays, so that a cipher's whole state is one value,
 the S3e slice adds loops over literal ranges, so that a standard's rounds are
 one expression, and the S3f slice adds truth values, comparisons, Euclidean
 division, and conditionals, so that a prime field and a key exchange can be
-written as their standards write them. None of them adds typed
+written as their standards write them, the S3g slice lets an index depend
+on data, still proved in range, so that AES's S-box is a lookup, as FIPS 197
+writes it, the S3h slice lets a program span several modules, so that
+HMAC is written over SHA-256 by name, as RFC 2104 defines it, the S3i
+slice puts a field in a type, so that X25519's ladder is written in the field
+of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it, the S3j
+slice lets a round name its values inside the loop that runs it, so that a
+round of SHA-256 names T1 and T2 where FIPS 180-4 does, the S3k slice adds
+tuples, so that a loop carries SHA-256's eight working variables by name and
+ChaCha20's quarter round gives its four words at once, the S3l slice
+writes bytes as the standards print them, so that RFC 4231's key is "Jefe"
+and SHA-256's padding is joined with `++`, the S3m slice lets one `spec`
+stand for every length in a range, so that SHA-256 is written once for every
+message from 1 through 119 bytes, the S3n slice reads and writes words in
+the byte order a standard names, so that SHA-256 reads a block as sixteen
+big-endian words in one conversion, the S3o slice lets one `spec` stand
+for a list of types, so that exponentiation is written once for five prime
+fields and SHA-256 and SHA-512 share one round, the S3p slice lets an
+array hold 65,536 elements, so that RFC 8439's 375-byte and 265-byte vectors
+are written as the RFC prints them, the S3q slice lets a module state its
+known answers as tests beside its functions, so that RFC 8439's examples are
+claims the program checks, and the S3r slice lets a shift or rotation take an
+amount computed from data, so that RC6 and SHA-3 turn their words as their
+designers write them. S3s adds tables of scalar rows, and S3t lets each finite
+size instance compute its own exact modulus. None of them
+adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
 language or compiler is sound.
+
+The permanent source formatter now supplies one frontend tool: it lays out
+parsed syntax while preserving token spellings and comment bytes and anchors.
+It does not validate types or imports, accept the semantic proposals, or
+complete the wider developer-tool and release stages.
+
+The source documentation generator produces a standalone offline reference
+for written declarations and an escaped source listing. Its scope is likewise
+syntactic: resolved interfaces, ABI contracts and checked claim matrices must
+come from the later compiler and proof paths.
+
+The local witness replayer now decodes exact concrete values against a checked
+Boolean function's parameters and evaluates that function for the supplied
+arguments. `Falsified` and `HoldsForThisWitness` describe a single reference
+execution. They are not a universal proof, an authoritative atomic claim or
+solver-trust decision evidence.
 
 The manuscript uses four kinds of statements:
 
@@ -296,9 +337,32 @@ specification is in the owner's review, adds pure functions over integers and
 machine words, the S3c slice, also in review, adds `let` bindings and
 explicit `as` conversions, the S3d slice, also in review, adds fixed-length
 arrays of those types, the S3e slice, also in review, adds loops over literal
-ranges, indices proved in range, and updates of one element, and the S3f
+ranges, indices proved in range, and updates of one element, the S3f
 slice, also in review, adds `Bool`, comparisons, Euclidean division, and
-conditionals.
+conditionals, the S3g slice, also in review, lets an index depend on data
+while still proving it in range, the S3h slice, also in review, lets a
+module use other modules, each in its own file, and call their functions by
+module name, the S3i slice, also in review, adds the integers modulo a
+constant and names for types, the S3j slice, also in review, lets a loop's
+step and each branch of a conditional begin with `let` bindings, the S3k
+slice, also in review, adds tuples and tuple patterns, so that a function
+gives several values and a loop carries several accumulators, the S3l
+slice, also in review, adds byte strings, joins, and slices, so that a
+program writes bytes as the standards print them, the S3m slice, also in
+review, adds size parameters, so that one function stands for every length
+in a range and is checked for each, the S3n slice, also in review, adds
+byte orders, so that words are read from bytes, and written back, in one
+conversion in the order a standard names, the S3o slice, also in review,
+adds type parameters, so that one function stands for a list of types, such
+as several prime fields or both of SHA-2's word widths, and is checked for
+each, the S3p slice, also in review, lets arrays, array literals, and byte
+strings hold up to 65,536 elements and lets `orangec eval` run under a larger
+step budget, evaluate only the functions it names, and report the steps each
+used, the S3q slice, also in review, adds known-answer tests and equality of
+whole arrays and tuples, so that a module states what its functions must give
+and `orangec test` checks it, and the S3r slice, also in review, lets the
+amount of a shift or rotation be computed from data, with the value the
+arithmetic gives at every amount.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -340,8 +404,8 @@ demo::sample: Word[32] = 0x1f85c98c
 Empty declarations still have no type, value, or execution meaning, and a
 function with parameters runs only when it is called. The Core is noncanonical
 and carries no proof identity or relationship between a `spec` and an `impl`.
-The fragment has no bindings, control flow, recursion, general failure values,
-proof terms, targets, ABI rules, or code generation.
+The fragment has no recursion, general failure values, proof terms, targets,
+ABI rules, or code generation.
 The reserved words `game`, `proof`, and `claim` still introduce no usable
 constructs.
 
@@ -771,7 +835,13 @@ with a reduction. The first run of all 25 candidate-case units, on 2026-09-28,
 passed every case for ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR and failed every
 case for ST-HOST, whose delegated hosts depend on the open D-006 and D-011
 decisions. The cases could not tell the four passing candidates apart, so the
-run selects nothing. Its results are contributor-produced and unreviewed.
+run selects nothing. Its results are contributor-produced and unreviewed. A
+second suite adds two cases, semantic evolution and relabeling within one
+authority, and five cost measures. Its run, on the same day, closed all seven
+cases for the same four candidates, and under the isolation-first rule, which
+the owner chose knowing which candidate each offered rule would leave, only
+ST-REL remains. That result is also contributor-produced and unreviewed. It is
+not a recommendation, and D-004 remains proposed.
 
 ### What exists in the language now
 
@@ -780,18 +850,29 @@ reserves `spec` and `impl` as declaration keywords and gives them separate
 namespaces, so a module may contain both `spec rounds` and `impl rounds`
 without a conflict while two `spec rounds` declarations are an error. The words
 `game`, `proof`, and `claim` are reserved and introduce nothing. Only typed
-specifications have meaning: pure `spec` functions over `Int`, `Bool`, and
-`Word[8]` through `Word[64]` and fixed-length arrays of them, built from
-literals, parameters, calls, operators, comparisons, `let` bindings, explicit
-conversions, array literals, indices, bounded loops, updates, and
-conditionals. An `impl` body must still be empty.
+specifications have meaning: pure `spec` functions over `Int`, `Bool`,
+`Word[8]` through `Word[64]`, the integers modulo a constant, fixed-length
+arrays of them, and tuples of those, built from
+literals, parameters, calls, operators, comparisons, `let` bindings, at the
+start of a body, a loop's step, or a branch, tuple patterns, explicit
+conversions, array literals, byte strings, tuples, indices, including indices
+keyed by data, selections by position, joins, slices, bounded loops, updates,
+and conditionals. A `spec` may declare sizes, each ranging over a finite
+set of integers, and then stands for one function for each of their values,
+with its array lengths and loop bounds written from them. An `impl` body must
+still be empty. A
+program may span several modules, one per file: a module names the modules it
+uses at its head and calls their functions by module name, as in
+`sha256::compress(h, block)`, and nothing is imported into its scope. A
+`type` declaration names a type, such as the field of X25519, for the rest of
+its module.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, and condition slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -863,11 +944,13 @@ exact span. `orangec lex` prints that sequence:
 
 The Orange 2026 lexer recognizes ASCII identifiers, seven reserved words,
 decimal, binary, and hexadecimal integers with single underscores between
-digits, line-bounded strings with a fixed escape set, nested block comments,
-and a fixed inventory of punctuation, matched longest first so that `<<<` is
-one rotation token rather than a shift and a comparison. It reserves more than
-the grammar uses: strings and several punctuation tokens have no grammatical
-role yet. Reservation is a promise about spelling, not about meaning.
+digits, line-bounded strings with a fixed escape set, hex strings of digit
+pairs, nested block comments, and a fixed inventory of punctuation, matched
+longest first so that `<<<` is one rotation token rather than a shift and a
+comparison. It reserves more than the grammar uses: several punctuation
+tokens have no grammatical role yet, and strings had none until the byte
+slice made them arrays of bytes. Reservation is a promise about spelling,
+not about meaning.
 
 The lexer is also bounded. It retains at most 262,144 non-trivia tokens and
 emits at most 100 ordinary diagnostics before one suppression diagnostic. A
@@ -881,18 +964,25 @@ Parsing checks that the tokens have one of a small number of shapes. The
 parser reads them in order and never backtracks: one token of lookahead decides
 almost everything, and a second is consulted only in a few places, such as
 telling a call from a name and a literal's sign from negation. The one longer
-look is at `if` before `(`, `-`, or `[`, where the parser scans ahead, without
+look is at `if` before `(`, `-`, `[`, the word `as`, or the word `with`
+followed by `[`, where the parser scans ahead, without
 backtracking, to see whether a brace group followed by `else` makes it a
 conditional. A source is exactly one edition
-declaration, `edition 2026;`, followed by exactly one module. A module contains
-`spec` and `impl` declarations. An `impl` has an empty parameter list and an
+declaration, `edition 2026;`, followed by exactly one module. A module begins
+with its `use` declarations, each naming one module it uses, then its `type`
+declarations, each naming one type, and then contains `spec` and `impl`
+declarations. An `impl` has an empty parameter list and an
 empty body. A `spec` body may be empty, or the `spec` may declare parameters
-and a result type and contain exactly one expression.
+and a result type and contain `let` bindings and then exactly one expression.
+A loop's step and each branch of a conditional have the same shape: bindings,
+if any, and then a value. A binding or a loop's accumulator names one value or,
+with a tuple pattern, each element of a tuple.
 
 Parsing produces a syntax tree that records spelling and source structure
 only. It is easy to overlook what that excludes. The grammar accepts any
-identifier as a type and any integer as a width, so `spec x() -> Word[12] { 1 }`
-and `spec y() -> Banana { 7 }` both parse. The parser also accepts two
+identifier as a type, any integer as a width, and any expression as a
+modulus, so `spec x() -> Word[12] { 1 }`, `spec y() -> Banana { 7 }`, and
+`spec z() -> Mod[q] { 0 }` all parse. The parser also accepts two
 declarations with the same name, because deciding whether names collide is not
 a syntactic question. Parse success means only that the source has a recorded
 shape. It is not validation, and the specification forbids describing it as
@@ -907,20 +997,43 @@ the syntax tree in source order and does five things:
 1. It checks that every declaration key is unique, where a key is the pair of
    declaration kind and exact name. `spec mix` and `impl mix` are different
    keys; two `spec mix` declarations are a duplicate.
-2. It resolves each typed specification's signature. Exactly five type forms
-   are accepted: `Int`, with no width, and `Word[8]`, `Word[16]`, `Word[32]`,
-   and `Word[64]`, with the width written as a plain decimal token.
-   `Word[08]`, `Word[0x8]`, `Word[12]`, `Int[8]`, and every other form are
-   errors. Parameter names must be distinct within one function.
+2. It resolves each typed specification's signature. The scalar types are
+   `Int` and `Bool`, with no width; `Word[8]`, `Word[16]`, `Word[32]`, and
+   `Word[64]`, with the width written as a plain decimal token; and `Mod[m]`,
+   whose modulus is a constant. `T^n` is an array of any of them, and a name
+   declared by `type` stands for its type. `Word[08]`, `Word[0x8]`,
+   `Word[12]`, `Int[8]`, and every other form are errors. Parameter names must
+   be distinct within one function.
 3. It checks each body against its declared result type, from the root of the
    expression down. Every expression has an expected type and nothing is
    inferred: a literal takes the type expected of it and must fit, a name must
    be a parameter of that type, a call must name a typed `spec` whose result is
    that type, and an operator must be defined on it. Literals are decoded
-   exactly, in base 2, 10, or 16.
+   exactly, in base 2, 10, or 16. An index is the one expression whose type
+   comes from what it contains: it is checked as the word type of its first
+   name, call, conversion, or element, or as an `Int` when that is not a
+   word, and it must be proved to select an element.
 4. It checks that the call graph is acyclic, so that every accepted program
    terminates.
 5. If no semantic diagnostic occurred, it constructs the Typed Reference Core.
+
+A program of several modules is analyzed one module at a time. Before any
+module is checked, the analyzer examines the uses: each must name a module of
+the program, and no module may use itself, use another twice, or be reached
+again along a cycle of uses. It then checks each module once, after every
+module it uses, against the declarations of those modules only. A call
+`sha256::compress(h, m)` is resolved in the module `sha256` and then checked
+like any other call, and because uses have no cycle, the call graph of the
+whole program is acyclic when each module's own is.
+
+Within a module, types come before functions. The analyzer first evaluates
+every modulus the module writes, once each: a modulus is built from integer
+literals with `+`, `-`, `*`, `<<`, and parentheses, and must lie from 2
+through 2^521 − 1. It then resolves the `type` declarations in source order,
+each against the names declared before it, and only then the signatures. A
+declared name is another spelling of its type, so a module that writes `F`
+and one that writes `Mod[(1 << 255) - 19]` mean the same thing, and the name
+stays in its module.
 
 The types are where the language's character first shows. `Int` is the
 type of mathematical integers. It has no maximum and does not overflow. The
@@ -955,6 +1068,14 @@ for mathematical integers, `+`, `-`, `*`, and negation, with their exact
 meaning. The bitwise operators are not defined on `Int`, and using one is an
 error rather than a guess about representation.
 
+`Mod[m]` generalizes the word types to any modulus a standard names.
+`Mod[(1 << 255) - 19]` is the field of X25519 and `Mod[3329]` the ring of
+ML-KEM. Its values are the least residues 0 through m − 1, its `+`, `-`, and
+`*` reduce by themselves, and its `/` multiplies by an inverse and gives 0
+when there is none. It has no order and no bits, because a residue's order
+and bits are those of a chosen representative, and a program that means the
+least residue says so with `as`.
+
 ### The Typed Reference Core
 
 A successful analysis produces one Typed Reference Core module. Its grammar is
@@ -977,11 +1098,29 @@ node_kind      = literal value
 Only typed specifications enter the Core. Empty `spec` and `impl` declarations
 remain valid syntax but gain no type, value, or execution meaning, and they do
 not appear. Functions keep source order and receive contiguous identifiers from
-zero. A literal written `-0x2a` becomes the mathematical integer −42, and every
+zero. The Core of a program of several modules lists the functions of the
+modules used first and the root's last, each recording its module, with
+identifiers contiguous across the whole program. A literal written `-0x2a` becomes the mathematical integer −42, and every
 spelling of negative zero becomes zero. A body is stored in postorder, each
 node after its operands and each call after its arguments, and every node
 carries its type. Parentheses leave no trace, because grouping is already the
-shape of the tree.
+shape of the tree. A residue type records its modulus exactly, and a `type`
+declaration leaves no trace either: every declared name is replaced by the
+type it names. A loop records the bindings of its step, and a conditional
+those of its branches, each with the point in the step's or branch's
+postorder where its value ends, so the evaluator knows when a name takes its
+value. A tuple pattern is one binding of a tuple type, and a read of one of
+its names reads the whole and selects the element, so tuples add only two
+nodes to the Core: one that builds a tuple and one that selects from it. A
+byte string is an array literal like any other, and the byte slice adds three
+nodes: one joins two arrays, one takes a run of elements, and one replaces a
+run, the last two with their bounds as `Int` operands. Each instance of a
+sized function is one Core function that records its sizes, and a size's
+name in an expression is an `Int` literal, so sizes add no node at all. A
+conversion in a byte order is one node that records its operand's type and
+its order. Each instance of a function with type parameters is likewise one
+Core function that records its types, each as its position in its list, and
+every type in its body is concrete, so type parameters add no node either.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -990,9 +1129,11 @@ diagnostic. There is no partial Core. An error in one declaration does not
 authorize the others; the analyzer may keep going to report more errors, but
 the result is unsuccessful.
 
-Evaluation is the last step. `orangec eval` visits each Core function in order
-and prints one line for each function without parameters, decimal for `Int`
-and fixed-width lowercase hexadecimal for words, from two digits for `Word[8]`
+Evaluation is the last step. `orangec eval` visits each of the root module's
+Core functions in order and prints one line for each function without
+parameters, decimal for `Int`
+and residues, which print as their least residues, and fixed-width lowercase
+hexadecimal for words, from two digits for `Word[8]`
 to sixteen for `Word[64]`:
 
 ```text
@@ -1006,11 +1147,14 @@ plus sign and the leading zero in `0x0a`. The precision is not decoration. A
 reference evaluator is useful only if another implementation can be compared
 against it byte for byte.
 
-Evaluation is bounded too. Every function of one source shares a budget of
+Evaluation is bounded too. Every function of one program shares a budget of
 1,048,576 steps, the call stack holds at most 256 frames, and no `Int` result
 may exceed 16,384 significant bits. An acyclic program can still ask for an
 exponential amount of work, a function that calls another twice, twenty levels
 deep; the step budget is what stops it, with a diagnostic rather than a hang.
+The reader chooses a larger budget, up to 1,073,741,824 steps, with
+`orangec eval --steps`, and a program's steps are the same wherever it runs,
+so `--stats` reports them as exactly as the values.
 
 ### What the Core is not
 
@@ -1033,13 +1177,29 @@ number and relationships.
 
 ### The next steps of meaning
 
-The six current slices complete bounded parts of the roadmap's S3 stage:
+The eighteen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
-range, then truth values, comparisons, Euclidean division, and conditionals.
-The rest of S3 adds the remaining substance of a language: records of mixed
-types, a type for integers modulo a prime, and explicit failure semantics,
+range, then truth values, comparisons, Euclidean division, and conditionals,
+then indices keyed by data, proved in range from their types, then programs
+of several modules, each checked once, after the modules it uses, then the
+integers modulo a constant, with names for types, then `let` bindings inside
+a loop's step and a branch, then tuples, so that a loop carries several
+values, then byte strings, joins, and slices at bounds proved in range,
+then size parameters, so that one function serves every length in a range
+and is checked once for each, then byte orders, so that words are read from
+bytes and written back in the order a standard names, then type parameters,
+so that one function serves a list of fields or word widths and is checked
+once for each, then arrays of up to 65,536 elements, so that a standard's long
+vectors are written whole, then known-answer tests and equality of whole
+arrays and tuples, so that a standard's examples are claims inside the
+program, then shift and rotation amounts computed from data, each with the
+value the arithmetic gives.
+The rest of S3 adds the remaining substance of a language: records with named
+fields, functions generic over any modulus rather than a listed few, and
+explicit failure
+semantics,
 together with one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
 every way to break it, a bound on the work it can cause, and a reference result
@@ -1350,6 +1510,38 @@ carries secret and public domains alongside an executable leakage trace. It is
 where the compiler would check that its own transformations did not introduce
 a leak.
 
+### A lookup, two ways
+
+Tables raise the same question as branches. FIPS 197 defines AES's SubBytes as
+a lookup: each byte of the state selects one of the 256 entries of the S-box.
+Written directly, the lookup reads memory at an address that depends on the
+state, and so on the key. Under the baseline observation model that address
+is part of the trace, and on a machine with a cache it is part of the time as
+well. Table-driven AES was broken this way in practice: Bernstein's 2005
+cache-timing attack, and the cache attacks of Osvik, Shamir, and Tromer,
+recovered AES keys from the cache behavior of its table lookups.
+
+The constant-time alternative reads every entry. For each position j of the
+table it compares j with the index, turns the comparison into a mask, and
+accumulates the entry under that mask, so every run touches all 256 entries in
+the same order and the addresses no longer depend on the secret. The price is
+256 reads for one lookup. Bitsliced implementations go further and compute the
+S-box as a circuit of Boolean operations, with no table at all.
+
+Orange 2026 states the first form, because it is the form the standard
+states: since the [lookup slice](#tables-keyed-by-data), a specification may
+write `s[a[i]]`. That is the right place for it. A lookup in a specification
+is a function from a table and a position to an element. It has no addresses,
+so it has no trace, and a specification that had to write the scan would ask
+every reviewer to recognize SubBytes inside it. Which form a machine should
+run is this chapter's question, and it belongs to the implementation and
+target strata. There, as proposed above, an index computed from a secret
+would be a type error in a claim-bearing kernel, unless the lookup is lowered
+to a scan of the whole table and the claim says so. Until those strata exist
+Orange claims neither: a lookup
+in an Orange specification says which value results, never how a machine
+would find it.
+
 ### Testing finds; it does not prove
 
 Statistical timing tools such as `dudect` run code on real hardware and look
@@ -1376,7 +1568,9 @@ solo capacity requires it.
 The current compiler has no secrecy labels, no leakage semantics, no target
 model, and no code generation. It therefore makes no constant-time claim of any
 kind, and any such claim is outside its support envelope, which the claim model
-would record as `unsupported`. What exists is the commitment that when Orange
+would record as `unsupported`. Its language can now state a lookup keyed by
+data, and so by a secret, and it neither rejects such a lookup nor claims
+anything about how one would run. What exists is the commitment that when Orange
 does say something about leakage, it will say which observer, which layer,
 which target, and which evidence, and it will say nothing more.
 
@@ -1547,15 +1741,43 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [pure expression specification](EXPRESSIONS_2026.md) of S3b, the
 [bindings and conversions specification](BINDINGS_2026.md) of S3c, the
 [arrays specification](ARRAYS_2026.md) of S3d, the
-[loops specification](LOOPS_2026.md) of S3e, and the
-[conditions specification](CONDITIONS_2026.md) of S3f. S3b through S3f are
-implemented and tested, but their specifications are **proposed**:
+[loops specification](LOOPS_2026.md) of S3e, the
+[conditions specification](CONDITIONS_2026.md) of S3f, the
+[lookups specification](LOOKUPS_2026.md) of S3g, the
+[modules specification](MODULES_2026.md) of S3h, the
+[modular arithmetic specification](MODULAR_2026.md) of S3i, the
+[blocks specification](BLOCKS_2026.md) of S3j, the
+[tuples specification](TUPLES_2026.md) of S3k, the
+[bytes specification](BYTES_2026.md) of S3l, the
+[sizes specification](SIZES_2026.md) of S3m, the
+[byte order specification](ORDER_2026.md) of S3n, the
+[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, the
+[lengths specification](LENGTHS_2026.md) of S3p, the
+[tests specification](TESTS_2026.md) of S3q, and the
+[computed amounts specification](AMOUNTS_2026.md) of S3r, the
+[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, and the
+[static moduli specification](STATIC_MODULI_2026.md) of S3t. S3b through
+S3t are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
-[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md) are in the
-owner's review and have not been accepted. Where this chapter and
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md),
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md),
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md),
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md),
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md),
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md),
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md),
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md),
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md),
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md),
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md), and
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) are in
+the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
 The edition name matters. `2026` is not a version number that will be bumped
@@ -1638,36 +1860,54 @@ The expression slice gives grammatical roles to `,`, `:`, `+`, `-`, `*`, `&`,
 `|`, `^`, and `~`, and adds four tokens of its own, `<<`, `>>`, `<<<`, and
 `>>>`, matched longest first, so `<<<<` is `<<<` followed by `<`. The
 condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
-`!`, `/`, and `%`, which the lexer has always produced. String tokens and the
-remaining punctuation are lexically reserved but have no grammatical role
-yet. `orangec lex` shows how any source
+`!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
+strings their role, as byte strings, and adds two tokens, `++` and the hex
+string `hex"..."`, whose `hex` touches its opening quote. The size,
+byte-order, type-parameter, length, test, and amount slices add no token, and
+the test slice reserves no word: `test` followed by a string begins a test only
+where a module member may begin. The remaining punctuation is lexically reserved but has no
+grammatical role yet.
+`orangec lex` shows how any source
 tokenizes, with exact byte spans.
 
 ### The grammar
 
-The whole Orange 2026 grammar fits in forty lines:
+The whole Orange 2026 grammar fits on a page:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
+use_decl        = "use" IDENTIFIER ";" ;
+type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
-                | "spec" IDENTIFIER "(" parameters ")" typed_tail
+                | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
+size_params     = "[" size_param ("," size_param)* "]" ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
-parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" size)? ;
+size            = INTEGER | IDENTIFIER | "(" expression ")" ;
+parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
-                | conversion | update ;
-conversion      = prefixed "as" parsed_type ;
-update          = prefixed "with" "[" expression "]" "=" expression ;
+                | chain("++") | conversion | update ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
+update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -1678,32 +1918,51 @@ compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | byte_string | tuple | array | fill | loop | conditional ;
+byte_string     = STRING | HEX_STRING ;
+suffix          = "." INTEGER (index | slice)? | index | slice ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
+slice           = "[" range "]" ;
+range           = expression ".." expression? | ".." expression ;
 array           = "[" expression ("," expression)* ","? "]" ;
-fill            = "[" expression ";" INTEGER "]" ;
-loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression
-                  "{" expression "}" ;
-conditional     = "if" expression "{" expression "}"
-                  "else" ("{" expression "}" | conditional) ;
-call            = IDENTIFIER "(" arguments? ")" ;
+fill            = "[" expression ";" size "]" ;
+loop            = "for" IDENTIFIER "in" size ".." size
+                  "with" pattern "=" expression block ;
+conditional     = "if" expression block "else" (block | conditional) ;
+block           = "{" binding* expression "}" ;
+call            = (IDENTIFIER "::")? IDENTIFIER sizes? "(" arguments? ")" ;
+sizes           = "[" expression ("," expression)* "]" ;
 arguments       = expression ("," expression)* ","? ;
 ```
 
 It has no implicit semicolons. The edition declaration must be first and
 must spell `2026` exactly. `let`, `as`, `for`, `in`, and `with` are contextual
-words: `let` starts a binding only at the start of a body item and before a
-name, `as` converts only directly after a complete operand, `for` starts a loop
-only before a name, `in` and `with` are words only inside a loop's header, and
-`with` updates only directly after a complete operand and before `[`. In the
+words: `let` starts a binding only at the start of a body, step, or branch
+item and before a name or a tuple pattern, `as` converts only directly after a complete operand, `for` starts a loop
+only before a name, `in` and `with` are words only inside a loop's header,
+`in` also between a size's or a type parameter's name and its bounds or
+list, and `with` updates only
+directly after a complete operand and before `[`. In the
 same way, `if` starts a conditional only where a condition can follow it,
-`else` is a word only after a conditional's value, and `true` and `false` are
-values only where no name of that spelling is in scope. Anywhere else they are
+`else` is a word only after a conditional's value, `use` and `type` start
+declarations only at the head of a module, before its first function, `Mod`
+takes a modulus only before `[`, `hex` begins a hex string only directly
+before a quote, `big` and `little` are byte orders only directly after `as`
+and before `(` or a name other than `as` and `with`, and `true` and `false`
+are values only where no name of that spelling is in scope. Anywhere else
+they are
 ordinary names, so no program that used them as names changed meaning when
 they gained a role. After a declared type, `^` and a length make it an array
-type; everywhere else `^` is exclusive or. One source holds one module. A typed `impl` is a syntax error, not a feature waiting to be switched
+type; everywhere else `^` is exclusive or. One source holds one module, and a
+program joins several sources through their `use` declarations. A name
+qualified by its module, as in `sha256::initial()`, is always called. A
+name followed by square brackets and then `(` is a call with sizes or types
+when the brackets hold only integers, names, a name's `[n]`, `+`, `-`, `*`,
+`/`, `%`, `^`, commas, and parentheses, as in `sha256[2](m)` or
+`ch[Word[32]](e, f, g)`; any other brackets are an index or a slice, as
+before. A typed `impl` is a syntax error, not a feature waiting to be switched
 on, and a `spec` with parameters must declare a result type and a body. A `-`
 written directly before an integer is that literal's sign, so the S3a body
 `{ -42 }` is still one literal and means what it always meant.
@@ -1732,17 +1991,19 @@ The rule costs a pair of parentheses and buys an expression that means what it
 looks like. It also matches the standards. FIPS 180-4 writes the choice
 function as `(x ∧ y) ⊕ (¬x ∧ z)`, with its grouping visible, and the Orange
 transcription is `(x & y) ^ (~x & z)`, the same shape symbol for symbol. A
-shift or rotation takes exactly two operands, and its amount must be a literal
-that fits the width, so `x >>> 32` on a `Word[32]` is an error rather than a
-question about what some processor does. A comparison also takes exactly two
+shift or rotation takes exactly two operands, and an amount written as a
+literal must fit the width, so `x >>> 32` on a `Word[32]` is an error rather
+than a question about what some processor does; an amount computed from data
+has the value the arithmetic gives at every amount (see
+[Amounts the data choose](#amounts-the-data-choose)). A comparison also takes exactly two
 operands, so `a < b < c` is an error whose note says to join two comparisons
 with `&&` or `||`. Division is deliberately not grouped with multiplication:
 with integer division, `(a * b) / c` and `a * (b / c)` differ, so `a * b / c`
 must say which it means.
 
-### Six types
+### The types
 
-Six types have meaning:
+Six types, and one family of types, have meaning:
 
 | Source form | Meaning | Values |
 | --- | --- | --- |
@@ -1752,6 +2013,7 @@ Six types have meaning:
 | `Word[16]` | The integers modulo 2^16 | 0 through 65,535 |
 | `Word[32]` | The integers modulo 2^32 | 0 through 4,294,967,295 |
 | `Word[64]` | The integers modulo 2^64 | 0 through 2^64 − 1 |
+| `Mod[m]` | The integers modulo m, for each constant m from 2 through 2^521 − 1 | 0 through m − 1 |
 
 The distinction is the seed of everything Orange will later say about
 arithmetic. A specification over `Int` is mathematics and does not overflow. A
@@ -1763,7 +2025,10 @@ value changes type implicitly, and nothing is inferred. `Word` with any width
 other than the exact decimal tokens `8`, `16`, `32`, and `64` is rejected, and
 so is `Int` with a width. `Bool`, added by the condition slice, is the type of
 comparisons and conditions, and it is not a number: no arithmetic applies to
-it, and nothing converts to or from it.
+it, and nothing converts to or from it. `Mod[m]`, added by the modular slice,
+is one type for each modulus, and
+[Fields as types](#fields-as-types) describes it. `type F = Mod[7];` gives a
+type a second name, never a new type.
 
 ### Naming steps and changing types
 
@@ -1788,14 +2053,16 @@ Where the RFC updates `a` in place, the Orange text writes `a1` and then `a2`.
 A binding never shadows a parameter or another binding, so every name in a
 body refers to exactly one thing, and a name is in scope only after its own
 semicolon. Each binding is evaluated once, in order, before the result. The
-stated type is not decoration. It is the one fact a reader checking a
+same form opens a loop's step or a branch, as
+[Rounds in the words of their standard](#rounds-in-the-words-of-their-standard)
+shows. The stated type is not decoration. It is the one fact a reader checking a
 transcription most needs, so Orange does not infer it.
 
 A conversion, written `e as T`, is the only way a value changes type, and its
 meaning is one rule: take the operand's integer value and, for `Word[n]`, its
 residue modulo 2^n. Widening keeps a value, narrowing keeps the low bits, and
-an `Int` holding -1 becomes `0xff` as a `Word[8]`. That single rule is enough
-for byte order:
+an `Int` holding -1 becomes `0xff` as a `Word[8]`. That single rule, with
+shifts, is enough to build a word from its bytes:
 
 ```orange
 spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
@@ -1806,7 +2073,9 @@ spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
 
 Applied to the bytes `00 01 02 03`, it gives `0x03020100`, the first ChaCha20
 key word of RFC 8439 section 2.3.2. The same function with its arguments
-reversed reads SHA-256's big-endian message words.
+reversed reads SHA-256's big-endian message words. Since the S3n slice, the
+body is one conversion, `[b0, b1, b2, b3] as little Word[32]`, as
+[Words in either byte order](#words-in-either-byte-order) shows.
 
 A conversion applies to exactly one operand and forms a group of its own, under
 the grouping rule above. `x + y as Word[32]` is `ORC0108`, because its two
@@ -1869,8 +2138,8 @@ chacha20::test_vector: Word[32]^16 = [0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc471
 ```
 
 Three rules keep arrays as plain as the words inside them. Every length is
-written: a type states it, from 1 through 256, and a literal lists exactly that
-many elements. Every position is visible: in the array slice an index is a
+written: a type states it, from 1 through 65,536 (256 until S3p), and a
+literal lists exactly that many elements. Every position is visible: in the array slice an index is a
 literal, checked against the length before anything runs, so there is no
 out-of-range read at run time:
 
@@ -1930,7 +2199,7 @@ spec schedule(m: Word[32]^16) -> Word[32]^64 {
 ```
 
 The indices `t - 2`, `t - 7`, `t - 15`, and `t - 16` are expressions, and this
-is where Orange asks something of its checker. An index may use only integer
+is where Orange asks something of its checker. These use only integer
 literals and the indices of enclosing loops, joined by `+`, `-`, and `*`. The
 checker computes the least and the greatest value each index can take over its
 loops' ranges and rejects the program unless every one selects an element. For
@@ -1943,7 +2212,7 @@ error[ORC0223]: this index runs from -1 through 46, out of range for `Word[32]^6
   |
 4 | ... ith v: Word[32]^64 = w { v with [t] = w[t - 17] }
   |                                             ^^^^^^ indices run from 0 through 63
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The check is deliberately simple. It bounds each side of an operator
@@ -1952,26 +2221,22 @@ because its computed range reaches below 0. A rule that a reader can apply in
 their head is worth more here than a cleverer one that only the compiler
 understands.
 
-Two consequences follow, and both matter to a cryptographer. No index is ever
-out of range while a program runs, so evaluation has no failure to report and
-no hidden check to trust. And an index that depends on data, such as an S-box
-lookup keyed by a secret byte, cannot be written at all:
+The consequence matters to a cryptographer: no index is ever out of range
+while a program runs, so evaluation has no failure to report and no hidden
+check to trust. The price is that an index must have a bound the checker can
+see. An `Int` parameter has none, so a lookup keyed by one is refused:
 
 ```text
-error[ORC0226]: an index may use only integer literals and loop indices
+error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int`
  --> <stdin>:4:10
   |
 4 |     sbox[k]
-  |          ^ not known when the program is checked
-  = note: an index is built from integer literals and loop indices with `+`, `-`, and `*`, so that every index is known to be in range when the program is checked
+  |          ^ this `Int` has no bound
+  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
 ```
 
-Table lookups indexed by secrets are the classic source of cache-timing leaks
-in software AES. Orange 2026 says nothing yet about timing, and this rule is
-not a constant-time claim about any compiled code, as
-[Chapter 6](#chapter-6-secrets-are-a-semantic-concern) explains. But a
-specification language in which a secret-dependent index cannot be expressed
-is one less thing a reviewer has to look for.
+A byte does have a bound, 0 through 255, and a lookup keyed by a byte is how
+[Tables keyed by data](#tables-keyed-by-data) writes AES.
 
 With loops, a whole primitive fits in one short module. The
 [SHA-256 fixture](../compiler/fixtures/s3e/valid-sha256.or) computes the
@@ -1993,9 +2258,10 @@ checker proves lies between 0 and 63. The encryption of the "sunscreen"
 plaintext of section 2.4.2 then matches the RFC's 114-byte ciphertext, byte for
 byte.
 
-One seam still shows. The quarter round names its four positions literally,
-because positions passed as parameters are not static and so cannot be used as
-indices. Positions known at every call, such as a quarter round over columns 0,
+One seam still shows. The quarter round names its four positions literally. A
+position passed as an `Int` has no bound, and one passed as a word must be
+masked to the state's size, as in `s[a & 15]`, a mask the RFC does not print.
+Positions known at every call, such as a quarter round over columns 0,
 4, 8, and 12, are the natural next step.
 
 ### Choices and prime fields
@@ -2085,7 +2351,7 @@ error[ORC0223]: this index runs from 0 through 7, out of range for `Word[8]^4`
   |
 4 | ... r i in 0..8 with s: Word[8] = 0 { s ^ k[i % 0] }
   |                                             ^^^^^ indices run from 0 through 3
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The [X25519 fixture](../compiler/fixtures/s3f/valid-x25519.or) computes the
@@ -2111,8 +2377,2066 @@ implementation stratum and to
 [Chapter 6](#chapter-6-secrets-are-a-semantic-concern), where Orange means to
 answer it with a claim rather than a keyword. The second is the field itself:
 every `%` in these modules is written by hand. A type of integers modulo a
-declared prime, whose arithmetic reduces on its own and whose values cannot
-leave the field, is the natural next step.
+prime, whose arithmetic reduces on its own and whose values cannot leave the
+field, was the natural next step, and [Fields as types](#fields-as-types)
+takes it.
+
+### Tables keyed by data
+
+Much of symmetric cryptography is written with tables. FIPS 197 defines AES's
+SubBytes by the S-box, and each byte of the state selects one of its 256
+entries. DES has eight S-boxes, Camellia, ARIA, and SM4 are specified with
+tables, and the table-driven CRC reads one entry per input byte. The S3g slice,
+proposed in the [lookups specification](LOOKUPS_2026.md), lets an index depend
+on data and keeps the rule that every index is proved in range before anything
+runs. SubBytes is then one line:
+
+```orange
+spec sub_bytes(s: Word[8]^256, a: Word[8]^16) -> Word[8]^16 {
+  for i in 0..16 with b: Word[8]^16 = a { b with [i] = s[a[i]] }
+}
+```
+
+The proof is the index's type. An index whose first name, call, conversion, or
+element is a word is checked as that word, and a word has a range: a byte runs
+from 0 through 255, so `a[i]` may select from any table of 256 entries.
+Operators narrow the range, each by one rule a reader can apply in their head.
+For a byte x, `x & 15` and `x >> 4` each run from 0 through 15, so either may
+index a table of 16, and `(x & 15) + 16` runs from 16 through 31. A remainder
+stays below its divisor, a conversion from a narrower word keeps its range,
+and a conditional takes the widest bounds of its values. `(x & 15) - 1` could
+wrap, because `x & 15` may be 0, so like every operator that could wrap it
+ranges over its whole type. When the range does not fit, the error names it:
+
+```text
+error[ORC0223]: this index runs from 1 through 16, out of range for `Word[8]^16`
+ --> <stdin>:4:7
+  |
+4 |     t[(x & 15) + 1]
+  |       ^^^^^^^^^^^^ indices run from 0 through 15
+  = note: every value an index can take, over every loop index and word in it, must select an element
+```
+
+An `Int` index is still built from literals and loop indices, and it may now
+also convert a word with `as Int` and choose with a conditional. That is how
+the S-box itself is written. Section 5.1.1 of FIPS 197 defines it as the
+multiplicative inverse in GF(2^8) followed by an affine map, and the inverse
+of g^k, for a generator g, is g^(255 − k), read off tables of powers and
+logarithms:
+
+```orange
+spec substitute(exp: Word[8]^256, log: Word[8]^256, a: Word[8]) -> Word[8] {
+  let b: Word[8] = if a == 0 { 0 } else { exp[(255 - (log[a] as Int)) % 255] };
+  b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+}
+```
+
+`log[a]` is a word index, and `(255 - (log[a] as Int)) % 255` is an `Int`
+index that runs from 0 through 254. The
+[AES-128 fixture](../compiler/fixtures/s3g/valid-aes128.or) builds the tables
+themselves with updates keyed by data: `t with [exp[i]] = i as Word[8]` stores
+each logarithm where its power points, and the inverse S-box is the S-box read
+backwards, `t with [s[i]] = i as Word[8]`. It derives all 256 entries, checks
+the example of section 5.1.1, where 0x53 becomes 0xed, encrypts the examples of
+Appendices B and C.1 to their published ciphertexts, and decrypts C.1 back to
+its plaintext:
+
+```text
+aes::example_substitution: Word[8] = 0xed
+aes::example_c1: Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+aes::example_c1_inverse: Word[8]^16 = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+```
+
+Tables built this way take many updates, and the loop slice charged one
+evaluation step for every element an update copied. The lookup slice charges
+one step per 64 elements, or part of 64: changing one entry of a 256-entry
+table costs 4 steps rather than 256, and no update costs more than before.
+
+Two seams show. The first is timing again, and it is the sharpest yet. A lookup
+keyed by a secret byte is the pattern that made table-driven AES a textbook
+cache-timing leak, and through S3f an Orange specification could not state one
+at all. S3g states it, because it is what the standard states, and leaves the
+question where [a lookup, two ways](#a-lookup-two-ways) puts it: a
+specification's lookup has no addresses, and whether compiled code may perform
+it, must scan the whole table, or must be rejected is a decision for the
+implementation and target strata. Meanwhile a reviewer can still find every
+lookup, because every index not built from literals and loop indices is one.
+The second seam is the range rule itself. It reads only the syntax of the
+index, so `if x < 16 { t[x] } else { 0 }` is rejected for a table of 16 even
+though it never selects outside it. The same choice is written `t[x & 15]`,
+whose range a reader can see.
+
+### Standards built on standards
+
+Cryptographic standards are written in layers, and each cites the one beneath
+it. RFC 2104 defines HMAC over any iterated hash function, RFC 5869 defines
+HKDF over HMAC, and an AEAD is built from a cipher and an authenticator.
+Through S3g an Orange program was one module, so every construction carried
+its own copy of every primitive beneath it. The S3h slice, proposed in the
+[modules specification](MODULES_2026.md), lets a module name the modules it
+uses at its head and call their functions by module name:
+
+```orange
+module hkdf {
+  use hmac;
+
+  spec extract(salt: Word[8]^64, ikm: Word[8]^64, length: Int) -> Word[8]^32 {
+    hmac::mac(salt, ikm, length)
+  }
+}
+```
+
+That is section 2.2 of RFC 5869, PRK = HMAC-Hash(salt, IKM), in one line, and
+three rules keep its meaning plain. Nothing is imported into scope: `extract`
+may call `hmac::mac`, but not `mac`, and not `sha256::compress`, which `hmac`
+uses and `hkdf` does not. A call into another module always names it, and a
+module declares every module it uses, so a reader sees where each function
+comes from without searching, and two modules may each declare a function
+named `block` without either noticing. A module means what it meant alone: it
+is checked once, against the declarations of the modules it uses, and gives
+the same Core whoever uses it. And the uses of a program form no cycle, so
+every module is checked after the modules it uses, and the call graph stays
+acyclic without any analysis across modules. A cycle is reported at the `use`
+that closes it:
+
+```text
+error[ORC0230]: module cycle `ring_a` -> `ring_b` -> `ring_a`
+ --> ring_b.or:4:3
+  |
+4 |   use ring_a;
+  |   ^^^^^^^^^^^ this `use` closes the cycle
+  = note: modules may not depend on each other in a cycle; move the functions they share into a module that both use
+```
+
+`orangec` finds a module by its name: `use hmac;` reads `hmac.or` from the
+directory of the file that names it, or from the current directory when the
+source comes from standard input. A module name is an ASCII identifier, so it
+names one file in that directory and no path outside it, and each module is
+read once, however many modules use it. That is a rule of the command line,
+not of the language. A program is a root module and the modules it reaches
+among those supplied with it, and another host may supply them another way.
+
+The [module fixtures](../compiler/fixtures/s3h/) write SHA-256, HMAC, and HKDF
+as three files. The program that uses them holds four modules, `hkdf` using
+`hmac` and `hmac` using `sha256`, and `orangec eval` prints only the root's
+values: the SHA-256 digest of "abc" from FIPS 180-4, test cases 1 and 2 of RFC
+4231, and the pseudorandom key and output key material of RFC 5869's first
+test case:
+
+```text
+vectors::prk: Word[8]^32 = [0x07, 0x77, 0x09, 0x36, 0x2c, 0x2e, 0x32, 0xdf, 0x0d, 0xdc, 0x3f, 0x0d, 0xc4, 0x7b, 0xba, 0x63, 0x90, 0xb6, 0xc7, 0x3b, 0xb5, 0x0f, 0x9c, 0x31, 0x22, 0xec, 0x84, 0x4a, 0xd7, 0xc2, 0xb3, 0xe5]
+vectors::okm: Word[8]^42 = [0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90, 0x43, 0x4f, 0x64, 0xd0, 0x36, 0x2f, 0x2a, 0x2d, 0x2d, 0x0a, 0x90, 0xcf, 0x1a, 0x5a, 0x4c, 0x5d, 0xb0, 0x2d, 0x56, 0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65]
+```
+
+The seam this slice shows lies between a module and the file that holds it. A
+file placed beside a program under a used module's name changes the
+program's meaning exactly as editing the program would, and S3h pins nothing:
+no digest, signature, or lock records which bytes a program's modules had. A
+program is only as trustworthy as its directory until the evidence bundles of
+[Chapter 14](#chapter-14-evidence-that-survives-the-build) record every module
+by digest. The slice also stops short of generic modules. The `hmac` module is
+HMAC-SHA-256, not HMAC over any hash, because a module cannot yet take another
+module as a parameter.
+
+### Fields as types
+
+[Choices and prime fields](#choices-and-prime-fields) ended on a seam: every
+reduction in X25519 and Poly1305 was a `%` written by hand. RFC 7748 writes
+`AA = A^2` and means the square in the field of 2^255 − 19 elements. A
+transcription that multiplies and forgets to reduce is still a valid program,
+merely a wrong one, and only a test vector notices. The S3i slice, proposed in
+the [modular arithmetic specification](MODULAR_2026.md), puts the field in the
+type. `Mod[m]` is the ring of integers modulo m, and a `type` declaration
+names it once for the rest of its module:
+
+```orange
+module x25519 {
+  // RFC 7748 section 4.1: the field of p = 2^255 - 19 elements.
+  type F = Mod[(1 << 255) - 19];
+  // [x_2, z_2, x_3, z_3].
+  type Ladder = F^4;
+
+  spec ladder(x1: F, s: Ladder) -> Ladder {
+    let a: F = s[0] + s[1];
+    let aa: F = a * a;
+    let b: F = s[0] - s[1];
+    let bb: F = b * b;
+    let e: F = aa - bb;
+    let c: F = s[2] + s[3];
+    let d: F = s[2] - s[3];
+    let da: F = d * a;
+    let cb: F = c * b;
+    [aa * bb, e * (aa + 121665 * e), (da + cb) * (da + cb), x1 * ((da - cb) * (da - cb))]
+  }
+}
+```
+
+Each line is the RFC's line. The values of `Mod[m]` are the least residues 0
+through m − 1, and `+`, `-`, and `*` give the least residue of the exact
+result, so no value leaves the field and no reduction can be forgotten. The
+modulus is a constant, written as the standard writes it with integer
+literals, `+`, `-`, `*`, `<<`, and parentheses, and two moduli are one type
+exactly when they are equal, however they are written: `Mod[7]`,
+`Mod[0b111]`, and `Mod[3 + 4]` are one type. A type is displayed the way its
+standard names it: the field of X25519 is `Mod[(1 << 255) - 19]`, and a
+modulus that is not within a small distance of a power of two, like P-256's,
+is displayed in hexadecimal. A modulus may be as wide as 2^521 − 1, the prime
+of P-521.
+
+Division is where a field differs from the integers, and Orange keeps it
+total. `x / y` multiplies x by the inverse of y when y has one and gives 0
+when it has none. In a prime field only 0 has no inverse, so `x / 0` is 0,
+which is exactly what the RFC's `x_2 * (z_2^(p - 2))` computes for a zero
+denominator, and the fixture's ladder ends in `s[0] / s[1]`, as the RFC does.
+Constants that the standards define by division are written the same way:
+
+```orange
+module fields {
+  // FIPS 203: q = 3329.
+  type Zq = Mod[3329];
+  // RFC 8032 section 5.1: p = 2^255 - 19.
+  type F = Mod[(1 << 255) - 19];
+
+  // 17 is a primitive 256th root of unity modulo q, so 17^128 = -1.
+  spec zeta_128() -> Zq { for i in 0..7 with z: Zq = 17 { z * z } }
+  // The inverse NTT scales by 128^-1 modulo q.
+  spec scale() -> Zq { 1 / 128 }
+  // RFC 8032 section 5.1: d = -121665/121666.
+  spec d() -> F { -121665 / 121666 }
+}
+```
+
+```text
+fields::zeta_128: Mod[3329] = 3328
+fields::scale: Mod[3329] = 3303
+fields::d: Mod[(1 << 255) - 19] = 37095705934669439343138083508754565189542113879843219016388785533085940283555
+```
+
+Literals follow the rule of the word types, adapted to a ring. A literal of
+`Mod[m]` has a magnitude less than m, and `-n` stands for m − n, so `-1` is
+the largest residue and `-121665` above is p − 121665. A literal is never
+reduced: `7` is an error as a `Mod[7]`, as `256` is as a `Word[8]`, because a
+constant that does not fit is almost always a transcription mistake.
+
+Two moduli are two types, and nothing crosses between them silently:
+
+```text
+error[ORC0214]: `y` has type `Mod[11]`, but `Mod[7]` is required here
+ --> <stdin>:3:53
+  |
+3 | ... (x: Mod[7], y: Mod[11]) -> Mod[7] { x + y }
+  |                                             ^ expected `Mod[7]`
+  = note: Orange has no implicit conversions between types
+```
+
+`as` is the only crossing. Into a ring, it takes the least residue of the
+operand's integer value; out of one, it gives the least residue as an `Int`,
+or that residue modulo 2^n as a word. So `t[x as Int]` looks a table up by a
+residue, and the range rules of the lookup slice prove it in range: `x as Int`
+for x of `Mod[7]` runs from 0 through 6. Residues have no order, no
+remainder, and no bits. An order on a ring is a property of the
+representatives one chooses, and the standards that compare field elements,
+as RFC 8032 does when it checks that a scalar is less than L, compare those
+representatives explicitly:
+
+```text
+error[ORC0215]: `<` is not defined for `Mod[(1 << 255) - 19]`
+ --> <stdin>:4:37
+  |
+4 |   spec less(x: F, y: F) -> Bool { x < y }
+  |                                     ^ the operands have type `Mod[(1 << 255) - 19]`
+  = note: residues are compared with `==` and `!=`; they have no order, so compare least residues, such as `(x as Int) < (y as Int)`
+```
+
+The [modular fixtures](../compiler/fixtures/s3i/) write X25519 over `F` with
+no `%` anywhere and reproduce the first test vector of RFC 7748 section 5.2,
+keep Poly1305's accumulator in `Mod[(1 << 130) - 5]` and reproduce the tag of
+RFC 8439 section 2.5.2, and compute constants in the rings their standards
+define: the three above, Ed25519's square root of −1, and a check, made in
+P-256's own field, that its generator lies on its curve:
+
+```text
+fields::p256_generator_on_curve: Bool = true
+```
+
+Two seams show. The first is that `Mod[m]` is a ring for every m, and nothing
+checks that m is prime. For a composite modulus, dividing by a residue that
+shares a factor with m gives 0: in `Mod[256]`, `1 / 2` is 0 and `1 / 3` is
+171. A program over a composite modulus must expect that, and one that must
+know can test `(y * (1 / y)) == 1`. The second is timing again. The reference
+evaluator finds an inverse with the extended Euclidean algorithm, whose running
+time depends on the value, and nothing here says how a field operation on a
+secret is to be compiled; that belongs, like the conditional swap, to
+[Chapter 6](#chapter-6-secrets-are-a-semantic-concern) and code generation.
+The slice also stops short of generic fields: `ladder` is written for one `F`,
+because a function cannot yet take its modulus as a parameter.
+
+### Rounds in the words of their standard
+
+A loop's step was one expression, and a standard's round is not. FIPS 180-4
+section 6.2.2 writes a round of SHA-256 as a short list of named values: the
+temporary words T1 and T2, and then the new working variables h through a.
+RFC 7748 writes each step of the Montgomery ladder as nine named values, A,
+AA, B, BB, E, C, D, DA, and CB, before the new coordinates. Through S3i, a
+`let` could stand only at the start of a function's body, so those names had
+to live in a helper function, apart from the loop that runs it. The
+[SHA-256 fixture](../compiler/fixtures/s3e/valid-sha256.or) of
+[Rounds as one expression](#rounds-as-one-expression) calls a `round`
+function with the state, the round's constant, and its message word, and reads
+a through h as `v[0]` through `v[7]`; the ladder of
+[Fields as types](#fields-as-types) is three functions where the RFC writes
+one loop.
+
+The S3j slice, proposed in the [blocks specification](BLOCKS_2026.md), lets a
+loop's step and each branch of a conditional begin with `let` bindings,
+exactly as a body does. The specification calls a step or a branch written
+this way a block. The round then stands where it runs, in the standard's own
+words:
+
+```orange
+spec compress(hash: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = hash {
+    let a: Word[32] = v[0];
+    let b: Word[32] = v[1];
+    let c: Word[32] = v[2];
+    let d: Word[32] = v[3];
+    let e: Word[32] = v[4];
+    let f: Word[32] = v[5];
+    let g: Word[32] = v[6];
+    let h: Word[32] = v[7];
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    [t1 + t2, a, b, c, d + t1, e, f, g]
+  };
+  for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + hash[i] }
+}
+```
+
+The last line of the step is the standard's step 3, read left to right: the
+new a is T1 + T2, the new e is d + T1, and every other variable moves down one
+place. A reviewer comparing this text with FIPS 180-4 compares names with
+names. The [block fixtures](../compiler/fixtures/s3j/) hash the same two
+messages to the same digests as before:
+
+```text
+sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad]
+```
+
+A step's bindings are evaluated afresh at every step, in order, each seeing
+the ones before it, and then the step's value becomes the next accumulator.
+Nothing a step binds survives into the next step; only the accumulator
+carries. A branch's bindings are evaluated only when the branch is chosen, as
+its value is, so a branch that is not chosen costs nothing, however much work
+its bindings describe:
+
+```orange
+spec pick(c: Bool, x: Int) -> Int {
+  if c { let t: Int = x + 1; t * t } else { x }
+}
+```
+
+`pick(true, 6)` is 49 and `pick(false, 6)` is 6. A binding costs the steps of
+its value each time its block runs, and one step each time it is read, so a
+name costs what writing its value in place would cost, and less when the value
+is read more than once.
+
+Scope is where blocks keep Orange's promise that a name means one thing. A
+block's binding is in scope from its own semicolon to the end of its block:
+in the bindings after it, in the block's value, and in every loop and
+conditional nested there, and nowhere else. Read outside, it is an error that
+points at the binding it might have meant:
+
+```text
+error[ORC0211]: `t` is not in scope here
+ --> <stdin>:4:47
+  |
+4 | ...  c { let t: Int = x + 1; t * t } else { t }
+  |                                             ^ unknown name
+ ::: <stdin>:4:16
+  |
+4 |     if c { let t: Int = x + 1; t * t } else { t }
+  |                - a binding of this name is here
+  = note: a binding of a loop's step or a branch is in scope only within that step or branch
+```
+
+A block still cannot shadow. A binding that repeats a parameter, a binding of
+the body, a loop's index or accumulator, or a binding of an enclosing block
+is rejected, and the error names what it would have hidden:
+
+```text
+error[ORC0219]: duplicate name `t`
+ --> <stdin>:4:49
+  |
+4 | ... t in 0..64 with v: Word[32]^8 = h { let t: Word[32] = v[7]; v }
+  |                                             ^ this name repeats a name in scope
+ ::: <stdin>:4:9
+  |
+4 |     for t in 0..64 with v: Word[32]^8 = h { let t: Word[32] = v[7]; v }
+  |         - the loop index is here
+  = note: each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing
+```
+
+Names whose scopes do not overlap may repeat. Two branches of one conditional
+may each bind `t`, and so may two loops, one after the other. That is what
+lets the [X25519 fixture](../compiler/fixtures/s3j/valid-x25519.or) write the
+whole ladder as the RFC does, with the conditional swap and every one of the
+RFC's names inside one loop, and still bind `x_2` and `z_2` again after it for
+the last swap:
+
+```orange
+let ladder: Ladder = for i in 0..255 with s: Ladder = [1, 0, x_1, 1] {
+  let k_t: Bool = (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0;
+  // swap ^= k_t, where swap holds bit t + 1; clamping clears bit 255.
+  let swap: Bool = k_t != ((k[(255 - i) / 8] & masks[(255 - i) % 8]) != 0);
+  let x_2: F = if swap { s[2] } else { s[0] };
+  let z_2: F = if swap { s[3] } else { s[1] };
+  let x_3: F = if swap { s[0] } else { s[2] };
+  let z_3: F = if swap { s[1] } else { s[3] };
+  let A: F = x_2 + z_2;
+  let AA: F = A * A;
+  let B: F = x_2 - z_2;
+  let BB: F = B * B;
+  let E: F = AA - BB;
+  let C: F = x_3 + z_3;
+  let D: F = x_3 - z_3;
+  let DA: F = D * A;
+  let CB: F = C * B;
+  [AA * BB, E * (AA + 121665 * E), (DA + CB) * (DA + CB), x_1 * ((DA - CB) * (DA - CB))]
+};
+```
+
+It reproduces the first test vector of RFC 7748 section 5.2, as the fixtures
+of the two earlier slices do. The RFC carries `swap` from one bit to the next
+in a variable; a step cannot, so the step reads bit t + 1 of the scalar again,
+which is the value the RFC's variable holds.
+
+That is the seam this slice leaves. A loop carries exactly one accumulator,
+so a round whose state is eight words keeps them in an array and names them
+again at the top of every step, as `let a: Word[32] = v[0]` does above. The
+next section closes it. A block is also not yet an expression of its own:
+bindings stand only at the start of a body, a step, or a branch, where braces
+already mark where their scope ends.
+
+### Several values at once
+
+Standards speak of several values at once. FIPS 180-4 carries eight working
+variables, a through h, from one round of SHA-256 to the next and assigns all
+eight at the end of every round. RFC 8439 defines the ChaCha20 quarter round
+on four words, a, b, c, and d, and gives four words back. NIST SP 800-232
+keeps the 320-bit state of Ascon as five 64-bit words. Through S3j, a function
+gave one value and a loop carried one accumulator, so each of those states had
+to become an array, and each round began by reading its words back out by
+index.
+
+The S3k slice, proposed in the [tuples specification](TUPLES_2026.md), adds
+tuples. A tuple type lists its element types in parentheses, as
+`(Word[64], Bool)`; a tuple lists its values the same way; `p.0` selects the
+first element of `p`; and a tuple pattern, written where a binding or a loop's
+accumulator names its value, names every element at once. One limb of a
+multi-precision addition gives its sum and its carry together:
+
+```orange
+type Limb = Word[64];
+type Carried = (Limb, Limb);
+
+spec add_carry(a: Limb, b: Limb, carry: Limb) -> Carried {
+  let s: Limb = a + b;
+  let t: Limb = s + carry;
+  let out: Limb = if s < a { 1 } else { 0 };
+  (t, if t < s { out + 1 } else { out })
+}
+
+spec add256(x: Limb^4, y: Limb^4) -> (Limb^4, Limb) {
+  for i in 0..4 with (sum: Limb^4, carry: Limb) = ([0; 4], 0) {
+    let (limb: Limb, out: Limb) = add_carry(x[i], y[i], carry);
+    (sum with [i] = limb, out)
+  }
+}
+```
+
+The loop's accumulator is a pattern. It carries the sum and the carry by name
+from one limb to the next, and each step gives the next pair. Adding one to
+the largest 256-bit number wraps every limb to zero and carries one out, and
+the evaluator prints the result as its type is written:
+
+```text
+tuples::wraps: (Word[64]^4, Word[64]) = ([0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000], 0x0000000000000001)
+```
+
+With a pattern for its accumulator, the round of SHA-256 from the previous
+section needs no array at all. The [tuple fixtures](../compiler/fixtures/s3k/)
+carry a through h themselves:
+
+```orange
+let (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+     e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+  for t in 0..64 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+                       e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+    (hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]) {
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    (t1 + t2, a, b, c, d + t1, e, f, g)
+  };
+```
+
+The loop's first value is the standard's step 2, which sets a through h to the
+previous hash value; its step is step 3; and the line after it is step 4,
+which adds each variable to its word of the hash, as `a + hash[0]`. The eight
+names appear twice, and that is not shadowing. The loop's names are in scope
+only in its step, and the body's names only after the binding's semicolon, so
+the two scopes never meet. The digests of "abc" and of the two-block message
+are the published ones, as they were.
+
+The ChaCha20 quarter round becomes a function of four words that gives four:
+
+```orange
+type Quad = (Word[32], Word[32], Word[32], Word[32]);
+
+spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+  let a1: Word[32] = a + b;
+  let d1: Word[32] = (d ^ a1) <<< 16;
+  let c1: Word[32] = c + d1;
+  let b1: Word[32] = (b ^ c1) <<< 12;
+  let a2: Word[32] = a1 + b1;
+  let d2: Word[32] = (d1 ^ a2) <<< 8;
+  let c2: Word[32] = c1 + d2;
+  let b2: Word[32] = (b1 ^ c2) <<< 7;
+  (a2, b2, c2, d2)
+}
+```
+
+The block function's loop carries the sixteen words of the state, s0 through
+s15, as one pattern, and a double round is eight lines: the column round and
+then the diagonal round, in the order of RFC 8439 section 2.3, each line naming
+the words it takes and the words it gives:
+
+```orange
+let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+```
+
+A reader checks the diagonals against the RFC's list, 0, 5, 10, 15 and then
+1, 6, 11, 12, by reading the names. The quarter round's test vector of section
+2.1.1 comes out as the RFC prints it, and the block function reproduces
+section 2.3.2:
+
+```text
+chacha20::quarter_round_vector: (Word[32], Word[32], Word[32], Word[32]) = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+```
+
+Ascon-Hash256 takes the same shape. Its state is a declared type of five
+words, `type State = (Word[64], Word[64], Word[64], Word[64], Word[64]);`. A
+round opens with a pattern, `let (x0: Word[64], x1: Word[64], x2: Word[64],
+x3: Word[64], x4: Word[64]) = s;`, and names every word of its constant
+addition, substitution, and linear layers before it gives the next state. The
+sponge absorbs a block into the first word by rebuilding the state around it,
+as `p12((s.0 ^ blocks[i], s.1, s.2, s.3, s.4))`. The digests of the empty
+message, of the byte 00, and of the eight bytes 00 through 07 match entries 1,
+2, and 9 of the designers' known-answer file.
+
+The rules are few, and each keeps a tuple a value rather than a place. A tuple
+has 2 through 16 elements, each `Int`, `Bool`, a word, a residue, or an array
+of one of them, and neither a tuple nor an array ever holds a tuple. `.k`
+follows a name or a call, and k is written in decimal, counted from zero. No
+operator, order, conversion, index, or update applies to a whole tuple,
+because each would have to choose a meaning, element by element or all at
+once, that a cryptographer should see written out. Equality is the one
+exception, since S3q: two tuples are equal when every element is, the only
+meaning it could have (see
+[Known answers beside the algorithm](#known-answers-beside-the-algorithm)).
+So the compiler points at the operator, and at a position that is not there:
+
+```text
+error[ORC0215]: `<` is not defined for `(Word[64], Word[64])`
+ --> <stdin>:4:45
+  |
+4 | ... ec before(p: Pair, q: Pair) -> Bool { p < q }
+  |                                             ^ the operands have type `(Word[64], Word[64])`
+  = note: tuples are compared whole with `==` and `!=`; they have no order, so compare elements, such as `p.0 < q.0`
+```
+
+```text
+error[ORC0223]: `(Word[64], Word[64])` has no element 2
+ --> <stdin>:4:39
+  |
+4 |   spec third(p: Pair) -> Word[64] { p.2 }
+  |                                       ^ its elements are numbered 0 through 1
+  = note: a tuple's elements are counted from zero
+```
+
+A tuple costs what its elements cost and one step for each element, `.k` costs
+one step beyond its base, and a name bound by a pattern costs two steps to
+read: the read of the tuple and the selection from it. That is also how the
+Core stays small. A pattern is one binding of a tuple type, and each of its
+names is a read of that binding followed by a selection, so tuples add only
+two kinds of node. A tuple is shared, not copied, where it is read more than
+once, as an array is, and every source S3j accepted has the same Core, values,
+and output under S3k, since it writes no tuple.
+
+That leaves seams. A pattern names every element, with no wildcard for one it
+does not need, and a step that changes one element of a tuple rebuilds the
+whole, as Ascon's absorption does. Nothing yet takes a size or a modulus as a
+parameter, so `add256` is written for four limbs rather than for n. The next
+section closes a third seam: through S3k, arrays could not be joined or
+sliced, and a message was written as a list of numbers rather than as the
+bytes a standard prints.
+
+### Bytes as the standards print them
+
+Standards print their inputs as text and hex. RFC 4231 keys its second HMAC
+test case with "Jefe" and authenticates "what do ya want for nothing?"; RFC
+8439 seals a sentence about sunscreen under a key printed as 32 hex bytes. And
+their algorithms move runs of bytes. FIPS 180-4 pads a message by appending
+the byte 80, zeros, and the message's length, then reads each block's words
+four bytes at a time; RFC 8439 takes the first 32 bytes of a block as a
+one-time key. Through S3k, each of those inputs was a list of numbers typed
+by hand, and each run of bytes was copied one element at a time by a loop.
+
+The S3l slice, proposed in the [bytes specification](BYTES_2026.md), writes
+them as the standards do. A byte string `"..."` is the array `Word[8]^n` of
+the ASCII codes of its characters; a hex string `hex"..."` is the array of its
+hex digit pairs, spaced wherever the reader likes between bytes; `a ++ b`
+joins two arrays of one element type; `x[a..b]` is the array of the elements
+of `x` from index a up to, but not including, index b, with a bound left out
+meaning the start or the end; and `x with [a..b] = v` is `x` with that run
+replaced by `v`:
+
+```orange
+spec key() -> Word[8]^4 { "Jefe" }
+spec nonce() -> Word[8]^12 { hex"07000000 40414243 44454647" }
+spec iv() -> Word[8]^8 { nonce()[4..] }
+spec padded() -> Word[8]^16 { "abc" ++ hex"80" ++ [0; 8] ++ hex"00 00 00 18" }
+```
+
+```text
+bytes::key: Word[8]^4 = [0x4a, 0x65, 0x66, 0x65]
+bytes::nonce: Word[8]^12 = [0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]
+bytes::iv: Word[8]^8 = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]
+bytes::padded: Word[8]^16 = [0x61, 0x62, 0x63, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18]
+```
+
+A byte string's length is part of its type, so `"Jefe"` is a `Word[8]^4` and
+is an error where five bytes are required, exactly as an array literal of four
+elements would be. Its characters are printable ASCII, space through tilde, so
+that what a reader sees is exactly what the bytes are, and any other byte is
+written with an escape, `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, or `\xNN`, or in
+hex. `hex` is not reserved: it begins a hex string only when a quote follows it
+directly, and a parameter named `hex` keeps its meaning. `++` is an operator
+group of its own, so it never shares a level with `+` or `^` without
+parentheses.
+
+The [HMAC fixture](../compiler/fixtures/s3l/valid-hmac.or) pads its messages
+as FIPS 180-4 section 5.1.1 says and reads the sixteen words of each block
+through slices, so the schedule of section 6.2.2 is written over bytes:
+
+```orange
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] {
+    w with [t] = word(block[4 * t..4 * t + 4])
+  };
+  for t in 16..64 with w: Word[32]^64 = head {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+```
+
+Here `word` is section 3.1's reading of four bytes, most significant first,
+as one word. The digest goes the other way, and a slice update writes each
+word of the hash as four bytes:
+
+```orange
+spec digest(hash: Word[32]^8) -> Word[8]^32 {
+  for i in 0..8 with out: Word[8]^32 = [0; 32] {
+    out with [4 * i..4 * i + 4] = [
+      (hash[i] >> 24) as Word[8], (hash[i] >> 16) as Word[8],
+      (hash[i] >> 8) as Word[8], hash[i] as Word[8],
+    ]
+  }
+}
+```
+
+HMAC is then RFC 2104 with RFC 4231's inputs as that RFC prints them. The key
+is padded with zeros to one block, exclusive-ored with the inner pad, and
+joined to the text and to SHA-256's padding: the byte 80, 27 zeros, and the
+length of the 92-byte inner message in bits, 0x2e0:
+
+```orange
+spec case2() -> Word[8]^32 {
+  let k0: Word[8]^64 = "Jefe" ++ [0; 60];
+  let text: Word[8]^28 = "what do ya want for nothing?";
+  outer(k0, hash128(keyed(k0, 0x36) ++ text ++ hex"80" ++ [0; 27] ++ hex"00000000 000002e0"))
+}
+```
+
+```text
+hmac::case2: Word[8]^32 = [0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e, 0x6a, 0x04, 0x24, 0x26, 0x08, 0x95, 0x75, 0xc7, 0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83, 0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43]
+```
+
+That is the MAC of RFC 4231 section 4.3, and the same fixture reproduces
+test case 1 and FIPS 180-4's digest of "abc". The arithmetic of the padding
+is still the writer's: each join's lengths must sum to the declared length,
+and the analyzer says so, with both lengths, when they do not.
+
+The [AEAD fixture](../compiler/fixtures/s3l/valid-aead.or) writes
+ChaCha20-Poly1305 as RFC 8439 section 2.8 does. Its plaintext is the
+sentence of section 2.8.2, as text:
+
+```orange
+spec sunscreen() -> Word[8]^114 {
+  "Ladies and Gentlemen of the class of '99: " ++
+    "If I could offer you only one tip for the future, " ++
+    "sunscreen would be it."
+}
+```
+
+Poly1305 reads one message joined from the additional data padded with zeros
+to sixteen bytes, the ciphertext padded the same way, and the two lengths, 12
+and 114, as 64-bit little-endian numbers; the one-time key is the first 32
+bytes of block 0, which is section 2.6's key generation read as a slice of a
+call:
+
+```orange
+spec mac_data(aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^160 {
+  aad ++ [0; 4] ++ ciphertext ++ [0; 14] ++ hex"0c00000000000000" ++ hex"7200000000000000"
+}
+
+spec seal(key: Word[8]^32, nonce: Word[8]^12, aad: Word[8]^12, plaintext: Word[8]^114)
+  -> Word[8]^130 {
+  let ciphertext: Word[8]^114 = encrypt(key, nonce, plaintext);
+  ciphertext ++ mac(block(key, 0, nonce)[..32], mac_data(aad, ciphertext))
+}
+```
+
+Poly1305 itself takes its sixteen-byte blocks as `m[16 * j..16 * j + 16]`,
+and even its clamp is written as bytes:
+`hex"ffffff0f fcffff0f fcffff0f fcffff0f"` is the mask
+0ffffffc0ffffffc0ffffffc0fffffff of section 2.5 in little-endian order. The
+sealed message ends in the RFC's tag, and the receiver's check, which
+recomputes the tag and compares it byte by byte, accepts it:
+
+```text
+aead::tag: Word[8]^16 = [0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60, 0x06, 0x91]
+aead::verified: Bool = true
+```
+
+Here `tag` is `sealed()[114..]`, the last sixteen bytes.
+
+A slice's position never depends on data. Its bounds are built from integer
+literals and loop indices, with `+`, `-`, and `*` by a constant, and the
+analyzer proves, before anything runs, that the distance between them is the
+same positive number at every step, because that number is the slice's
+length and so part of its type, and that every element the slice can take,
+at every step, exists. A slice therefore needs no check when it runs, and the
+compiler points at the part it cannot prove:
+
+```orange
+spec window(x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
+spec words(x: Word[8]^8) -> Word[8]^4 {
+  for i in 0..2 with w: Word[8]^4 = [0; 4] { x[4 * i + 2..4 * i + 6] }
+}
+spec accent() -> Word[8]^5 { "café" }
+```
+
+```text
+error[ORC0226]: a slice's bounds may use only integer literals and loop indices
+ --> <stdin>:3:54
+  |
+3 | ... (x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
+  |                                             ^ this is neither
+  = note: a slice's position never depends on data: its bounds are built from integer literals and loop indices with `+`, `-`, and `*` by a constant
+```
+
+```text
+error[ORC0223]: this slice reaches elements 2 through 9, out of range for `Word[8]^8`
+ --> <stdin>:5:50
+  |
+5 | ...  in 0..2 with w: Word[8]^4 = [0; 4] { x[4 * i + 2..4 * i + 6] }
+  |                                             ^^^^^^^^^^^^^^^^^^^^ indices run from 0 through 7
+  = note: every element a slice can take, over every loop index in its bounds, must be an element of the array
+```
+
+```text
+error[ORC0235]: U+00E9 is not a printable ASCII character
+ --> <stdin>:7:36
+  |
+7 |   spec accent() -> Word[8]^5 { "caf\u{e9}" }
+  |                                    ^^^^^^ its UTF-8 bytes are written `hex"c3 a9"`
+  = note: a byte string's characters are its bytes, so each is printable ASCII, from ` ` through `~`; write any other byte as an escape, or in a hex string joined with `++`
+```
+
+The second error names the whole range the slice sweeps: its last step, i =
+1, would take elements 6 through 9 of an array of eight. The third writes the
+source line with the character escaped, and its label gives the bytes a
+program would write in its place.
+
+A byte string costs one evaluation step, whatever its length, because the
+evaluator builds its array once, before evaluation, and shares it, as it
+shares an integer literal. A join, a slice, and a slice update cost one step
+for each 64 elements, or part of 64, of the array they build, as an update or
+a fill does. In the Core, a byte string is one array literal, and joins,
+slices, and slice updates are three new kinds of node, each after its
+operands, with a bound left out recorded as the literal it stands for. Every
+source S3k accepted has the same Core, values, and output under S3l, since it
+writes no string, `++`, or range in brackets.
+
+That leaves new seams. A slice's position never depends on data, so a message
+of variable length, or a format that reads a length and then that many bytes,
+cannot be written yet. A byte string holds printable ASCII, so text in
+another script is written in hex, and until S3p an array held at most 256
+elements, so a longer message was several values. Bytes and words are converted by functions a
+program writes, such as `word` above, one for each byte order. The next
+section closes one more seam: through S3l, nothing took a size as a
+parameter, so `hash64` and `hash128` were two functions where SHA-256 is one.
+
+### One algorithm for every length
+
+A standard defines each algorithm once, for inputs of many lengths. FIPS
+180-4 pads a message of any length to whole 64-byte blocks and absorbs them
+one at a time; RFC 2104 hashes a padded key followed by a message of any
+length; RFC 8439 feeds Poly1305 sixteen bytes at a time, the last block
+holding what is left. Through S3l every length in an Orange program was an
+integer written in its source, so a program could hash a message of 3 bytes
+or of 56, but a function for both had to be written twice.
+
+The S3m slice, proposed in the [sizes specification](SIZES_2026.md), writes
+it once. A `spec` declares **size parameters** in square brackets before its
+parameters, each with a finite range, and writes them wherever a length or a
+loop bound is written:
+
+```orange
+spec sum[n in 1..9](x: Int^n) -> Int {
+  for i in 0..n with s: Int = 0 { s + x[i] }
+}
+spec zeros[n in 1..4]() -> Word[8]^n { [0; n] }
+spec code[a in 1..3, b in 7..9]() -> Int { (a * 10) + b }
+spec total() -> Int { sum([1, 2, 3]) + sum[1]([10]) }
+```
+
+```text
+sizes::zeros[1]: Word[8]^1 = [0x00]
+sizes::zeros[2]: Word[8]^2 = [0x00, 0x00]
+sizes::zeros[3]: Word[8]^3 = [0x00, 0x00, 0x00]
+sizes::code[1, 7]: Int = 17
+sizes::code[1, 8]: Int = 18
+sizes::code[2, 7]: Int = 27
+sizes::code[2, 8]: Int = 28
+sizes::total: Int = 16
+```
+
+`sum` stands for eight functions, `sum[1]` through `sum[8]`, one for each
+value of `n` from 1 up to, but not including, 9. Each is an **instance**: the
+function with its sizes replaced by their values. The compiler checks every
+instance before anything runs, exactly as it would check the same function
+written out by hand, so in each of the eight the loop's bound is a number and
+`x[i]` is proved in range. A call names its instance by its sizes in
+brackets, as `sum[1]([10])`, or by the lengths of its arguments:
+`sum([1, 2, 3])` calls `sum[3]`, the one instance whose parameter has three
+elements. `orangec eval` evaluates every instance of a `spec` without value
+parameters and names it as a call would, the first size changing slowest.
+
+Nothing is symbolic. A size is not a variable that the checker reasons about;
+it is a number, different in each instance, and the instances are finite: a
+size's range, like a loop's, lies within 0 through 65536, and a function has
+at most four sizes and 256 instances. What is proved for `sum` is proved for
+each of its eight instances separately, which is all a finite family of
+functions needs, and each instance is checked by the rules every function
+already obeyed, with no new rule of type or of range.
+
+A size is built from integer literals and size parameters with `+`, `-`,
+`*`, `/`, `%`, and parentheses, and computed exactly, with `/` and `%`
+Euclidean and total, as for `Int`. A length computed from sizes is written in
+parentheses. That is enough for SHA-256. The
+[SHA-256 fixture](../compiler/fixtures/s3m/sha256.or) writes the padding of
+FIPS 180-4 section 5.1.1 once for every message of 1 through 119 bytes: the
+message, the byte 80, zeros, and the message's length in bits fill
+((len + 8) / 64) + 1 blocks, and that length, 8 · len, is under 2^16, so all
+but its last two bytes are zeros:
+
+```orange
+spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+  m ++ hex"80" ++ [0; ((64 * (((len + 8) / 64) + 1)) - len - 3)]
+    ++ [((8 * len) / 256) as Word[8], (8 * len) as Word[8]]
+}
+```
+
+The digest absorbs one block in each turn of a loop whose bound is a size,
+and SHA-256 is the one composed with the other:
+
+```orange
+spec absorb[blocks in 1..4](p: Word[8]^(64 * blocks)) -> Word[8]^32 {
+  digest(for b in 0..blocks with h: Word[32]^8 = initial_hash() {
+    compress(h, p[64 * b..64 * b + 64])
+  })
+}
+
+spec sha256[len in 1..120](m: Word[8]^len) -> Word[8]^32 { absorb(pad(m)) }
+
+spec abc() -> Word[8]^32 { sha256("abc") }
+```
+
+`sha256("abc")` calls `sha256[3]`. Inside it, `pad(m)` calls `pad[3]`, whose
+result has 64 bytes, and `absorb(pad(m))` calls `absorb[1]`, the instance
+whose parameter has that length: a call without sizes has the result type of
+the instance it calls, so lengths pass through calls. The 56-byte message of
+FIPS 180-4's second example needs a second block, and the same three
+functions take it there, through `pad[56]`, which gives 128 bytes, and
+`absorb[2]`:
+
+```text
+sha256::abc: Word[8]^32 = [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
+sha256::two_blocks: Word[8]^32 = [0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8, 0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39, 0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67, 0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1]
+```
+
+Those are the digests FIPS 180-4's examples print. `compress`, `schedule`,
+and `digest` are the functions of the byte slice, unchanged: a function
+without sizes has one instance, and it is the function it always was.
+
+HMAC is now RFC 2104's formula and nothing else. The
+[HMAC fixture](../compiler/fixtures/s3m/valid-hmac.or) uses the sized SHA-256
+as a module, pads any key of 1 through 63 bytes with zeros to one block, and
+authenticates any message of 1 through 55 bytes:
+
+```orange
+spec padded[klen in 1..64](key: Word[8]^klen) -> Word[8]^64 { key ++ [0; (64 - klen)] }
+
+spec hmac[len in 1..56](k0: Word[8]^64, m: Word[8]^len) -> Word[8]^32 {
+  sha256::sha256(keyed(k0, 0x5c) ++ sha256::sha256(keyed(k0, 0x36) ++ m))
+}
+
+spec case2() -> Word[8]^32 { hmac(padded("Jefe"), "what do ya want for nothing?") }
+```
+
+```text
+hmac::case2: Word[8]^32 = [0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e, 0x6a, 0x04, 0x24, 0x26, 0x08, 0x95, 0x75, 0xc7, 0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83, 0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43]
+```
+
+The byte slice wrote SHA-256's padding, and the inner message's length of
+0x2e0 bits, into `case2` by hand. Here the inner hash reads 64 + 28 = 92
+bytes and calls `sha256[92]`, the outer reads 96 and calls `sha256[96]`, and
+each pads its own message; the longest message, 55 bytes, gives an inner
+hash of 119, the last length `sha256` takes. The MAC is RFC 4231's, and so
+is that of test case 1, whose key is twenty bytes 0b.
+
+Where an expression stands, a size's name is an `Int` constant: its value in
+the instance. The [Poly1305 fixture](../compiler/fixtures/s3m/valid-poly1305.or)
+writes RFC 8439 section 2.5 once for every message of 1 through 255 bytes,
+over the type `P` of the integers modulo 2^130 − 5. Its loop runs over the
+message's sixteen-byte blocks, and the byte 01 that each block carries above
+its bytes sits, in the last block, just above the message's own last byte:
+
+```orange
+spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+  let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+  let r: P = number(clamp(key[..16]));
+  let s: Int = number(key[16..]) as Int;
+  let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+    let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+    (a + number(padded[16 * j..16 * j + 16]) + weight(held)) * r
+  };
+  tag((a as Int) + s)
+}
+```
+
+Here `weight(k)` is 256^k in the field, so `weight(held)` is that byte 01. In
+each instance the loop's bound is a number, so `padded[16 * j..16 * j + 16]`
+is proved in range for every j the loop takes. Called with the key of section
+2.5.2 and "Cryptographic Forum Research Group", 34 bytes, `mac` takes the
+instance `mac[34]` and gives the RFC's tag:
+
+```text
+poly1305::example: Word[8]^16 = [0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27, 0xa9]
+```
+
+A mistake is reported in the first instance that makes it:
+
+```orange
+spec last[n in 1..5](x: Word[8]^n) -> Word[8] { x[3] }
+spec count[n in 1..3]() -> Int { n }
+spec unclear() -> Int { count() }
+spec first[n in 1..4](x: Word[8]^n) -> Word[8] { x[0] }
+spec unfit() -> Word[8] { first([0; 9]) }
+```
+
+```text
+error[ORC0223]: index `3` is out of range for `Word[8]^1`
+ --> <stdin>:3:53
+  |
+3 | ... n in 1..5](x: Word[8]^n) -> Word[8] { x[3] }
+  |                                             ^ indices run from 0 through 0
+  = note: a literal index must be less than the array's length
+  = note: in the instance `last[1]`, the first of `last` in error: a sized function is checked once for each value of its sizes
+```
+
+```text
+error[ORC0239]: this call fits more than one instance of `count`, among them `count[1]` and `count[2]`
+ --> <stdin>:5:27
+  |
+5 |   spec unclear() -> Int { count() }
+  |                           ^^^^^^^ write the sizes in brackets
+  = note: a call that writes no sizes calls the one instance of its function whose array parameters have the lengths of its arguments; any other call writes its sizes in brackets, as in `absorb[2](p)`
+```
+
+```text
+error[ORC0238]: no instance of `first` takes arguments of these lengths
+ --> <stdin>:7:29
+  |
+7 |   spec unfit() -> Word[8] { first([0; 9]) }
+  |                             ^^^^^^^^^^^^^ an array of length 9 is given
+  = note: `first` is defined for `n` in 1..4
+  = note: a call that writes no sizes calls the one instance of its function whose array parameters have the lengths of its arguments; any other call writes its sizes in brackets, as in `absorb[2](p)`
+```
+
+`last` is wrong in `last[1]`, `last[2]`, and `last[3]`, where the array has
+no element 3, but it is reported once, in its first instance in error, which
+the note names, and the instances after it are not checked. `count` has no
+array parameter, so a call without sizes fits every instance and must say
+which it means; `[0; 9]` fits no instance of `first`, and the error says
+which sizes `first` takes.
+
+Sizes cost nothing when a program runs. A length, a fill, or a loop bound
+written with sizes costs what the same integer costs, and a size's name in an
+expression costs one step, as an integer literal does. Checking pays instead:
+every instance is checked in full, each part of a size costs one semantic
+event each time it is computed, and the per-source budgets of 1,048,576
+semantic events and 262,144 Core nodes bound all the instances together. In
+the Core, each instance is one Core function that records its sizes, a size's
+name is an `Int` literal, and a call refers to the instance it names; the
+Core gains no kind of node. Every source S3l accepted has the same Core,
+values, and output under S3m, since it declares no size parameter and writes
+every length and bound as an integer.
+
+That leaves seams. Nothing is proved for every value of a size at once, only
+for each value in its range, one instance at a time, so a family is finite,
+and, until S3p, an array still held at most 256 elements. No modulus is written with a
+parameter, so one `spec` cannot yet serve every field, and no position is a
+parameter, so one quarter round cannot act on four positions of a whole
+state. And a size is fixed in each instance, as a slice's position is, so a
+format that reads a length and then that many bytes still cannot be written.
+The roadmap lists those next. The next section closes one more seam: through
+S3m, bytes and words were converted by functions a program writes, one for
+each width and each order.
+
+### Words in either byte order
+
+A standard prints bytes and computes on words, and it says in a few words how
+one becomes the other. FIPS 180-4 section 3.1 fixes big-endian order for the
+whole standard, so SHA-256 reads each 64-byte block as sixteen 32-bit words,
+the first byte of each most significant, and writes its digest the same way.
+RFC 8439 reads ChaCha20's key, counter, and nonce as little-endian words,
+serializes the state as little-endian bytes, and reads each Poly1305 block as
+a little-endian number, and RFC 7748 decodes and encodes an X25519
+coordinate as a little-endian number. Through S3m, Orange said each of these
+in code. `load_le32`, earlier in this chapter, builds a word with three shifts
+and three ors, its inverse was four shifts called in another loop, and
+Poly1305 read a block with a loop of sixteen multiplications. A reader checked every index against
+the standard's few words, and the evaluator ran every step.
+
+The S3n slice, proposed in the [byte order specification](ORDER_2026.md),
+says it as the standards do. A conversion may name a **byte order**, `big`
+or `little`, between `as` and its type, and the type may then be an array:
+
+```orange
+spec big_word() -> Word[32] { hex"01020304" as big Word[32] }
+spec little_word() -> Word[32] { hex"01020304" as little Word[32] }
+spec text() -> Word[32] { "abcd" as big Word[32] }
+spec bytes() -> Word[8]^4 { let w: Word[32] = 0xdeadbeef; w as big Word[8]^4 }
+spec round_trip() -> Word[32] {
+  let w: Word[32] = 0xdeadbeef;
+  (w as little Word[8]^4) as little Word[32]
+}
+spec joined() -> Word[64] {
+  let high: Word[32] = 0x01234567;
+  let low: Word[32] = 0x89abcdef;
+  [high, low] as big Word[64]
+}
+spec quarters() -> Word[16]^4 { let w: Word[64] = 0x0123456789abcdef; w as little Word[16]^4 }
+```
+
+```text
+order::big_word: Word[32] = 0x01020304
+order::little_word: Word[32] = 0x04030201
+order::text: Word[32] = 0x61626364
+order::bytes: Word[8]^4 = [0xde, 0xad, 0xbe, 0xef]
+order::round_trip: Word[32] = 0xdeadbeef
+order::joined: Word[64] = 0x0123456789abcdef
+order::quarters: Word[16]^4 = [0xcdef, 0x89ab, 0x4567, 0x0123]
+```
+
+The meaning is one piece of arithmetic. Words x_0 through x_(k−1), each of n
+bits, **spell** a number N, the first word most significant in `big` order and
+least significant in `little`:
+
+```text
+big:     N = x_0 · 2^(n(k−1)) + x_1 · 2^(n(k−2)) + … + x_(k−1)
+little:  N = x_0 + x_1 · 2^n + … + x_(k−1) · 2^(n(k−1))
+```
+
+A conversion in a byte order goes through that number. Words become the words
+of another width that spell N in the same order, so `joined` puts `high`
+above `low`, and `quarters` gives the low sixteen bits first. A single word is
+an array of one, so `hex"01020304" as big Word[32]` and `w as big Word[8]^4`
+are one rule read in two directions. Words convert only to words of the same
+number of bits, so no conversion between words loses a bit or invents one:
+writing words in the order they were read gives them back, as `round_trip`
+shows, and writing them in the other order reverses the bytes of a word.
+
+Words convert to a number, and a number to words:
+
+```orange
+spec number() -> Int { hex"0100" as big Int }
+spec little_number() -> Int { hex"0100" as little Int }
+spec minus_one() -> Word[8]^4 { let n: Int = -1; n as big Word[8]^4 }
+spec wraps() -> Word[8]^2 { let n: Int = 65539; n as big Word[8]^2 }
+spec residue() -> Mod[251] { hex"0100" as big Mod[251] }
+spec residue_bytes() -> Word[8]^2 { let x: Mod[65521] = -1; x as big Word[8]^2 }
+```
+
+```text
+order::number: Int = 256
+order::little_number: Int = 1
+order::minus_one: Word[8]^4 = [0xff, 0xff, 0xff, 0xff]
+order::wraps: Word[8]^2 = [0x00, 0x03]
+order::residue: Mod[251] = 5
+order::residue_bytes: Word[8]^2 = [0xff, 0xf0]
+```
+
+As an `Int`, words are N itself, and as a `Mod[m]`, N modulo m, as
+`N as Mod[m]` would give. In the other direction a number becomes the words
+that spell its residue modulo 2^(nk), the width of the words, and a residue
+first becomes its least residue. That is the rule of `as Word[n]` stretched
+across an array: one word keeps a value's residue modulo 2^n, so −1 is `0xff`
+as one byte and four bytes `0xff` as four, 65539 keeps its low sixteen bits,
+which are 3, and the residue −1 of `Mod[65521]`, which is 65520, is the two
+bytes that spell it. Two numbers convert to each other without a byte order,
+as before, and `Bool`, tuples, and arrays of anything but words convert in
+none.
+
+SHA-256 then reads and writes its words where FIPS 180-4 says to. The
+[SHA-256 fixture](../compiler/fixtures/s3n/valid-sha256.or) is the sized
+SHA-256 of [One algorithm for every length](#one-algorithm-for-every-length)
+with its byte functions gone. The first sixteen words of the message schedule
+are the block, read as big-endian words, and the padding ends in the
+message's length in bits as a big-endian 64-bit number, all eight of its
+bytes, as the standard writes it:
+
+```orange
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^16 = block as big Word[32]^16;
+  for t in 16..64 with w: Word[32]^64 = head ++ [0; 48] {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+
+spec absorb[blocks in 1..4](p: Word[8]^(64 * blocks)) -> Word[8]^32 {
+  let hash: Word[32]^8 = for b in 0..blocks with h: Word[32]^8 = initial_hash() {
+    compress(h, p[64 * b..64 * b + 64])
+  };
+  hash as big Word[8]^32
+}
+
+spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+  m ++ ([0; ((64 * (((len + 8) / 64) + 1)) - len - 8)] with [0] = 0x80)
+    ++ ((8 * len) as big Word[8]^8)
+}
+```
+
+The S3m fixture wrote a function `word` of four bytes and called it sixteen
+times in a loop, wrote the digest one word at a time in another, and wrote
+only the length's last two bytes, all that a message of at most 119 bytes
+needs. Here each of those is one conversion. The
+[SHA-512 fixture](../compiler/fixtures/s3n/valid-sha512.or) is the same
+program over 64-bit words, reading `block as big Word[64]^16` and writing its
+length as `(8 * len) as big Word[8]^16`, sixteen bytes, and both hash FIPS
+180-4's examples, a message that fills its last block exactly, and the
+longest message each takes to their digests.
+
+ChaCha20 reads the other way. The 64 bytes of its constant, key, counter,
+and nonce are its initial state as sixteen little-endian words, and the state
+it gives is those words as little-endian bytes:
+
+```orange
+let initial: Word[32]^16 =
+  ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+```
+
+```orange
+state as little Word[8]^64
+```
+
+The constant is text, as RFC 8439 prints it, "expand 32-byte k", and the
+[ChaCha20 fixture](../compiler/fixtures/s3n/valid-chacha20.or) gives the
+serialized block of section 2.3.2 byte for byte and encrypts the sunscreen
+sentence of section 2.4.2 to its ciphertext:
+
+```text
+chacha20::block_vector: Word[8]^64 = [0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4, 0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e, 0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa, 0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2, 0xb5, 0x12, 0x9c, 0xd1, 0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e]
+```
+
+A number in a field is where a byte order earns the most. RFC 8439 section
+2.5 reads Poly1305's key as two little-endian numbers, r and s, clamps r,
+reads each block of the message as a little-endian number with a byte 01
+above it, and writes the low 128 bits of the accumulator plus s as sixteen
+little-endian bytes. The
+[Poly1305 fixture](../compiler/fixtures/s3n/valid-poly1305.or) says so, over
+the type `P` of the integers modulo 2^130 − 5:
+
+```orange
+spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, on its two 64-bit halves.
+  let half: Word[64]^2 = key[..16] as little Word[64]^2;
+  let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+  let s: Int = key[16..] as little Int;
+  let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+  let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+    let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+    (a + (padded[16 * j..16 * j + 16] as little P) + weight(held)) * r
+  };
+  ((a as Int) + s) as little Word[8]^16
+}
+```
+
+The clamp is the RFC's mask, written on two 64-bit halves where the byte
+slice wrote it as bytes in little-endian order. A block goes straight into
+the field, since sixteen bytes spell a number below 2^128, which is its own
+residue. The tag needs no reduction of its own: a number becomes words by
+its residue, so writing the sum as sixteen bytes keeps exactly its low 128
+bits. The example of section 2.5.2 gives the RFC's tag, and two vectors of
+Appendix A.3, one whose sum passes 2^128, give theirs:
+
+```text
+poly1305::example: Word[8]^16 = [0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27, 0xa9]
+```
+
+X25519 decodes a coordinate as RFC 7748's decodeUCoordinate does, the top bit
+masked and the 32 bytes read as a little-endian number modulo 2^255 − 19,
+and encodes its result as encodeUCoordinate does, the least residue as 32
+little-endian bytes. In the
+[X25519 fixture](../compiler/fixtures/s3n/valid-x25519.or) each is one line
+around the ladder of
+[Rounds in the words of their standard](#rounds-in-the-words-of-their-standard):
+
+```orange
+let x_1: F = (u with [31] = u[31] & 127) as little F;
+```
+
+```orange
+(x_2 / z_2) as little Word[8]^32
+```
+
+```text
+x25519::test_vector: Word[8]^32 = [0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f, 0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52]
+```
+
+That is the result of the first test vector of section 5.2.
+
+A conversion that would lose a bit, or that has no words to order, is an
+error:
+
+```orange
+spec w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+spec m(x: Int) -> Mod[7] { x as big Mod[7] }
+spec n(x: Word[8]^4) -> Int { x as Int }
+```
+
+```text
+error[ORC0240]: `Word[8]^3` and `Word[32]` have different widths
+ --> <stdin>:3:47
+  |
+3 | ...  w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+  |                                             ^^^^^^^^ `Word[32]` has 32 bits
+ ::: <stdin>:3:38
+  |
+3 |   spec w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+  |                                      - `Word[8]^3` has 24 bits
+  = note: a byte order keeps every bit of the words it converts, so words convert only to words of the same number of bits
+```
+
+```text
+error[ORC0215]: `big` orders words, but this converts `Int` to `Mod[7]`
+ --> <stdin>:4:35
+  |
+4 |   spec m(x: Int) -> Mod[7] { x as big Mod[7] }
+  |                                   ^^^ neither side is a word or an array of words
+  = note: a number converts to another without a byte order, as `x as Mod[7]`
+```
+
+```text
+error[ORC0215]: `as` is not defined for `Word[8]^4`
+ --> <stdin>:5:35
+  |
+5 |   spec n(x: Word[8]^4) -> Int { x as Int }
+  |                                   ^^ `as` converts one `Int`, word, or residue value
+  = note: name a byte order to read the words as one number or as words of another width, as in `x as big Int`, or convert each element, such as `x[0] as Int`
+```
+
+Three bytes are 24 bits and a word is 32, and the error counts both sides.
+Between two numbers there is nothing to order. An array of words converts to
+a number only in a byte order, since without one there is no telling which
+end is the most significant, and the note names the byte order. `big` and
+`little` are byte orders only directly after `as` and before `(` or a name
+other than `as` and `with`, and anywhere else they are names, so a program
+that calls a function `big` or a type `little` means what it meant; without
+a byte order, an array type after `as` is still the ungrouped `^` of
+`ORC0108`, whose note now names the byte order too.
+
+A conversion in a byte order costs one evaluation step for each 64 bits of
+its width, or part of 64: 8 steps for a SHA-256 block read as sixteen words,
+and 256 for `Word[64]^256`, whose 16,384 bits are also the most an `Int`
+holds; since S3p an array may be wider, and a conversion of one to a number
+stops at run time if the number passes that limit. A conversion to `Mod[m]` also costs what
+`as Mod[m]` costs. In the Core it is one `pack` node that records its
+operand's type and its order. The three schemes of `orangec enc` read and
+write their words this way, the ChaCha20 state, the key stream, the exclusive
+or of a chunk eight bytes at a time, each Poly1305 block, the tag, and
+Ascon's blocks, and sealing one chunk takes 24,152 through 28,325 steps where
+it took 43,805 through 55,096; a megabyte seals in about a third of the time,
+and every file sealed before the change opens after it, and every file sealed
+after opens before. Every source S3m accepted has the same Core, values, and
+output under S3n, since `big` or `little` after `as` was a type's name only
+where S3n still reads it as one.
+
+That leaves seams. A byte order reads a whole value, never words at a
+position computed from data, so a format that reads a length and then that
+many bytes still cannot be written. An array of residues, such as field
+elements serialized one after another, converts one element at a time. A bit
+order within a word, as some hash functions and ciphers number their bits,
+is not defined, and a word has no byte order of its own: a word is a number,
+and only a sequence of words spells a number in an order. The roadmap lists
+moduli written with parameters, positions given as parameters, and slices
+and words at positions computed from data next. The next section closes a
+seam that S3m named another way: through S3n, one function could not serve
+several fields, or words of several widths, and was written again for each.
+
+### One function for several types
+
+Cryptography computes the same way in many types. Square-and-multiply raises
+an element to a power in any field, Fermat's little theorem inverts in any
+field of prime order, and Euler's criterion tells squares from nonsquares in
+any of them. RFC 7748 computes modulo 2^255 − 19, RFC 8032 also modulo the
+order of the Curve25519 subgroup, RFC 8439 modulo 2^130 − 5, and FIPS 203 and
+FIPS 204 modulo 3329 and 8380417. FIPS 180-4 defines Ch, Maj, and the round
+of SHA-256 and SHA-512 by the same formulas, once on 32-bit words and once on
+64-bit ones. Through S3n, each had to be written once for each type, word for
+word the same, and a reader compared the copies by eye.
+
+The S3o slice, proposed in the
+[type parameters specification](TYPE_PARAMETERS_2026.md), writes each once.
+Beside its sizes, or instead of them, a `spec` may declare a **type
+parameter**, a name and the list of types the function is written for, and
+write that name wherever a type is written:
+
+```orange
+type P = Mod[65521];
+
+spec seven[K in {Int, Word[16], P}]() -> K {
+  let x: K = 3;
+  x + 4
+}
+spec minus_one[K in {Word[16], P}]() -> K {
+  let n: Int = -1;
+  n as K
+}
+spec square[K in {Word[16], P}](x: K) -> K { x * x }
+spec squares() -> (Word[16], P) { (square[Word[16]](300), square[P](300)) }
+```
+
+```text
+kinds::seven[Int]: Int = 7
+kinds::seven[Word[16]]: Word[16] = 0x0007
+kinds::seven[P]: Mod[65521] = 7
+kinds::minus_one[Word[16]]: Word[16] = 0xffff
+kinds::minus_one[P]: Mod[65521] = 65520
+kinds::squares: (Word[16], Mod[65521]) = (0x5f90, 24479)
+```
+
+`seven` stands for three functions, `seven[Int]`, `seven[Word[16]]`, and
+`seven[P]`, one for each listed type, and each is an **instance**, as each
+value of a size gives one in [One algorithm for every length](#one-algorithm-for-every-length):
+the function with `K` replaced by its type. The compiler checks every
+instance before anything runs, exactly as it would check the function
+written out with that type, so `let x: K = 3` is checked as an `Int`, as a
+word, and as a residue, and `n as K` is the conversion to a word in one
+instance and to a residue in the other. The same −1 is `0xffff`, sixteen bits
+of ones, and 65520, the least residue of −1 modulo 65521, and the same
+square of 300 is 90000 modulo 2^16 in one instance and modulo 65521 in the
+other. `orangec eval` evaluates every instance of a `spec` without value
+parameters and names it by its types, as a call names it.
+
+Nothing is generic at run time. A type parameter is not a type variable that
+the checker reasons about for all types; it is a type, different in each
+instance, and the list is finite and written in the source, so the source
+says which types a function was checked for. That is exactly what a size
+already is, and the two mix: a function has at most four parameters in
+brackets, sizes and types together, and one instance for each combination of
+their values, the first parameter changing slowest, at most 256 in all.
+
+A call names its instance in brackets, as `square[P](300)`, with one entry
+for each of the callee's parameters in brackets: `Int`, `Bool`, a word, an
+array of them, a `type` declaration's name, or a type parameter of the
+caller. Without brackets, its arguments choose: the instance whose
+parameters have the arguments' types. Where they do not decide, because an
+argument is a literal that fits several types, the type the call's place
+expects does:
+
+```orange
+spec zero[K in {Int, Word[16], P}]() -> K { 0 }
+spec total[K in {Int, Word[16], P}, n in 1..4](xs: K^n) -> K {
+  for i in 0..n with sum: K = 0 { sum + xs[i] }
+}
+spec chosen() -> (Word[16], P, Int) {
+  let w: Word[16] = 40000;
+  let r: P = 40000;
+  (square(w), total([r, r, r]), total([1, 2, 3]) + zero())
+}
+```
+
+```text
+fit::chosen: (Word[16], Mod[65521], Int) = (0x1000, 54479, 6)
+```
+
+`square(w)` is `square[Word[16]]`, since `w` is a word. `total([r, r, r])`
+is `total[P, 3]`: its argument's elements are residues and there are three
+of them, so one call chooses a type and a size at once. `total([1, 2, 3])`
+has an argument whose elements are literals, which could be any of the three
+types, and so could `zero()`, which has no argument at all; each sits where
+an `Int` is expected, and each is its `Int` instance.
+
+That is enough for the fields. The
+[field fixture](../compiler/fixtures/s3o/valid-fields.or) writes
+exponentiation, inversion, and Euler's criterion once, for the five prime
+fields of Curve25519, its subgroup, Poly1305, ML-KEM, and ML-DSA:
+
+```orange
+type F = Mod[(1 << 255) - 19];
+type L = Mod[(1 << 252) + 27742317777372353535851937790883648493];
+type P = Mod[(1 << 130) - 5];
+type Q = Mod[3329];
+type D = Mod[8380417];
+
+// x^e for 0 <= e < 2^256, squaring x once for each bit of e and
+// multiplying the bits that are set into the power.
+spec pow[K in {F, L, P, Q, D}](x: K, e: Int) -> K {
+  let (square: K, power: K, rest: Int) =
+    for i in 0..256 with (square: K, power: K, rest: Int) = (x, 1, e) {
+      (square * square, if (rest % 2) == 1 { power * square } else { power }, rest / 2)
+    };
+  power
+}
+
+// Fermat's little theorem: in a field of prime order m, x^(m - 2) is the
+// inverse of x, for x not 0.
+spec inverse[K in {F, L, P, Q, D}](x: K) -> K { pow(x, modulus[K]() - 2) }
+
+// Euler's criterion: 1 for a nonzero square, -1 for a nonsquare, 0 for 0.
+spec legendre[K in {F, L, P, Q, D}](x: K) -> Int {
+  let t: K = pow(x, (modulus[K]() - 1) / 2);
+  if t == 0 { 0 } else if t == 1 { 1 } else { -1 }
+}
+
+// RFC 8032 section 5.1.3 takes square roots in F with 2^((m - 1) / 4),
+// a square root of -1.
+spec sqrt_minus_one() -> F { pow(2, (modulus[F]() - 1) / 4) }
+
+// ML-KEM's number-theoretic transform is built on 17, a primitive 256th
+// root of unity modulo 3329, and ML-DSA's on 1753, a primitive 512th root
+// of unity modulo 8380417: 17^128 and 1753^256 are both -1.
+spec kem_root() -> Q { pow(17, 128) }
+
+spec dsa_root() -> D { pow(1753, 256) }
+```
+
+```text
+fields::two_is_square[F]: Int = -1
+fields::two_is_square[L]: Int = -1
+fields::two_is_square[P]: Int = -1
+fields::two_is_square[Q]: Int = 1
+fields::two_is_square[D]: Int = 1
+fields::sqrt_minus_one: Mod[(1 << 255) - 19] = 19681161376707505956807079304988542015446066515923890162744021073123829784752
+fields::squares_to_minus_one: Bool = true
+fields::kem_root: Mod[3329] = 3328
+fields::dsa_root: Mod[8380417] = 8380416
+```
+
+Inside `inverse`, `modulus[K]()` passes the caller's own type parameter on,
+so each instance of `inverse` calls the instance of `modulus` for its own
+field, and `pow(x, ...)` takes the instance of `pow` that `x`'s type chooses.
+In `sqrt_minus_one`, `pow(2, ...)` has only literals for arguments, and the
+result `F` chooses. The five instances of `two_is_square`, a call of
+`legendre` on 2, give −1 where the modulus is 3 or 5 modulo 8 and 1 where it
+is 1 modulo 8, as the second supplement to quadratic reciprocity says, and
+the constant RFC 8032 takes square roots with squares to −1. 17^128 is 3328
+and 1753^256 is 8380416, both −1: 17 and 1753 are the roots of unity FIPS
+203 and FIPS 204 build their transforms on, and −1 shows that each has
+exactly the order its standard names, since a root of smaller order would
+divide 128 or 256 and give 1.
+
+SHA-256 and SHA-512 share their round. The
+[SHA-2 fixture](../compiler/fixtures/s3o/valid-sha2.or) writes Ch, Maj, the
+round that updates the eight working variables, and their addition to the
+hash value once, over `W in {Word[32], Word[64]}`, and each compression
+function calls them without brackets, on its own words:
+
+```orange
+// Sections 4.1.2 and 4.1.3: the same Ch and Maj on words of either width.
+spec ch[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (~x & z) }
+spec maj[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (x & z) ^ (y & z) }
+
+// Step 3 of sections 6.2.2 and 6.4.2: one round on the working variables,
+// given the round's two Sigma values and its constant plus schedule word.
+spec round[W in {Word[32], Word[64]}](
+  v: (W, W, W, W, W, W, W, W),
+  sigma0: W,
+  sigma1: W,
+  kw: W,
+) -> (W, W, W, W, W, W, W, W) {
+  let (a: W, b: W, c: W, d: W, e: W, f: W, g: W, h: W) = v;
+  let t1: W = h + sigma1 + ch(e, f, g) + kw;
+  let t2: W = sigma0 + maj(a, b, c);
+  (t1 + t2, a, b, c, d + t1, e, f, g)
+}
+```
+
+```orange
+round(v, big_sigma0_256(v.0), big_sigma1_256(v.4), k[t] + w[t])
+```
+
+```orange
+round(v, big_sigma0_512(v.0), big_sigma1_512(v.4), k[t] + w[t])
+```
+
+The rotations, the schedules, the constants, and the padding differ, and
+each hash keeps its own; what the standard writes once, the fixture writes
+once. Both reproduce FIPS 180-4's digests of "abc" and of the messages whose
+padding takes a second block:
+
+```text
+sha2::sha256_abc: Word[8]^32 = [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
+sha2::sha512_abc: Word[8]^64 = [0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba, 0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41, 0x31, 0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2, 0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55, 0xd3, 0x9a, 0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8, 0x36, 0xba, 0x3c, 0x23, 0xa3, 0xfe, 0xeb, 0xbd, 0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e, 0x2a, 0x9a, 0xc9, 0x4f, 0xa5, 0x4c, 0xa4, 0x9f]
+```
+
+An instance in error is reported by its name, the first of its function, as
+for sizes, and a call that its arguments and place cannot place is an error
+that says what it was given:
+
+```orange
+edition 2026;
+module errors {
+  type Q = Mod[3329];
+  spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  spec double[K in {Word[32], Q}](x: K) -> K { x + x }
+  spec unfit(x: Int) -> Int { double(x) }
+  spec unclear() -> Int { double(3) as Int }
+}
+```
+
+```text
+error[ORC0241]: `K` lists the type `Mod[3329]` twice
+ --> <stdin>:4:23
+  |
+4 |   spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  |                       ^^^^^^^^^ this is the same type as an earlier one
+ ::: <stdin>:4:20
+  |
+4 |   spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  |                    - first listed here
+  = note: a type parameter lists each type once, so that each instance has a type of its own
+```
+
+```text
+error[ORC0241]: no instance of `double` takes arguments of these types
+ --> <stdin>:6:31
+  |
+6 |   spec unfit(x: Int) -> Int { double(x) }
+  |                               ^^^^^^^^^ an argument of type `Int` is given
+  = note: `double` is defined for `K` in {Word[32], Q}
+  = note: a call that writes no brackets calls the one instance of its function whose parameters have its arguments' types, and among several, the one whose result has the type its place expects; any other call writes its types in brackets, as in `pow[F](x, e)`
+```
+
+```text
+error[ORC0239]: this call fits more than one instance of `double`, among them `double[Word[32]]` and `double[Q]`
+ --> <stdin>:7:27
+  |
+7 |   spec unclear() -> Int { double(3) as Int }
+  |                           ^^^^^^^^^ write the types in brackets
+  = note: a call that writes no brackets calls the one instance of its function whose parameters have its arguments' types, and among several, the one whose result has the type its place expects; any other call writes its types in brackets, as in `pow[F](x, e)`
+```
+
+`Q` and `Mod[3329]` are one type under two spellings, and a list names each
+type once, so that no two instances are the same function. `Int` is not
+among `double`'s types, and the error lists the ones that are. In
+`unclear`, the literal 3 fits a word and a residue, and `as Int` expects no
+type of its operand, so nothing chooses, and the error says to write the
+types in brackets. The listed types are resolved once, before any size has a
+value, so their lengths are written without sizes; a type parameter's name
+is no built-in type's, no declared type's, and no other bracket parameter's;
+and it names a type, not a value, so `K` in an expression names no value,
+while a parameter or a binding may share its spelling.
+
+Types cost nothing when a program runs: each instance is one Core function,
+as for sizes, that records its parameters' values, a type as its position in
+its list, and its name, and every type in its body is concrete. Checking
+pays, as it does for sizes: every instance is checked in full, within the
+same per-source budgets. Finding the instance of a call reads each of its
+arguments once, so calls nested in each other's arguments cost work in
+proportion to their depth. The same change removed a cost that S3m had left:
+a sized call whose argument was a conditional read that argument twice when
+its first branch gave no length, so each level of nesting doubled the work of
+checking, and a source of 31 levels and 1,248 bytes did not finish in two
+minutes. Every source S3n accepted has the same Core, values, and output
+under S3o, since no source it accepted wrote braces after a size's `in`.
+
+That leaves seams. A list is written in each function, so several functions
+over the same fields repeat it, and nothing yet names a list once. A `type`
+declaration takes no type parameter, so a field element cannot carry its
+modulus's name, and a residue type is written in a call's brackets only
+through a declaration's name. Nothing is known of all types at once, only of
+each listed one, and no bound or class of types exists. The roadmap lists
+positions given as parameters and slices and words at positions computed
+from data next.
+
+### Vectors at full length
+
+The objects of cryptography are long. An ML-KEM-512 encapsulation key is 800
+bytes and its ciphertext 768; an ML-DSA-44 public key is 1,312 bytes and its
+signature 2,420; an RSA-2048 modulus, and every OAEP block under it, is 256
+bytes, and RSA-4096's are 512. Even RFC 8439 prints test vectors of 375 and
+265 bytes. Through S3o an array held at most 256 elements, so each of these
+was cut into a head and a tail, and a reader had to reassemble the RFC's
+vector from pieces. The S3p slice, proposed in the
+[lengths specification](LENGTHS_2026.md) and in the owner's review under
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), lets an array,
+an array literal, and a byte string hold up to 65,536 elements, and the
+vectors are written as printed. The text that RFC 8439 encrypts in
+appendix A.2 and authenticates in appendix A.3 is one byte string of 375
+bytes, and ChaCha20 and Poly1305 are each written once for every message of
+1 through 256 whole blocks:
+
+```orange
+// The text of test vectors A.2 #2, A.3 #2 and A.3 #3: 375 bytes.
+spec ietf() -> Word[8]^375 {
+  "Any submission to the IETF intended by the Contributor for publication as all " ++
+    "or part of an IETF Internet-Draft or RFC and any statement made within the " ++
+    "context of an IETF activity is considered an \"IETF Contribution\". Such " ++
+    "statements include oral statements in IETF sessions, as well as written and " ++
+    "electronic communications made at any time or place, which are addressed to"
+}
+
+spec mac[blocks in 1..257](key: Word[8]^32, m: Word[8]^(16 * blocks), held: Int) -> Word[8]^16 {
+  let half: Word[64]^2 = key[..16] as little Word[64]^2;
+  let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+  let s: Int = key[16..] as little Int;
+  let a: P = for j in 0..blocks with a: P = 0 {
+    let k: Int = if j == (blocks - 1) { held } else { 16 };
+    (a + (m[16 * j..16 * j + 16] as little P) + weight(k)) * r
+  };
+  ((a as Int) + s) as little Word[8]^16
+}
+
+spec a3_2() -> Word[8]^16 {
+  mac(
+    hex"00000000 00000000 00000000 00000000 36e5f6b5 c5e06070 f0efca96 227a863e",
+    ietf() ++ [0; 9],
+    7,
+  )
+}
+```
+
+The text is 23 blocks and 7 bytes, so the message is padded with nine zeros
+to 24 blocks, the call fits `mac[24]` by that length, and the last block is
+told that 7 of its bytes are the message's. Each tag is the RFC's:
+
+```text
+rfc8439::a3_2: Word[8]^16 = [0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a, 0x86, 0x3e]
+rfc8439::a3_3: Word[8]^16 = [0xf3, 0x47, 0x7e, 0x7c, 0xd9, 0x54, 0x17, 0xaf, 0x89, 0xa6, 0xb8, 0x79, 0x4c, 0x31, 0x0c, 0xf0]
+```
+
+The limit is not arbitrary. 65,536 is 2^16: the most iterations a loop has
+always had, and exactly the values of a 16-bit word. The index proofs of S3g
+are unchanged, and at the new limit they say that a `Word[16]` indexes an
+array of 65,536 elements with no check at run time, while an index into an
+array one element shorter is rejected before anything runs. A table of 16-bit
+entries is therefore as safe to read as an S-box of 256 always was.
+The lengths fixture fills a table with the powers of 3 modulo the Fermat
+prime F4 = 2^16 + 1 and reads it with Pepin's test, which says that F4 is
+prime exactly when 3^((F4 − 1)/2) is −1:
+
+```orange
+type F4 = Mod[(1 << 16) + 1];
+
+spec powers(g: F4) -> F4^65536 {
+  let (table: F4^65536, next: F4) =
+    for k in 0..256 with (t: F4^65536, x: F4) = ([0; 65536], 1) {
+      let r: F4^256 = row(x, g);
+      (t with [256 * k..256 * k + 256] = r, r[255] * g)
+    };
+  table
+}
+
+spec at(table: F4^65536, i: Word[16]) -> F4 { table[i] }
+
+spec pepin() -> (F4, F4, Bool) {
+  let table: F4^65536 = powers(3);
+  let half: F4 = at(table, 0x8000);
+  let last: F4 = at(table, 0xffff);
+  (half, last, (half == -1) && ((last * 3) == 1))
+}
+```
+
+Costs do not change with length. An update, a fill, a join, a slice, and a
+slice update of an array of n elements cost ceil(n / 64) steps, as they did,
+so every operation that makes an array makes at most 64 elements for each
+step it costs, and an evaluation's memory stays bounded by its steps. The
+price is visible in the program's shape. Updating one element of an array of
+65,536 costs 1,024 steps, so filling the table one element at a time would
+cost 65,536 × 1,024, about 67 million steps. `powers` fills each row of 256
+in an array of its own, at 4 steps an element, and places it with one slice
+update of 1,024 steps: 524,288 steps for the updates, and about 1.45 million
+for the whole test.
+
+That is more than the 1,048,576 steps a source has always had, and the
+evaluator says so, and says what to do:
+
+```text
+error[ORC0301]: reference evaluation step limit exceeded
+ --> compiler/fixtures/s3p/valid-lengths.or:38:8
+   |
+38 |   spec pepin() -> (F4, F4, Bool) {
+   |        ^^^^^ evaluation stopped while evaluating this function
+  = note: at most 1048576 evaluation steps are permitted
+  = note: no partial value set is returned
+  = note: `orangec eval --steps N` sets the budget, up to 1073741824 steps
+```
+
+`orangec eval` takes three options. `--steps N` sets the budget of the whole
+evaluation, from 1 through 1,073,741,824, a thousand and twenty-four times the
+default. `--spec NAME`, repeatable, evaluates only the named functions without
+parameters, every instance of a sized one, in source order, and checks the
+rest; a name that matches none is `ORC1016`, and nothing runs. `--stats`
+writes to standard error, after the values, the steps each function used and
+their total against the budget:
+
+```console
+$ orangec eval --steps 2097152 --spec pepin --stats compiler/fixtures/s3p/valid-lengths.or
+lengths::pepin: (Mod[65537], Mod[65537], Bool) = (65536, 21846, true)
+lengths::pepin: 1452583 steps
+total: 1452583 of 2097152 steps
+```
+
+3^32768 is 65536, which is −1 modulo F4, so F4 is prime and 3 generates its
+multiplicative group; 3^65535 is 21846, the inverse of 3. The steps are the
+cost table's and are deterministic, so the report is as reproducible as the
+values: the same source, options, and edition give the same numbers on every
+machine. They are not time, and they say nothing about a native
+implementation or about side channels.
+
+One consequence reaches back to S3n. Through S3o no array held more than
+16,384 bits, so a conversion to a number could never exceed the evaluator's
+exact-integer limit. Now 8,192 words of 64 bits are 65,536 bytes, and back,
+in one conversion each; but words convert to `Int` or `Mod[m]` only while the
+number they spell has at most 16,384 significant bits, and a larger number
+stops the evaluation at the conversion with `ORC0301`, as every exact integer
+past the limit does. The limit is on the value, not the type: 2,048 bytes of
+`0xff` spell 2^16384 − 1, which converts, and which F4 divides, since
+2^16 = −1 modulo F4:
+
+```orange
+spec widest() -> Int {
+  let ones: Word[8]^2048 = [0xff; 2048];
+  (ones as big Int) % 65537
+}
+```
+
+```text
+lengths::widest: Int = 0
+```
+
+S3p adds no syntax, no token, no reserved word, and no node to the Core. Every
+source S3o accepted has arrays of at most 256 elements and keeps its Core,
+values, output, and steps; every message that named the limit 256 now names
+65536. A sealing scheme of `orangec enc` may now seal chunks of up to 65,536
+bytes with their tag, with the file format unchanged.
+
+That leaves seams. A size still covers at most 256 instances, so one function
+covers every message of up to 256 whole blocks, not every length byte by
+byte; a message that ends inside a block is padded and cut back, as above. No
+length is known only at run time, so a format that reads a length and then
+that many bytes still cannot be written. The budget belongs to the command
+line, not the source, so a program cannot say what it expects to cost, and
+checking has its own fixed budgets, which long literals spend like any others.
+
+### Known answers beside the algorithm
+
+Every cryptographic standard ends in numbers: a key, a nonce, a message, and
+the bytes an implementation must produce from them. RFC 8439 prints them in
+every section and again in an appendix, and FIPS 197 walks through a whole AES
+encryption round by round. They are how an implementer knows the code is the
+algorithm and not something near it. Through S3p an Orange program could
+compute a known answer and print it, but the claim that the answer matched
+the standard lived outside the program, in a runner that compared text. The
+S3q slice, proposed in the [tests specification](TESTS_2026.md) and in the
+owner's review under
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), puts the claim in
+the program, beside the functions it is about:
+
+```orange
+test "2.1.1: the quarter round" {
+  quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+    == (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+}
+
+test "2.3.2: the block function" {
+  let key: Word[8]^32 =
+    hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f";
+  let serialized: Word[8]^64 =
+    hex"10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4" ++
+      hex"c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e" ++
+      hex"d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2" ++
+      hex"b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e";
+  block(key, 1, hex"00 00 00 09 00 00 00 4a 00 00 00 00") == serialized
+}
+```
+
+A test is a title and a claim. The title is a quoted string that says where
+the claim comes from, here the RFC's section numbers, and it names the test in
+every report, so it is held to what a report can print: 1 through 128
+characters of printable ASCII, no backslash, and no title twice in a module.
+Each break of that rule is `ORC0242` at the title. The claim is a `Bool`
+expression, with its own `let` bindings, over the module's functions and the
+functions of the modules it uses: the test is checked as a function without
+parameters that gives a `Bool`, and a claim of any other type is the error an
+expected `Bool` gives. The word `test` is not reserved. It begins a test only
+where a module member may begin, followed by a string, so a function named
+`test` is still called as `test()`.
+
+The claims above compare a tuple of four words and an array of 64 bytes,
+which no earlier slice allowed. S3q defines `==` and `!=` for every type: two
+arrays are equal when every pair of elements at the same index is, and two
+tuples when every pair of parts at the same position is. An array, a fill,
+or a tuple written out takes its type from the other side, so neither
+`x == [1, 2, 9, 4]` nor the appendix A.1 test's `zero_key_stream() ==
+(hex"76 b8 ..." ++ ...)` needs a type written; two written out have no type
+between them and are `ORC0227`. Arrays
+and tuples have equality but no order: `<` on them is `ORC0215`, with a note
+that says to compare elements.
+
+The cost of a comparison is chosen with a cryptographer's suspicion. It
+compares every part, whether or not an earlier part differs: one step for each
+64 words or truth values of an array, what each pair costs for numbers and
+residues, and the sum of its parts for a tuple. The
+[equality fixture](../compiler/fixtures/s3q/valid-equality.or) builds two
+arrays of 256 bytes that differ in their first byte and two that differ in
+their last, and both functions cost 17 steps; two arrays of 65,536 bytes cost
+1,024 steps to compare wherever they differ. The equality a tag check needs is
+the one that does not stop early. The reference evaluator is not
+constant-time, and steps are not time, but the language no longer offers the
+early exit that a native implementation would then have to be talked out of.
+
+`orangec test` checks the program as `orangec check` does and runs the root
+module's tests in source order, under one step budget:
+
+```console
+$ orangec test compiler/fixtures/s3q/valid-rfc8439-tests.or
+test "2.1.1: the quarter round" ... ok
+test "2.3.2: the block function" ... ok
+test "A.1 #1: the zero key's key stream, block 0" ... ok
+test "A.1 #2: the zero key's key stream, block 1" ... ok
+test "the nonce changes every block" ... ok
+test "2.5.2: Poly1305 of the Forum's name" ... ok
+test "A.3 #1: Poly1305 of zeros under the zero key" ... ok
+7 tests: 7 passed, 0 failed
+```
+
+A failed claim is a result, not an error. It goes to standard output, and the
+exit status says whether every claim held: 0 when all did, 1 when any did not.
+When the claim is a single `left == right`, the report shows both values and,
+for arrays and tuples, where they first differ, as an index or a part followed
+into its elements, so a wrong byte deep in a block is found at once. The
+[failing fixture](../compiler/fixtures/s3q/failing-tests.or) shows each shape:
+
+```text
+test "an array" ... FAILED
+    left:  [0x01, 0x02, 0x03, 0x04]
+    right: [0x01, 0x02, 0x09, 0x04]
+    first difference at [2]
+test "a tuple holding an array" ... FAILED
+    left:  (0x01, [0x02, 0x03, 0x04])
+    right: (0x01, [0x02, 0x03, 0x05])
+    first difference at .1[2]
+```
+
+`--steps` and `--stats` work as they do for `eval`: the tests share one
+budget, and `--stats` writes each test's steps after the report. A test that
+exceeds the budget stops the whole run with `ORC0301` at its title and the
+note "no test outcome is reported". A claim that could not be decided is
+neither kept nor failed, so nothing else is written, and the status is 1.
+
+Only the root module's tests run. A program is checked from the file given to
+`orangec`; the modules it uses are checked for what it can call, and their
+tests are neither checked nor run until that module is the root, as in
+`orangec test sha256.or`. A module carries its own known answers, and a
+program that uses it pays nothing for them. `orangec eval` runs no test, and
+in the Core the root's tests follow its functions, each a function of result
+`Bool` that keeps its title, so the evaluator runs them with no new
+machinery.
+
+S3q adds one declaration form and one language diagnostic code, and no token,
+reserved word, type, or Core node. Every source S3p accepted keeps its Core,
+values, output, and steps, since none began a member with `test` and none
+compared arrays or tuples, which S3p rejected.
+
+That leaves seams. A test states one claim about one computation. It takes no
+parameters, so a table of vectors is several tests, and no test can claim
+that a call stops or that a source is rejected, so negative vectors still
+live in the conformance runners. A module's user cannot run the tests of the
+modules it uses. And a passing test is evidence about the reference evaluator
+at one revision, not a proof that a function meets its standard for every
+input.
+
+### Amounts the data choose
+
+A rotation by a fixed amount is a wire in a circuit diagram. SHA-256 turns
+its words by 2, 13, and 22 bits, and every one of those numbers is printed in
+the standard. Some designs turn words by amounts printed nowhere, because the
+data choose them. RC5 and its successor RC6 made rotations by data their
+central operation. SHA-3's rho step turns each of its 24 lanes by a triangular
+number, (t + 1)(t + 2)/2 modulo 64, where t counts the steps of a walk over
+the state. A Montgomery ladder or a square-and-multiply reads bit i of a
+scalar, `(k >> i) & 1`, and ML-KEM orders the constants of its transform by
+moving bit i of an index to bit 6 − i. Through S3q an amount was a literal,
+so each of these was a table that a reader had to check against the one line
+the standard prints. The S3r slice, proposed in the
+[computed amounts specification](AMOUNTS_2026.md) and in the owner's review
+under
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md), writes
+the line:
+
+```orange
+// FIPS 202 Algorithm 2, rho: from (x, y) = (1, 0), step t turns lane (x, y)
+// by (t + 1)(t + 2)/2 and moves to (y, 2x + 3y), coordinates modulo 5.
+spec rho_walk(a: State) -> (State, Z5, Z5) {
+  for t in 0..24 with (b: State, x: Z5, y: Z5) = (a, 1, 0) {
+    (
+      b with [(x as Int) + 5 * (y as Int)] =
+        a[(x as Int) + 5 * (y as Int)] <<< (((t + 1) * (t + 2)) / 2),
+      y,
+      2 * x + 3 * y,
+    )
+  }
+}
+```
+
+The walk's coordinates are residues modulo 5, and the offset is an `Int`
+computed from the loop index. Nothing in the program says "modulo 64",
+because a rotation already means it: `a <<< k` turns a word of n bits by k
+modulo n, whatever k is. The standard's table of offsets, whose first row
+reads 0, 1, 62, 28, 27, is written nowhere in the
+[SHA3-256 fixture](../compiler/fixtures/s3r/valid-sha3.or). The fixture
+computes it, and its tests of NIST's examples pass only if every offset is
+right.
+
+An amount is any expression of type `Int` or a word, and its type is found
+as an index's is, from its first typed leaf. In `x <<< r` with a byte r the
+amount is a `Word[8]`, and the word it turns may be a `Word[64]`; in
+`x >> (i % 8)` with a loop index i it is an `Int`. A truth value, a residue,
+or an array is not an amount, and is reported with the error an expected
+`Int` gives. A residue becomes an amount with `as Int`.
+
+What gives the slice its character is that every amount has a value, the one
+the arithmetic gives. For a word a of n bits:
+
+| Amount k | `a << k` | `a >> k` | `a <<< k` | `a >>> k` |
+| --- | --- | --- | --- | --- |
+| 0 through n − 1 | as in S3b | as in S3b | as in S3b | as in S3b |
+| n or more | 0 | 0 | turns left by k mod n | turns right by k mod n |
+| negative | `a >> −k` | `a << −k` | `a >>> −k` | `a <<< −k` |
+
+`a << k` is floor(a · 2^k) and `a >> k` is floor(a · 2^−k), each kept to the
+word, so a shift by the width or more pushes every bit out and a negative
+amount shifts the other way. A rotation is periodic, so it turns by k modulo
+n. This is a choice, and not the common one. C leaves a shift by the width or
+more undefined, and Java and x86 reduce a 32-bit shift's amount modulo 32, so
+there `x << 32` gives back x while two shifts by 16 give 0. A specification
+cannot inherit either answer: undefined behavior is not a meaning, and the
+machine's answer breaks the identity that two shifts by 16 are one shift by
+32. Orange gives the arithmetic's answer at every amount, and a backend that
+compiles a shift to an instruction that reduces its amount must add the
+comparison that makes the answer come out right.
+
+RC6 shows what that buys. Its paper defines `a <<< b` as a rotation to the
+left by the amount in the least significant lg w bits of b, which for 32-bit
+words is b modulo 32, exactly Orange's rotation by a word. So the key
+schedule and the rounds are written as the paper writes them, with no mask:
+
+```orange
+// Key schedule, v = 132 steps of mixing:
+//   A = S[i] = (S[i] + A + B) <<< 3
+//   B = L[j] = (L[j] + A + B) <<< (A + B)
+let a1: Word[32] = (s[k % 44] + a + b) <<< 3;
+let b1: Word[32] = (l[k % 4] + a1 + b) <<< (a1 + b);
+
+// Encryption, twenty rounds of
+//   A = ((A ^ t) <<< u) + S[2i]; C = ((C ^ u) <<< t) + S[2i + 1]
+(b, ((c ^ u) <<< t) + s[2 * i + 1], d, ((a ^ t) <<< u) + s[2 * i])
+```
+
+The [RC6 fixture](../compiler/fixtures/s3r/valid-rc6.or) states the paper's
+test vectors for 128-bit keys as tests, each run both ways:
+
+```console
+$ orangec test compiler/fixtures/s3r/valid-rc6.or
+test "RC6 paper, 128-bit key 1: encryption" ... ok
+test "RC6 paper, 128-bit key 1: decryption" ... ok
+test "RC6 paper, 128-bit key 2: encryption" ... ok
+test "RC6 paper, 128-bit key 2: decryption" ... ok
+4 tests: 4 passed, 0 failed
+```
+
+A third program reads bits at positions a loop computes. BitRev7, in FIPS
+203 section 4.3, reverses the seven bits of an index, and ML-KEM's
+transform takes its constants as powers of 17 in that order:
+
+```orange
+spec bit_rev7(r: Word[8]) -> Word[8] {
+  for i in 0..7 with b: Word[8] = 0 { b | (((r >> i) & 1) << (6 - i)) }
+}
+```
+
+The [zetas fixture](../compiler/fixtures/s3r/valid-zetas.or) derives all 128
+constants of the transform and all 128 of its multiplication this way, and
+its tests reproduce the start of both tables in FIPS 203's Appendix A.
+
+A literal amount keeps its old rule. `x >>> 32` written on a `Word[32]` is
+still `ORC0216`, now labeled "a literal amount is from 0 through 31", because
+a literal names a fixed bit position, and one past the width is far more
+often a slip than a wish for 0. So is a literal with a sign. Written in any
+other way, as `x << (32)` or through a name, the same number is computed and
+shifts every bit out. As an index, a shift by a computed amount ranges over
+its whole type, since the range analysis of S3g never follows an amount, so a
+table read by a nibble at a computed position masks it:
+`ones[(x >> (4 * i)) & 15]`.
+
+A computed amount costs one step, whatever its size. The evaluator reads
+only its sign, whether its magnitude has more than 64 bits, and its low 64
+bits, which settle every width, so `x <<< k` costs the same with k of 16,384
+bits as with k = 3. That is a statement about steps, not time. A rotation by
+a secret amount is where RC5 and RC6 drew the attention of timing analysis:
+on a processor without a barrel shifter a shift takes time that grows with
+its amount. What a backend makes of a shift by a possibly secret amount, a
+fixed ladder of conditional rotations by 1, 2, 4, 8, and 16 or a refusal
+under a constant-time profile, belongs to its leakage model, as a lookup at a
+secret index does since S3g.
+
+S3r adds one Core node, `shift-by`, and no token, reserved word, diagnostic
+code, or command. Every source S3q accepted keeps its Core, values, output,
+and steps, since each of its amounts was a literal below the width.
 
 ### From bytes to a value
 
@@ -2205,7 +4529,72 @@ for a computed index whose range leaves the array. The condition slice adds
 `ORC0227` for a comparison whose operands have no type of their own, such as
 `1 < 2`, and reuses `ORC0214` for a condition that is not a `Bool` and
 `ORC0215` for an operator that a type does not have, such as `<` on `Bool`
-values or `&&` on words.
+values or `&&` on words. The lookup slice adds no code. It narrows `ORC0226` to
+an `Int` index without a bound and reports a word index whose range leaves its
+array as `ORC0223`, naming the range. The module slice adds `ORC0228` for a
+`use` that names no module of the program, `ORC0229` for a call qualified by
+a module its module does not use, `ORC0230` for a module that uses itself or
+a cycle of uses, and `ORC0231` for two modules of one name or a module used
+twice. The modular slice adds `ORC0232` for a modulus that is not a constant
+from 2 through 2^521 − 1, or a `Mod` without one, and `ORC0233` for a `type`
+declaration that names a built-in type or repeats a name, and it reuses
+`ORC0207` for a residue literal out of range, `ORC0214` for a residue of
+another modulus, and `ORC0215` for an order, remainder, or bitwise operator
+on residues. The block slice adds no code: a malformed block is `ORC0101`
+with a note that describes a block, a block of more than 256 bindings is
+`ORC0106`, a binding that repeats a name in scope is `ORC0219`, and a name
+read outside its block is `ORC0211`, pointing at the binding it might mean.
+The tuple slice adds `ORC0234` for `.k` on a value that is not a tuple, and
+reuses `ORC0203` for a tuple of tuples or an array of tuples, `ORC0214` for a
+tuple of the wrong length or where no tuple is wanted, `ORC0223` for a
+position the tuple lacks, `ORC0215` for an operator on a whole tuple,
+`ORC0224` for an index into a tuple or an update of one, and `ORC0101` and
+`ORC0106` for a malformed or oversized tuple, tuple type, or pattern.
+The byte slice adds `ORC0009` for a malformed hex string, `ORC0235` for a
+character in a byte string that is not printable ASCII, and `ORC0236` for a
+slice whose length is not the same positive number at every step, and it
+reuses `ORC0003` for an unterminated hex string, `ORC0221` for an empty or
+oversized byte string, `ORC0222` for a byte string, join, or slice of the
+wrong length, `ORC0224` for a join, slice, or slice update of a value that is
+not an array, `ORC0226` for a slice bound that is neither a literal nor a
+loop index, `ORC0223` for a slice that leaves its array, `ORC0214` where no
+array is wanted, `ORC0108` for `++` beside another operator, and `ORC0101`
+for a slice with no bounds or with a step. The size slice adds `ORC0237` for a
+size built from anything but integer literals and size parameters, `ORC0238`
+for a size's range that is empty or has a bound over 65536, a function of
+more than 256 instances, a size outside its range, and a call that fits no
+instance, and `ORC0239` for a call with the wrong number of sizes or one that
+fits more than one instance, and it reuses `ORC0218` and `ORC0219` for a name
+that repeats a size parameter's, `ORC0221` and `ORC0225` for a length or a
+loop bound whose value in an instance is out of range, `ORC0205` for a part
+of a size that is too large, `ORC0217` for a cycle between instances,
+`ORC0232` for a modulus written with a size, and `ORC0101` for a malformed
+size parameter, size, or sized call. The byte-order slice adds `ORC0240` for
+words converted to words of a different number of bits, and it reuses
+`ORC0215` for a byte order between two numbers or on a type that is neither
+words nor a number, `ORC0220` for an operand with no type of its own,
+`ORC0214` for a target other than the type expected, `ORC0221` for a target
+of more than 256 words, and `ORC0108` for an array type after `as` without a
+byte order. The type-parameter slice adds `ORC0241` for a type listed twice,
+a type entry that is not listed or not a type, and a call that fits no
+instance by its arguments' types, and it reuses `ORC0233` for a type
+parameter named like a built-in or declared type, `ORC0218` for one named
+like another parameter in brackets, `ORC0237` for a size inside a listed
+type, `ORC0238` for more than 256 instances, `ORC0239` for a wrong number of
+entries or a call that several instances fit, `ORC0211` for a type
+parameter's name used as a value, and `ORC0101` for a malformed list. The
+length slice adds no language code: its limits are the old codes with 65536
+in their messages, a number too wide for the evaluator is the `ORC0301` of
+every exact integer, and `orangec` adds `ORC1016` for a `--spec` name that
+matches no function without parameters. The test slice adds `ORC0242` for a
+test's title that is empty, longer than 128 bytes, not printable ASCII,
+holding a backslash, or repeating another's, and it reuses `ORC0101` for a
+test without a quoted title or a body, `ORC0214` for a claim that is not a
+`Bool`, `ORC0227` for a comparison of two arrays or tuples both written out,
+and `ORC0215` for an order on arrays or tuples. The amount slice adds no code:
+a literal amount past the width or with a sign is still `ORC0216`, labeled
+with the amounts a literal may be, and a computed amount of another type is
+the `ORC0214` of an expected `Int`.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2214,20 +4603,94 @@ each use.
 
 ### The command line
 
-`orangec` has three commands:
+`orangec` has eleven commands:
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
+orangec test [--steps <N>] [--stats] <FILE>
+orangec fmt <FILE>
+orangec fmt --check <FILE>...
+orangec doc <FILE>
+orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
+               --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec keygen [--scheme <NAME>] [-o <FILE>]
+orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
+orangec schemes [<NAME>...]
 ```
 
 - `check` performs lexical, syntactic, and semantic validation of one or more
   sources and is silent on success.
-- `eval` validates exactly one source and prints the value of each typed
-  `spec` without parameters.
+- `eval` validates exactly one program and prints the value of each typed
+  `spec` without parameters of its root module. `--steps N` sets its step
+  budget, from 1 through 1,073,741,824; `--spec NAME`, repeatable, evaluates
+  only the functions named; and `--stats` reports on standard error the
+  steps each function used, as
+  [Vectors at full length](#vectors-at-full-length) shows. It runs no test.
+- `test` validates exactly one program and runs its root module's
+  known-answer tests in source order, printing `ok` or `FAILED` for each on
+  standard output and exiting with status 1 when any fails; it takes
+  `--steps` and `--stats` as `eval` does, as
+  [Known answers beside the algorithm](#known-answers-beside-the-algorithm)
+  shows.
 - `lex` prints the deterministic token stream.
+- `fmt FILE` prints one complete formatted source; `fmt --check FILE...`
+  checks sources without printing formatted text or changing files.
+- `doc FILE` prints a standalone offline HTML reference for one parsed source.
+- `replay` validates one program and reference-evaluates one selected Boolean
+  function/instance for a typed local witness file; both completed Boolean
+  outcomes use status 0.
+- `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
+  written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
+  `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
+  every chunk is authentic. A scheme is any Orange program with the
+  specifications `seal`, `open`, and `authentic`, and it may use other
+  modules; XChaCha20-Poly1305, the default, ChaCha20-Poly1305, and
+  Ascon-AEAD128 are built in. The [scheme guide](../compiler/schemes/README.md)
+  gives the interface and the sealed-file format, and states the limits: the
+  ciphers run on the reference evaluator, which is not constant-time, nothing
+  about them is verified, and keys are stored unencrypted.
+
+`check`, `eval`, `test` and `replay` treat each source as the root of a
+program and read the modules it uses from beside it, as
+[Standards built on standards](#standards-built-on-standards) describes; `lex`,
+`fmt` and `doc` read only the source they are given.
+
+The [formatter contract](FORMATTER_2026.md) defines a syntax-only tool. It uses
+the parsed structure to lay out whitespace between tokens, preserving every
+token's spelling and each comment's bytes, order and anchor. Before returning
+text it re-lexes and re-parses the bounded result; formatting that result again
+must leave it byte-identical. Generated layout whitespace uses LF, while bytes
+inside strings and comments are retained. Formatting does not load imports or
+check types. It changes source bytes, spans and digests and does not preserve
+or migrate source-bound proof/evidence identities. It adds no proof claim and
+leaves the S3t language marker unchanged.
+
+The [documentation generator](DOCUMENTATION_2026.md) describes the module's
+imports, aliases, specifications, implementation declarations and tests in
+source order, with written signatures, finite domains, unique ordinal anchors
+and source locations. It includes a full escaped source listing with comments;
+source-derived text cannot introduce HTML, scripts or external assets. Output
+is bounded and deterministic and adds no ambient filename, host path or date.
+It describes parsed source, with no type checking, imported-module loading,
+evaluation or test pass status. It provides no proof/evidence identity or
+checked claim matrix. The remaining product documentation and complete 1.0
+obligations stay explicit in the [execution record](RELEASE_1_0_EXECUTION.md).
+
+The [local witness contract](WITNESS_REPLAY_2026.md) defines a complete outer
+argument list using exact current value spellings. Checked parameter types
+supply widths, shapes and residue moduli; no expression or implicit reduction
+is accepted. `--function MODULE::NAME` selects a Boolean specification and
+`--instance N[,N...]` names its numeric finite-instance vector. The command
+prints `falsified` or `holds_for_this_witness`, actual arguments and parameter
+types; it runs within bounded decoding and evaluation budgets. It establishes
+no universal property, selected solver format, authoritative atomic claim or
+source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
-edition explicitly. `--version` prints `orangec 0.0.1 (Orange edition 2026)`.
+edition explicitly. `--version` prints
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. The slice
+identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
 failure makes `eval` print no values at all; if writing the output itself
@@ -2269,7 +4732,72 @@ sources, four valid and four invalid, including X25519 against the first test
 vector of RFC 7748, Poly1305 against RFC 8439 section 2.5.2, and the
 ChaCha20-Poly1305 seal of section 2.8.2; generated sources run a conditional
 of 4096 arms and show that a branch the step budget could never finish costs
-nothing unless it is chosen. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+nothing unless it is chosen. The lookup specification adds 10 rule identifiers
+and four sources, two valid and two invalid, including AES-128 against FIPS 197
+and a table-driven CRC-32 against its check value; generated sources spend the
+step budget exactly and invert a permutation of 256 bytes by updates keyed by
+its own values. The module specification adds 10 rule identifiers and four
+programs over six modules, one valid and three invalid, in which SHA-256,
+HMAC, and HKDF are three modules that reproduce the examples of FIPS 180-4,
+RFC 4231, and RFC 5869; generated programs read a diamond of uses once each
+and link a chain of 64 modules. The modular arithmetic specification adds 13
+rule identifiers and seven sources, three valid and four invalid, including
+X25519 and Poly1305 over their fields against RFC 7748 and RFC 8439 and
+constants of ML-KEM, Ed25519, and P-256; generated sources pin 64 `type`
+declarations, the widest modulus, 2^521 − 1, and residue literals and indices
+at the edges of their ranges. The blocks specification adds 8 rule
+identifiers and six sources, three valid and three invalid, including SHA-256
+and X25519 whose rounds name their values inside their loops, against FIPS
+180-4 and RFC 7748; generated sources pin a step and a branch of 256 bindings
+and of 257. The tuples specification adds 8 rule identifiers and seven
+sources, four valid and three invalid, including SHA-256 with a through h as
+eight named accumulators, the ChaCha20 quarter round and block, and
+Ascon-Hash256, against FIPS 180-4, RFC 8439, and the Ascon designers' known
+answers; generated sources pin tuple types, tuples, and patterns of 16 parts
+and of 17. The bytes specification adds 10 rule identifiers and six sources,
+three valid and three invalid, including HMAC-SHA-256 with RFC 4231's keys
+and messages as that RFC prints them and ChaCha20-Poly1305 with RFC 8439's
+plaintext as text, against FIPS 180-4, RFC 4231, and RFC 8439; generated
+sources pin byte strings and hex strings of 256 bytes and of 257. The sizes
+specification adds 10 rule identifiers and six sources, four valid and two
+invalid, including SHA-256 written once for every message of 1 through 119
+bytes, HMAC-SHA-256 over it, and Poly1305 written once for every message of 1
+through 255 bytes, against FIPS 180-4, RFC 4231, and RFC 8439; generated
+sources pin functions of 256 instances and of 257 and 320, and a size's bound
+of 65536 and of 65537. The byte order specification adds 8 rule identifiers
+and eight sources, six valid and two invalid, including SHA-256, SHA-512,
+ChaCha20, Poly1305, and X25519 reading and writing their words in the orders
+their standards name, against FIPS 180-4, RFC 8439, and RFC 7748; a generated
+source converts words of every width in both orders to words of every width
+and to `Int` against a reference computed in the runner, and converts the
+widest array to an `Int` and back, and an array one element longer is no
+type. The type parameters specification adds 10 rule identifiers and five
+sources, three valid and two invalid, including exponentiation, inversion,
+and Euler's criterion written once for five prime fields and SHA-256 and
+SHA-512 sharing one round, against RFC 7748, RFC 8032, RFC 8439, FIPS 203,
+FIPS 204, and FIPS 180-4; a generated source evaluates the 256 instances of
+one function over 64 residue types and four sizes, and one type more is 260
+instances and an error. The lengths specification adds 11 rule identifiers
+and three sources, two valid and one invalid, including RFC 8439's 375-byte
+and 265-byte vectors written as the RFC prints them and a table of all 65,536
+powers of 3 modulo 2^16 + 1 read by 16-bit words, against the vectors of
+RFC 8439 pinned in the D-011 suite; generated sources pin literals and byte
+strings of 65,536 elements and of 65,537, and every step budget, selection,
+report, and usage error of the three new options. The tests specification
+adds 12 rule identifiers and five sources, two valid, one whose tests fail,
+and two invalid, including seven of RFC 8439's examples and test vectors
+written as tests, with inputs and expected bytes as the RFC prints them;
+generated sources pin titles at and past their limits, that only the root's
+tests run, a test that stops, every option and usage error of `orangec test`,
+and comparisons of 65,536 bytes that cost the same wherever they differ. The
+computed amounts specification adds 10 rule identifiers and six sources, four
+valid and two invalid, including RC6 with its paper's 128-bit-key vectors run
+both ways, SHA3-256 with NIST's examples, and ML-KEM's transform constants
+derived as FIPS 203 defines them; generated sources compare every shift and
+rotation at every width with its definition for amounts of every sign and
+size and of every word width, show amounts of 2 through 16,384 bits costing
+the same steps, and refuse every literal amount at the width or with a sign.
+The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2278,15 +4806,100 @@ complete or that the parser is correct. That caution is not modesty. It is the
 same discipline Chapter 2 applied to claims, applied to the project's own
 compiler.
 
+### Arrays of rows
+
+A cryptographic state or polynomial vector often has two dimensions. S3s
+makes that shape a type, using the aliases Orange already has:
+
+```orange
+edition 2026;
+module rows {
+  type Row = Word[32]^4;
+  type Matrix = Row^4;
+  spec diagonal(m: Matrix) -> Row {
+    for i in 0..4 with out: Row = [0; 4] { out with [i] = m[i][i] }
+  }
+  test "diagonal" { diagonal([[1, 2, 3, 4]; 4]) == [1, 2, 3, 4] }
+}
+```
+
+The outer index chooses a row; the inner index chooses its scalar. Each is
+proved in range on its own axis. The rows have one exact type, so a short row,
+a different word width, or another residue modulus is rejected. A matrix
+holds at most 65,536 scalars, including the product of both dimensions. A
+third dimension and arrays of tuples remain outside this bounded slice.
+
+Rows are immutable values. Updating one row can share every other row, and
+slices and joins preserve the row type. Equality visits every row and every
+scalar with deterministic interpreter costs; those costs are not a timing
+guarantee. A byte-order conversion must select a row explicitly, because a
+matrix has no implicit flattening order.
+
+The [nested-array specification](NESTED_ARRAYS_2026.md) and
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md) record S3s as
+implemented and in owner review. It supplies vocabulary for the polynomial
+vectors of the development plan, without accepting a ring transformation,
+proof rule, machine layout, or backend. The conformance corpus includes
+quadratic-pair arithmetic with hand-derived answers; it makes no complete
+ML-KEM claim.
+
+### A modulus for each finite size
+
+A size can now describe a residue domain as well as an array length:
+
+```orange
+edition 2026;
+module rings {
+  spec add[m in 2..8](a: Mod[m], b: Mod[m]) -> Mod[m] { a + b }
+  spec result() -> (Mod[3], Mod[4]) { (add[3](2, 2), add[4](2, 2)) }
+  test "distinct domains" { (add[3](2, 2) == 1) && (add[4](2, 2) == 0) }
+}
+```
+
+The size range is finite and excludes its upper endpoint. The analyzer checks
+every declared instance, including those no call selects. Each has a concrete
+modulus from 2 through 2^521 − 1, and that exact integer remains part of its
+type. An invalid unused instance rejects the definition. The function's own
+sizes may also occur in expressions such as `Mod[(1 << bits) - 19]`, in body
+annotations and conversions, and in direct explicit type arguments. Global
+aliases and finite type lists remain concrete; this is finite specialization,
+not universal dependent typing. The [static-modulus specification](STATIC_MODULI_2026.md)
+and [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) remain
+in owner review.
+
+The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
+implement OEP-0022 P2: reconstruction, abstraction and tight/loose/canonical
+predicates, followed by addition, carrying and canonicalization. Partial P4
+mathematical preparation adds multiplication. Five exact `Int` accumulators hold the
+folded products, and three normalization passes expose each digit array and
+top carry before canonicalization. Boundary and generated binary-reference
+tests check coefficients and every carry stage; the third pass can be needed
+to keep every output digit below 2^51. These definitions supply no native wide
+multiplication primitive and do not complete P4. Transparent type aliases do
+not enforce the predicates, and these tests are not P3 checked refinement proofs.
+The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
+later proof, compiler, corpus and release obligations explicit.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
-than hidden: imports, multiple modules, attributes, visibility, generic
-arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, mixed-type tuples, arrays of arrays, indices that
-depend on data, loops over computed ranges, early exit, short-circuit
-operators, conditionals without `else`, a type of integers modulo a prime,
-signed words, variable shift and rotation amounts, recursion, typed
+than hidden: imports of names into scope, module paths and packages, modules
+that take modules as parameters, attributes, visibility, type parameters of
+`type` declarations, bounds or classes of types, types and sizes reasoned
+about for all their values at once, lists of types named once for several
+functions, sizes fitted outside the finite argument and expected-result
+types, contracts, effects, statements other than `let`, mutation,
+shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
+tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
+narrowed by conditions, slices at positions computed from data, empty arrays,
+arrays of more than 65,536 elements, step budgets written in a source,
+an order on arrays or tuples, tests with parameters or expected failures,
+text beyond printable ASCII, conversions of
+arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
+operators, conditionals without `else`, blocks as expressions of their own,
+moduli computed at run time,
+unbounded modulus parameters, sizes on `type` declarations, distinct types by declaration, extension
+fields, signed words, shifts of `Int`, arithmetic shifts, recursion, typed
 implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
 ABI, leakage behavior, lowering, optimization, code generation, packaging, and
@@ -2302,14 +4915,44 @@ only what every candidate gives the specification stratum: pure, total,
 deterministic meaning over mathematical values. Accepting it is the owner's
 decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
 S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
-through OEP-0008, and S3f's, which builds on S3e, through OEP-0009.
+through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
+builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
+OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
+on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
+S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
+through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
+which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
+through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
+which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
+through OEP-0023, and S3t's, which builds on S3s, through OEP-0024.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All five migrations so far are small: every source
+documented migration. All nineteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
-under S3e, and every source S3e accepted does the same under S3f.
+under S3e, every source S3e accepted does the same under S3f, every source
+S3f accepted does the same under S3g, where it costs no more steps, every
+source S3g accepted does the same under S3h, as a program of one module,
+every source S3h accepted does the same under S3i, since it declares no type
+and writes no modulus, every source S3i accepted does the same under S3j,
+since it binds nothing in a step or a branch, every source S3j accepted does
+the same under S3k, since it writes no tuple, every source S3k accepted
+does the same under S3l, since it writes no string, `++`, or range in
+brackets, every source S3l accepted does the same under S3m, since it
+declares no size parameter and writes every length and bound as an integer,
+every source S3m accepted does the same under S3n, since `big` or
+`little` after `as` was a type's name only where S3n still reads it as one,
+every source S3n accepted does the same under S3o, since it wrote no
+braces after a size's `in`, every source S3o accepted does the same under
+S3p, in the same steps, since its arrays hold at most 256 elements, every
+source S3p accepted does the same under S3q, since none began a member with
+`test` or compared arrays or tuples, and every source S3q accepted does the
+same under S3r, in the same steps, since each of its amounts was a literal
+below the width. Every source S3r accepted retains its values and costs
+under S3s; rank-two type aliases and chained indices are newly admitted.
+S3t retains S3s values and costs and admits own finite size names in modulus
+expressions, while rejecting invalid concrete instances before evaluation.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3003,10 +5646,57 @@ remainder, a truth value, and a choice, which is what prime-field arithmetic
 needs. X25519 now computes the first test vector of RFC 7748 with a
 255-rung Montgomery ladder over the integers modulo 2^255 − 19, Poly1305
 reproduces the tag of RFC 8439 section 2.5.2, and ChaCha20-Poly1305 seals the
-section 2.8.2 message to its published ciphertext and tag. These are still
-fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
-no byte strings and no message of variable length, and no standard has been
-admitted with its provenance. The corpus remains a set of research inputs
+section 2.8.2 message to its published ciphertext and tag. The lookup slice
+let a byte select from a table. AES-128 now derives its S-box as FIPS 197
+defines it and encrypts the examples of Appendices B and C.1 to their published
+ciphertexts, and a table-driven CRC-32 reproduces its check value. The module
+slice let each standard be written once and used by name: SHA-256, HMAC, and
+HKDF are three modules, and a program that uses them reproduces the
+HMAC-SHA-256 test cases of RFC 4231 and the first test case of RFC 5869. HMAC
+is not yet generic over its hash, as the corpus plan asks. The modular slice
+put each field in a type: X25519 and Poly1305 are now written over
+`Mod[(1 << 255) - 19]` and `Mod[(1 << 130) - 5]` with no reduction in sight
+and reproduce the same vectors, and the constants of ML-KEM, Ed25519, and
+P-256 are computed in the rings their standards define. The block slice let
+each round name its values where it runs: SHA-256's rounds name a through h,
+T1, and T2, and X25519's ladder names every value RFC 7748 names, inside one
+loop each. The tuple slice let each round carry its state by name: SHA-256's
+loop carries a through h, ChaCha20's quarter round gives four words as RFC
+8439 writes it, and Ascon-Hash256's state is five named words; all three
+reproduce their published values. The byte slice let each input be written
+as its standard prints it: HMAC-SHA-256 is keyed with "Jefe" and twenty bytes
+0b, as RFC 4231 prints its test cases, and ChaCha20-Poly1305 seals RFC 8439's
+sentence, written as text, into the RFC's ciphertext and tag. The size
+slice let each algorithm be written once for every length in a range:
+SHA-256 pads its own messages of 1 through 119 bytes, HMAC-SHA-256 takes any
+key of 1 through 63 bytes and message of 1 through 55, and Poly1305 any
+message of 1 through 255 bytes, and all three reproduce their published
+values. The byte-order slice let each algorithm read and write its words in
+the order its standard names, in one conversion each: SHA-256 and SHA-512
+read their blocks as big-endian words and write their digests as big-endian
+bytes, ChaCha20 and Poly1305 read their keys, nonces, and blocks as
+little-endian words and numbers, and X25519 decodes and encodes its
+coordinates as little-endian numbers, and all five reproduce their published
+values. The type-parameter slice let each computation be written once for
+every type it serves: exponentiation, Fermat inversion, and Euler's
+criterion once for five prime fields, which reproduce RFC 8032's square root
+of −1 and the roots of unity of FIPS 203 and FIPS 204, and Ch, Maj, and the
+round once for SHA-256 and SHA-512, which reproduce FIPS 180-4's digests.
+The length slice let a standard's long vectors be written whole: RFC 8439's
+375-byte text and ciphertext and its 265-byte AEAD ciphertext, each as the
+RFC prints it, reproduced byte for byte, and it leaves room for the 768-byte
+ciphertexts and 2,420-byte signatures of the post-quantum standards.
+The test slice moved known answers into the programs themselves: RFC 8439's
+quarter round, block function, zero-key key stream, and Poly1305 examples
+are stated as tests beside the functions they check, titled with their
+sections, and `orangec test` fails when one stops holding.
+The amount slice let rotations by data be written as their designers write
+them: RC6 encrypts and decrypts its paper's vectors, SHA3-256 computes its
+rotation offsets and round constants as FIPS 202 defines them, and ML-KEM's
+transform constants are derived by reversing bits.
+These are still fixtures, not corpus entries. A message's length is
+fixed in each instance rather than read when the program runs, and no
+standard has been admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
 
 The acceptance test will run for the first time when a complete primitive can
@@ -3615,7 +6305,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3t in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -3653,9 +6343,16 @@ reviewed protocol describes five candidate graphs and a replay plan of 25
 candidate-case units, each run three times, for 75 executions. Epoch
 `d004-e-4aaf8a83a01693d543c4` ran all 75 on 2026-09-28 with byte-identical
 repetitions. Four candidates passed every case and ST-HOST failed every case,
-so the laboratory narrowed the field without choosing. The results are
-contributor-produced and unreviewed, the selection remains null, and D-004
-remains proposed.
+so the laboratory narrowed the field without choosing. A v0.8 suite then
+added two cases and five cost measures, and epoch
+`d004-e-633e0aa831615cda3e06` ran all 105 of its executions on the same day:
+the same four candidates closed all seven cases, 28 of 35 units. The owner
+chose an isolation-first rule for telling them apart, knowing which candidate
+each offered rule would leave, and it leaves only ST-REL, which ties ST-MIRROR
+at zero isolation obligations and re-identifies six subject classes to its
+seven. Both runs are contributor-produced and unreviewed, the rule's result is
+not a recommendation until the owner disposes every candidate and hard gate,
+the selection remains null, and D-004 remains proposed.
 
 Laboratories let research run ahead of commitments without becoming
 commitments. They also make the eventual decision auditable. When D-004 is
@@ -3920,38 +6617,67 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [pure expression specification](EXPRESSIONS_2026.md), the
 [bindings and conversions specification](BINDINGS_2026.md), the
 [arrays specification](ARRAYS_2026.md), the
-[loops specification](LOOPS_2026.md), and the
-[conditions specification](CONDITIONS_2026.md) are proposed under OEP-0005
-through OEP-0009 and in the owner's review. Where this summary and those
+[loops specification](LOOPS_2026.md), the
+[conditions specification](CONDITIONS_2026.md), the
+[lookups specification](LOOKUPS_2026.md), the
+[modules specification](MODULES_2026.md), the
+[modular arithmetic specification](MODULAR_2026.md), the
+[blocks specification](BLOCKS_2026.md), the
+[tuples specification](TUPLES_2026.md), the
+[bytes specification](BYTES_2026.md), the
+[sizes specification](SIZES_2026.md), the
+[byte order specification](ORDER_2026.md), the
+[type parameters specification](TYPE_PARAMETERS_2026.md), the
+[lengths specification](LENGTHS_2026.md), the
+[tests specification](TESTS_2026.md), and the
+[computed amounts specification](AMOUNTS_2026.md) are proposed under
+OEP-0005 through OEP-0021 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
 
 The parser accepts exactly this grammar, with at most two tokens of
-lookahead, except that `if` before `(`, `-`, or `[` scans forward, without
-backtracking, for a brace group followed by `else`:
+lookahead, except that `if` before `(`, `-`, `[`, the word `as`, or the word
+`with` followed by `[` scans forward, without backtracking, for a brace group
+followed by `else`, and a name followed by `[` scans forward, reading each
+token at most twice over a whole source, for brackets that hold only
+integers, names, a name's `[n]`, `+`, `-`, `*`, `/`, `%`, `^`, commas, and
+parentheses followed by `(`, which make it a call with sizes or types:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
+use_decl        = "use" IDENTIFIER ";" ;
+type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
-                | "spec" IDENTIFIER "(" parameters ")" typed_tail
+                | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
+size_params     = "[" size_param ("," size_param)* "]" ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
-parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" size)? ;
+size            = INTEGER | IDENTIFIER | "(" expression ")" ;
+parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
-                | conversion | update ;
-conversion      = prefixed "as" parsed_type ;
-update          = prefixed "with" "[" expression "]" "=" expression ;
+                | chain("++") | conversion | update ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
+update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -3962,17 +6688,22 @@ compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | byte_string | tuple | array | fill | loop | conditional ;
+byte_string     = STRING | HEX_STRING ;
+suffix          = "." INTEGER (index | slice)? | index | slice ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
+slice           = "[" range "]" ;
+range           = expression ".." expression? | ".." expression ;
 array           = "[" expression ("," expression)* ","? "]" ;
-fill            = "[" expression ";" INTEGER "]" ;
-loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression
-                  "{" expression "}" ;
-conditional     = "if" expression "{" expression "}"
-                  "else" ("{" expression "}" | conditional) ;
-call            = IDENTIFIER "(" arguments? ")" ;
+fill            = "[" expression ";" size "]" ;
+loop            = "for" IDENTIFIER "in" size ".." size
+                  "with" pattern "=" expression block ;
+conditional     = "if" expression block "else" (block | conditional) ;
+block           = "{" binding* expression "}" ;
+call            = (IDENTIFIER "::")? IDENTIFIER sizes? "(" arguments? ")" ;
+sizes           = "[" expression ("," expression)* "]" ;
 arguments       = expression ("," expression)* ","? ;
 ```
 
@@ -3980,23 +6711,38 @@ Sources are valid UTF-8 of at most 16 MiB. Identifiers are ASCII. Integers
 may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
-`for`, `in`, `with`, `if`, `else`, `true`, and `false` are not reserved: `let`
-starts a binding only at the start of a body item before a name, `as` converts
+`for`, `in`, `with`, `if`, `else`, `use`, `type`, `hex`, `big`, `little`, `true`, and `false` are not reserved: `let`
+starts a binding only at the start of a body, step, or branch item before a
+name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
-`with` are words only in a loop's header, `with` updates only after a complete
+`with` are words only in a loop's header, `in` also between a size's or a
+type parameter's name and its bounds or list, `with` updates only after a complete
 operand and before `[`, `if` starts a conditional only where a condition can
-follow it, `else` is a word only after a conditional's value, and `true` and
-`false` are values only where no name of that spelling is in scope. Line and
-nested block comments are trivia. `<<`, `>>`, `<<<`, and `>>>` are single
-tokens, matched longest first. Operators from different groups, or two shifts,
+follow it, `else` is a word only after a conditional's value, `use` and `type`
+start declarations only at the head of a module before its first function,
+`Mod` takes a modulus only before `[`, `hex` begins a hex string only directly
+before a quote, `big` and `little` are byte orders only directly after `as`
+and before `(` or a name other than `as` and `with`, and `true` and `false`
+are values only where no name of that spelling is in scope.
+Line and
+nested block comments are trivia. `<<`, `>>`, `<<<`, `>>>`, and `++` are
+single tokens, matched longest first, and a string is a byte string of
+printable ASCII and escapes or, when `hex` touches its opening quote, a hex
+string of digit pairs and spaces. Operators from different groups, or two shifts,
 two comparisons, or two divisions, may not share a level without parentheses, and a conversion or an update shares
 a level with no operator and no other conversion or update. `^` after a declared
 type gives its array length; anywhere else it is exclusive or. Expressions may
-nest at most 64 levels deep, counting groups, calls, arrays, indices, loops,
-conditionals, updates, and prefix operators, and reach height 256; a function declares at
-most 64 parameters and 256 bindings, a call supplies at most 256 arguments, an
-array literal lists at most 256 elements, and a loop's bounds satisfy
-0 ≤ a < b ≤ 65536.
+nest at most 64 levels deep, counting groups, tuples, calls, arrays, indices,
+slices, loops, conditionals, updates, moduli, and prefix operators, and reach
+height 256; a function declares at most 4 size parameters, 64 parameters,
+and 256 bindings and has at most 256 instances, a loop's step
+or a branch at most 256 bindings, a call supplies at most 4 sizes and 256
+arguments, an array literal lists at most 65,536 elements, a byte string holds 1
+through 65,536 bytes, a tuple type, a tuple, and a tuple pattern hold at most 16
+parts, and a loop's bounds and a size parameter's bounds satisfy
+0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations and 64
+`type` declarations, and a program holds at most 64 modules, its root
+included.
 
 ### Types and values
 
@@ -4008,69 +6754,168 @@ array literal lists at most 256 elements, and a loop's bounds satisfy
 | `Word[16]` | The integers modulo 2^16 | `0x` and 4 lowercase hex digits |
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
-| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
+| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
-No other type, width, or length is accepted. Word literals are never wrapped, truncated,
-saturated, or coerced, and no value changes type implicitly. `e as T` converts
-between any two of these types other than `Bool`: it takes the integer value
-of `e` and, for `Word[n]`, its residue modulo 2^n. The operand's type comes from its first
+No other type, width, or length is accepted; a name declared by `type` stands
+for the type it names. A modulus is a constant built from integer literals
+with `+`, `-`, `*`, `<<`, and parentheses, and two moduli are one type when
+they are equal. Word and residue literals are never wrapped, truncated,
+saturated, or coerced: a literal of `Mod[m]` has a magnitude less than m, and
+`-n` stands for m − n. No value changes type implicitly. `e as T` converts
+between any two scalar types other than `Bool`: it takes the integer value
+of `e`, the least residue for a residue, and, for `Word[n]` or `Mod[m]`, its
+residue modulo 2^n or m. The operand's type comes from its first
 name, call, conversion, or index, so a conversion of literals alone is an
 error. An array literal lists exactly as many elements as its type, and `x[k]`
-selects the element at a literal index below the length. No operator or
-conversion applies to a whole array, and an array's elements are never arrays.
+selects the element at position k, which must be proved below the length
+before anything runs. An index is checked as the word type of its first name,
+call, conversion, or element, and ranges over that type, narrowed by its
+operators; otherwise it is an `Int` built from integer literals, loop indices,
+and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
+conditionals. An update, a fill, a join, a slice, or a slice update costs one
+evaluation step per 64 elements of the array it builds, or part of 64, and a
+byte string costs one. No operator but `++`, and no conversion without a byte
+order, applies to a whole array, and an array's elements are never arrays. A byte string `"..."`
+of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
+`\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
+of its bytes. `a ++ b` is the elements of a followed by those of b, of one
+element type. `x[a..b]` is the elements of x from index a up to but not
+including b, `x with [a..b] = v` is x with them replaced by v, and an omitted
+bound is 0 or the length. A slice's bounds are built from integer literals
+and loop indices with `+`, `-`, and `*` by a constant, and are proved a fixed
+positive distance apart and in range at every step.
+A tuple lists exactly as many elements as its type, `p.k` selects element k,
+counted from zero, and no operator, comparison, conversion, index, or update
+applies to a whole tuple; neither a tuple's nor an array's elements are ever
+tuples.
+A `spec f[n in a..b, ...]` stands for one instance for each value of its
+sizes, ordered with the first size changing slowest, and each instance is
+checked as the function written out with those values; only the first
+instance of a function in error is reported. A size is built from integer
+literals and size parameters with `+`, `-`, `*`, `/`, `%`, prefix `-`, and
+parentheses and computed exactly, with `/` and `%` Euclidean and total; it
+writes an array length, a fill length, or a loop bound, and a size
+parameter's name is an `Int` constant, which index and slice analysis read as
+a literal. `f[s, ...](args)` calls the instance with those sizes, and
+`f(args)` the one instance whose array parameters have the lengths of its
+arguments. Sizes cost nothing at run time.
+A type parameter `K in {T, U, ...}` lists distinct types, resolved once and
+written without sizes; its name is a type in the function's signature and
+body, never a value, and the function stands for one instance for each
+combination of its sizes' values and types, with at most four parameters in
+brackets and 256 instances. A call's entries are `Int`, `Bool`, a word, an
+array of them, a `type` declaration's name, or the caller's type parameter,
+matched by type equality; `f(args)` calls the one instance whose parameters
+have its arguments' types, literal lengths deciding only where a type does
+not, and among several, the one whose result has the type its place
+expects. Types cost nothing at run time.
+`e as big T` and `e as little T` convert words, a word or an array of words,
+to words of the same number of bits, to `Int`, or to `Mod[m]`, and an `Int`
+or a residue to words, through the number N the words spell, their first
+word most significant for `big` and least significant for `little`; a number
+becomes the words that spell its residue modulo 2 to the power of their
+width, and words become N, or N modulo m. The operand's type is its first
+typed leaf's, an array literal's or a fill's from its elements and its
+length. A conversion in a byte order costs one evaluation step per 64 bits of
+its width, or part of 64, and a conversion to `Mod[m]` also the cost of
+`as Mod[m]`.
 
 ### Operators
 
-| Expression | On `Int` | On `Word[n]` |
-| --- | --- | --- |
-| `a + b`, `a - b`, `a * b` | Exact | Modulo 2^n |
-| `-a` | Exact negation | Not defined; write `0 - a` |
-| `a & b`, `a \| b`, `a ^ b` | Not defined | Bitwise and, or, exclusive or |
-| `~a` | Not defined | Bitwise complement |
-| `a << k`, `a >> k` | Not defined | Logical shift left, right |
-| `a <<< k`, `a >>> k` | Not defined | Rotation left, right |
-| `a / b`, `a % b` | Euclidean quotient and remainder, 0 ≤ `a % b` < \|b\| | Unsigned quotient and remainder |
-| `a == b`, `a != b` | Equality, giving `Bool` | Equality, giving `Bool` |
-| `a < b`, `a <= b`, `a > b`, `a >= b` | Order by value, giving `Bool` | Unsigned order, giving `Bool` |
+| Expression | On `Int` | On `Word[n]` | On `Mod[m]` |
+| --- | --- | --- | --- |
+| `a + b`, `a - b`, `a * b` | Exact | Modulo 2^n | Modulo m |
+| `-a` | Exact negation | Not defined; write `0 - a` | m − a, or 0 when a is 0 |
+| `a & b`, `a \| b`, `a ^ b` | Not defined | Bitwise and, or, exclusive or | Not defined |
+| `~a` | Not defined | Bitwise complement | Not defined |
+| `a << k`, `a >> k` | Not defined | Logical shift left, right | Not defined |
+| `a <<< k`, `a >>> k` | Not defined | Rotation left, right | Not defined |
+| `a / b` | Euclidean quotient | Unsigned quotient | a times the inverse of b, or 0 when b has none |
+| `a % b` | Euclidean remainder, 0 ≤ `a % b` < \|b\| | Unsigned remainder | Not defined |
+| `a == b`, `a != b` | Equality, giving `Bool` | Equality, giving `Bool` | Equality, giving `Bool` |
+| `a < b`, `a <= b`, `a > b`, `a >= b` | Order by value, giving `Bool` | Unsigned order, giving `Bool` | Not defined |
 
-For every type, `a / 0` is 0 and `a % 0` is a. On `Bool`, `!a`, `a && b`, and
+For every type, `a / 0` is 0, and `a % 0` is a where `%` is defined. On `Bool`, `!a`, `a && b`, and
 `a || b` are negation, conjunction, and disjunction, evaluating every operand,
 and `==` and `!=` compare. `if c { a } else { b }` has the type of both
 branches and evaluates only the one its `Bool` condition chooses; an
 `else if` chain is one conditional per arm.
 
-The amount `k` must be an unsigned integer literal from 0 through n − 1. Calls
-name typed `spec` functions of the same module, pass exactly one argument per
-parameter, and may not form a cycle. A `let` binding states its type, is in
+An amount `k` written as one integer literal must be unsigned and from 0
+through n − 1. Any other amount is an `Int` or a word, typed by its first
+typed leaf: `a << k` is floor(a · 2^k) and `a >> k` is floor(a · 2^−k)
+modulo 2^n, so a shift by n or more is 0 and a negative amount shifts the
+other way, and a rotation turns by k modulo n, at one evaluation step
+whatever k's size. Calls
+name typed `spec` functions of the same module, or, as `m::f(...)`, of a
+module `m` it uses, pass exactly one argument per parameter, and may not form
+a cycle; nor may the uses of a program. A `let` binding states its type, is in
 scope after its semicolon, and may not reuse the name of a parameter or another
-binding.
+binding. A tuple pattern, as in `let (s: T, c: U) = e;` or a loop's
+`with (a: T, b: U) = e`, names each element of its value and states each
+name's type, and each of its names follows the same rules.
 
 ### Commands
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
+orangec test [--steps <N>] [--stats] <FILE>
+orangec fmt <FILE>
+orangec fmt --check <FILE>...
+orangec doc <FILE>
+orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
+               --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec keygen [--scheme <NAME>] [-o <FILE>]
+orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
+orangec schemes [<NAME>...]
 ```
 
 | Command | Behavior |
 | --- | --- |
 | `check` | Lexical, syntactic, and semantic validation; silent on success |
-| `eval` | Validate one source, then print each typed `spec` without parameters as `module::name: Type = value` |
+| `eval` | Validate one program, then print each typed `spec` without parameters of its root module as `module::name: Type = value`, and each instance of a sized one as `module::name[2]: Type = value` |
 | `lex` | Print the deterministic token stream with byte spans |
+| `fmt` | Print one formatted source or check sources without changing them |
+| `doc` | Print standalone offline HTML for one parsed source |
+| `replay` | Validate one program and reference-evaluate a Boolean specification for exact typed local arguments |
+| `test` | Validate one program, then run its root module's tests in source order, printing `test "TITLE" ... ok` or `... FAILED` for each and a count; status 1 when any fails |
+| `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
+| `enc` | Seal one file as `FILE.orange` with its key's scheme |
+| `dec` | Open one sealed file; output is published only if every chunk is authentic |
+| `schemes` | List the built-in schemes or check a scheme program |
 
-Options are `--edition <YEAR>` (only `2026`, at most once), `--` to end option
+Options are `--edition <YEAR>` (only `2026`, at most once), for `eval`,
+`test` and `replay` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
+once; default 1,048,576) and `--stats` (report each evaluated function's or
+test's steps and the total on standard error, after the values or the
+report), for `eval` only `--spec <NAME>` (evaluate only this function without
+parameters; up to 64 names), for `fmt` only `--check` (check one through 256
+sources without changing files; otherwise `fmt` requires exactly one source),
+for `replay` `--function <MODULE::NAME>`, `--witness <FILE>` and optional
+`--instance <N[,N...]>` (an exact numeric finite-instance vector), `--scheme <NAME>`
+(a built-in name or a program path), `--key <FILE>` (default
+`$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
-UTF-8 source from standard input, once per invocation. Exit status is 0 on
+UTF-8 source from standard input, once per invocation. For `check`, `eval`,
+`test` and `replay`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
+or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
 ### Diagnostic families
 
 | Codes | Phase | Examples |
 | --- | --- | --- |
-| `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
+| `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0227` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, index not built from literals and loop indices, comparison whose operands have no type |
+| `ORC0201`–`ORC0242` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated |
+| `ORC0250`–`ORC0252` | Formatting | Formatter resource limit, inconsistent result, source requiring formatting under `--check` |
+| `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
+| `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1008` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit |
+| `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
@@ -4088,7 +6933,7 @@ its gate; `investigate` means the alternatives need a reproducible comparison.
 | D-001 | Mission | Directed |
 | D-002 | No disposable prototype | Directed |
 | D-003 | Product form | Accepted: standalone Orange (PF-01) |
-| D-004 | Semantic strata | Proposed; first laboratory run recorded, contributor-produced and unreviewed; nothing selected |
+| D-004 | Semantic strata | Proposed; two laboratory runs recorded, contributor-produced and unreviewed; nothing selected |
 | D-005 | Public assurance model | Proposed |
 | D-006 | Proof foundation | Investigate |
 | D-007 | Orange-owned proof format and checker | Proposed; depends on D-006 |
@@ -4183,10 +7028,19 @@ part are listed here so a reader can move from explanation to authority.
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md), the
   proposed [expression](EXPRESSIONS_2026.md),
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
-  [loop](LOOPS_2026.md), and [condition](CONDITIONS_2026.md) specifications
-  under OEP-0005 through OEP-0009, the
-  [compiler guide](../compiler/README.md), and the compiler's own behavior at
-  the book's snapshot.
+  [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
+  [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
+  [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
+  [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md),
+  [byte order](ORDER_2026.md), [type parameter](TYPE_PARAMETERS_2026.md),
+  [length](LENGTHS_2026.md), [test](TESTS_2026.md), and
+  [amount](AMOUNTS_2026.md) specifications under OEP-0005 through OEP-0021,
+  [nested arrays](NESTED_ARRAYS_2026.md) under OEP-0023 and
+  [static moduli](STATIC_MODULI_2026.md) under OEP-0024,
+  the
+  [compiler guide](../compiler/README.md),
+  the [scheme guide](../compiler/schemes/README.md), and the compiler's own
+  behavior at the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
   [assurance model](ASSURANCE.md), the
   [proof foundation](PROOF_FOUNDATION_DECISION_SUITE.md) and
@@ -4223,24 +7077,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.8 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.20 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.8 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.8 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, and condition slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.20 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.20 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
-| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3 | Leakage baseline and target models remain unsettled |
+| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.8 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, and condition slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.20 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.8 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.20 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.20 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and D revised in v0.8 and Appendix B in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.20 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4279,7 +7133,46 @@ version 0.6 adds the [arrays specification](ARRAYS_2026.md) and
 version 0.7 adds the [loops specification](LOOPS_2026.md) and
 [OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
 version 0.8 adds the [conditions specification](CONDITIONS_2026.md) and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md).
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
+version 0.9 adds the [lookups specification](LOOKUPS_2026.md) and
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
+version 0.10 adds the [modules specification](MODULES_2026.md),
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), and the
+[scheme guide](../compiler/schemes/README.md), version 0.11 adds the
+[modular arithmetic specification](MODULAR_2026.md) and
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
+version 0.12 adds the [blocks specification](BLOCKS_2026.md) and
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), version 0.13
+adds the [tuples specification](TUPLES_2026.md) and
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), version 0.14
+adds the [bytes specification](BYTES_2026.md) and
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), version 0.15
+adds the [sizes specification](SIZES_2026.md) and
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), version 0.16
+adds the [byte order specification](ORDER_2026.md) and
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), version
+0.17 adds the [type parameters specification](TYPE_PARAMETERS_2026.md) and
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
+version 0.18 adds the [lengths specification](LENGTHS_2026.md) and
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), version 0.19
+adds the [tests specification](TESTS_2026.md) and
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), and version 0.20
+adds the [computed amounts specification](AMOUNTS_2026.md) and
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md).
+Version 0.21 adds the [nested-array specification](NESTED_ARRAYS_2026.md)
+and [OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md);
+version 0.22 adds the [static-modulus specification](STATIC_MODULI_2026.md),
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), P2 limb
+definitions and the [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md).
+Version 0.23 adds the permanent [formatter contract](FORMATTER_2026.md) and
+its command, identity and developer-tool status boundaries.
+Version 0.24 adds the permanent [source documentation contract](DOCUMENTATION_2026.md)
+and its syntax-only, offline rendering and product documentation boundaries.
+Version 0.25 adds the permanent [local witness replay contract](WITNESS_REPLAY_2026.md),
+its typed value boundary, numeric instance selection and reference-only outcomes.
+Version 0.26 adds partial P4 mathematical product preparation alongside the
+existing P2 representation definitions, with exact accumulators and three
+normalization passes; it adds no P3 proof or P4 completion claim.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -4338,6 +7231,133 @@ Bryan's direction on 2026-09-29, and every Orange example it adds was run
 against the compiler at the revision that introduced it. That check is not
 independent review, and the same authorship, review, evidence, and provenance
 boundaries apply.
+
+Manuscript version 0.9 revised the preface, Chapters 1, 3, 4, 6, 8, 12, and 16,
+and Appendices A, B, and D for the S3g lookup slice and the second D-004
+laboratory run, and added the Chapter 6 section "A lookup, two ways" and the
+Chapter 8 section "Tables keyed by data". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
+
+Manuscript version 0.10 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3h module slice and the sealing commands, and
+added the Chapter 8 section "Standards built on standards". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-09-30, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. That check is not independent review, and the same authorship, review,
+evidence, and provenance boundaries apply.
+
+Manuscript version 0.11 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3i modular slice, and added the Chapter 8
+section "Fields as types". It was drafted with Claude Code under Chase Bryan's
+direction on 2026-09-30, and every Orange example it adds was run against the
+compiler at the revision that introduced it. That check is not independent
+review, and the same authorship, review, evidence, and provenance boundaries
+apply.
+
+Manuscript version 0.12 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3j block slice, and added the Chapter 8
+section "Rounds in the words of their standard". It was drafted with Claude
+Code under Chase Bryan's direction on 2026-09-30, and every Orange example it
+adds was run against the compiler at the revision that introduced it. That
+check is not independent review, and the same authorship, review, evidence,
+and provenance boundaries apply.
+
+Manuscript version 0.13 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3k tuple slice, and added the Chapter 8
+section "Several values at once". It was drafted with Claude Code under Chase
+Bryan's direction on 2026-09-30, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
+
+Manuscript version 0.14 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3l byte slice, and added the Chapter 8
+section "Bytes as the standards print them". It was drafted with Claude Code
+under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
+was run against the compiler at the revision that introduced it. That check
+is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.15 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3m size slice, and added the Chapter 8
+section "One algorithm for every length". It was drafted with Claude Code
+under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
+was run against the compiler at the revision that introduced it. That check
+is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.16 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3n byte-order slice, and added the Chapter 8
+section "Words in either byte order". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.17 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3o type-parameter slice, and added the
+Chapter 8 section "One function for several types". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-09-30, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. That check is not independent review, and the same authorship, review,
+evidence, and provenance boundaries apply.
+
+Manuscript version 0.18 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3p length slice, and added the Chapter 8
+section "Vectors at full length". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.19 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3q test slice, and added the Chapter 8
+section "Known answers beside the algorithm". It was drafted with Claude Code
+under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
+was run against the compiler at the revision that introduced it. That check
+is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.20 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3r amount slice, and added the Chapter 8
+section "Amounts the data choose". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.21 updates Chapter 8, the current slice marker, and the
+status ledger for S3s nested arrays, with the executable "Arrays of rows"
+example. Codex using GPT-6.1 prepared these changes under Chase Bryan's
+2026-10-01 direction. Their implementation tests are solo-produced evidence;
+they do not supply independent review or semantic acceptance.
+
+Manuscript version 0.22 updates the finite-size modulus boundary, Chapter 8's
+executable examples and representation work, the current slice marker and
+status ledger, and the complete 1.0 execution path. Codex using GPT-6.1
+prepared these changes under Chase Bryan's 2026-10-01 direction. The proposals
+remain in review; no foundational decision, proof or release is inferred.
+
+Manuscript version 0.23 documents the syntax-only formatter, its stdout and
+check-only interfaces, and the source identities that formatting changes.
+Codex using GPT-6.1 prepared these changes under Chase Bryan's 2026-10-01
+direction. The semantic boundary remains S3t in review; this frontend tool
+does not close S8 or establish proof, evidence or release acceptance.
+
+Manuscript version 0.24 documents the syntax-only source documentation
+generator, its standalone offline HTML, bounded rendering and source-display
+identity. Codex using GPT-6.1 prepared these changes under Chase Bryan's
+2026-10-01 direction. The semantic boundary remains S3t in review; generated
+source pages supply no checked claim, proof acceptance or release authority.
+
+Manuscript version 0.25 documents the typed local argument decoder and Boolean
+witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
+2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
+execution supplies no proof, solver selection, D-009 candidate credit, atomic
+claim authority or release acceptance.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

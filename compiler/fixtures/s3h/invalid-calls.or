@@ -1,0 +1,12 @@
+// S3h rejection: a module name qualifies only a call of a typed `spec` of a
+// module this module uses, and such a call is checked as any call is.
+edition 2026;
+module calls {
+  use sha256;
+  spec unused() -> Word[8]^32 { hmac::block(sha256::digest(sha256::initial())) }
+  spec itself() -> Word[32]^8 { calls::unused() }
+  spec unknown() -> Word[32]^8 { sha256::final() }
+  spec unqualified() -> Word[32]^8 { initial() }
+  spec count() -> Word[32]^8 { sha256::compress(sha256::initial()) }
+  spec mismatch() -> Word[8]^32 { sha256::initial() }
+}

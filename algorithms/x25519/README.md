@@ -139,8 +139,9 @@ The evaluation cost was measured with a filler spec sharing the file's
 budget (`probe.py` in the scratch directory): one X25519 evaluation, from
 the vector's literals to the encoded output, costs about 568,000 of the
 1,048,576 steps of a file. One rung of the ladder costs about 1,963 steps,
-of which the ten products (65 steps each for two 8-limb numbers) and their
-ten reductions by `%` (129 steps each) are more than nine tenths; 255 rungs
+of which the ten products (65 steps each for two 8-limb numbers) and the
+nine reductions by `%` that follow all but `a24() * e` (129 steps each) are
+more than nine tenths; 255 rungs
 are about 500,000 steps. The inversion by the addition chain costs about
 59,000 steps, against about 107,000 for square-and-multiply on p - 2 as the
 S3f fixture writes it; the digit-peeling encoding costs about 4,400 steps,
@@ -163,6 +164,8 @@ reach by three and six orders of magnitude.
   `shared_secret`.
 - `x25519-wycheproof.or`: the same algorithm, and test case 1 of Wycheproof's
   `x25519_test.json`.
+- `field25519-limbs.or`: the separate executable radix-2^51 representation
+  definitions and mathematical boundary cases described below.
 
 The four files are one file split by the step budget: their algorithm part,
 from `edition 2026;` through `all_zero`, is the same text, generated from one
@@ -175,6 +178,8 @@ sentence and the two vector specs differ.
     orangec eval algorithms/x25519/x25519-second-vector.or
     orangec eval algorithms/x25519/x25519-diffie-hellman.or
     orangec eval algorithms/x25519/x25519-wycheproof.or
+    orangec eval --stats algorithms/x25519/field25519-limbs.or
+    orangec test --stats algorithms/x25519/field25519-limbs.or
     python3 algorithms/verify.py algorithms/x25519
 
 `eval` also prints the constant specs `prime`, `a24` and `base_point`, which
@@ -189,7 +194,7 @@ have no `_expected` twin and are not vectors.
 | `rfc7748_6_1_shared_secret` | RFC 7748, section 6.1 | K = X25519(a, K_B) with Alice's a 77076d0a... and Bob's K_B de9edb7d...; K 4a5d9d5b... |
 | `wycheproof_x25519_tc_1` | Wycheproof `testvectors_v1/x25519_test.json`, tcId 1 | "normal case", flags Normal, result valid; private c8a9d5a9..., public 504a3699..., shared 436a2c04... |
 
-Every expected value is the published value: the section 5.2 outputs and the
+Every expected value in these four vectors is the published value: the section 5.2 outputs and the
 section 6.1 K as the RFC prints them, taken from the copies named below, and
 the Wycheproof `shared` field. The `cryptography` package
 (`X25519PrivateKey.from_private_bytes(...).exchange(...)` and
@@ -219,6 +224,101 @@ particular the conditional in `cswap` is a specification of a choice, not a
 constant-time swap. It is not a corpus entry in the sense of The Orange Book
 chapter 12.
 
+## Mathematical limb representations
+
+[`field25519-limbs.or`](field25519-limbs.or) implements the executable P2
+representation definitions and partial P4 mathematical product preparation of
+[OEP-0022](../../docs/governance/oeps/OEP-0022-crypto-language-development-plan.md).
+It is separate from the existing ladder. It supplies exact mathematical field
+products, while inversion, coordinate decoding, and full X25519 refinement
+remain absent from this source.
+The five `Word[64]` limbs are least significant first, with B = 2^51 and
+p = B^5 - 19. This radix and carry schedule are original definitions;
+RFC 7748 does not require this storage format.
+
+`reconstruct` computes N(x) = sum Int(x[i]) * B^i with exact `Int`
+arithmetic. `alpha` reduces N(x) into the existing `Mod[p]` ring.
+`tight` requires every limb below B, `loose` requires every limb below 2B,
+and `canonical` requires Tight and N(x) < p. These predicates are ordinary
+Boolean functions, and the transparent `Limbs` alias does not enforce any of
+them. For example, the tight representation of p is accepted by `alpha` as
+field zero but is not canonical. Canonical output does not require canonical
+input. These pure limb functions do not implement the RFC coordinate decoder.
+
+The intended input contract of `add_tight` is two tight values. Each limb sum
+is computed in `Int` and is below 2^52 under that contract, so its `Word[64]`
+conversion is exact. `carry_loose` accepts loose inputs under its intended
+contract and performs two immutable five-iteration carry passes. Each pass
+returns its digits and top carry as a tuple; the top carry is folded into the
+low digit using B^5 = p + 19. The first top carry is at most 2. The second is
+at most 1; when it is 1, the second low digit is below 38 and adding 19 remains
+below B. `canonicalize_tight` reconstructs a tight value, subtracts p once
+when needed, and splits the resulting integer into five digits.
+`canonical_output` composes carry and canonicalization for loose inputs.
+These mathematical bounds describe the schedule; they have not been checked
+by an Orange proof checker.
+
+The partial P4 preparation starts with `product_accumulators`, which folds the
+five-by-five convolution with B^5 = p + 19
+into five exact `Int` coefficients. For tight inputs, their respective maxima
+are [77, 59, 41, 23, 5] times (B - 1)^2, each below 2^109. The ordinary
+`bounded_product` predicate records these nonnegative bounds. Products and
+carries retain exact `Int` values; only radix digits below B are narrowed to
+`Word[64]`. `product_carry_trace` exposes all three digit arrays and top carries.
+Under the stated coefficient bounds, the first top carry is at most 5B + 12,
+the second at most 1, and the third zero. The third pass preserves tightness:
+adding 19 only to the second low digit can exceed B despite the right residue.
+`multiply_tight` uses this schedule, and `multiply_canonical` applies the
+existing single-subtraction canonicalization. Tight inputs need not be
+canonical. These intended contracts remain unchecked predicates; this
+mathematical preparation does not complete P4 or supply P3 checked proofs.
+
+Seven P2 computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum
+tight storage, componentwise addition and both addition folds. Five partial P4
+pairs add exact product coefficient maxima, every product carry stage, product
+boundaries and a product requiring the third pass.
+The expected values follow directly from B^5 = p + 19, rather than from a
+published X25519 vector. The external
+[`field25519_limbs.rs`](../../compiler/crates/orangec/tests/field25519_limbs.rs)
+test runs the CLI twice and independently reconstructs the storage bits into
+a 320-bit integer, reduces by binary long division, and extracts canonical
+digits. Its 118 inputs include below/at/above both bounds at every limb,
+the four p boundaries, maximum `Word[64]` storage, carry chains, and 80
+deterministic generated tight/loose inputs. Addition tests compare exact limb
+sums and canonical residues for 50 tight-input pairs. Product tests use 129
+tight-input pairs and an independent 640-bit binary product/reference carry
+calculation to check coefficients, each carry stage, tight output and canonical
+residues. Forty-one boundary observations separate the intended input and
+accumulator predicates from a coincidentally correct residue outside them.
+
+The following are exact reference-evaluator step counts for the named
+parameterless specs, including construction of their inputs. They describe
+this source and evaluator cost model, not native execution time.
+
+| Spec | Steps |
+| --- | ---: |
+| `reconstruction_vectors` | 632 |
+| `abstraction_vectors` | 903 |
+| `predicate_vectors` | 1,422 |
+| `exact_addition` | 106 |
+| `carried_addition` | 477 |
+| `canonical_boundaries` | 1,165 |
+| `second_fold` | 380 |
+| `product_accumulator_maxima` | 1,019 |
+| `product_maximum_trace` | 1,572 |
+| `product_maximum` | 1,768 |
+| `product_third_pass` | 1,474 |
+| `product_boundaries` | 8,824 |
+
+Default `eval --stats` takes 19,999 steps including constants and expected
+values. The ten executable test blocks take 15,751 steps. The external tests
+check the exact 380-step budget for `second_fold` and 1,474-step budget for
+`product_third_pass`: each succeeds at its stated budget and returns ORC0301
+with no partial value output one step below it. All loops have five iterations;
+no array is larger than twelve scalar elements. Boolean examples and test
+results establish no checked refinement type, universal theorem, timing,
+machine layout, or native security guarantee.
+
 ## Gaps
 
 - The step budget of 1,048,576 steps per file holds one X25519 evaluation
@@ -226,14 +326,14 @@ chapter 12.
   an identical algorithm part instead of one file, the iterated test of
   section 5.2 is out of reach, and the all-zero check of section 6.1 is
   written (`all_zero`) but not evaluated on a computed shared secret.
-- Loop bounds must be literals, so the runs of squarings in the addition
-  chain cannot take their length as the bound; `square_times` always runs
-  100 iterations and skips the surplus with a comparison, about 4,500 idle
-  steps per inversion, the alternative being nine one-purpose specs.
-- There are no tuples and no arrays of mixed type, so the ladder's four
-  coordinates travel as an `Int^4`, and the encoding carries the remaining
-  value and the 32 digits together as an `Int^33` and needs a second loop to
-  make bytes of them.
+- The existing `square_times` accepts its length as runtime `Int`, while
+  loop bounds must be static. It always runs 100 iterations and skips the
+  surplus with a comparison, about 4,500 idle steps per inversion. The current
+  language supports bounded static size parameters, but this helper has not
+  been migrated.
+- The existing ladder sources retain their earlier `Int^4` coordinate state
+  and `Int^33` encoding accumulator. The current language supports tuples;
+  the new limb definitions use them, but the ladder has not been migrated.
 - `^` is not defined on `Int` or `Bool`, so the RFC's running `swap ^= k_t`
   is not written as such; `rung` swaps around the step when k_t is set,
   which is the same sequence of arrangements.

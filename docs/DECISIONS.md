@@ -168,9 +168,16 @@ subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. Integrity parsing and structural oracles ratify no
 Orange semantics. D-004 remains proposed pending owner review of these results,
-S3b through S3f are implemented and await owner review under OEP-0005 through
-OEP-0009, and Orange's 3-of-10 (30%) binary gate-closure score remains
+S3b through S3t are implemented and await owner review under OEP-0005 through
+OEP-0021, OEP-0023 and OEP-0024, and Orange's 3-of-10 (30%) binary gate-closure score remains
 unchanged; that mechanical score is not release readiness.
+
+The 2026-10-01 owner direction retains the complete 1.0 target.
+[`RELEASE_1_0_EXECUTION.md`](RELEASE_1_0_EXECUTION.md) maps the full charter
+scope and eight journeys to permanent engineering and their actual decision
+gates. S3t size-dependent moduli and P2 field-representation predicates are
+proof-neutral development; they accept no semantic stratum or proof foundation,
+complete no release journey and authorize no distribution.
 
 ## D-005 — Public assurance model
 
@@ -253,7 +260,7 @@ procedure are specified in the
 The decision is evidence-based. The owner-executable `d006-v0.2-draft` defines
 14 candidate-case runs, level-2 same-owner replay, symmetric hard gates, and
 exact `solo-reviewed` OEP acceptance without pretending that the owner is an
-independent reviewer. Current execution evidence is 0/14 candidate-case runs.
+independent reviewer. Current execution evidence is 12/14 candidate-case runs.
 D-023 permits proof-neutral compiler work while this remains open. No source or
 Core choice may make a proof foundation irreversible before the owner completes
 the suite and accepts the selected foundation through an exact-revision OEP.
@@ -266,6 +273,15 @@ unresolved coverage, and an active freeze blocker. Its deterministic 14-pair
 identity inventory is not a physical run order. The laboratory installs and
 executes no prover, freezes no epoch, creates no result or evidence, performs no
 owner review, and retains the exact 0/14 baseline and null selection.
+
+The d006-v0.3 tranche built both candidates and an isolated epoch runner. Epoch
+`d006-e-c7b6648ae3988234297f` ran DS-01 to DS-06 for both candidates on
+2026-09-30, twice: the first attempt exposed a Lean build that exceeded the
+4 GiB address-space cap, and the second is Lean's one correction round. In the
+corrected run both candidates pass hard gates 2 to 7. Hard gates 1 and 8 wait
+on the owner's DS-07 tasks, so the conclusion is inconclusive and no foundation
+is selected. That result is contributor-produced and unreviewed; the
+[D-006 laboratory](../research/decisions/D-006/README.md) records it.
 
 ## D-007 — Orange-owned proof format and checker
 
@@ -508,6 +524,19 @@ owner-accessible hardware evidence, and flagship-corpus feasibility.
 
 The active solo capacity boundary that governs future target admission is
 recorded in the [solo development envelope](GATE0_SUPPORT_ENVELOPES.md).
+
+The d011-v0.1 [native target decision suite](NATIVE_TARGET_DECISION_SUITE.md)
+compares five target envelopes, from x86-64 with AArch64 and RV64GC down to
+portable C only, on contributor-written C kernels standing in for code Orange
+does not yet generate. Epoch `d011-e-291c7d1e803c802bcfd0` ran its measured
+profile on 2026-09-30 on a contributor host. No hard gate failed. The gates
+that did not pass are unresolved for want of owner input (inventory
+verification and owner hardware), of three tools that need D-018 admission (a
+RISC-V GCC and two Rust standard libraries), or of an emulated AArch64 CPU
+without the Cryptographic Extension. Only the portable-C-only envelope passes
+every gate, and only vacuously, so the conclusion is inconclusive and no
+envelope is selected. That result is contributor-produced and unreviewed; the
+[D-011 laboratory](../research/decisions/D-011/README.md) records it.
 
 ## D-012 — Baseline leakage claim
 

@@ -10,9 +10,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceMap,
-    analyze, evaluate, lex, parse, render_diagnostics,
+    CoreFunction, CoreModule, CoreType, CoreValue, Diagnostic, DiagnosticCode, Edition, Evaluator,
+    Lexed, MAX_EVALUATION_STEPS_PER_SOURCE, MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES,
+    RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap, SyntaxTree, TestOutcome,
+    TextOffset, WitnessReplayOutcome, analyze_program, decode_arguments, document_source,
+    evaluate_selected, format_source, lex, parse, render_diagnostics, replay_witness, run_tests,
 };
+
+mod crypt;
 
 const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
@@ -24,22 +29,59 @@ const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS: usize = 1_024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
+/// The most steps `eval --steps` admits: 1,024 times the default budget.
+const MAX_EVALUATION_STEP_LIMIT: usize = 1 << 30;
+/// The most functions one `eval` names with `--spec`.
+const MAX_SELECTED_SPECS: usize = 64;
+const MAX_REPLAY_INSTANCE_VALUES: usize = orange_compiler::parser::MAX_SIZES_PER_FUNCTION;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
+/// The latest implemented language slice, not an acceptance or release status.
+const IMPLEMENTED_SLICE: &str = "S3t";
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+    "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
+    "       orangec test [--steps <N>] [--stats] <FILE>\n",
+    "       orangec fmt <FILE>\n",
+    "       orangec fmt --check <FILE>...\n",
+    "       orangec doc <FILE>\n",
+    "       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]\n",
+    "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
+    "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
+    "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
+    "       orangec schemes [<NAME>...]\n",
     "\n",
     "Commands:\n",
     "  check    Perform lexical, syntactic, and semantic validation\n",
     "  eval     Reference-evaluate one source after complete validation\n",
     "  lex      Print the deterministic token stream\n",
+    "  test     Run one source's known-answer tests after complete validation\n",
+    "  fmt      Format one source, or check source formatting with --check\n",
+    "  doc      Document one parsed source as standalone HTML\n",
+    "  replay   Replay one exact Boolean function instance on typed witness values\n",
+    "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
+    "  enc      Seal a file with the scheme its key belongs to\n",
+    "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
+    "  schemes  List the built-in sealing schemes, or describe the named ones\n",
     "\n",
     "Options:\n",
     "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
+    "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
+    "      --stats           Report the steps each function or test used, on stderr\n",
+    "      --check           Check formatting without source changes [fmt only]\n",
+    "      --function <M::N> Select exactly this module and function [replay only]\n",
+    "      --instance <N,...> Complete numeric size/type-index vector [replay only]\n",
+    "      --witness <FILE>  Canonical argument vector; `-` reads stdin [replay only]\n",
+    "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
+    "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
+    "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
     "      --                End option parsing\n",
     "  -h, --help            Print help\n",
-    "  -V, --version         Print version\n",
+    "  -V, --version         Print version and implemented language slice\n",
     "\n",
-    "Use `-` as a file name to read UTF-8 source from standard input.\n",
+    "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
+    "Orange programs on the reference evaluator, which is not constant-time; the\n",
+    "schemes are reference code and are not verified.\n",
 );
 
 macro_rules! define_cli_diagnostic_codes {
@@ -71,6 +113,14 @@ define_cli_diagnostic_codes! {
     MissingPhaseArtifact => "ORC1006",
     OutputTooLarge => "ORC1007",
     InvocationSourceTooLarge => "ORC1008",
+    KeyFile => "ORC1009",
+    Scheme => "ORC1010",
+    CryptInput => "ORC1011",
+    CryptOutput => "ORC1012",
+    SealedFile => "ORC1013",
+    NotAuthentic => "ORC1014",
+    Randomness => "ORC1015",
+    EntryPoint => "ORC1016",
 }
 
 fn main() -> ExitCode {
@@ -292,7 +342,7 @@ fn run_with_standard_error_limit(
         Action::Version => {
             if writeln!(
                 standard_output,
-                "orangec {} (Orange edition {})",
+                "orangec {} (Orange edition {}; implemented slice {IMPLEMENTED_SLICE})",
                 env!("CARGO_PKG_VERSION"),
                 Edition::CURRENT
             )
@@ -309,6 +359,7 @@ fn run_with_standard_error_limit(
             &mut standard_output,
             &mut standard_error,
         ),
+        Action::Seal(options) => crypt::run(&options, &mut standard_output, &mut standard_error),
     }
 }
 
@@ -470,6 +521,144 @@ fn compile_with_limits(
             );
             continue;
         };
+        if options.command == CompilerCommand::Doc {
+            let documentation = document_source(source, options.edition);
+            let html = match classify_phase_result(
+                documentation.html(),
+                documentation.diagnostics(),
+            ) {
+                PhaseResult::Complete(html) => html,
+                PhaseResult::Diagnosed(diagnostics) => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_diagnostics(&sources, diagnostics),
+                    );
+                    continue;
+                }
+                PhaseResult::Missing => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::MissingPhaseArtifact,
+                            "documentation returned neither a complete HTML document nor a diagnostic",
+                            "this is an internal compiler or resource failure",
+                        ),
+                    );
+                    continue;
+                }
+            };
+            // The engine has completed and validated its entire result before
+            // the stdout budget or the host writer can receive any HTML.
+            let written = if html.len() > buffered_output.remaining {
+                Err(output_limit_error())
+            } else {
+                buffered_output.write_all(html.as_bytes())
+            };
+            match written {
+                Ok(()) => standard_output_written = true,
+                Err(error) => {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+            }
+            continue;
+        }
+        if options.command == CompilerCommand::Fmt {
+            let formatted = format_source(source, options.edition);
+            let text = match classify_phase_result(formatted.formatted(), formatted.diagnostics()) {
+                PhaseResult::Complete(text) => text,
+                PhaseResult::Diagnosed(diagnostics) => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_diagnostics(&sources, diagnostics),
+                    );
+                    continue;
+                }
+                PhaseResult::Missing => {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::MissingPhaseArtifact,
+                            "formatter returned neither a complete source nor a diagnostic",
+                            "this is an internal compiler or resource failure",
+                        ),
+                    );
+                    continue;
+                }
+            };
+            if options.formatting_check {
+                if text != source.text() {
+                    compilation_failed = true;
+                    let rendered = formatting_required(source, text).map_or_else(
+                        || {
+                            render_cli_error(
+                                CliDiagnosticCode::MissingPhaseArtifact,
+                                "formatter could not identify the source formatting difference",
+                                "this is an internal compiler or resource failure",
+                            )
+                        },
+                        |diagnostic| render_diagnostics(&sources, &[diagnostic]),
+                    );
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &rendered,
+                    );
+                }
+            } else {
+                // Validate the complete result against the output budget before
+                // any bytes can escape. Argument parsing permits one source.
+                let written = if text.len() > buffered_output.remaining {
+                    Err(output_limit_error())
+                } else {
+                    buffered_output.write_all(text.as_bytes())
+                };
+                match written {
+                    Ok(()) => standard_output_written = true,
+                    Err(error) => {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         let result = lex(source, options.edition);
 
         if options.command == CompilerCommand::Lex && standard_output_available {
@@ -520,7 +709,10 @@ fn compile_with_limits(
             );
         } else if matches!(
             options.command,
-            CompilerCommand::Check | CompilerCommand::Eval
+            CompilerCommand::Check
+                | CompilerCommand::Eval
+                | CompilerCommand::Test
+                | CompilerCommand::Replay
         ) {
             let parsed = parse(source, &result);
             let ast = match classify_phase_result(parsed.ast(), parsed.diagnostics()) {
@@ -552,7 +744,50 @@ fn compile_with_limits(
                     continue;
                 }
             };
-            let analyzed = analyze(source, ast);
+            let modules = if ast.module().uses().is_empty() {
+                Vec::new()
+            } else {
+                match load_used_modules(
+                    path,
+                    ast,
+                    &mut sources,
+                    options.edition,
+                    &mut remaining_source_bytes,
+                ) {
+                    Ok(modules) => modules,
+                    Err(group) => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                        continue;
+                    }
+                }
+            };
+            let program = modules
+                .iter()
+                .filter_map(|(id, ast)| Some((sources.get(*id)?, ast)))
+                .collect::<Vec<_>>();
+            let Some(source) = sources.get(id).filter(|_| program.len() == modules.len()) else {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_cli_error(
+                        CliDiagnosticCode::MissingPhaseArtifact,
+                        "source insertion succeeded without a retrievable source",
+                        "this is an internal compiler failure",
+                    ),
+                );
+                continue;
+            };
+            let analyzed = analyze_program((source, ast), &program);
             let core = match classify_phase_result(analyzed.core(), analyzed.diagnostics()) {
                 PhaseResult::Complete(core) => core,
                 PhaseResult::Diagnosed(diagnostics) => {
@@ -583,8 +818,102 @@ fn compile_with_limits(
                 }
             };
 
-            if options.command == CompilerCommand::Eval {
-                let evaluated = evaluate(core);
+            if options.command == CompilerCommand::Replay {
+                let report = match prepare_replay(
+                    options,
+                    core,
+                    &mut sources,
+                    standard_input,
+                    &mut remaining_source_bytes,
+                ) {
+                    Ok(report) => report,
+                    Err(group) => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                        continue;
+                    }
+                };
+                // The complete report has been built before any result bytes
+                // are committed. Even a smaller invocation budget emits none.
+                let written = if report.output.len() > buffered_output.remaining {
+                    Err(output_limit_error())
+                } else {
+                    buffered_output.write_all(report.output.as_bytes())
+                };
+                match written {
+                    Ok(()) => standard_output_written = true,
+                    Err(error) => {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                }
+                if options.evaluation.stats && standard_output_available {
+                    if let Err(error) = flush_retry_interrupted(&mut buffered_output) {
+                        standard_output_available = false;
+                        output_failed = true;
+                        if let Some(group) = output_failure_group(options.command, &error) {
+                            emit_error_group(
+                                standard_error,
+                                &mut standard_error_available,
+                                &mut error_group_written,
+                                &mut output_failed,
+                                &group,
+                            );
+                        }
+                    }
+                    if standard_output_available {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &report.statistics,
+                        );
+                    }
+                }
+            } else if options.command == CompilerCommand::Eval {
+                let evaluation = &options.evaluation;
+                if let Some(missing) = unmatched_spec(core, &evaluation.specs) {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::EntryPoint,
+                            format_args!(
+                                "module `{}` has no function `{missing}` without parameters",
+                                core.name()
+                            ),
+                            "`--spec` names a function of the evaluated module that takes no \
+                             parameters; a function with sizes is evaluated in every instance",
+                        ),
+                    );
+                    continue;
+                }
+                let evaluated = evaluate_selected(core, evaluation.steps, |function| {
+                    evaluation.specs.is_empty()
+                        || evaluation
+                            .specs
+                            .iter()
+                            .any(|spec| spec.as_str() == function.name())
+                });
                 let values = match classify_phase_result(
                     evaluated.values(),
                     evaluated.diagnostics(),
@@ -592,12 +921,14 @@ fn compile_with_limits(
                     PhaseResult::Complete(values) => values,
                     PhaseResult::Diagnosed(diagnostics) => {
                         compilation_failed = true;
+                        let hinted =
+                            with_budget_hint(diagnostics, evaluation.steps, options.command);
                         emit_error_group(
                             standard_error,
                             &mut standard_error_available,
                             &mut error_group_written,
                             &mut output_failed,
-                            &render_diagnostics(&sources, diagnostics),
+                            &render_diagnostics(&sources, hinted.as_deref().unwrap_or(diagnostics)),
                         );
                         continue;
                     }
@@ -639,6 +970,121 @@ fn compile_with_limits(
                             }
                         }
                     }
+                }
+                // The report follows the values: they are committed first, so
+                // that a terminal shows them in that order, and a failure to
+                // commit them writes no report.
+                if evaluation.stats
+                    && standard_output_available
+                    && standard_output_written
+                    && let Err(error) = flush_retry_interrupted(&mut buffered_output)
+                {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+                if evaluation.stats && standard_output_available {
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_steps(values, evaluation.steps),
+                    );
+                }
+            } else if options.command == CompilerCommand::Test {
+                let evaluation = &options.evaluation;
+                let run = run_tests(core, evaluation.steps);
+                let outcomes = match classify_phase_result(run.outcomes(), run.diagnostics()) {
+                    PhaseResult::Complete(outcomes) => outcomes,
+                    PhaseResult::Diagnosed(diagnostics) => {
+                        compilation_failed = true;
+                        let hinted =
+                            with_budget_hint(diagnostics, evaluation.steps, options.command);
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &render_diagnostics(&sources, hinted.as_deref().unwrap_or(diagnostics)),
+                        );
+                        continue;
+                    }
+                    PhaseResult::Missing => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &render_cli_error(
+                                CliDiagnosticCode::MissingPhaseArtifact,
+                                "the test run returned neither a complete set of outcomes nor a diagnostic",
+                                "this is an internal compiler or resource failure",
+                            ),
+                        );
+                        continue;
+                    }
+                };
+                // A test that fails is the answer the command exists to give,
+                // not an error in the source: the report says which, and the
+                // exit status says whether any did.
+                if !run.passed() {
+                    compilation_failed = true;
+                }
+                // Argument validation guarantees exactly one `test` source, as
+                // for `eval`.
+                if standard_output_available {
+                    match write_test_report(&mut buffered_output, outcomes) {
+                        Ok(()) => standard_output_written = true,
+                        Err(error) => {
+                            standard_output_available = false;
+                            output_failed = true;
+                            if let Some(group) = output_failure_group(options.command, &error) {
+                                emit_error_group(
+                                    standard_error,
+                                    &mut standard_error_available,
+                                    &mut error_group_written,
+                                    &mut output_failed,
+                                    &group,
+                                );
+                            }
+                        }
+                    }
+                }
+                if evaluation.stats
+                    && standard_output_available
+                    && standard_output_written
+                    && let Err(error) = flush_retry_interrupted(&mut buffered_output)
+                {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+                if evaluation.stats && standard_output_available {
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_test_steps(outcomes, evaluation.steps),
+                    );
                 }
             }
         }
@@ -697,6 +1143,535 @@ fn compile_with_limits(
     }
 }
 
+/// Locate the first differing character boundary, including a missing final
+/// newline at EOF. Diagnostic rendering retains the original source identity.
+fn formatting_required(source: &SourceFile, formatted: &str) -> Option<Diagnostic> {
+    let mut offset = source
+        .text()
+        .bytes()
+        .zip(formatted.bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while !source.text().is_char_boundary(offset) {
+        offset = offset.checked_sub(1)?;
+    }
+    let offset = TextOffset::new(u32::try_from(offset).ok()?);
+    Some(
+        Diagnostic::error(
+            DiagnosticCode::FormattingRequired,
+            "source does not match the canonical formatter output",
+            source.span(offset, offset)?,
+        )
+        .with_label("formatting differs here")
+        .with_note(
+            "run `orangec fmt FILE` to print the formatted source; this command changes no files",
+        ),
+    )
+}
+
+struct ReplayReport {
+    output: String,
+    statistics: String,
+}
+
+/// Build one complete observation, using the selected function's exact checked
+/// types for decoding and its pointer for replay. Source-spelled instance names
+/// are never selectors or report metadata.
+fn prepare_replay(
+    options: &Options,
+    core: &CoreModule,
+    sources: &mut SourceMap,
+    standard_input: &mut impl Read,
+    remaining_source_bytes: &mut usize,
+) -> Result<ReplayReport, String> {
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "witness replay returned no complete artifact",
+            "this is an internal compiler or resource failure",
+        )
+    };
+    let replay = options.replay.as_ref().ok_or_else(missing)?;
+    let (module, name) = replay.function.split_once("::").ok_or_else(missing)?;
+    let mut matches = core.functions().iter().filter(|function| {
+        function.module() == module
+            && function.name() == name
+            && function.sizes() == replay.instance
+            && function.title().is_none()
+    });
+    let selected = matches.next().ok_or_else(|| render_cli_error(
+        CliDiagnosticCode::EntryPoint,
+        format_args!("no function `{}` has the selected numeric instance", replay.function),
+        "`--function` names a linked module's function; `--instance` supplies every size value and zero-based type-domain index, in declaration order",
+    ))?;
+    if matches.next().is_some() {
+        return Err(render_cli_error(
+            CliDiagnosticCode::EntryPoint,
+            "the replay function selector is ambiguous",
+            "select one exact module, function, and complete numeric instance",
+        ));
+    }
+    if selected.result_type() != CoreType::Bool {
+        return Err(render_cli_error(
+            CliDiagnosticCode::EntryPoint,
+            "witness replay requires a Boolean function result",
+            "select a function whose checked result type is Bool",
+        ));
+    }
+    let display_name = stable_source_name(&replay.witness).map_err(source_name_error)?;
+    let bytes = read_source(&replay.witness, standard_input, remaining_source_bytes)
+        .map_err(|error| render_read_source_error(&display_name, error))?;
+    let text = String::from_utf8(bytes).map_err(|error| {
+        render_cli_error(
+            CliDiagnosticCode::InvalidUtf8,
+            format_args!("source file `{display_name}` is not valid UTF-8"),
+            format_args!(
+                "invalid byte sequence begins at byte offset {}",
+                error.utf8_error().valid_up_to()
+            ),
+        )
+    })?;
+    let id = sources
+        .add_with_rendered_name(display_name, text)
+        .map_err(source_limit_error_without_name)?;
+    let witness = sources.get(id).ok_or_else(missing)?;
+    let decoded = decode_arguments(witness, selected.parameters());
+    let arguments = match classify_phase_result(decoded.arguments(), decoded.diagnostics()) {
+        PhaseResult::Complete(arguments) => arguments,
+        PhaseResult::Diagnosed(diagnostics) => {
+            return Err(render_diagnostics(sources, diagnostics));
+        }
+        PhaseResult::Missing => return Err(missing()),
+    };
+    let mut evaluator = Evaluator::new(core).ok_or_else(missing)?;
+    let result = replay_witness(
+        &mut evaluator,
+        selected,
+        arguments,
+        options.evaluation.steps,
+    );
+    if !std::ptr::eq(result.function(), selected) {
+        return Err(missing());
+    }
+    if result.has_errors() || result.outcome() == WitnessReplayOutcome::Failed {
+        return if result.diagnostics().is_empty() {
+            Err(missing())
+        } else {
+            let hinted = with_budget_hint(
+                result.diagnostics(),
+                options.evaluation.steps,
+                options.command,
+            );
+            Err(render_diagnostics(
+                sources,
+                hinted.as_deref().unwrap_or(result.diagnostics()),
+            ))
+        };
+    }
+    let outcome = match result.outcome() {
+        WitnessReplayOutcome::Falsified => "falsified",
+        WitnessReplayOutcome::HoldsForThisWitness => "holds_for_this_witness",
+        WitnessReplayOutcome::Failed => return Err(missing()),
+    };
+    let mut output = ReplayText::new(MAX_STANDARD_OUTPUT_BYTES);
+    let rendered = (|| {
+        write_numeric_function(&mut output, selected)?;
+        writeln!(output, ": {outcome}")?;
+        output.write_str("parameter_types: [")?;
+        for (index, parameter) in selected.parameters().iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            write!(output, "{parameter}")?;
+        }
+        output.write_str("]\narguments: [")?;
+        for (index, value) in arguments.values().iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            write!(output, "{value}")?;
+        }
+        output.write_str("]\n")
+    })();
+    if rendered.is_err() {
+        return Err(output.failure());
+    }
+    let mut statistics = ReplayText::new(MAX_STANDARD_ERROR_BYTES);
+    if options.evaluation.stats {
+        let rendered = (|| {
+            write_numeric_function(&mut statistics, selected)?;
+            let steps = result.steps();
+            let unit = if steps == 1 { "step" } else { "steps" };
+            writeln!(statistics, ": {steps} {unit}")?;
+            writeln!(
+                statistics,
+                "total: {steps} of {} steps",
+                options.evaluation.steps
+            )
+        })();
+        if rendered.is_err() {
+            return Err(statistics.failure());
+        }
+    }
+    Ok(ReplayReport {
+        output: output.text,
+        statistics: statistics.text,
+    })
+}
+
+fn write_numeric_function(output: &mut impl fmt::Write, function: &CoreFunction) -> fmt::Result {
+    write!(output, "{}::{}[", function.module(), function.name())?;
+    for (index, size) in function.sizes().iter().enumerate() {
+        if index != 0 {
+            output.write_str(", ")?;
+        }
+        write!(output, "{size}")?;
+    }
+    output.write_str("]")
+}
+
+/// A fallible, bounded complete buffer; no partial report reaches stdout.
+struct ReplayText {
+    text: String,
+    limit: usize,
+    exceeded: bool,
+}
+
+impl ReplayText {
+    const fn new(limit: usize) -> Self {
+        Self {
+            text: String::new(),
+            limit,
+            exceeded: false,
+        }
+    }
+
+    fn failure(&self) -> String {
+        if self.exceeded {
+            render_cli_error(
+                CliDiagnosticCode::OutputTooLarge,
+                "witness replay report exceeds the output limit",
+                "orangec writes at most 64 MiB per output stream per invocation",
+            )
+        } else {
+            render_cli_error(
+                CliDiagnosticCode::MissingPhaseArtifact,
+                "could not allocate the complete witness replay report",
+                "this is an internal compiler or resource failure",
+            )
+        }
+    }
+}
+
+impl fmt::Write for ReplayText {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        if self
+            .text
+            .len()
+            .checked_add(text.len())
+            .is_none_or(|length| length > self.limit)
+        {
+            self.exceeded = true;
+            return Err(fmt::Error);
+        }
+        self.text.try_reserve(text.len()).map_err(|_| fmt::Error)?;
+        self.text.push_str(text);
+        Ok(())
+    }
+}
+
+/// Adds to each step-limit diagnostic the option of `command` that raises
+/// the budget, while `budget` is below the most `--steps` admits; `None` when
+/// the copy cannot be allocated.
+fn with_budget_hint(
+    diagnostics: &[Diagnostic],
+    budget: usize,
+    command: CompilerCommand,
+) -> Option<Vec<Diagnostic>> {
+    let mut hinted = Vec::new();
+    hinted.try_reserve_exact(diagnostics.len()).ok()?;
+    for diagnostic in diagnostics {
+        let steps = diagnostic.code() == DiagnosticCode::EvaluationResourceLimit
+            && diagnostic.message() == "reference evaluation step limit exceeded";
+        hinted.push(if steps && budget < MAX_EVALUATION_STEP_LIMIT {
+            diagnostic.clone().with_note(format!(
+                "`orangec {} --steps N` sets the budget, up to {MAX_EVALUATION_STEP_LIMIT} steps",
+                command.as_str()
+            ))
+        } else {
+            diagnostic.clone()
+        });
+    }
+    Some(hinted)
+}
+
+/// Returns the first of `specs` that names no function of `core`'s root
+/// module without parameters.
+fn unmatched_spec<'spec>(
+    core: &orange_compiler::CoreModule,
+    specs: &'spec [String],
+) -> Option<&'spec str> {
+    specs
+        .iter()
+        .find(|spec| {
+            !core.entry_functions().iter().any(|function| {
+                function.parameters().is_empty() && function.name() == spec.as_str()
+            })
+        })
+        .map(String::as_str)
+}
+
+/// Reports the steps each evaluated function used, one line each in the
+/// order printed, and their total against the budget.
+fn render_steps(values: &[orange_compiler::EvaluatedFunction], budget: usize) -> String {
+    let mut report = String::new();
+    let mut total = 0_usize;
+    for value in values {
+        total = total.saturating_add(value.steps());
+        let unit = if value.steps() == 1 { "step" } else { "steps" };
+        let _ = writeln!(
+            report,
+            "{}::{}{}: {} {unit}",
+            value.module(),
+            value.name(),
+            value.instance(),
+            value.steps()
+        );
+    }
+    let _ = writeln!(report, "total: {total} of {budget} steps");
+    report
+}
+
+/// Writes one line for each test in source order, the values a failed
+/// `left == right` test compared, and a closing count.
+///
+/// A title is printable ASCII without a backslash, and so without a quote,
+/// so it is written between quotes as the source wrote it.
+fn write_test_report(output: &mut impl Write, outcomes: &[TestOutcome]) -> io::Result<()> {
+    let mut failed = 0_usize;
+    for outcome in outcomes {
+        if outcome.passed() {
+            writeln!(output, "test \"{}\" ... ok", outcome.title())?;
+            continue;
+        }
+        failed = failed.saturating_add(1);
+        writeln!(output, "test \"{}\" ... FAILED", outcome.title())?;
+        if let Some((left, right)) = outcome.sides() {
+            writeln!(output, "    left:  {left}")?;
+            writeln!(output, "    right: {right}")?;
+            if let Some(place) = first_difference(left, right) {
+                writeln!(output, "    first difference at {place}")?;
+            }
+        }
+    }
+    let count = outcomes.len();
+    let noun = if count == 1 { "test" } else { "tests" };
+    let passed = count.saturating_sub(failed);
+    writeln!(output, "{count} {noun}: {passed} passed, {failed} failed")
+}
+
+/// Names the first element, or tuple part, in which two unequal values of
+/// one array or tuple type differ: `[i]` or `.k`, followed into a tuple's
+/// arrays and nested rows; `None` for scalars, whose whole value is the difference.
+fn first_difference(left: &CoreValue, right: &CoreValue) -> Option<String> {
+    let (elements, other, tuple) = match (left, right) {
+        (CoreValue::Array(left), CoreValue::Array(right)) => {
+            (left.elements(), right.elements(), false)
+        }
+        (CoreValue::Tuple(left), CoreValue::Tuple(right)) => {
+            (left.elements(), right.elements(), true)
+        }
+        _ => return None,
+    };
+    let (index, (left, right)) = elements
+        .iter()
+        .zip(other)
+        .enumerate()
+        .find(|(_, (left, right))| left != right)?;
+    let mut place = if tuple {
+        format!(".{index}")
+    } else {
+        format!("[{index}]")
+    };
+    if let Some(inner) = first_difference(left, right) {
+        place.push_str(&inner);
+    }
+    Some(place)
+}
+
+/// Reports the steps each test used, one line each in source order, and
+/// their total against the budget.
+fn render_test_steps(outcomes: &[TestOutcome], budget: usize) -> String {
+    let mut report = String::new();
+    let mut total = 0_usize;
+    for outcome in outcomes {
+        total = total.saturating_add(outcome.steps());
+        let unit = if outcome.steps() == 1 {
+            "step"
+        } else {
+            "steps"
+        };
+        let _ = writeln!(
+            report,
+            "test \"{}\": {} {unit}",
+            outcome.title(),
+            outcome.steps()
+        );
+    }
+    let _ = writeln!(report, "total: {total} of {budget} steps");
+    report
+}
+
+/// Reads, lexes, and parses the modules that `root` uses, directly or
+/// through other modules.
+///
+/// The module `NAME` of a `use NAME;` declaration is read from the file
+/// `NAME.or` in the directory of the root file, or the current directory for
+/// standard input; a module name is an ASCII identifier, so it names a file
+/// in that directory and nothing outside it. Each module is read once, in the
+/// order in which a `use` first names it, and every read is charged to the
+/// invocation's source budget. The uses of a file that declares a module of
+/// another name are not followed. At most one module more than a program may
+/// hold is read, so that semantic analysis reports the limit. A module that
+/// cannot be read, lexed, or parsed stops the program with its diagnostics.
+fn load_used_modules(
+    root_path: &Path,
+    root: &SyntaxTree,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<Vec<(SourceId, SyntaxTree)>, String> {
+    let directory = if root_path == Path::new("-") {
+        Path::new("")
+    } else {
+        root_path.parent().unwrap_or_else(|| Path::new(""))
+    };
+    let root_name = root.module().name().text();
+    let mut requested: Vec<String> = Vec::new();
+    let mut loaded: Vec<(SourceId, SyntaxTree)> = Vec::new();
+    // Module 0 is the root; module `n` is `loaded[n - 1]`.
+    let mut next_module = 0_usize;
+    loop {
+        let uses = if next_module == 0 {
+            Some(root.module().uses())
+        } else {
+            // A file that declares a module of another name stays loaded, so
+            // that the module graph reports the `use` that read it, but its
+            // own uses name no module of this program and are not followed.
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index).zip(requested.get(index)))
+                .map(|((_, ast), requested)| {
+                    if ast.module().name().text() == requested {
+                        ast.module().uses()
+                    } else {
+                        &[]
+                    }
+                })
+        };
+        let Some(uses) = uses else {
+            return Ok(loaded);
+        };
+        let user = if next_module == 0 {
+            root_name
+        } else {
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index))
+                .map_or("", |(_, ast)| ast.module().name().text())
+        }
+        .to_owned();
+        let names = uses
+            .iter()
+            .map(|declaration| declaration.name().text())
+            .filter(|name| *name != root_name && !requested.iter().any(|seen| seen == name))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        next_module = next_module.saturating_add(1);
+        for name in names {
+            if requested.contains(&name) {
+                continue;
+            }
+            if loaded.len() >= MAX_MODULES_PER_PROGRAM {
+                return Ok(loaded);
+            }
+            let path = directory.join(format!("{name}.or"));
+            let module = load_module(&path, sources, edition, remaining_source_bytes).map_err(
+                |mut group| {
+                    if group.starts_with("error[ORC1") {
+                        let _ = writeln!(
+                            group,
+                            "  = note: `use {name};` in module `{user}` reads the module `{name}` \
+                             from this file"
+                        );
+                    }
+                    group
+                },
+            )?;
+            requested.push(name);
+            loaded.push(module);
+        }
+    }
+}
+
+/// Reads, lexes, and parses one used module.
+fn load_module(
+    path: &Path,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<(SourceId, SyntaxTree), String> {
+    let display_name = stable_source_name(path).map_err(source_name_error)?;
+    // A used module is always a file, never standard input.
+    let bytes = read_source(path, &mut io::empty(), remaining_source_bytes)
+        .map_err(|error| render_read_source_error(&display_name, error))?;
+    let text = String::from_utf8(bytes).map_err(|error| {
+        render_cli_error(
+            CliDiagnosticCode::InvalidUtf8,
+            format_args!("source file `{display_name}` is not valid UTF-8"),
+            format_args!(
+                "invalid byte sequence begins at byte offset {}",
+                error.utf8_error().valid_up_to()
+            ),
+        )
+    })?;
+    let id = sources
+        .add_with_rendered_name(display_name, text)
+        .map_err(source_limit_error_without_name)?;
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "source insertion succeeded without a retrievable source",
+            "this is an internal compiler failure",
+        )
+    };
+    let source = sources.get(id).ok_or_else(missing)?;
+    let lexed = lex(source, edition);
+    if lexed.has_errors() {
+        return Err(if lexed.diagnostics().is_empty() {
+            render_cli_error(
+                CliDiagnosticCode::MissingPhaseArtifact,
+                "lexical analysis failed without a diagnostic",
+                "this is an internal compiler resource failure",
+            )
+        } else {
+            render_diagnostics(sources, lexed.diagnostics())
+        });
+    }
+    let parsed = parse(source, &lexed);
+    if !parsed.diagnostics().is_empty() {
+        return Err(render_diagnostics(sources, parsed.diagnostics()));
+    }
+    let ast = parsed.into_ast().ok_or_else(|| {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "parser returned neither a complete syntax tree nor a diagnostic",
+            "this is an internal compiler or resource failure",
+        )
+    })?;
+    Ok((id, ast))
+}
+
 fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<Cow<'static, str>> {
     if error
         .get_ref()
@@ -712,10 +1687,13 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
     }
     match error.kind() {
         io::ErrorKind::BrokenPipe => None,
-        _ => Some(Cow::Borrowed(if command == CompilerCommand::Eval {
-            "orangec: could not write evaluation output\n"
-        } else {
-            "orangec: could not write token output\n"
+        _ => Some(Cow::Borrowed(match command {
+            CompilerCommand::Eval => "orangec: could not write evaluation output\n",
+            CompilerCommand::Test => "orangec: could not write test report\n",
+            CompilerCommand::Fmt => "orangec: could not write formatted source\n",
+            CompilerCommand::Doc => "orangec: could not write documentation output\n",
+            CompilerCommand::Replay => "orangec: could not write witness replay output\n",
+            _ => "orangec: could not write token output\n",
         })),
     }
 }
@@ -1267,6 +2245,21 @@ define_compiler_commands! {
     Check => "check",
     Eval => "eval",
     Lex => "lex",
+    Test => "test",
+    Fmt => "fmt",
+    Doc => "doc",
+    Replay => "replay",
+    Keygen => "keygen",
+    Enc => "enc",
+    Dec => "dec",
+    Schemes => "schemes",
+}
+
+impl CompilerCommand {
+    /// Returns whether this is one of the sealing commands in [`crypt`].
+    const fn seals(self) -> bool {
+        matches!(self, Self::Keygen | Self::Enc | Self::Dec | Self::Schemes)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1274,6 +2267,40 @@ struct Options {
     command: CompilerCommand,
     edition: Edition,
     paths: Vec<PathBuf>,
+    evaluation: Evaluation,
+    /// Check every source without printing its formatted representation.
+    formatting_check: bool,
+    replay: Option<Replay>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct Replay {
+    function: String,
+    instance: Vec<u32>,
+    witness: PathBuf,
+}
+
+/// How `eval` evaluates: its step budget, the functions it names, and
+/// whether it reports the steps each used.
+#[derive(Debug, Eq, PartialEq)]
+struct Evaluation {
+    /// The step budget of the whole evaluation.
+    steps: usize,
+    /// The functions without parameters to evaluate, each named once, in
+    /// the order given; empty for every one.
+    specs: Vec<String>,
+    /// Whether to report each function's steps and the total on stderr.
+    stats: bool,
+}
+
+impl Default for Evaluation {
+    fn default() -> Self {
+        Self {
+            steps: MAX_EVALUATION_STEPS_PER_SOURCE,
+            specs: Vec::new(),
+            stats: false,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1281,6 +2308,7 @@ enum Action {
     Help,
     Version,
     Compile(Options),
+    Seal(crypt::SealOptions),
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Action, String> {
@@ -1301,6 +2329,15 @@ fn parse_arguments_with_path_reservation(
     let mut edition = Edition::default();
     let mut edition_seen = false;
     let mut paths = Vec::new();
+    let mut scheme = None;
+    let mut key = None;
+    let mut output = None;
+    let mut evaluation = Evaluation::default();
+    let mut steps_seen = false;
+    let mut formatting_check = false;
+    let mut replay_function = None;
+    let mut replay_instance = None;
+    let mut replay_witness = None;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -1324,11 +2361,87 @@ fn parse_arguments_with_path_reservation(
                     edition = parse_edition(&value)?;
                     continue;
                 }
+                Some("--stats") => {
+                    evaluation.stats = true;
+                    continue;
+                }
+                Some("--check") => {
+                    if formatting_check {
+                        return Err(String::from(
+                            "option `--check` may be specified at most once",
+                        ));
+                    }
+                    formatting_check = true;
+                    continue;
+                }
+                Some(name @ ("--steps" | "--spec")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_evaluation_option(name, &value, &mut evaluation, &mut steps_seen)?;
+                    continue;
+                }
+                Some(name @ ("--function" | "--instance" | "--witness")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_replay_option(
+                        name,
+                        value,
+                        &mut replay_function,
+                        &mut replay_instance,
+                        &mut replay_witness,
+                    )?;
+                    continue;
+                }
+                Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_sealing_option(name, value, &mut scheme, &mut key, &mut output)?;
+                    continue;
+                }
                 Some(value) => {
                     if let Some(value) = value.strip_prefix("--edition=") {
                         mark_edition_option(&mut edition_seen)?;
                         edition = value.parse().map_err(
                             |error: orange_compiler::ParseEditionError| error.to_string(),
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--steps" | "--spec"), value)) = value.split_once('=') {
+                        set_evaluation_option(
+                            name,
+                            OsStr::new(value),
+                            &mut evaluation,
+                            &mut steps_seen,
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--scheme" | "--key" | "--output"), value)) =
+                        value.split_once('=')
+                    {
+                        set_sealing_option(
+                            name,
+                            OsString::from(value),
+                            &mut scheme,
+                            &mut key,
+                            &mut output,
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--function" | "--instance" | "--witness"), value)) =
+                        value.split_once('=')
+                    {
+                        set_replay_option(
+                            name,
+                            OsString::from(value),
+                            &mut replay_function,
+                            &mut replay_instance,
+                            &mut replay_witness,
                         )?;
                         continue;
                     }
@@ -1339,6 +2452,23 @@ fn parse_arguments_with_path_reservation(
                 None if argument.as_encoded_bytes().starts_with(b"--edition=") => {
                     mark_edition_option(&mut edition_seen)?;
                     return Err(String::from("edition name is not valid UTF-8"));
+                }
+                None if [
+                    &b"--scheme="[..],
+                    b"--key=",
+                    b"--output=",
+                    b"--steps=",
+                    b"--spec=",
+                    b"--function=",
+                    b"--instance=",
+                    b"--witness=",
+                ]
+                .iter()
+                .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
+                {
+                    return Err(String::from(
+                        "an option value that is not valid UTF-8 must be a separate argument",
+                    ));
                 }
                 None if argument.as_encoded_bytes().first() == Some(&b'-') => {
                     let argument = RenderedSourceName::try_from_os_str(&argument)
@@ -1371,21 +2501,316 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
+    if formatting_check && command != CompilerCommand::Fmt {
+        return Err(String::from("option `--check` applies only to fmt"));
+    }
+    // `--steps` and `--stats` serve the commands that evaluate; `--spec`
+    // selects functions, which only `eval` runs.
+    let evaluates = matches!(
+        command,
+        CompilerCommand::Eval | CompilerCommand::Test | CompilerCommand::Replay
+    );
+    if !evaluates && steps_seen {
+        return Err(String::from(
+            "option `--steps` applies only to eval, test, and replay",
+        ));
+    }
+    if command != CompilerCommand::Eval && !evaluation.specs.is_empty() {
+        return Err(String::from("option `--spec` applies only to eval"));
+    }
+    if !evaluates && evaluation.stats {
+        return Err(String::from(
+            "option `--stats` applies only to eval, test, and replay",
+        ));
+    }
+    for (present, name) in [
+        (replay_function.is_some(), "--function"),
+        (replay_instance.is_some(), "--instance"),
+        (replay_witness.is_some(), "--witness"),
+    ] {
+        if present && command != CompilerCommand::Replay {
+            return Err(format!("option `{name}` applies only to replay"));
+        }
+    }
+    if command.seals() {
+        return sealing_action(command, edition, scheme, key, output, paths);
+    }
+    for (present, name) in [
+        (scheme.is_some(), "--scheme"),
+        (key.is_some(), "--key"),
+        (output.is_some(), "--output"),
+    ] {
+        if present {
+            return Err(format!(
+                "option `{name}` applies only to keygen, enc, dec, and schemes"
+            ));
+        }
+    }
     if paths.is_empty() {
         return Err(format!(
             "command `{}` requires at least one source file",
             command.as_str()
         ));
     }
-    if command == CompilerCommand::Eval && paths.len() != 1 {
-        return Err(String::from(
-            "command `eval` requires exactly one source file",
+    if evaluates && paths.len() != 1 {
+        return Err(format!(
+            "command `{}` requires exactly one source file",
+            command.as_str()
         ));
     }
+    if command == CompilerCommand::Doc && paths.len() != 1 {
+        return Err(String::from(
+            "command `doc` requires exactly one source file",
+        ));
+    }
+    if command == CompilerCommand::Fmt && !formatting_check && paths.len() != 1 {
+        return Err(String::from(
+            "command `fmt` requires exactly one source file unless `--check` is given",
+        ));
+    }
+    let replay = if command == CompilerCommand::Replay {
+        let function = replay_function
+            .ok_or_else(|| String::from("command `replay` requires `--function MODULE::NAME`"))?;
+        let witness = replay_witness
+            .ok_or_else(|| String::from("command `replay` requires `--witness FILE`"))?;
+        if paths.first().is_some_and(|path| path == Path::new("-")) && witness == Path::new("-") {
+            return Err(String::from(
+                "source and witness cannot both read standard input",
+            ));
+        }
+        Some(Replay {
+            function,
+            instance: replay_instance.unwrap_or_default(),
+            witness,
+        })
+    } else {
+        None
+    };
     Ok(Action::Compile(Options {
         command,
         edition,
         paths,
+        evaluation,
+        formatting_check,
+        replay,
+    }))
+}
+
+fn set_replay_option(
+    name: &str,
+    value: OsString,
+    function: &mut Option<String>,
+    instance: &mut Option<Vec<u32>>,
+    witness: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let duplicate = match name {
+        "--function" => function.is_some(),
+        "--instance" => instance.is_some(),
+        _ => witness.is_some(),
+    };
+    if duplicate {
+        return Err(format!("option `{name}` may be specified at most once"));
+    }
+    match name {
+        "--function" => {
+            let invalid =
+                || String::from("option `--function` takes exactly MODULE::NAME identifiers");
+            let text = value.to_str().ok_or_else(invalid)?;
+            let (module, selected) = text.split_once("::").ok_or_else(invalid)?;
+            let identifier = |text: &str| {
+                let mut bytes = text.bytes();
+                bytes
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+                    && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            };
+            if !identifier(module) || !identifier(selected) {
+                return Err(invalid());
+            }
+            let mut stored = String::new();
+            stored
+                .try_reserve_exact(text.len())
+                .map_err(|_| String::from("could not allocate the replay function selector"))?;
+            stored.push_str(text);
+            *function = Some(stored);
+        }
+        "--instance" => {
+            let invalid = || {
+                String::from(
+                    "option `--instance` takes one to four canonical decimal u32 values separated by commas",
+                )
+            };
+            let text = value.to_str().ok_or_else(invalid)?;
+            let mut sizes = Vec::new();
+            sizes
+                .try_reserve_exact(MAX_REPLAY_INSTANCE_VALUES)
+                .map_err(|_| String::from("could not allocate the replay instance selector"))?;
+            for item in text.split(',') {
+                if sizes.len() == MAX_REPLAY_INSTANCE_VALUES
+                    || item.is_empty()
+                    || (item.len() > 1 && item.starts_with('0'))
+                    || !item.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(invalid());
+                }
+                sizes.push(item.parse::<u32>().map_err(|_| invalid())?);
+            }
+            *instance = Some(sizes);
+        }
+        _ => {
+            if value.is_empty() {
+                return Err(String::from(
+                    "option `--witness` requires a nonempty file name",
+                ));
+            }
+            *witness = Some(PathBuf::from(value));
+        }
+    }
+    Ok(())
+}
+
+/// Records `--steps`, at most once, or one more `--spec` name.
+fn set_evaluation_option(
+    name: &str,
+    value: &OsStr,
+    evaluation: &mut Evaluation,
+    steps_seen: &mut bool,
+) -> Result<(), String> {
+    if name == "--steps" {
+        if *steps_seen {
+            return Err(String::from(
+                "option `--steps` may be specified at most once",
+            ));
+        }
+        *steps_seen = true;
+        evaluation.steps = parse_steps(value)?;
+        return Ok(());
+    }
+    let spec = parse_spec_name(value)?;
+    if evaluation.specs.contains(&spec) {
+        return Ok(());
+    }
+    if evaluation.specs.len() >= MAX_SELECTED_SPECS {
+        return Err(format!(
+            "option `--spec` names at most {MAX_SELECTED_SPECS} functions"
+        ));
+    }
+    if evaluation.specs.try_reserve(1).is_err() {
+        return Err(String::from(
+            "could not allocate the list of `--spec` names",
+        ));
+    }
+    evaluation.specs.push(spec);
+    Ok(())
+}
+
+/// Reads a step budget: a decimal number from 1 through
+/// [`MAX_EVALUATION_STEP_LIMIT`], without sign or leading zeros.
+fn parse_steps(value: &OsStr) -> Result<usize, String> {
+    let invalid = || {
+        format!(
+            "option `--steps` takes a number of steps from 1 through {MAX_EVALUATION_STEP_LIMIT}"
+        )
+    };
+    let text = value.to_str().ok_or_else(invalid)?;
+    if text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    text.parse::<usize>()
+        .ok()
+        .filter(|steps| (1..=MAX_EVALUATION_STEP_LIMIT).contains(steps))
+        .ok_or_else(invalid)
+}
+
+/// Reads a function name: an Orange identifier, an ASCII letter or `_`
+/// followed by ASCII letters, digits, and `_`.
+fn parse_spec_name(value: &OsStr) -> Result<String, String> {
+    let invalid = || String::from("option `--spec` takes the name of a function");
+    let text = value.to_str().ok_or_else(invalid)?;
+    let mut bytes = text.bytes();
+    let starts = bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    if !starts || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+        return Err(invalid());
+    }
+    let mut name = String::new();
+    if name.try_reserve_exact(text.len()).is_err() {
+        return Err(String::from(
+            "could not allocate the list of `--spec` names",
+        ));
+    }
+    name.push_str(text);
+    Ok(name)
+}
+
+/// Records one sealing option, each at most once.
+fn set_sealing_option(
+    name: &str,
+    value: OsString,
+    scheme: &mut Option<OsString>,
+    key: &mut Option<PathBuf>,
+    output: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let (canonical, taken) = match name {
+        "--scheme" => ("--scheme", scheme.replace(value).is_some()),
+        "--key" => ("--key", key.replace(PathBuf::from(value)).is_some()),
+        _ => ("--output", output.replace(PathBuf::from(value)).is_some()),
+    };
+    if taken {
+        return Err(format!(
+            "option `{canonical}` may be specified at most once"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks a sealing command's operands and options.
+fn sealing_action(
+    command: CompilerCommand,
+    edition: Edition,
+    scheme: Option<OsString>,
+    key: Option<PathBuf>,
+    output: Option<PathBuf>,
+    inputs: Vec<PathBuf>,
+) -> Result<Action, String> {
+    let name = command.as_str();
+    match command {
+        CompilerCommand::Keygen => {
+            if !inputs.is_empty() {
+                return Err(String::from(
+                    "command `keygen` takes no file; name the new key file with -o",
+                ));
+            }
+            if key.is_some() {
+                return Err(String::from(
+                    "command `keygen` writes its key to -o, not --key",
+                ));
+            }
+        }
+        CompilerCommand::Schemes => {
+            if scheme.is_some() || key.is_some() || output.is_some() {
+                return Err(String::from(
+                    "command `schemes` takes scheme names or paths as operands and no options",
+                ));
+            }
+        }
+        _ => {
+            if inputs.len() != 1 {
+                return Err(format!("command `{name}` requires exactly one file"));
+            }
+            if inputs.iter().any(|input| input == Path::new("-")) {
+                return Err(format!("command `{name}` reads a file, not standard input"));
+            }
+        }
+    }
+    Ok(Action::Seal(crypt::SealOptions {
+        command,
+        edition,
+        scheme,
+        key,
+        output,
+        inputs,
     }))
 }
 
@@ -1429,6 +2854,83 @@ mod tests {
         root
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn used_modules_are_read_once_from_the_root_directory() {
+        let directory = unix_test_root().join(format!("orangec-modules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let files = [
+            (
+                "base.or",
+                "edition 2026; module base { spec one() -> Int { 1 } }\n",
+            ),
+            ("left.or", "edition 2026; module left { use base; }\n"),
+            (
+                "right.or",
+                "edition 2026; module right { use base; use left; }\n",
+            ),
+        ];
+        for (name, text) in files {
+            std::fs::write(directory.join(name), text).unwrap();
+        }
+        let root_path = directory.join("root.or");
+        let load = |root_text: &str| {
+            let mut sources = SourceMap::new();
+            let id = sources.add("root.or", root_text).unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::default());
+            let ast = parse(source, &lexed).into_ast().unwrap();
+            let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+            let loaded = load_used_modules(
+                &root_path,
+                &ast,
+                &mut sources,
+                Edition::default(),
+                &mut remaining,
+            );
+            let loaded = loaded.map(|modules| {
+                modules
+                    .iter()
+                    .map(|(id, ast)| {
+                        (
+                            sources.get(*id).unwrap().name().to_owned(),
+                            ast.module().name().text().to_owned(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+            (loaded, MAX_SOURCE_BYTES_PER_INVOCATION - remaining)
+        };
+
+        // Each module is read once, in the order a `use` first names it; the
+        // root's own name is not read.
+        let (loaded, charged) =
+            load("edition 2026; module root { use right; use root; use base; use right; }");
+        let path_of = |name: &str| directory.join(name).display().to_string();
+        assert_eq!(
+            loaded.unwrap(),
+            [
+                (path_of("right.or"), String::from("right")),
+                (path_of("base.or"), String::from("base")),
+                (path_of("left.or"), String::from("left")),
+            ]
+        );
+        assert_eq!(
+            charged,
+            files.iter().map(|(_, text)| text.len()).sum::<usize>()
+        );
+
+        let (missing, _) = load("edition 2026; module root { use left; use gone; }");
+        let group = missing.unwrap_err();
+        assert!(group.starts_with("error[ORC1001]: could not read source file `"));
+        assert!(group.contains("gone.or`"));
+        assert!(group.ends_with(
+            "  = note: `use gone;` in module `root` reads the module `gone` from this file\n"
+        ));
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
     #[test]
     fn cli_diagnostic_code_inventory_is_exact_ordered_and_unique() {
         let actual = CliDiagnosticCode::ALL
@@ -1437,6 +2939,7 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
+            "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015", "ORC1016",
         ];
 
         assert_eq!(actual, expected);
@@ -1481,6 +2984,9 @@ mod tests {
             command: CompilerCommand::Lex,
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
+            evaluation: Evaluation::default(),
+            formatting_check: false,
+            replay: None,
         };
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
@@ -1532,6 +3038,9 @@ mod tests {
             command: CompilerCommand::Check,
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
+            evaluation: Evaluation::default(),
+            formatting_check: false,
+            replay: None,
         };
         let mut input = b"abcd".as_slice();
         let mut output = Vec::new();
@@ -1571,6 +3080,9 @@ mod tests {
             command: CompilerCommand::Check,
             edition: Edition::CURRENT,
             paths: vec![path.clone(), path],
+            evaluation: Evaluation::default(),
+            formatting_check: false,
+            replay: None,
         };
         let mut input = b"".as_slice();
         let mut output = Vec::new();
@@ -1621,7 +3133,13 @@ mod tests {
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(names, ["check", "eval", "lex"]);
+        assert_eq!(
+            names,
+            [
+                "check", "eval", "lex", "test", "fmt", "doc", "replay", "keygen", "enc", "dec",
+                "schemes"
+            ]
+        );
         assert_eq!(
             CompilerCommand::ALL
                 .iter()
@@ -2493,6 +4011,9 @@ mod tests {
                 command: CompilerCommand::Lex,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
+                formatting_check: false,
+                replay: None,
             }))
         );
         assert_eq!(
@@ -2501,6 +4022,9 @@ mod tests {
                 command: CompilerCommand::Check,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
+                formatting_check: false,
+                replay: None,
             }))
         );
         assert_eq!(
@@ -2509,7 +4033,696 @@ mod tests {
                 command: CompilerCommand::Eval,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
+                formatting_check: false,
+                replay: None,
             }))
+        );
+    }
+
+    #[test]
+    fn formatter_preflights_the_entire_output_budget() {
+        let source = b"edition 2026;module m{}";
+        let options = parse_arguments(os_arguments(&["fmt", "-"]))
+            .unwrap()
+            .compile_options();
+        let mut expected = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut diagnostics,
+                source.len(),
+                MAX_STANDARD_OUTPUT_BYTES,
+            ),
+            SUCCESS
+        );
+        assert!(!expected.is_empty());
+        assert!(diagnostics.is_empty());
+
+        let mut actual = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut actual,
+                &mut diagnostics,
+                source.len(),
+                expected.len() - 1,
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(actual.is_empty());
+        assert!(
+            String::from_utf8(diagnostics)
+                .unwrap()
+                .contains("error[ORC1007]")
+        );
+
+        let mut exact = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut exact,
+                &mut diagnostics,
+                source.len(),
+                expected.len(),
+            ),
+            SUCCESS
+        );
+        assert_eq!(exact, expected);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn formatter_checks_do_not_consume_the_output_budget() {
+        let options = parse_arguments(os_arguments(&["fmt", "--check", "-"]))
+            .unwrap()
+            .compile_options();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        let source = b"edition 2026;module m{}";
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics,
+                source.len(),
+                0,
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.is_empty());
+        let diagnostics = String::from_utf8(diagnostics).unwrap();
+        assert!(diagnostics.contains("error[ORC0252]"));
+        assert!(!diagnostics.contains("ORC1007"));
+    }
+
+    #[test]
+    fn formatter_difference_spans_keep_utf8_boundaries_and_eof() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("sample.or", "é").unwrap();
+        let source = sources.get(id).unwrap();
+        let changed = formatting_required(source, "ê").unwrap();
+        assert_eq!(source.slice(changed.primary_span()), Some(""));
+        assert_eq!(changed.primary_span().start(), TextOffset::new(0));
+        let newline = formatting_required(source, "é\n").unwrap();
+        assert_eq!(newline.primary_span().start(), source.byte_len());
+        assert_eq!(source.slice(newline.primary_span()), Some(""));
+    }
+
+    #[test]
+    fn documentation_preflights_the_complete_stdout_budget() {
+        let options = parse_arguments(os_arguments(&["doc", "-"]))
+            .unwrap()
+            .compile_options();
+        let source = b"edition 2026;module m{}";
+        let mut expected = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut diagnostics,
+                source.len(),
+                MAX_STANDARD_OUTPUT_BYTES,
+            ),
+            SUCCESS
+        );
+        assert!(!expected.is_empty());
+        assert!(diagnostics.is_empty());
+        for budget in [0, expected.len() - 1] {
+            let mut output = Vec::new();
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile_with_limits(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics,
+                    source.len(),
+                    budget,
+                ),
+                COMPILATION_ERROR
+            );
+            assert!(output.is_empty());
+            assert!(
+                String::from_utf8(diagnostics)
+                    .unwrap()
+                    .contains("error[ORC1007]")
+            );
+        }
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics,
+                source.len(),
+                expected.len(),
+            ),
+            SUCCESS
+        );
+        assert_eq!(output, expected);
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn documentation_host_output_failures_report_only_the_accepted_prefix() {
+        let options = parse_arguments(os_arguments(&["doc", "-"]))
+            .unwrap()
+            .compile_options();
+        let source = b"edition 2026;module m{}";
+        for kind in [io::ErrorKind::Other, io::ErrorKind::BrokenPipe] {
+            let mut output = AcceptPrefixThenFail::new(2, kind);
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics
+                ),
+                COMPILATION_ERROR
+            );
+            assert_eq!(output.bytes, b"<!");
+            assert_eq!(output.attempts, 2);
+            if kind == io::ErrorKind::BrokenPipe {
+                assert!(diagnostics.is_empty());
+            } else {
+                assert_eq!(
+                    diagnostics,
+                    b"orangec: could not write documentation output\n"
+                );
+            }
+        }
+        let mut output = FailFlush::default();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(!output.bytes.is_empty());
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(
+            diagnostics,
+            b"orangec: could not write documentation output\n"
+        );
+    }
+
+    #[test]
+    fn documentation_arguments_retain_the_bounded_option_contract() {
+        for arguments in [
+            &["doc", "source.or"][..],
+            &["--edition", "2026", "doc", "source.or"],
+            &["doc", "--edition=2026", "--", "--check"],
+        ] {
+            let options = parse_arguments(os_arguments(arguments))
+                .unwrap()
+                .compile_options();
+            assert_eq!(options.command, CompilerCommand::Doc);
+            assert_eq!(options.edition, Edition::E2026);
+            assert_eq!(options.paths.len(), 1);
+            assert!(!options.formatting_check);
+        }
+        assert!(
+            parse_arguments_with_path_reservation(
+                os_arguments(&["doc", "long-source-name.or"]),
+                8,
+                |paths| paths.try_reserve(1).is_ok(),
+            )
+            .unwrap_err()
+            .contains("command-line arguments exceed")
+        );
+    }
+
+    struct ReplayScratch(PathBuf);
+
+    impl ReplayScratch {
+        fn new(name: &str) -> Self {
+            // Unit-test Cargo builds have no CARGO_TARGET_TMPDIR. This root is
+            // fixed by the build-time manifest, as for existing CLI unit IO.
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/orangec-tests");
+            std::fs::create_dir_all(&root).unwrap();
+            let path = root.join(format!("replay-{name}-{}", std::process::id()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
+            let path = self.0.join(name);
+            let mut file = std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(bytes).unwrap();
+            path
+        }
+
+        fn options(&self, stats: bool) -> Options {
+            let mut arguments = os_arguments(&["replay", "--function", "m::p", "--witness"]);
+            arguments.push(self.0.join("input.values").into_os_string());
+            if stats {
+                arguments.push(OsString::from("--stats"));
+            }
+            arguments.push(OsString::from("-"));
+            parse_arguments(arguments).unwrap().compile_options()
+        }
+    }
+
+    impl Drop for ReplayScratch {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn replay_preflights_complete_stdout_and_buffers_fallibly() {
+        let scratch = ReplayScratch::new("output-budgets");
+        scratch.write("input.values", b"[7]");
+        let source = b"edition 2026;module m{spec p(x:Int)->Bool{x == 7}}";
+        let options = scratch.options(true);
+        let mut expected = Vec::new();
+        let mut statistics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut expected,
+                &mut statistics,
+                source.len() + 3,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            SUCCESS
+        );
+        assert_eq!(
+            expected,
+            b"m::p[]: holds_for_this_witness\nparameter_types: [Int]\narguments: [7]\n"
+        );
+        assert!(statistics.starts_with(b"m::p[]: "));
+        for limit in [0, expected.len() - 1] {
+            let mut output = Vec::new();
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile_with_limits(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics,
+                    source.len() + 3,
+                    limit
+                ),
+                COMPILATION_ERROR
+            );
+            assert!(output.is_empty());
+            let diagnostics = String::from_utf8(diagnostics).unwrap();
+            assert!(diagnostics.contains("error[ORC1007]"));
+            assert!(!diagnostics.contains("\ntotal:"));
+        }
+        let mut output = Vec::new();
+        let mut actual_statistics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut actual_statistics,
+                source.len() + 3,
+                expected.len()
+            ),
+            SUCCESS
+        );
+        assert_eq!(output, expected);
+        assert_eq!(actual_statistics, statistics);
+        let mut buffer = ReplayText::new(4);
+        buffer.write_str("1234").unwrap();
+        assert!(buffer.write_str("5").is_err());
+        assert_eq!(buffer.text, "1234");
+        assert!(buffer.failure().contains("ORC1007"));
+    }
+
+    #[test]
+    fn replay_charges_source_imports_and_witness_to_one_envelope() {
+        let scratch = ReplayScratch::new("source-envelope");
+        let root = b"edition 2026;module m{use helper;spec p(x:Int)->Bool{helper::p(x)}}";
+        let helper = b"edition 2026;module helper{spec p(x:Int)->Bool{x == 7}}";
+        scratch.write("subject.or", root);
+        scratch.write("helper.or", helper);
+        scratch.write("input.values", b"[7]");
+        let mut options = scratch.options(false);
+        options.paths = vec![scratch.0.join("subject.or")];
+        let exact = root.len() + helper.len() + 3;
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut input,
+                &mut output,
+                &mut diagnostics,
+                exact,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            SUCCESS
+        );
+        assert!(!output.is_empty());
+        assert!(diagnostics.is_empty());
+        let mut output = Vec::new();
+        assert_eq!(
+            compile_with_limits(
+                &options,
+                &mut input,
+                &mut output,
+                &mut diagnostics,
+                exact - 1,
+                MAX_STANDARD_OUTPUT_BYTES
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.is_empty());
+        assert!(
+            String::from_utf8(diagnostics)
+                .unwrap()
+                .contains("error[ORC1008]")
+        );
+        assert_eq!(input.attempts, 0);
+    }
+
+    #[test]
+    fn replay_stats_follow_committed_output_and_transport_failures_stop_them() {
+        let scratch = ReplayScratch::new("transport");
+        scratch.write("input.values", b"[7]");
+        let options = scratch.options(true);
+        let source = b"edition 2026;module m{spec p(x:Int)->Bool{x == 7}}";
+        let transcript = Transcript::default();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut transcript.clone(),
+                &mut transcript.clone()
+            ),
+            SUCCESS
+        );
+        let text = String::from_utf8(transcript.0.borrow().clone()).unwrap();
+        assert!(text.starts_with(
+            "m::p[]: holds_for_this_witness\nparameter_types: [Int]\narguments: [7]\nm::p[]: "
+        ));
+        assert!(text.ends_with("of 1048576 steps\n"));
+        for kind in [io::ErrorKind::Other, io::ErrorKind::BrokenPipe] {
+            let mut output = AcceptPrefixThenFail::new(2, kind);
+            let mut diagnostics = Vec::new();
+            assert_eq!(
+                compile(
+                    &options,
+                    &mut source.as_slice(),
+                    &mut output,
+                    &mut diagnostics
+                ),
+                COMPILATION_ERROR
+            );
+            assert_eq!(output.bytes, b"m:");
+            assert_eq!(output.attempts, 2);
+            if kind == io::ErrorKind::BrokenPipe {
+                assert!(diagnostics.is_empty());
+            } else {
+                assert_eq!(
+                    diagnostics,
+                    b"orangec: could not write witness replay output\n"
+                );
+            }
+        }
+        let mut output = FailFlush::default();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            compile(
+                &options,
+                &mut source.as_slice(),
+                &mut output,
+                &mut diagnostics
+            ),
+            COMPILATION_ERROR
+        );
+        assert!(output.bytes.ends_with(b"arguments: [7]\n"));
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(
+            diagnostics,
+            b"orangec: could not write witness replay output\n"
+        );
+    }
+
+    #[test]
+    fn replay_arguments_share_exact_invocation_and_selector_bounds() {
+        let arguments = os_arguments(&[
+            "replay",
+            "--function=m::p",
+            "--instance=0,1,2,4294967295",
+            "--witness=input.values",
+            "--steps=1073741824",
+            "--stats",
+            "--",
+            "--source.or",
+        ]);
+        let bytes = arguments
+            .iter()
+            .map(|argument| argument.as_encoded_bytes().len())
+            .sum();
+        let options = parse_arguments_with_path_reservation(arguments.clone(), bytes, |paths| {
+            paths.try_reserve(1).is_ok()
+        })
+        .unwrap()
+        .compile_options();
+        assert_eq!(options.command, CompilerCommand::Replay);
+        assert_eq!(options.paths, [PathBuf::from("--source.or")]);
+        assert_eq!(options.evaluation.steps, MAX_EVALUATION_STEP_LIMIT);
+        assert_eq!(
+            options.replay.as_ref().unwrap().instance,
+            [0, 1, 2, u32::MAX]
+        );
+        assert!(
+            parse_arguments_with_path_reservation(arguments, bytes - 1, |paths| paths
+                .try_reserve(1)
+                .is_ok())
+            .unwrap_err()
+            .contains("command-line arguments exceed")
+        );
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut diagnostics = Vec::new();
+        assert_eq!(
+            run(
+                os_arguments(&["replay", "--function=m::p", "--witness=-", "-"]),
+                &mut input,
+                &mut output,
+                &mut diagnostics
+            ),
+            USAGE_ERROR
+        );
+        assert_eq!(input.attempts, 0);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn evaluation_options_parse_with_exact_bounds_and_messages() {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let evaluation = |arguments: &[&str]| match parse_arguments(os_arguments(arguments)) {
+            Ok(Action::Compile(options)) => Ok(options.evaluation),
+            Ok(_) => panic!("{arguments:?} is not a compilation"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(
+            evaluation(&[
+                "eval",
+                "--steps",
+                "5",
+                "--spec",
+                "a",
+                "--spec=b_2",
+                "--stats",
+                "--spec",
+                "a",
+                "one.or",
+            ]),
+            Ok(Evaluation {
+                steps: 5,
+                specs: vec![String::from("a"), String::from("b_2")],
+                stats: true,
+            })
+        );
+        assert_eq!(
+            evaluation(&["--steps=1073741824", "eval", "one.or"]).map(|value| value.steps),
+            Ok(MAX_EVALUATION_STEP_LIMIT)
+        );
+        assert_eq!(
+            evaluation(&["eval", "one.or"]),
+            Ok(Evaluation {
+                steps: MAX_EVALUATION_STEPS_PER_SOURCE,
+                specs: Vec::new(),
+                stats: false,
+            })
+        );
+
+        let steps = Err(String::from(
+            "option `--steps` takes a number of steps from 1 through 1073741824",
+        ));
+        for value in [
+            "0",
+            "01",
+            "1073741825",
+            "-1",
+            "+5",
+            "1e3",
+            "1_000",
+            " 5",
+            "",
+            "99999999999999999999999",
+        ] {
+            assert_eq!(
+                evaluation(&["eval", "--steps", value, "one.or"]),
+                steps,
+                "{value}"
+            );
+        }
+        assert_eq!(
+            evaluation(&["eval", "--steps", "5", "--steps=6", "one.or"]),
+            Err(String::from(
+                "option `--steps` may be specified at most once"
+            ))
+        );
+        assert_eq!(
+            evaluation(&["eval", "one.or", "--steps"]),
+            Err(String::from("option `--steps` requires a value"))
+        );
+
+        let spec = Err(String::from("option `--spec` takes the name of a function"));
+        for value in ["", "1a", "a-b", "m::f", "f()", "é", "a b"] {
+            assert_eq!(
+                evaluation(&["eval", "--spec", value, "one.or"]),
+                spec,
+                "{value}"
+            );
+        }
+        let names = (0..65).map(|index| format!("f{index}")).collect::<Vec<_>>();
+        let mut arguments = vec!["eval"];
+        for name in names.iter().take(64) {
+            arguments.extend(["--spec", name.as_str()]);
+        }
+        arguments.push("one.or");
+        assert_eq!(
+            evaluation(&arguments).map(|value| value.specs),
+            Ok(names[..64].to_vec())
+        );
+        arguments.pop();
+        arguments.extend(["--spec", "f64", "one.or"]);
+        assert_eq!(
+            evaluation(&arguments),
+            Err(String::from("option `--spec` names at most 64 functions"))
+        );
+
+        // `--steps` and `--stats` serve `eval` and `test`; `--spec` only
+        // `eval`. The first misplaced option is named in that order.
+        for (arguments, message) in [
+            (
+                &["check", "--steps", "5", "one.or"][..],
+                "`--steps` applies only to eval, test, and replay",
+            ),
+            (
+                &["check", "--steps", "1048576", "one.or"][..],
+                "`--steps` applies only to eval, test, and replay",
+            ),
+            (
+                &["lex", "--spec", "f", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
+            (
+                &["check", "--stats", "one.or"][..],
+                "`--stats` applies only to eval, test, and replay",
+            ),
+            (
+                &["--steps=5", "--spec=f", "--stats", "check", "one.or"][..],
+                "`--steps` applies only to eval, test, and replay",
+            ),
+            (
+                &["--spec=f", "--stats", "check", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
+            (
+                &["enc", "--stats", "one.or"][..],
+                "`--stats` applies only to eval, test, and replay",
+            ),
+            (
+                &["--steps=5", "--spec=f", "--stats", "test", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
+        ] {
+            assert_eq!(
+                parse_arguments(os_arguments(arguments)),
+                Err(format!("option {message}")),
+                "{arguments:?}"
+            );
+        }
+        let test = |arguments: &[&str]| match parse_arguments(os_arguments(arguments)) {
+            Ok(Action::Compile(options)) => Ok((options.command, options.evaluation)),
+            Ok(_) => panic!("{arguments:?} is not a compilation"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(
+            test(&["test", "--steps", "7", "--stats", "one.or"]),
+            Ok((
+                CompilerCommand::Test,
+                Evaluation {
+                    steps: 7,
+                    specs: Vec::new(),
+                    stats: true,
+                }
+            ))
+        );
+        for arguments in [&["test"][..], &["test", "one.or", "two.or"][..]] {
+            assert_eq!(
+                test(arguments).map(|_| ()),
+                Err(String::from(if arguments.len() == 1 {
+                    "command `test` requires at least one source file"
+                } else {
+                    "command `test` requires exactly one source file"
+                })),
+                "{arguments:?}"
+            );
+        }
+
+        assert_eq!(
+            parse_arguments([
+                OsString::from_vec(b"--steps=\x80".to_vec()),
+                OsString::from("eval"),
+                OsString::from("one.or"),
+            ]),
+            Err(String::from(
+                "an option value that is not valid UTF-8 must be a separate argument"
+            ))
+        );
+        assert_eq!(
+            parse_arguments([
+                OsString::from("eval"),
+                OsString::from("--spec"),
+                OsString::from_vec(vec![0x80]),
+                OsString::from("one.or"),
+            ]),
+            Err(String::from("option `--spec` takes the name of a function"))
         );
     }
 
@@ -3651,6 +5864,272 @@ mod tests {
         assert_eq!(error, b"orangec: could not write evaluation output\n");
     }
 
+    /// Both streams of one run, in the order their bytes were written.
+    #[derive(Clone, Default)]
+    struct Transcript(std::rc::Rc<std::cell::RefCell<Vec<u8>>>);
+
+    impl Write for Transcript {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0.borrow_mut().extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn step_report_follows_committed_values_and_is_not_written_without_them() {
+        let source =
+            b"edition 2026; module values { spec answer() -> Int { 42 } spec one() -> Word[8] { 1 } }\n";
+        let transcript = Transcript::default();
+        let mut input = source.as_slice();
+        let status = run(
+            os_arguments(&["eval", "--stats", "-"]),
+            &mut input,
+            &mut transcript.clone(),
+            &mut transcript.clone(),
+        );
+        assert_eq!(status, SUCCESS);
+        assert_eq!(
+            String::from_utf8_lossy(&transcript.0.borrow()),
+            concat!(
+                "values::answer: Int = 42\n",
+                "values::one: Word[8] = 0x01\n",
+                "values::answer: 1 step\n",
+                "values::one: 1 step\n",
+                "total: 2 of 1048576 steps\n",
+            )
+        );
+
+        let mut input = source.as_slice();
+        let mut output = FailFlush::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["eval", "--stats", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(
+            output.bytes,
+            b"values::answer: Int = 42\nvalues::one: Word[8] = 0x01\n"
+        );
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(error, b"orangec: could not write evaluation output\n");
+    }
+
+    #[test]
+    fn test_report_names_each_test_and_where_a_failed_equality_first_differs() {
+        let source = concat!(
+            "edition 2026; module t {\n",
+            "  spec one() -> Word[8]^2 { [1, 2] }\n",
+            "  test \"same\" { one() == [1, 2] }\n",
+            "  test \"differs\" { one() == [1, 3] }\n",
+            "  test \"a tuple\" { let p: (Int, Word[8]^2) = (1, one()); p == (1, [1, 3]) }\n",
+            "  test \"a scalar\" { one()[0] == 2 }\n",
+            "  test \"both\" { (one() == [1, 2]) && false }\n",
+            "}\n",
+        );
+        let transcript = Transcript::default();
+        let mut input = source.as_bytes();
+        let status = run(
+            os_arguments(&["test", "--stats", "-"]),
+            &mut input,
+            &mut transcript.clone(),
+            &mut transcript.clone(),
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        let steps = String::from_utf8_lossy(&transcript.0.borrow())
+            .split_once("5 tests: 1 passed, 4 failed\n")
+            .unwrap()
+            .1
+            .to_owned();
+        assert_eq!(
+            String::from_utf8_lossy(&transcript.0.borrow()),
+            format!(
+                "{}{steps}",
+                concat!(
+                    "test \"same\" ... ok\n",
+                    "test \"differs\" ... FAILED\n",
+                    "    left:  [0x01, 0x02]\n",
+                    "    right: [0x01, 0x03]\n",
+                    "    first difference at [1]\n",
+                    "test \"a tuple\" ... FAILED\n",
+                    "    left:  (1, [0x01, 0x02])\n",
+                    "    right: (1, [0x01, 0x03])\n",
+                    "    first difference at .1[1]\n",
+                    "test \"a scalar\" ... FAILED\n",
+                    "    left:  0x01\n",
+                    "    right: 0x02\n",
+                    "test \"both\" ... FAILED\n",
+                    "5 tests: 1 passed, 4 failed\n",
+                )
+            )
+        );
+        // The report of steps follows, one line for each test in order.
+        let titles = steps
+            .lines()
+            .map(|line| line.split_once(':').unwrap().0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            titles,
+            [
+                "test \"same\"",
+                "test \"differs\"",
+                "test \"a tuple\"",
+                "test \"a scalar\"",
+                "test \"both\"",
+                "total",
+            ]
+        );
+        assert!(steps.ends_with(" of 1048576 steps\n"), "{steps}");
+
+        // Every test passing, or none at all, is success; one test is
+        // counted in the singular.
+        for (text, report) in [
+            (
+                "edition 2026; module t { test \"one\" { true } }\n",
+                "test \"one\" ... ok\n1 test: 1 passed, 0 failed\n",
+            ),
+            (
+                "edition 2026; module t { spec f() -> Int { 1 } }\n",
+                "0 tests: 0 passed, 0 failed\n",
+            ),
+        ] {
+            let transcript = Transcript::default();
+            let mut input = text.as_bytes();
+            let status = run(
+                os_arguments(&["test", "-"]),
+                &mut input,
+                &mut transcript.clone(),
+                &mut transcript.clone(),
+            );
+            assert_eq!(status, SUCCESS, "{text}");
+            assert_eq!(String::from_utf8_lossy(&transcript.0.borrow()), report);
+        }
+
+        // A report that cannot be committed is followed by no step report.
+        let mut input = source.as_bytes();
+        let mut output = FailFlush::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["test", "--stats", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert!(output.bytes.starts_with(b"test \"same\" ... ok\n"));
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(error, b"orangec: could not write test report\n");
+    }
+
+    #[test]
+    fn first_differences_name_an_element_or_a_part_and_its_element() {
+        use orange_compiler::{ArrayType, CoreArray, CoreTuple, CoreType, TupleType};
+        let words = |values: &[u8]| {
+            CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap(),
+                    values.iter().copied().map(CoreValue::Word8).collect(),
+                )
+                .unwrap(),
+            )
+        };
+        let pair = |word: u8, values: &[u8]| {
+            let array = ArrayType::new(&CoreType::Word8, 2).unwrap();
+            CoreValue::Tuple(
+                CoreTuple::new(
+                    TupleType::new(&[CoreType::Word8, CoreType::Array(array)]).unwrap(),
+                    vec![CoreValue::Word8(word), words(values)],
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(
+            first_difference(&words(&[1, 2]), &words(&[1, 3])).as_deref(),
+            Some("[1]")
+        );
+        assert_eq!(
+            first_difference(&words(&[0, 2]), &words(&[1, 3])).as_deref(),
+            Some("[0]")
+        );
+        assert_eq!(
+            first_difference(&pair(1, &[2, 3]), &pair(2, &[2, 4])).as_deref(),
+            Some(".0")
+        );
+        assert_eq!(
+            first_difference(&pair(1, &[2, 3]), &pair(1, &[2, 4])).as_deref(),
+            Some(".1[1]")
+        );
+        assert_eq!(
+            first_difference(&CoreValue::Word8(1), &CoreValue::Word8(2)),
+            None
+        );
+        assert_eq!(first_difference(&words(&[1, 2]), &words(&[1, 2])), None);
+    }
+
+    #[test]
+    fn step_limit_diagnostics_name_the_option_only_below_the_most_admitted() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "budget.or",
+                "edition 2026; module budget { spec two() -> Int { 1 + 1 } }\n",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::default());
+        let ast = parse(source, &lexed).into_ast().unwrap();
+        let analysis = analyze_program((source, &ast), &[]);
+        let stopped = evaluate_selected(analysis.core().unwrap(), 1, |_| true);
+        let diagnostics = stopped.diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "reference evaluation step limit exceeded"
+        );
+        // The note names the command that ran, `eval` or `test`.
+        for (command, hint) in [
+            (
+                CompilerCommand::Eval,
+                "`orangec eval --steps N` sets the budget, up to 1073741824 steps",
+            ),
+            (
+                CompilerCommand::Test,
+                "`orangec test --steps N` sets the budget, up to 1073741824 steps",
+            ),
+        ] {
+            for (budget, hinted) in [
+                (1, true),
+                (MAX_EVALUATION_STEPS_PER_SOURCE, true),
+                (MAX_EVALUATION_STEP_LIMIT - 1, true),
+                (MAX_EVALUATION_STEP_LIMIT, false),
+            ] {
+                let copied = with_budget_hint(diagnostics, budget, command).unwrap();
+                let mut expected = diagnostics[0].clone();
+                if hinted {
+                    expected = expected.with_note(hint);
+                }
+                assert_eq!(copied, [expected], "{hint} {budget}");
+            }
+        }
+
+        // Every other diagnostic is copied unchanged.
+        let other = Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            "reference evaluation result allocation failed",
+            diagnostics[0].primary_span(),
+        );
+        assert_eq!(
+            with_budget_hint(std::slice::from_ref(&other), 1, CompilerCommand::Eval).unwrap(),
+            [other]
+        );
+    }
+
     #[test]
     fn token_output_flush_failure_reports_failure_after_complete_bytes() {
         let source = b"edition 2026; module values {}\n";
@@ -3882,7 +6361,7 @@ mod tests {
         fn compile_options(self) -> Options {
             match self {
                 Self::Compile(options) => options,
-                Self::Help | Self::Version => panic!("expected compile action"),
+                Self::Help | Self::Version | Self::Seal(_) => panic!("expected compile action"),
             }
         }
     }

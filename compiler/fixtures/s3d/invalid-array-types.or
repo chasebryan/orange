@@ -1,9 +1,9 @@
-// S3d rejection: an array length is a decimal integer from 1 through 256,
+// S3d rejection: an array length is a decimal integer from 1 through 65536,
 // written without leading zeros, and the element type must resolve.
 edition 2026;
 module lengths {
   spec zero() -> Word[8]^0 { [1] }
-  spec too_long(x: Word[32]^257) -> Int { 1 }
+  spec too_long(x: Word[32]^65537) -> Int { 1 }
   spec hexadecimal() -> Int { let t: Int^0x2 = [1, 2]; 1 }
   spec padded(x: Word[8]^016) -> Int { 1 }
   spec unwidthed(x: Word^4) -> Int { 1 }

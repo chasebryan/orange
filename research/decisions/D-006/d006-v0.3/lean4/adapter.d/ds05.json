@@ -1,0 +1,415 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads=1",
+        "--tstack=65536",
+        "--root=.",
+        "-c",
+        ".lake/build/ir/Checker/Main.c",
+        "Checker/Main.lean"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads={jobs}",
+        "--tstack=65536",
+        "--root=.",
+        "-c",
+        ".lake/build/ir/Checker/Main.c",
+        "Checker/Main.lean"
+      ]
+    ]
+  },
+  "standalone": {
+    "sources": [
+      "Checker/*.lean",
+      "D006/Core.lean",
+      "D006/Records.lean",
+      "D006/Lrat.lean",
+      ".lake/build/ir/D006/Core.c",
+      ".lake/build/ir/D006/Records.c",
+      ".lake/build/ir/D006/Lrat.c",
+      ".lake/build/ir/Checker/Main.c"
+    ],
+    "hosts": {
+      "H-01": {
+        "build": [
+          [
+            "mkdir",
+            "-p",
+            ".lake/build/obj/x86_64-linux-gnu",
+            ".lake/build/bin/x86_64-linux-gnu"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--sysroot",
+            "{toolchain}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain}/include/clang",
+            "-I",
+            "{toolchain}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Core.o",
+            ".lake/build/ir/D006/Core.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--sysroot",
+            "{toolchain}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain}/include/clang",
+            "-I",
+            "{toolchain}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Records.o",
+            ".lake/build/ir/D006/Records.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--sysroot",
+            "{toolchain}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain}/include/clang",
+            "-I",
+            "{toolchain}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Lrat.o",
+            ".lake/build/ir/D006/Lrat.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--sysroot",
+            "{toolchain}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain}/include/clang",
+            "-I",
+            "{toolchain}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/x86_64-linux-gnu/Checker.Main.o",
+            ".lake/build/ir/Checker/Main.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--sysroot",
+            "{toolchain}",
+            "-fuse-ld=lld",
+            "-o",
+            ".lake/build/bin/x86_64-linux-gnu/d006-checker",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Core.o",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Records.o",
+            ".lake/build/obj/x86_64-linux-gnu/D006.Lrat.o",
+            ".lake/build/obj/x86_64-linux-gnu/Checker.Main.o",
+            "-L",
+            "{toolchain}/lib",
+            "-L",
+            "{toolchain}/lib/glibc",
+            "-L",
+            "{toolchain}/lib/lean",
+            "-Wl,--start-group",
+            "-lInit",
+            "-lleanrt",
+            "-Wl,--end-group",
+            "-Wl,-Bstatic",
+            "-lc++",
+            "-lc++abi",
+            "-lunwind",
+            "-lgmp",
+            "-luv",
+            "-Wl,-Bdynamic",
+            "-lc",
+            "-lc_nonshared",
+            "-Wl,--as-needed",
+            "-l:ld.so",
+            "-Wl,--no-as-needed",
+            "-lpthread_nonshared",
+            "-Wl,--as-needed",
+            "-lpthread",
+            "-ldl",
+            "-lrt",
+            "-lm",
+            "-Wl,--no-as-needed",
+            "-Wl,--gc-sections",
+            "-pthread"
+          ]
+        ],
+        "binary": ".lake/build/bin/x86_64-linux-gnu/d006-checker",
+        "launch": [
+          "{binary}"
+        ],
+        "runtime": [],
+        "environment": {
+          "LEAN_STACK_SIZE_KB": "524288"
+        }
+      },
+      "H-02": {
+        "build": [
+          [
+            "mkdir",
+            "-p",
+            ".lake/build/obj/aarch64-linux-gnu",
+            ".lake/build/bin/aarch64-linux-gnu"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--target=aarch64-unknown-linux-gnu",
+            "-resource-dir",
+            "{toolchain_aarch64}/lib/clang/22",
+            "--sysroot",
+            "{toolchain_aarch64}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain_aarch64}/include/clang",
+            "-I",
+            "{toolchain_aarch64}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Core.o",
+            ".lake/build/ir/D006/Core.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--target=aarch64-unknown-linux-gnu",
+            "-resource-dir",
+            "{toolchain_aarch64}/lib/clang/22",
+            "--sysroot",
+            "{toolchain_aarch64}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain_aarch64}/include/clang",
+            "-I",
+            "{toolchain_aarch64}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Records.o",
+            ".lake/build/ir/D006/Records.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--target=aarch64-unknown-linux-gnu",
+            "-resource-dir",
+            "{toolchain_aarch64}/lib/clang/22",
+            "--sysroot",
+            "{toolchain_aarch64}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain_aarch64}/include/clang",
+            "-I",
+            "{toolchain_aarch64}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Lrat.o",
+            ".lake/build/ir/D006/Lrat.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--target=aarch64-unknown-linux-gnu",
+            "-resource-dir",
+            "{toolchain_aarch64}/lib/clang/22",
+            "--sysroot",
+            "{toolchain_aarch64}",
+            "-nostdinc",
+            "-isystem",
+            "{toolchain_aarch64}/include/clang",
+            "-I",
+            "{toolchain_aarch64}/include",
+            "-fstack-clash-protection",
+            "-ffp-contract=off",
+            "-fdata-sections",
+            "-ffunction-sections",
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-O3",
+            "-DNDEBUG",
+            "-c",
+            "-o",
+            ".lake/build/obj/aarch64-linux-gnu/Checker.Main.o",
+            ".lake/build/ir/Checker/Main.c"
+          ],
+          [
+            "{toolchain}/bin/clang",
+            "--target=aarch64-unknown-linux-gnu",
+            "-resource-dir",
+            "{toolchain_aarch64}/lib/clang/22",
+            "--sysroot",
+            "{toolchain_aarch64}",
+            "-fuse-ld=lld",
+            "-o",
+            ".lake/build/bin/aarch64-linux-gnu/d006-checker",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Core.o",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Records.o",
+            ".lake/build/obj/aarch64-linux-gnu/D006.Lrat.o",
+            ".lake/build/obj/aarch64-linux-gnu/Checker.Main.o",
+            "-L",
+            "{toolchain_aarch64}/lib",
+            "-L",
+            "{toolchain_aarch64}/lib/glibc",
+            "-L",
+            "{toolchain_aarch64}/lib/lean",
+            "-Wl,--start-group",
+            "-lInit",
+            "-lleanrt",
+            "-Wl,--end-group",
+            "-Wl,-Bstatic",
+            "-lc++",
+            "-lc++abi",
+            "-lunwind",
+            "-lgmp",
+            "-luv",
+            "-Wl,-Bdynamic",
+            "-lc",
+            "-lc_nonshared",
+            "-Wl,--as-needed",
+            "-l:ld.so",
+            "-Wl,--no-as-needed",
+            "-lpthread_nonshared",
+            "-Wl,--as-needed",
+            "-lpthread",
+            "-ldl",
+            "-lrt",
+            "-lm",
+            "-Wl,--no-as-needed",
+            "-Wl,--gc-sections",
+            "-pthread"
+          ]
+        ],
+        "binary": ".lake/build/bin/aarch64-linux-gnu/d006-checker",
+        "launch": [
+          "/usr/bin/qemu-aarch64-static",
+          "-L",
+          "/usr/aarch64-linux-gnu",
+          "{binary}"
+        ],
+        "runtime": [],
+        "environment": {
+          "LEAN_STACK_SIZE_KB": "524288"
+        }
+      }
+    },
+    "dependency": "lib/lean/libleanrt.a"
+  },
+  "classifier": [
+    {
+      "category": "unsupported_feature",
+      "phases": [
+        "build"
+      ],
+      "pattern": "ld\\.lld: error: unable to find library -l\\S+|fatal error: '[^']+' file not found"
+    }
+  ],
+  "trust": {
+    "inventory": [
+      {
+        "name": "Lean 4.34.1 compiler and C code generator (lean -c, DS-05)",
+        "kind": "compiler",
+        "reason": "translates the in-prover definitions to C for the standalone checker: D006.Core, D006.Records (decode_records) and D006.Lrat (cnf_text, lrat_verdict), elaborated and kernel-checked again by the same `lean` run that emits them, and the driver Checker.Main. It erases proofs and types, compiles through LCNF and IR, and applies core's @[implemented_by], @[extern] and @[csimp] replacements (tail-recursive List functions, Nat, String and ByteArray primitives). The kernel never sees the C: the checker agrees with the kernel-checked definitions only as far as this compiler is right. It is the compiler DS-04's native_decide already trusts. `lean -c` runs in build.serial (one C file per module, identical for both hosts); only the C compiler and linker differ per host"
+      },
+      {
+        "name": "clang 22.1.4 and ld.lld (bundled with TC-01)",
+        "kind": "C compiler and linker",
+        "reason": "compile the emitted C at -O3 -DNDEBUG and link the checker: natively for H-01 against TC-01's sysroot, headers and libraries, and with --target=aarch64-unknown-linux-gnu for H-02 against TC-11's sysroot, include, lib/lean and clang resource directory. The flags are leanc's own (`leanc --print-cflags` and the internal sysroot flags it passes to clang); the link names only the libraries the checker uses instead of leanc's full list (no Lean, Lake, Std, leancpp, ssl or crypto)"
+      },
+      {
+        "name": "Lean runtime (lib/lean/libleanrt.a) and compiled core library (lib/lean/libInit.a), TC-01 for H-01 and TC-11 for H-02",
+        "kind": "runtime",
+        "reason": "statically linked into the checker. libleanrt: object allocation and reference counting, Nat beyond 63 bits on GMP, String and ByteArray primitives, the file reading and printing the driver uses, and the thread that runs main with a LEAN_STACK_SIZE_KB stack. libInit: the compiled C of core's List, Array, String and Nat functions that the definitions call. libleanrt.a is the declared D5-N06 dependency: without it the link fails with `ld.lld: error: unable to find library -lleanrt`"
+      },
+      {
+        "name": "GMP (libgmp.a), libuv (libuv.a), LLVM libc++, libc++abi and libunwind, from the toolchain trees",
+        "kind": "runtime library",
+        "reason": "linked statically: GMP for large Nat values, libuv because the runtime starts its event loop when it initializes (the checker does no asynchronous IO), the C++ library and unwinder because the runtime is written in C++. Also linked: compiler-rt builtins and the C start files (clang_rt.crtbegin/crtend, crt1.o, crti.o, crtn.o) of each tree"
+      },
+      {
+        "name": "glibc (dynamic)",
+        "kind": "system library",
+        "reason": "linked against the glibc 2.27 link stubs in each tree (lib/glibc); at run time the host's C library is loaded: on H-01 /lib64/ld-linux-x86-64.so.2 with libc.so.6, libpthread.so.0, libdl.so.2 and librt.so.1, on H-02 the same libraries from /usr/aarch64-linux-gnu through qemu's -L. All of it is under /usr, so both hosts declare an empty runtime: the checker reads no file of a toolchain tree at check time"
+      },
+      {
+        "name": "QEMU 8.2.2 user-mode emulator (/usr/bin/qemu-aarch64-static), H-02 only",
+        "kind": "emulator",
+        "reason": "runs the AArch64 checker on the x86-64 laboratory host; -L /usr/aarch64-linux-gnu gives it the AArch64 dynamic loader and C library"
+      },
+      {
+        "name": "Checker/Main.lean (the driver)",
+        "kind": "trusted glue",
+        "reason": "hand-written, no theorem covers it: argument parsing and the usage (exit 2), reading the input files (bytes for records, UTF-8 text for the CNF and the certificate; exit 1 if a file cannot be read), and the verdict lines: the section 4 records line (failure-code names, lowercase hex, comma-separated references) and `accept` or `reject CODE LINE`. It calls decode_records, cnf_text and lrat_verdict and decides nothing itself"
+      },
+      {
+        "name": "LEAN_STACK_SIZE_KB=524288 (checker run environment, H-01 and H-02)",
+        "kind": "runtime setting",
+        "reason": "compiled Lean runs main on a thread with this stack. D006.Lrat.lines is not tail recursive (one frame per certificate line) and a certificate within the 4 MiB limit can have 4,194,304 lines; measured, that worst case needs between 192 and 256 MiB of stack on x86-64 and between 256 and 384 MiB on AArch64. The runtime's default, 1 GiB, also works, but the runtime reserves about 2.2 GiB of address space besides the stack, so 1 GiB leaves under 0.7 GiB of the 4 GiB cap for the heap; 512 MiB covers the worst case on both hosts and leaves about 1.2 GiB"
+      }
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+// S3r conformance: the constants of ML-KEM's number-theoretic transform,
+// derived as FIPS 203 (August 2024) defines them. Section 4.3 takes
+// zeta = 17, a primitive 256th root of unity modulo q = 3329, and orders
+// its powers by BitRev7, the reversal of a 7-bit number's bits; Appendix A
+// prints the results. Both the reversal and the exponentiation read and
+// place bits at positions computed from a loop index.
+edition 2026;
+module zetas {
+  type Zq = Mod[3329];
+
+  // Section 4.3: BitRev7(r) for 0 <= r < 128, bit i moving to bit 6 - i.
+  spec bit_rev7(r: Word[8]) -> Word[8] {
+    for i in 0..7 with b: Word[8] = 0 { b | (((r >> i) & 1) << (6 - i)) }
+  }
+
+  // zeta^e by squaring and multiplying, from the high bit of e to the low.
+  spec power(e: Word[8]) -> Zq {
+    for i in 0..8 with z: Zq = 1 {
+      if ((e >> (7 - i)) & 1) == 1 { z * z * 17 } else { z * z }
+    }
+  }
+
+  // Appendix A: zeta^BitRev7(i) for 0 <= i < 128, used by NTT and NTT^-1.
+  spec ntt_zetas() -> Zq^128 {
+    for i in 0..128 with z: Zq^128 = [0; 128] { z with [i] = power(bit_rev7(i as Word[8])) }
+  }
+
+  // Appendix A: zeta^(2 BitRev7(i) + 1) for 0 <= i < 128, used by
+  // MultiplyNTTs.
+  spec base_zetas() -> Zq^128 {
+    for i in 0..128 with z: Zq^128 = [0; 128] {
+      z with [i] = power((2 * bit_rev7(i as Word[8])) + 1)
+    }
+  }
+
+  spec first_row() -> Zq^16 { ntt_zetas()[..16] }
+
+  test "BitRev7 turns 1 into 64 and 0b0000011 into 0b1100000" {
+    (bit_rev7(1) == 64) && (bit_rev7(3) == 96) && (bit_rev7(127) == 127)
+  }
+
+  test "Appendix A: the first sixteen of the NTT's zetas" {
+    ntt_zetas()[..16] == [
+      1, 1729, 2580, 3289, 2642, 630, 1897, 848,
+      1062, 1919, 193, 797, 2786, 3260, 569, 1746,
+    ]
+  }
+
+  test "Appendix A: the first eight of MultiplyNTTs' zetas" {
+    base_zetas()[..8] == [17, 3312, 2761, 568, 583, 2746, 2649, 680]
+  }
+
+  test "zeta is a primitive 256th root of unity" {
+    (power(128) == 3328) && ((power(128) * power(128)) == 1)
+  }
+}

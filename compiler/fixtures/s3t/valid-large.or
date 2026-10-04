@@ -1,0 +1,26 @@
+edition 2026;
+module large {
+  spec modulus[bits in 254..257]() -> Int {
+    let power: Int = for i in 0..bits with value: Int = 1 { value * 2 };
+    power - 19
+  }
+  spec reduce[bits in 254..257](x: Int) -> Mod[(1 << bits) - 19] {
+    x as Mod[(1 << bits) - 19]
+  }
+  spec prior[bits in 254..257]() -> Mod[(1 << bits) - 19] {
+    let negative: Int = -1;
+    negative as Mod[(1 << bits) - 19]
+  }
+  spec same[bits in 254..257](x: Int) -> Bool {
+    (reduce[bits](x) as Int) == (x % modulus[bits]())
+  }
+  spec result() -> Mod[(1 << 255) - 19] { prior[255]() }
+  test "large moduli are exact at all three static sizes" {
+    same[254](-1) && same[255](-1) && same[256](-1)
+  }
+  test "the same written conversion is specialized separately" {
+    (((prior[254]() as Int) + 19) == 28948022309329048855892746252171976963317496166410141009864396001978282409983)
+      && (((prior[255]() as Int) + 19) == 57896044618658097711785492504343953926634992332820282019728792003956564819967)
+      && (((prior[256]() as Int) + 19) == 115792089237316195423570985008687907853269984665640564039457584007913129639935)
+  }
+}

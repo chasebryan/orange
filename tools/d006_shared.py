@@ -1844,8 +1844,8 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
     return {
         "schema_version": PROTOCOL_SCHEMA,
         "suite_version": SUITE_VERSION,
-        "status": "prerequisites_draft",
-        "status_meaning": "Shared inputs, contracts and toolchains are written. No candidate is built, no epoch is frozen and no execution evidence exists (0/14).",
+        "status": "runner_ready",
+        "status_meaning": "Shared inputs, contracts, toolchains, both candidates, their adapters, the runner and the observer are written. An epoch binds this overlay by digest; its archive, records and summary live under run/, never here.",
         "base": BASE,
         "shared_inputs": {"manifest": "shared-inputs/manifest.json", "input_manifest_sha256": manifest_sha256},
         "candidates": [
@@ -1858,13 +1858,14 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
             {"gap": "execution resource, timeout, host, environment, cache, and network contract unassigned", "by": "execution and host_matrix below"},
             {"gap": "candidate tool versions, dependency graphs, acquisitions, and D-018 admissions absent", "by": "protocol/toolchains.json for versions, build inputs and acquisitions; D-018 owner admissions stay open"},
             {"gap": "physical execution order, correction window, and materiality bands unassigned", "by": "execution_order, correction_window and materiality_bands below"},
+            {"gap": "candidate adapters, runner, observer, and isolation backend absent", "by": "rocq/ and lean4/ with their adapters, tools/d006_run.py (runner and observer) and tools/fs_sandbox.c under AM-05 to AM-09"},
+            {"gap": "versioned D-006 result and same-owner-replay schema absent", "by": "the d006-v0.3-record-1 records, archive manifest and d006-v0.3-summary-1 summary that tools/d006_run.py writes and verifies"},
         ],
         "remaining": [
             "D-004 acceptance absent",
             "D-005 acceptance absent",
             "D-018 owner admission of every candidate tool absent",
-            "candidate adapters, runner, observer, and isolation backend absent (next tranche)",
-            "versioned D-006 result and same-owner-replay schema absent (next tranche, with the runner that writes it)",
+            "DS-07 and owner review scopes R-01 to R-09 absent (owner-performed, AM-02)",
             "owner protocol review absent",
         ],
         "amendments": [
@@ -1872,6 +1873,11 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
             {"id": "AM-02", "rule": "The contributor builds both candidates and runs DS-01 to DS-06 on the owner's standing direction. DS-07 and R-01 to R-09 stay owner-performed; a contributor rehearsal is recorded separately, labeled as such, and never satisfies M-16 or an owner scope."},
             {"id": "AM-03", "rule": "Candidate tools run in the laboratory under a recorded contributor disposition. That disposition is not a D-018 admission, and selection stays blocked until the owner records admissions."},
             {"id": "AM-04", "rule": "An epoch binds the shared-input manifest, this overlay, the toolchain record, the runner and the observer by digest. Candidate artifacts are bound per run, so a correction inside the window adds a run to the same epoch while any shared change opens a new epoch for both candidates."},
+            {"id": "AM-05", "rule": "Isolation backend. Every step runs as laboratory uid 60606 with no supplementary groups, in new user, mount, IPC, UTS, PID and network namespaces, with every capability dropped and no_new_privs set, under tools/fs_sandbox.c unchanged: the toolchains, candidate sources and declared host files are read-only, only the step's run root, temporary directory and /dev/null are writable, and the environment is cleared to the allowlist. The sandbox's own limits hold inside every ceiling: 4 GiB of address space, 600 CPU seconds, 512 MiB per file, 1024 open files, 256 processes and no core files. A step stopped by one of them ends failed, crash, resource_exhaustion or timeout, never completed, and its record keeps the exit code or signal."},
+            {"id": "AM-06", "rule": "Read-only host surface. Every step may read /usr, /proc, /sys/devices/system/cpu and /dev/urandom. A candidate adapter may declare further host files its toolchain reads (Rocq reads /etc/ocamlfind.conf); each is listed in the adapter, recorded by digest and counted in M-06 and M-12."},
+            {"id": "AM-07", "rule": "Timed replay runs both candidates on the serial CPU set (one CPU) so that M-08 and M-09 compare like with like; builds and deterministic replays use both CPU sets as execution.cpu says."},
+            {"id": "AM-08", "rule": "For D6-F02, D6-F05, D6-F06 and D6-F09, identical deterministic outputs means the positive projection (build completion, every positive observation and fresh-certificate outcome, and the deterministic artifact manifest) equals the candidate's first serial run in the same workspace. Negative diagnostics, logs and timings are excluded."},
+            {"id": "AM-09", "rule": "A correction round is a new attempt in the same archive, run from a revision that descends from the epoch's and leaves every bound input byte-identical. Summaries read the latest attempt and list every earlier one beside it."},
         ],
         "host_matrix": [
             {"id": "H-01", "triple": "x86_64-unknown-linux-gnu", "kind": "native", "required": True, "cases": ["DS-01", "DS-02", "DS-03", "DS-04", "DS-05", "DS-06"]},
@@ -1881,8 +1887,8 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
         ],
         "host_matrix_note": "This matrix is the tested envelope for this suite only and does not accept D-011. A different envelope reruns DS-05.",
         "execution": {
-            "ceilings": {"measured_step": ceilings, "negative_case": {"wall_seconds": 120, "memory_bytes": 4 * 1024**3, "temp_bytes": 1024**3, "output_bytes": 1024**2, "pids": 1024}, "timed_replay_step": dict(ceilings, wall_seconds=600)},
-            "timeouts": "Each step runs in its own cgroup. At the wall ceiling the whole cgroup is killed and the step is timeout. A memory kill, a temp or output overrun, or the pid limit is resource_exhaustion. Neither is ever success.",
+            "ceilings": {"measured_step": ceilings, "negative_case": {"wall_seconds": 120, "memory_bytes": 4 * 1024**3, "temp_bytes": 1024**3, "output_bytes": 1024**2, "pids": 1024}, "timed_replay_step": dict(ceilings, wall_seconds=600), "solver_zero_wall": dict(ceilings, wall_seconds=0)},
+            "timeouts": "Each step runs in its own cgroup. At the wall ceiling the whole cgroup is killed and the step is timeout. A memory kill, a temp or output overrun, or the pid limit is resource_exhaustion. Neither is ever success. The solver_zero_wall class serves only DS-04's run-time case D4-R04.",
             "cpu": {"serial": "one CPU and the candidate's one-job build setting", "declared_parallel": "four CPUs and the candidate's declared parallel build setting"},
             "network": "Every measured step runs in a new network namespace with no interfaces.",
             "filesystem": "The toolchain tree and the candidate sources are read-only. Writes go only to the step's output root and temporary directory.",
@@ -1909,7 +1915,7 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
             {"metrics": ["M-11"], "measure": "reported by role only", "label": "none: M-11 plans audit effort and carries no better or worse label"},
         ],
         "nonclaims": [
-            "no epoch frozen and no candidate built, executed or measured",
+            "this overlay carries no result; an epoch's results are only in its archive under run/",
             "no D-004, D-005 or D-011 acceptance inferred",
             "no D-018 admission recorded",
             "no proof foundation selected, preferred or recommended",
@@ -1931,6 +1937,7 @@ GENERATED = {
 }
 TEXT_FILES = {"ds04-carry-save.cnf": lambda golden: cnf_text("B-C01"), "ds04-carry-save-unshifted.cnf": lambda golden: cnf_text("B-C02")}
 GOLDEN = "ds04-carry-save-golden.lrat"
+GENERATED_ROOTS = ("shared-inputs", "protocol")  # candidates (rocq/, lean4/) and epoch archives (run/) are not generated
 SEMANTICS = "semantics.md"
 MANIFEST = "manifest.json"
 
@@ -1969,7 +1976,7 @@ def main(arguments: list[str]) -> int:
     if arguments == ["check"]:
         golden = (root / "shared-inputs" / GOLDEN).read_text(encoding="ascii")
         expected = build(golden, (root / "shared-inputs" / SEMANTICS).read_bytes())
-        present = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+        present = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file() and path.relative_to(root).parts[0] in GENERATED_ROOTS}
         problems = sorted(set(expected) ^ present)
         problems += [name for name, data in expected.items() if name in present and (root / name).read_bytes() != data]
         for name in problems:

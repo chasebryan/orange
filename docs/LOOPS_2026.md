@@ -23,9 +23,31 @@ meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, extends
-> this document with `Bool`, comparisons, Euclidean division, and
-> conditionals, and lets a static index divide a loop index. Every source this
-> document accepts keeps its meaning under it.
+> this document with `Bool`, comparisons, Euclidean division, and conditionals,
+> and lets a static index divide a loop index.
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, lifts the
+> static-index limit of section 13: an index may depend on data, and is proved
+> in range from its type. [`MODULES_2026.md`](MODULES_2026.md), proposed under
+> OEP-0011, lets a module use others, [`MODULAR_2026.md`](MODULAR_2026.md),
+> proposed under OEP-0012, lets a loop accumulate a residue, as a Poly1305
+> accumulator does, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
+> OEP-0013, lets a step begin with `let` bindings, evaluated afresh at every
+> step, as the working variables of a SHA-256 round are, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a loop carry
+> several accumulators through a tuple pattern, as `with (a: Int, b: Int) = (0,
+> 1)`, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, lets a
+> step read and replace a run of elements at bounds that follow the loop index,
+> as `w with [4 * i..4 * i + 4] = b`, and [`SIZES_2026.md`](SIZES_2026.md),
+> proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
+> 0..blocks`, fixed in each instance of a sized function, and
+> [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, reads a block of
+> words in one conversion where a loop read them a byte at a time, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a loop's accumulators have a function's type parameter as their type, as
+> `with sum: K = 0`. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under
+> OEP-0019, lets a fill literal and an accumulator's array have up to 65,536
+> elements, as many as a loop's iterations. Every source this document accepts
+> keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
@@ -307,8 +329,9 @@ and its accumulator type. Its step's nodes count as any others. Each
 **Evaluation.** A loop costs one step and one more per iteration, beyond its
 first value's and every step's. A `loop_index` or `accumulator` read costs
 one step, and so does a `select`. An `update` or `fill` of an array of n
-elements costs n steps. A loop's steps run within the call of their function
-and add no call depth.
+elements costs ⌈n/64⌉ steps, as [`LOOKUPS_2026.md`](LOOKUPS_2026.md)
+section 8 amends this rule (OEP-0008 first charged n). A loop's steps run
+within the call of their function and add no call depth.
 
 Exhausting any budget, and any allocation failure, yields one resource
 diagnostic, no Core, and no value line. The deepest sources the limits admit,

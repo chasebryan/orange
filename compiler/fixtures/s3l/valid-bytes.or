@@ -1,0 +1,76 @@
+// S3l conformance: bytes as the standards write them. A byte string "..."
+// is an array of `Word[8]`, one element per byte of its text, with the
+// escapes of a string literal; hex"..." writes such an array as hex digits in
+// pairs, spaced wherever the reader likes between bytes; `++` joins two
+// arrays of one element type; `x[a..b]` is the array of the elements a
+// through b - 1 of x; and `x with [a..b] = v` is x with those elements
+// replaced by v. Every bound is an integer literal or a fixed multiple of a
+// loop index plus a constant, so every slice's length and range are proved
+// before the program runs.
+edition 2026;
+module bytes {
+  // A byte string holds the ASCII codes of its characters.
+  spec greeting() -> Word[8]^8 { "Hi There" }
+
+  // Escapes write a quote, a backslash, a line feed, a carriage return, a
+  // tab, a zero byte and any byte in hex.
+  spec escapes() -> Word[8]^7 { "\"\\\n\r\t\0\x7f" }
+
+  // RFC 8439 section 2.8.2: a 32-bit constant and a 64-bit IV, spaced as
+  // two groups; hex digits may be of either case.
+  spec nonce() -> Word[8]^12 { hex"07000000 4041424344454647" }
+
+  spec mixed_case() -> Word[8]^4 { hex"de AD Be ef" }
+
+  // `++` joins arrays of any one element type, left to right; a fill
+  // supplies the zeros that the declared length leaves.
+  spec padded() -> Word[8]^16 { "abc" ++ hex"80" ++ [0; 8] ++ hex"00 00 00 18" }
+
+  spec joined_words() -> Word[32]^5 { [1, 2] ++ [3, 4] ++ [5] }
+
+  spec joined_flags() -> Bool^3 { [true, false] ++ [true] }
+
+  // Slices with literal bounds; an open bound is the start or the end.
+  spec constant() -> Word[8]^4 { nonce()[..4] }
+
+  spec iv() -> Word[8]^8 { nonce()[4..] }
+
+  spec middle() -> Word[8]^2 { greeting()[3..5] }
+
+  // Halves exchanged: a rotation by four bytes.
+  spec rotated() -> Word[8]^8 {
+    let x: Word[8]^8 = "ABCDwxyz";
+    x[4..] ++ x[..4]
+  }
+
+  // Four bytes, most significant first, as one word.
+  spec word(b: Word[8]^4) -> Word[32] {
+    ((b[0] as Word[32]) << 24) | ((b[1] as Word[32]) << 16) | ((b[2] as Word[32]) << 8)
+      | (b[3] as Word[32])
+  }
+
+  // Slices in a loop: the bounds of step i are 4i and 4i + 4.
+  spec big_endian(b: Word[8]^16) -> Word[32]^4 {
+    for i in 0..4 with w: Word[32]^4 = [0; 4] { w with [i] = word(b[4 * i..4 * i + 4]) }
+  }
+
+  spec key_words() -> Word[32]^4 { big_endian(hex"00010203 04050607 08090a0b 0c0d0e0f") }
+
+  // A slice update replaces a run of elements; here each step writes one
+  // byte taken from the other end, reversing the array.
+  spec reversed(b: Word[8]^8) -> Word[8]^8 {
+    for i in 0..8 with out: Word[8]^8 = b { out with [i..i + 1] = b[7 - i..8 - i] }
+  }
+
+  spec reversed_iv() -> Word[8]^8 { reversed(iv()) }
+
+  // Two four-byte runs written in place, one per step.
+  spec spliced() -> Word[8]^8 {
+    for i in 0..2 with out: Word[8]^8 = "........" {
+      out with [4 * i..4 * i + 4] = if i == 0 { greeting()[..4] } else { "wxyz" }
+    }
+  }
+
+  // An open slice update replaces everything from its start to the end.
+  spec overwritten() -> Word[8]^8 { greeting() with [3..] = "e!!!!" }
+}

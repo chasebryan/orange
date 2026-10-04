@@ -1,0 +1,7 @@
+// S3r rejection: a computed amount built with an operator is grouped, as
+// in `x << (i + 1)`; a shift takes exactly two operands and has no
+// precedence over the other operator groups.
+edition 2026;
+module grouping {
+  spec next(x: Word[32], i: Int) -> Word[32] { x << i + 1 }
+}

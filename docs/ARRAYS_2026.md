@@ -4,6 +4,12 @@ Status: proposed S3d semantics under OEP-0007, in owner review; not accepted
 
 Edition: `2026`
 
+> S3s, proposed in [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md) under
+> OEP-0023, extends this slice with rank-two arrays through row aliases and
+> chained index selections. Its shape limits and diagnostics replace the
+> blanket rejection of arrays of arrays below. Repeated `^` type syntax
+> remains rejected.
+
 Snapshot: 2026-09-28
 
 This document defines slice S3d of Orange 2026: fixed-length arrays of `Int`
@@ -24,10 +30,34 @@ meaning. It accepts no D-004 candidate.
 > [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008, extends this
 > document with bounded loops, indices computed from loop indices, updates of
 > one element, and fill literals, which lift the absence of loops described in
-> section 12, and [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
+> section 12, [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
 > OEP-0009, adds `Bool`, comparisons, Euclidean division, and conditionals on
-> top of those. Every source this document accepts keeps its meaning under
-> both.
+> top of those, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010,
+> lets an index depend on data, [`MODULES_2026.md`](MODULES_2026.md), proposed
+> under OEP-0011, lets a module use others,
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds arrays of
+> residues, as `Mod[3329]^256`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed
+> under OEP-0013, lets a loop's step name the values it computes before the
+> array it returns, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under
+> OEP-0014, adds tuples, whose elements may be arrays, as `(Word[64]^4,
+> Word[64])`, though no array holds a tuple, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, writes an array of
+> bytes as a string, as `"abc"` or `hex"00 1f"`, joins two arrays with `++`, and
+> takes a run of elements with a slice, as `x[4..8]`, at bounds proved in range,
+> and [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, writes a length
+> with a function's size parameters, as `Word[8]^(64 * blocks)`, and checks it
+> in each instance, from 1 through 256, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, converts an array of words in a byte order to words
+> of another width or to a number, as `block as big Word[32]^16`, where a
+> conversion of an array is otherwise `ORC0215`, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets an array's element be a function's type parameter, as `K^n`, and lists
+> array types among a function's types. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets an array and an array literal hold up to 65,536
+> elements, where this document admits 256. [`TESTS_2026.md`](TESTS_2026.md),
+> proposed under OEP-0020, defines `==` and `!=` on arrays, which compare
+> every pair of elements, where this document defines no operator on an array.
+> Every source this document accepts keeps its meaning under all thirteen.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

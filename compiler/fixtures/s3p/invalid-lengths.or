@@ -1,0 +1,18 @@
+// S3p rejection: an array has 1 through 65,536 elements. A longer array
+// type, fill, join, slice, or word conversion is refused where it is
+// written, and an index is still proved in range of the array it reads: a
+// 16-bit word ranges over 65,536 elements, so it indexes no shorter array,
+// and a 32-bit word indexes none.
+edition 2026;
+module lengths {
+  spec over(x: Word[8]^65537) -> Int { 1 }
+  spec fill() -> Word[8]^65536 { [0; 65537] }
+  spec join() -> Word[8]^65536 { [0; 65536] ++ [0; 1] }
+  spec slice(x: Word[8]^65536) -> Word[8]^65536 { x[1..65537] }
+  spec short(t: Word[8]^65535, i: Word[16]) -> Word[8] { t[i] }
+  spec wide(t: Word[8]^65536, i: Word[32]) -> Word[8] { t[i] }
+  spec words(x: Word[64]^8193) -> Word[8]^8 {
+    let b: Word[8]^65544 = x as little Word[8]^65544;
+    b[..8]
+  }
+}

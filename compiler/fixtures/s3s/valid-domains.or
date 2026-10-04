@@ -1,0 +1,29 @@
+// Mathematical integers, truth values, and residues retain distinct leaves.
+edition 2026;
+module domains {
+  type IntegerRow = Int^2;
+  type IntegerMatrix = IntegerRow^2;
+  type TruthRow = Bool^2;
+  type TruthMatrix = TruthRow^2;
+  type ResidueRow = Mod[7]^2;
+  type ResidueMatrix = ResidueRow^2;
+
+  spec integers() -> IntegerMatrix { [[-1, 2], [3, -4]] }
+  spec truths() -> TruthMatrix { [[true, false], [false, true]] }
+  spec residues() -> ResidueMatrix {
+    let seven: Int = 7;
+    let eight: Int = 8;
+    [[3, -3], [seven as Mod[7], eight as Mod[7]]]
+  }
+  spec chosen() -> IntegerMatrix { if truths()[0][0] { integers() } else { [[0; 2]; 2] } }
+  spec packaged() -> (IntegerMatrix, TruthMatrix, ResidueMatrix) {
+    (integers(), truths(), residues())
+  }
+
+  test "integer leaves retain signs" { chosen() == [[-1, 2], [3, -4]] }
+  test "truth leaves compare recursively" { truths() == [[true, false], [false, true]] }
+  test "residue leaves retain least-residue meaning" { residues() == [[3, 4], [0, 1]] }
+  test "a tuple can contain matrices from different domains" {
+    packaged() == ([[-1, 2], [3, -4]], [[true, false], [false, true]], [[3, 4], [0, 1]])
+  }
+}

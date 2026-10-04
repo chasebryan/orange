@@ -3,7 +3,7 @@
 Status: current direct-dependency inventory and gap record; not a reproducible-
 build claim or legal approval
 
-Inventory amendment: 2026-09-28
+Inventory amendment: 2026-10-03
 
 Hosted execution snapshot: 2026-07-11
 
@@ -71,7 +71,7 @@ nondeterminism; it is not independently reproduced release evidence.
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
 | `workflow-online-audit.yml` | `main`, scheduled, and manual upstream-metadata observation | Checkout and zizmor | Pulls the digest-pinned zizmor image and intentionally queries current GitHub metadata |
 
-Job deadlines are exact: `ci.yml`, `external-links.yml`, and
+Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and
 `workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits
 10 minutes; and `scorecard.yml` permits 20 minutes.
 
@@ -150,7 +150,7 @@ identities.
 | [`zizmorcore/zizmor-action`](https://github.com/zizmorcore/zizmor-action/tree/cc914d7f3750a2d13d75c7f184a1060aa0e9d482), used by required CI and the online audit | `cc914d7f3750a2d13d75c7f184a1060aa0e9d482` (`v0.6.4`) | [MIT at the selected revision](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/LICENSE); the selected revision's [version map](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/support/versions) supplies the runtime image digest | Composite Bash Action requiring ambient Docker; Orange selects zizmor 1.26.1, whose image digest is recorded in section 4 |
 | [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action/tree/a1d282b36b6f3519aa1f3fc636f609c47dddb294), used by dependency review | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` (`v5.0.0`) | [MIT at the selected revision](https://github.com/actions/dependency-review-action/blob/a1d282b36b6f3519aa1f3fc636f609c47dddb294/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and consumes current GitHub dependency data; neither the bundle closure nor API response is archived here |
 | [`actions/upload-artifact`](https://github.com/actions/upload-artifact/tree/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a), used by Scorecard | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (`v7.0.1`) | [MIT at the selected revision](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the mutable hosted artifact service; service implementation and storage are not reproducible inputs |
-| [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/1c5b675653bb5c22dbe9b12b556ec555138e09fd), used by Scorecard | `1c5b675653bb5c22dbe9b12b556ec555138e09fd` (`v4.38.1`) | [MIT at the selected revision](https://github.com/github/codeql-action/blob/1c5b675653bb5c22dbe9b12b556ec555138e09fd/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the hosted code-scanning service; neither service behavior nor the transitive bundle is fixed here |
+| [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2), used by Scorecard | `2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2` (`v4.38.2`) | [MIT at the selected revision](https://github.com/github/codeql-action/blob/2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the hosted code-scanning service; neither service behavior nor the transitive bundle is fixed here |
 
 The owner admits Checkout v7.0.1 as a direct replacement for v7.0.0. The need
 is its narrower handling of untrusted pull-request, ref, and Git-configuration
@@ -178,9 +178,7 @@ a `collect` input whose default passes `--collect=default`, the value zizmor
 replaces v4.37.0 with an unchanged descriptor, inputs, license, and Node 24
 entry points; its shared bundle updates the upload HTTP stack (undici 6.28.0
 and `@octokit/request` 10.0.16) and now exports `CODEQL_ACTION_JOB_RUN_UUID`
-from the upload step. v4.38.2 was deferred because its changes sit outside the
-upload path, chiefly a new default CodeQL bundle, and it was published inside
-the seven-day cooldown. The need is to stay on each upstream's maintained release
+from the upload step. The need is to stay on each upstream's maintained release
 line; retaining the earlier revisions was rejected because none of the
 replacements changes Orange's inputs, while drift makes each later update
 larger. The direct Action graph, permissions, network access, runtime class,
@@ -188,6 +186,28 @@ removal path, and Orange claim/TCB classification are unchanged; the bundled
 transitive graphs remain an explicit gap. A runtime regression rolls back the
 affected pin together with its validator contract and reviewed digests. A
 compromise or end-of-life event fails affected workflows closed until the
+owner admits another exact revision.
+
+The owner now admits CodeQL `upload-sarif` v4.38.2, surfaced by Dependabot
+pull request #233, as a direct replacement for v4.38.1. Its upstream release
+was published on 2026-09-24, so the seven-day cooldown has elapsed. The need
+is to keep this repository-tooling dependency on the maintained patch line;
+retaining the deferred revision was rejected after reviewing the exact
+[source comparison](https://github.com/github/codeql-action/compare/1c5b675653bb5c22dbe9b12b556ec555138e09fd...2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2).
+The MIT license, upload descriptor, inputs, and Node 24 entry-point paths are
+unchanged. The release changes the default CodeQL bundle to 2.27.1 and shared
+analysis/setup utilities; its source lock updates js-yaml 5.4.1 to 5.4.2,
+yaml 2.9.0 to 2.9.1, and development-only eslint-plugin-jsdoc 64.3.8 to
+64.5.2. The upload-specific source files are unchanged, while the shared
+compiled bundle changes. Orange does not select a CodeQL analyzer bundle in
+this SARIF-only step. This is a bounded solo review, not independent assurance.
+The direct Action graph, permissions, install/network boundary, removal path,
+and repository/build classification outside the logical TCB remain unchanged.
+The exact Git revision and upstream repository are the retrieval locators;
+Action bytes, transitive closure, ambient Node, and hosted services are still
+not independently archived or reproducible. A runtime regression rolls back
+the pin, inventory, validator contract, and reviewed digests together. A
+compromise or end-of-life event fails the affected workflow closed until the
 owner admits another exact revision.
 
 The pinned zizmor composite Action also declares
@@ -279,6 +299,14 @@ The required invariant check invokes repository-owned Bash and Python files:
   per-host concurrency at 2, total concurrency at 16, retries at 3, and each
   request at 20 seconds.
 
+D-004's `baseline/` stores 17 byte-identical inputs rather than a complete
+repository. The link helper remaps only local URLs within that stored baseline
+to the complete source tree at commit
+`265ce9ca1f3bc7060d1a6db9f822f2c43494ab95`, where all 17 original paths have
+the same bytes. It checks those historical targets and fragments over HTTPS;
+live local links keep their ordinary filesystem checks. Stored evidence, its
+digests, and the endpoint exclusions remain unchanged.
+
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does
 not grant third parties permission to reuse those files.
@@ -296,7 +324,7 @@ tools and services are ambient rather than admitted, fixed inputs:
 | Bash and Python 3 standard library | First-party checks and composite Actions | Runner-provided executables; exact versions and binary/package digests are not captured. No PyPI packages are installed by first-party checks |
 | Git | Checkout implementation and validator repository inventory | The first-party validator selects `/usr/bin/git`, fixes child-command lookup to `/usr/bin:/bin`, requires a literal local `.git` directory with regular config/index files and no common-directory or object alternates, clears inherited/system/global Git controls, and overrides the local settings relevant to its commands; other local config remains an ambient input, and the runner executable's exact version, package provenance, license, and binary digest are not captured |
 | Docker daemon, kernel, and CPU | zizmor and Scorecard containers | Runner-provided execution boundary; versions, configuration, and host identity are not captured |
-| `cat`, `cc`, `cmp`, `curl`, `hostname`, `mount`, `readlink`, `sha256sum`, `tar`, `stat`, `install`, `mktemp`, `rm`, `uname`, `sudo`, `unshare`, and `setpriv` | Relay copied-command output; build the protected Landlock launcher; compare captured sources; download, verify, extract, inspect, install, clean temporary tools; set the fixed gate hostname; compare namespace identities; bind the selected toolchain read-only; hide `/home`; create private mount, PID, `/proc`, network, IPC, and UTS namespaces; and restore an unprivileged copied-command identity when user-namespace mapping is unavailable | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured. Output relay, C compilation, Landlock ABI and enforcement, mount/namespace availability, passwordless namespace-setup policy, and privilege dropping depend on the mutable runner image and kernel |
+| `cat`, `cc`, `cmp`, `curl`, `hostname`, `mount`, `readlink`, `sha256sum`, `sleep`, `tar`, `stat`, `install`, `mktemp`, `rm`, `uname`, `sudo`, `unshare`, and `setpriv` | Relay copied-command output; build the protected Landlock launcher; compare captured sources; download, verify, extract, inspect, install, clean temporary tools; set the fixed gate hostname; compare namespace identities; bind the selected toolchain read-only; hide `/home`; create private mount, PID, `/proc`, network, IPC, and UTS namespaces; and, when unprivileged user-namespace mapping is unavailable, create through `sudo` a user namespace owned by the invoking account, map it to that identity from outside, and restore that unprivileged copied-command identity | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured. Output relay, C compilation, Landlock ABI and enforcement, mount/namespace availability, passwordless namespace-setup policy, and privilege dropping depend on the mutable runner image and kernel |
 | GNU Make | Protected compiler recipe and optional local `make check` entry point | Required hosted CI invokes the compiler target with built-in rules and variables disabled; exact binary version, provenance, and package license are unrecorded |
 | Artifact, code-scanning, GHCR, and external web services | Storage, analysis upload, image retrieval, and link observations | Mutable hosted services; terms and service behavior are external assumptions, not repository-pinned software inputs |
 

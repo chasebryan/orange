@@ -1,0 +1,31 @@
+// S3q conformance: the report of tests that fail. The program is valid, so
+// `orangec check` accepts it; `orangec test` runs every test, prints each
+// failed `left == right` with the values it compared and where they first
+// differ, and exits with status 1.
+edition 2026;
+module failing {
+  spec rotate(x: Word[32]) -> Word[32] { x <<< 7 }
+
+  test "a word, rotated" { rotate(0x80000000) == 0x40 }
+
+  test "a word, rotated the wrong way" { rotate(1) == 0x100 }
+
+  test "an array" {
+    let x: Word[8]^4 = [1, 2, 3, 4];
+    x == [1, 2, 9, 4]
+  }
+
+  test "a tuple holding an array" {
+    let p: (Word[8], Word[8]^3) = (1, [2, 3, 4]);
+    p == (1, [2, 3, 5])
+  }
+
+  test "a residue" {
+    let a: Mod[7] = 3;
+    (a * 5) == 2
+  }
+
+  test "two claims at once" { (rotate(1) == 0x80) && (rotate(2) == 0x101) }
+
+  test "unequal, as claimed" { rotate(1) != rotate(2) }
+}

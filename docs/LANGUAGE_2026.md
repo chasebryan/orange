@@ -51,6 +51,104 @@ unresolved.
 > operators, Euclidean division, and conditionals. It gives meaning to tokens
 > the lexer already produces, and it adds no token and no reserved word:
 > `if` and `else` are recognized by position, and `true` and `false` by scope.
+>
+> The S3g slice proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under
+> OEP-0010, also in review, builds on S3f with indices that depend on data,
+> each proved in range from its type, and cheaper updates. It changes no
+> grammar.
+>
+> The S3h slice proposed in [`MODULES_2026.md`](MODULES_2026.md) under
+> OEP-0011, also in review, builds on S3g with programs of more than one
+> module: `use` declarations at the head of a module, and calls qualified by a
+> module name, as in `sha256::compress(h, block)`. It adds no token and no
+> reserved word: `use` is recognized by position, and `::` is the existing
+> `DOUBLE_COLON` token.
+>
+> The S3i slice proposed in [`MODULAR_2026.md`](MODULAR_2026.md) under
+> OEP-0012, also in review, builds on S3h with the type `Mod[m]` of the
+> integers modulo a constant, whose modulus is an expression, as in
+> `Mod[(1 << 255) - 19]`, and `type` declarations at the head of a module. It
+> adds no token and no reserved word: `type` is recognized by position, and
+> `Mod` is an ordinary type name that takes an expression in brackets.
+>
+> The S3j slice proposed in [`BLOCKS_2026.md`](BLOCKS_2026.md) under
+> OEP-0013, also in review, builds on S3i with blocks: a loop's step and each
+> branch of a conditional may begin with `let` bindings, as a function's body
+> does. It adds no token and no reserved word: `let` is recognized by
+> position, as in S3c.
+>
+> The S3k slice proposed in [`TUPLES_2026.md`](TUPLES_2026.md) under
+> OEP-0014, also in review, builds on S3j with tuples: a tuple type `(T, U)`,
+> a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns that
+> name each element where a binding or a loop's accumulator is declared. It
+> adds no token and no reserved word.
+>
+> The S3l slice proposed in [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015,
+> also in review, builds on S3k with bytes: a string is the array of its
+> bytes, `hex"..."` writes one in hex, `++` joins two arrays, and `x[a..b]`
+> takes a run of elements at bounds proved in range. It adds two tokens,
+> `HEX_STRING` and `PLUS_PLUS`, and no reserved word: `hex` is a name unless a
+> quote follows it directly.
+>
+> The S3m slice proposed in [`SIZES_2026.md`](SIZES_2026.md) under OEP-0016,
+> also in review, builds on S3l with sizes: a `spec` may declare size parameters
+> with finite ranges, as `spec pad[len in 1..120](m: Word[8]^len)`, and stands
+> for one function for each of their values, each checked as if written out. It
+> adds no token and no reserved word: `in` is a name except between a size
+> parameter's name and its first bound.
+>
+> The S3n slice proposed in [`ORDER_2026.md`](ORDER_2026.md) under OEP-0017,
+> also in review, builds on S3m with byte orders: `x as big T` and
+> `x as little T` read words as words of another width, as a number, or as a
+> residue, and write a number as words, first word most significant or least.
+> It adds no token and no reserved word: `big` and `little` are names except
+> directly after `as` and before a type.
+>
+> The S3o slice proposed in
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md) under OEP-0018, also in
+> review, builds on S3n with type parameters: a `spec` may list the types it is
+> written for, as `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for
+> one function for each, each checked as if written out; a call names its
+> instance by its types, `pow[F](x, e)`, or lets its arguments' types and its
+> place choose. It adds no token and no reserved word: braces after a size
+> parameter's `in` hold a list of types.
+>
+> The S3p slice proposed in [`LENGTHS_2026.md`](LENGTHS_2026.md) under
+> OEP-0019, also in review, builds on S3o with long arrays and evaluation
+> controls: an array, an array literal, and a byte string hold up to 65,536
+> elements, so a `Word[16]` indexes the longest with no check at run time, and
+> `orangec eval --steps`, `--spec`, and `--stats` set a run's step budget,
+> evaluate only the functions named, and report the steps each used. It adds
+> no token and no reserved word.
+>
+> The S3q slice proposed in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020,
+> also in review, builds on S3p with known-answer tests and whole-value
+> equality: `test "TITLE" { claim }` may stand among a module's functions, its
+> claim a `Bool` checked as a function without parameters, `==` and `!=`
+> compare arrays and tuples whole, and `orangec test` runs the root module's
+> tests and reports each. It adds no token and no reserved word: `test`
+> followed by a string begins a test only where a module member may begin.
+>
+> The S3r slice proposed in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under
+> OEP-0021, also in review, builds on S3q with computed amounts: a shift or
+> rotation may take any `Int` or word expression as its amount, `x <<< r` or
+> `x >> (i % 8)`, a shift by the width or more giving 0, a negative amount
+> shifting the other way, and a rotation turning by its amount modulo the
+> width. An amount written as one integer literal is still from 0 through
+> n - 1. It adds no token, reserved word, or diagnostic code.
+>
+> The S3s slice proposed in [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md)
+> under OEP-0023, also in review, builds on S3r with rank-two arrays:
+> `type Row = Word[32]^4; type Matrix = Row^4;` and `m[i][j]`. Both axes
+> are checked and their scalar product is at most 65,536. It adds chained
+> index selections, with no new token or reserved word; repeated `^` type
+> syntax remains rejected.
+>
+> The S3t slice proposed in [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md)
+> under OEP-0024, also in review, builds on S3s with own finite size names in
+> modulus expressions, as `Mod[(1 << bits) - 19]`. Every concrete instance is
+> checked eagerly and retains its exact residue domain. It changes no grammar,
+> token or reserved word; global aliases and finite type lists remain concrete.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

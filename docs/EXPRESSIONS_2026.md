@@ -23,12 +23,42 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > [!NOTE]
 > [`BINDINGS_2026.md`](BINDINGS_2026.md), proposed under OEP-0006, extends this
 > document with typed `let` bindings and explicit `as` conversions,
-> [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds
-> fixed-length arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed
-> under OEP-0008, adds bounded loops on top of those, and
+> [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds fixed-length
+> arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed under
+> OEP-0008, adds bounded loops on top of those,
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
-> `Bool`, comparisons, Euclidean division, and conditionals. Every source this
-> document accepts keeps its meaning under all four.
+> `Bool`, comparisons, Euclidean division, and conditionals,
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, adds indices
+> that depend on data, [`MODULES_2026.md`](MODULES_2026.md), proposed under
+> OEP-0011, adds programs of more than one module, whose modules call each
+> other's functions by module name, [`MODULAR_2026.md`](MODULAR_2026.md),
+> proposed under OEP-0012, adds the integers modulo a constant and `type`
+> declarations, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
+> adds `let` bindings at the start of a loop's step and of each branch, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples, the
+> selection `.k` of an element, and tuple patterns, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte strings,
+> the concatenation operator `++` in a group of its own, and slices, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
+> parameters to a `spec` and sizes to its calls, as `sha256[2](m)`, and
+> [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lets `as` name a
+> byte order, as `block as big Word[32]^16`, which reads words as words of
+> another width or as one number, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a `spec` list the types it is written for, as `K in {Word[32],
+> Word[64]}`, and stands for one function for each.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, lets `orangec
+> eval` set the step budget, from 1 through 1,073,741,824 steps, evaluate only
+> the functions it names, and report the steps each used.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, adds known-answer
+> tests beside a module's functions, `==` and `!=` on arrays and tuples, and
+> `orangec test`, which runs a module's tests.
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md), proposed under OEP-0021, replaces the
+> rule of section 8 that an amount is an unsigned literal: any amount that is
+> not one integer literal is an `Int` or word expression, and section 9's
+> shifts and rotations are extended to every amount, a shift by the width or
+> more giving 0 and a rotation turning by its amount modulo the width. Every
+> source this document accepts keeps its meaning under all sixteen.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

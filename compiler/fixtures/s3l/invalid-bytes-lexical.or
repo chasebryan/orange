@@ -1,0 +1,14 @@
+// S3l conformance: malformed hex strings. A hex string holds hex digits in
+// pairs, one pair per byte, and spaces between bytes. Each is reported at
+// the first character that breaks that rule: a character that is neither a
+// hex digit nor a space, or a digit whose partner is missing.
+edition 2026;
+module hex_lexical {
+  spec letter() -> Word[8]^2 { hex"00 0g" }
+  spec prefixed() -> Word[8]^1 { hex"0x11" }
+  spec punctuated() -> Word[8]^2 { hex"00:11" }
+  spec odd() -> Word[8]^2 { hex"00 112" }
+  spec split() -> Word[8]^2 { hex"0 0 11" }
+  spec escaped() -> Word[8]^1 { hex"\x00" }
+  spec unterminated() -> Word[8]^1 { hex"00 }
+}

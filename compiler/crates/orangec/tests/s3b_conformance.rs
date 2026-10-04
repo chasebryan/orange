@@ -16,6 +16,7 @@ const S3B_CONFORMANCE_SOURCE: &str = include_str!("s3b_conformance.rs");
 const LEXER_SOURCE: &str = include_str!("../../orange-compiler/src/lexer.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 
@@ -281,14 +282,14 @@ const CASES: [Case; 14] = [
     Case {
         fixture: "invalid-shift-amounts.or",
         expectation: Expectation::Failure {
-            codes: &["ORC0216", "ORC0216", "ORC0216", "ORC0216", "ORC0216"],
-            locations: &["5:49", "6:59", "7:49", "8:63", "9:50"],
+            codes: &["ORC0216", "ORC0216", "ORC0216", "ORC0216"],
+            locations: &["6:49", "7:59", "8:49", "9:58"],
             messages: &[
                 "`<<` on `Word[8]` needs an amount from 0 through 7",
                 "`>>>` on `Word[32]` needs an amount from 0 through 31",
                 "`>>` on `Word[16]` needs an amount from 0 through 15",
                 "`<<<` on `Word[64]` needs an amount from 0 through 63",
-                "amount must be an unsigned integer literal",
+                "a literal amount is from 0 through 63",
             ],
         },
         rules: &["S3B-SHIFT-01", "S3B-DIAG-01", "S3B-DETERMINISM-01"],
@@ -461,77 +462,77 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3B-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "typed_core_is_postorder_with_exact_types_spans_and_operations",
         rules: &["S3B-CHECK-01", "S3B-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "calls_resolve_in_any_order_and_acyclic_graphs_are_accepted",
         rules: &["S3B-CALL-01", "S3B-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "call_cycles_are_reported_once_at_the_closing_call",
         rules: &["S3B-CYCLE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "call_cycles_are_reported_through_calls_with_other_errors",
         rules: &["S3B-CYCLE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "long_call_cycles_have_bounded_messages",
         rules: &["S3B-CYCLE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "names_and_calls_resolve_only_to_parameters_and_typed_specs",
         rules: &["S3B-NAME-01", "S3B-CALL-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "calls_check_arity_argument_types_and_result_types",
         rules: &["S3B-CALL-01", "S3B-CHECK-01", "S3B-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "operators_are_defined_only_for_their_types",
         rules: &["S3B-OP-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
-        test: "shift_and_rotation_amounts_are_literals_below_the_width",
+        source_path: "src/semantics/tests.rs",
+        test: "literal_shift_and_rotation_amounts_are_below_the_width",
         rules: &["S3B-SHIFT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "every_word_width_has_exact_literal_bounds",
         rules: &["S3B-TYPE-01", "S3B-LIT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "only_exact_decimal_word_widths_resolve",
         rules: &["S3B-TYPE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "unresolved_signatures_are_reported_once_without_cascades",
         rules: &["S3B-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "body_errors_precede_call_graph_errors_and_all_errors_are_ordered",
         rules: &["S3B-CYCLE-01", "S3B-DIAG-01", "S3B-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "expression_events_and_core_nodes_follow_the_normative_accounting",
         rules: &["S3B-CORE-01", "S3B-RES-EVENT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "expression_storage_failures_return_no_partial_core",
         rules: &["S3B-RES-FAIL-01"],
     },
@@ -763,6 +764,7 @@ fn unit_source(source_path: &str) -> &'static str {
         "src/lexer.rs" => LEXER_SOURCE,
         "src/parser.rs" => PARSER_SOURCE,
         "src/semantics.rs" => SEMANTICS_SOURCE,
+        "src/semantics/tests.rs" => SEMANTICS_TESTS_SOURCE,
         "src/core.rs" => CORE_SOURCE,
         "src/eval.rs" => EVAL_SOURCE,
         _ => panic!("unmapped S3b evidence source {source_path}"),
@@ -770,17 +772,48 @@ fn unit_source(source_path: &str) -> &'static str {
 }
 
 /// Requires `test` to be declared exactly once, as a `#[test]` function
-/// directly inside the source's single `#[cfg(test)] mod tests` module.
+/// directly inside the source's single `#[cfg(test)] mod tests` module. The
+/// module is written inline, or in its own `tests.rs` file that its parent
+/// declares once as `#[cfg(test)] mod tests;` with no other attribute.
 fn assert_unit_test_declared(source_path: &str, test: &str) {
     let source = unit_source(source_path);
-    let marker = "\n#[cfg(test)]\nmod tests {\n";
-    assert_eq!(
-        source.matches(marker).count(),
-        1,
-        "{source_path} must have exactly one unconditional test module"
-    );
-    let (_, tests) = source.split_once(marker).unwrap();
-    let declaration = format!("\n    #[test]\n    fn {test}() {{\n");
+    let (tests, declaration) = match source_path.strip_suffix("/tests.rs") {
+        Some(parent) => {
+            let parent_path = format!("{parent}.rs");
+            let parent_source = unit_source(&parent_path);
+            assert_eq!(
+                parent_source.matches("mod tests").count(),
+                1,
+                "{parent_path} must declare exactly one test module"
+            );
+            assert_eq!(
+                parent_source
+                    .matches("\n#[cfg(test)]\nmod tests;\n")
+                    .count(),
+                1,
+                "{parent_path} must declare its test module unconditionally"
+            );
+            assert!(
+                !parent_source.contains("]\n#[cfg(test)]\nmod tests;"),
+                "{parent_path} must not add an attribute to its test module"
+            );
+            assert!(
+                !source.contains("#!["),
+                "{source_path} must not carry an inner attribute"
+            );
+            (source, format!("\n#[test]\nfn {test}() {{\n"))
+        }
+        None => {
+            let marker = "\n#[cfg(test)]\nmod tests {\n";
+            assert_eq!(
+                source.matches(marker).count(),
+                1,
+                "{source_path} must have exactly one unconditional test module"
+            );
+            let (_, tests) = source.split_once(marker).unwrap();
+            (tests, format!("\n    #[test]\n    fn {test}() {{\n"))
+        }
+    };
     assert_eq!(
         tests.matches(&declaration).count(),
         1,
@@ -975,8 +1008,8 @@ fn s3b_expression_nesting_limit_is_exact_for_every_opener() {
         assert!(
             stderr.contains(
                 "expression nesting exceeds the 64-level limit \
-                 for groups, calls, arrays, indices, loops, conditionals, updates, and \
-                 prefix operators"
+                 for groups, calls, arrays, indices, loops, conditionals, updates, moduli, \
+                 and prefix operators"
             ),
             "{name}:\n{stderr}"
         );

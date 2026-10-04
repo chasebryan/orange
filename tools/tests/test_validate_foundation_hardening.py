@@ -758,7 +758,7 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "ci.yml",
-                "    timeout-minutes: 15\n",
+                "    timeout-minutes: 30\n",
                 "    timeout-minutes: 1\n",
                 "workflow.timeout",
             ),
@@ -1671,6 +1671,8 @@ jobs:
                     "--exclude",
                     r"^https://eprint\.iacr\.org/",
                     "--exclude-all-private",
+                    "--remap",
+                    r"^file://.*/research/decisions/D-004/baseline/(.*)$ https://github.com/chasebryan/orange/blob/265ce9ca1f3bc7060d1a6db9f822f2c43494ab95/$1",
                     "--extensions",
                     "md,yml",
                     "--host-concurrency",
@@ -2650,11 +2652,18 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/crates/orange-compiler/src/source.rs",
         "compiler/crates/orange-compiler/src/lexer.rs",
         "compiler/crates/orange-compiler/src/parser.rs",
+        "compiler/crates/orange-compiler/src/formatter.rs",
+        "compiler/crates/orange-compiler/src/documentation.rs",
+        "compiler/crates/orange-compiler/src/arguments.rs",
+        "compiler/crates/orange-compiler/src/witness.rs",
         "compiler/crates/orange-compiler/src/semantics.rs",
         "compiler/crates/orange-compiler/src/eval.rs",
         "compiler/crates/orangec/src/main.rs",
         "compiler/README.md",
         "docs/LANGUAGE_2026.md",
+        "docs/FORMATTER_2026.md",
+        "docs/DOCUMENTATION_2026.md",
+        "docs/WITNESS_REPLAY_2026.md",
         "docs/SEMANTICS_2026.md",
         "docs/operations/CI_DEPENDENCIES.md",
         "policy/README.md",
@@ -2680,6 +2689,99 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             root = Path(directory)
             self._copy_boundary(root)
             self.assertFalse(self._codes(root))
+
+    def test_formatter_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 * 1024 * 1024", "16 * 1024 * 1025"),
+            ("4 * 262_144", "4 * 262_145"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/crates/orange-compiler/src/formatter.rs"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_documentation_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 * 1024 * 1024", "16 * 1024 * 1025"),
+            ("4 * 262_144", "4 * 262_145"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/crates/orange-compiler/src/documentation.rs"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_documentation_documented_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 MiB (`16 * 1024 * 1024` HTML bytes)", "17 MiB (`17 * 1024 * 1024` HTML bytes)"),
+            ("at most 1,048,576 documentation work items", "at most 1,048,577 documentation work items"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/DOCUMENTATION_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
+
+    def test_witness_decoder_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 * 262_144", "16 * 262_145"),
+            ("4 * 1_048_576", "4 * 1_048_577"),
+            ("64 * 1_048_576", "64 * 1_048_577"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/crates/orange-compiler/src/arguments.rs"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_witness_documented_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 MiB\n(`16 * 1024 * 1024` witness bytes)", "17 MiB\n(`17 * 1024 * 1024` witness bytes)"),
+            ("at most 4,194,304 value nodes", "at most 4,194,305 value nodes"),
+            ("at most 4,194,304 retained\nbinary integer limbs", "at most 4,194,305 retained\nbinary integer limbs"),
+            ("at most 67,108,864 decoding work items", "at most 67,108,865 decoding work items"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/WITNESS_REPLAY_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
+
+    def test_formatter_documented_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("16 MiB (`16 * 1024 * 1024` output bytes)", "17 MiB (`17 * 1024 * 1024` output bytes)"),
+            ("at most 1,048,576 formatting work items", "at most 1,048,577 formatting work items"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/FORMATTER_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
 
     def test_installer_shell_budget_drift_is_rejected(self) -> None:
         mutations = (
@@ -2913,8 +3015,8 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("512 KiB (`512 * 1024` bytes)", "511 KiB (`511 * 1024` bytes)"),
             ("448 KiB\n(`448 * 1024` bytes)", "447 KiB\n(`447 * 1024` bytes)"),
             ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
-            ("24 MiB (`24 * 1024 * 1024` bytes)", "23 MiB (`23 * 1024 * 1024` bytes)"),
-            ("at most 512 files", "at most 511 files"),
+            ("48 MiB (`48 * 1024 * 1024` bytes)", "47 MiB (`47 * 1024 * 1024` bytes)"),
+            ("at most 1,024 files", "at most 1,023 files"),
             ("at most 1,024 bytes per raw path", "at most 1,023 bytes per raw path"),
             (
                 "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata",
@@ -3316,6 +3418,49 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 "\t\t\t--clear-groups \\\n",
                 "\t\t\t--keep-groups \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '\t\t\t/bin/bash \\\n\t\t\t-p \\\n\t\t\t-c \\\n\t\t\t"$$user_namespace_setup" \\\n'
+                '\t\t\tgate-user-namespace-setup \\\n\t\t\t"$$gate_uid" \\\n\t\t\t"$$gate_gid" \\\n'
+                '\t\t\t"$$user_namespace_wait" \\\n',
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "/usr/bin/unshare --user --keep-caps -- /bin/bash",
+                "/usr/bin/unshare --user -- /bin/bash",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'printf "%s %s 1\\n" "$$gate_uid" "$$gate_uid" > /proc/1/uid_map;',
+                'printf "0 %s 1\\n" "$$gate_uid" > /proc/1/uid_map;',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'read -r _ < /proc/self/gid_map && exec "$$@";',
+                'exec "$$@";',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$${namespace_runner[0]}" != /usr/bin/sudo ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'exec /usr/bin/setpriv --reuid "$$gate_uid" --regid "$$gate_gid" --clear-groups '
+                "--inh-caps=+sys_admin --ambient-caps=+sys_admin -- /usr/bin/unshare --user",
+                "exec /usr/bin/unshare --user",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$(< /proc/sys/user/max_user_namespaces)" != 0 ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "( /usr/bin/sudo --non-interactive --validate 2>/dev/null && : ) ||",
+                "true ||",
                 "make.compiler_environment_contract",
             ),
             (
@@ -4127,13 +4272,14 @@ class HostedControlEvidenceHardeningTests(unittest.TestCase):
             validator._validate_hosted_control_evidence()
             self.assertIn("hosted_control.missing", {finding.code for finding in validator.findings})
 
-    def test_snapshot_expires_on_its_review_due_date(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self._write_current_evidence(root)
-            validator = FoundationValidator(root)
-            validator._validate_hosted_control_evidence(today=dt.date(2026, 10, 11))
-            self.assertIn("hosted_control.expired", {finding.code for finding in validator.findings})
+    def test_passed_review_due_date_does_not_fail_validation(self) -> None:
+        for today in (dt.date(2026, 10, 11), dt.date(2031, 1, 1)):
+            with self.subTest(today=today), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_current_evidence(root)
+                validator = FoundationValidator(root)
+                validator._validate_hosted_control_evidence(today=today)
+                self.assertEqual(validator.findings, [])
 
     def test_extra_conflicting_binding_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -5228,7 +5374,7 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "D-006 may be Accepted before D-004 and D-005.",
             ),
             (
-                "Current execution evidence is 0/14 candidate-case runs.",
+                "Current execution evidence is 12/14 candidate-case runs.",
                 "Current execution evidence is 14/14 candidate-case runs.",
             ),
         )

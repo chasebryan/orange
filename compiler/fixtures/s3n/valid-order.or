@@ -1,0 +1,40 @@
+// S3n conformance: conversions in a byte order. Words become words of
+// another width, a number, or a residue, and a number or a residue becomes
+// words, reading the first word as the most significant with `big` and as
+// the least significant with `little`. A number written as words keeps its
+// residue modulo 2 to the power of their width.
+edition 2026;
+module order {
+  // Four bytes as one word, in each order.
+  spec big_word() -> Word[32] { hex"01020304" as big Word[32] }
+  spec little_word() -> Word[32] { hex"01020304" as little Word[32] }
+  spec text() -> Word[32] { "abcd" as big Word[32] }
+
+  // One word as bytes, and back again.
+  spec bytes() -> Word[8]^4 { let w: Word[32] = 0xdeadbeef; w as big Word[8]^4 }
+  spec round_trip() -> Word[32] {
+    let w: Word[32] = 0xdeadbeef;
+    (w as little Word[8]^4) as little Word[32]
+  }
+
+  // Words of one width as words of another.
+  spec joined() -> Word[64] {
+    let high: Word[32] = 0x01234567;
+    let low: Word[32] = 0x89abcdef;
+    [high, low] as big Word[64]
+  }
+  spec quarters() -> Word[16]^4 { let w: Word[64] = 0x0123456789abcdef; w as little Word[16]^4 }
+
+  // Bytes as a number, and a number as bytes: its residue modulo 2^(8n).
+  spec number() -> Int { hex"0100" as big Int }
+  spec little_number() -> Int { hex"0100" as little Int }
+  spec minus_one() -> Word[8]^4 { let n: Int = -1; n as big Word[8]^4 }
+  spec wraps() -> Word[8]^2 { let n: Int = 65539; n as big Word[8]^2 }
+
+  // Bytes as a residue, and a residue as bytes.
+  spec residue() -> Mod[251] { hex"0100" as big Mod[251] }
+  spec residue_bytes() -> Word[8]^2 { let x: Mod[65521] = -1; x as big Word[8]^2 }
+
+  // A size's value, eight times over, as two big-endian bytes.
+  spec bits[n in 1..3]() -> Word[8]^2 { (8 * n) as big Word[8]^2 }
+}

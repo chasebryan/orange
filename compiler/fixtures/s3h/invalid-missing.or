@@ -1,0 +1,7 @@
+// S3h rejection: `use absent;` reads the module `absent` from the file
+// `absent.or` beside this one, and there is no such file.
+edition 2026;
+module missing {
+  use absent;
+  spec one() -> Int { 1 }
+}

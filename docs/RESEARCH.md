@@ -197,8 +197,8 @@ four candidates closed all seven cases and ST-HOST closed none, for 28 closed of
 ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
-candidate and hard gate. D-004 remains proposed, S3b through S3f are implemented
-and await owner review under OEP-0005 through OEP-0009, and Orange's binary
+candidate and hard gate. D-004 remains proposed, S3b through S3r are implemented
+and await owner review under OEP-0005 through OEP-0021, and Orange's binary
 gate-closure score remains 3 of 10 (30%); that mechanical score is not release
 readiness.
 

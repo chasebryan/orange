@@ -1,0 +1,11 @@
+--- a/D006/Core.lean	2026-09-29 02:35:17.067266730 +0000
++++ b/D006/Core.lean	2026-09-29 02:35:17.078298029 +0000
+@@ -138,7 +138,7 @@
+     let n := count.toNat
+     if 16 < n then .err .too_many
+     else if rest.length < 4 * n then .err .truncated
+-    else if 4 * n < rest.length then .err .trailing
++    else if 4 * n < rest.length then .ok (group4 (rest.take (4 * n)))
+     else .ok (group4 rest)
+
+ /-- F-15: the count (mod 256) as one byte, then each word big-endian. -/

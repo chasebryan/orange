@@ -1069,19 +1069,49 @@ fn usage_errors_have_a_distinct_exit_status() {
         help,
         concat!(
             "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+            "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
+            "       orangec test [--steps <N>] [--stats] <FILE>\n",
+            "       orangec fmt <FILE>\n",
+            "       orangec fmt --check <FILE>...\n",
+            "       orangec doc <FILE>\n",
+            "       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]\n",
+            "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
+            "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
+            "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
+            "       orangec schemes [<NAME>...]\n",
             "\n",
             "Commands:\n",
             "  check    Perform lexical, syntactic, and semantic validation\n",
             "  eval     Reference-evaluate one source after complete validation\n",
             "  lex      Print the deterministic token stream\n",
+            "  test     Run one source's known-answer tests after complete validation\n",
+            "  fmt      Format one source, or check source formatting with --check\n",
+            "  doc      Document one parsed source as standalone HTML\n",
+            "  replay   Replay one exact Boolean function instance on typed witness values\n",
+            "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
+            "  enc      Seal a file with the scheme its key belongs to\n",
+            "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
+            "  schemes  List the built-in sealing schemes, or describe the named ones\n",
             "\n",
             "Options:\n",
             "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+            "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
+            "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
+            "      --stats           Report the steps each function or test used, on stderr\n",
+            "      --check           Check formatting without source changes [fmt only]\n",
+            "      --function <M::N> Select exactly this module and function [replay only]\n",
+            "      --instance <N,...> Complete numeric size/type-index vector [replay only]\n",
+            "      --witness <FILE>  Canonical argument vector; `-` reads stdin [replay only]\n",
+            "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
+            "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
+            "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
             "      --                End option parsing\n",
             "  -h, --help            Print help\n",
-            "  -V, --version         Print version\n",
+            "  -V, --version         Print version and implemented language slice\n",
             "\n",
-            "Use `-` as a file name to read UTF-8 source from standard input.\n",
+            "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
+            "Orange programs on the reference evaluator, which is not constant-time; the\n",
+            "schemes are reference code and are not verified.\n",
         )
     );
 
@@ -1095,7 +1125,7 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(
         String::from_utf8(version_first.stdout).unwrap(),
         format!(
-            "orangec {} (Orange edition 2026)\n",
+            "orangec {} (Orange edition 2026; implemented slice S3t)\n",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -1127,16 +1157,41 @@ fn usage_errors_have_a_distinct_exit_status() {
 }
 
 #[test]
+fn version_slice_has_executable_language_evidence() {
+    // The package version alone cannot distinguish a literal-only compiler
+    // from the later expression slices. Check the actual binary's latest
+    // slice marker together with the behavior that distinguishes S3t.
+    let version = orangec().arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert_eq!(version.stderr, b"");
+    assert!(version.stdout.ends_with(b"; implemented slice S3t)\n"));
+
+    let source = concat!(
+        "edition 2026; module version_probe {\n",
+        "  type Row = Word[8]^2;\n",
+        "  type Matrix = Row^2;\n",
+        "  spec sample() -> Matrix { [[1, 2], [3, 4]] }\n",
+        "  spec reduce[n in 2..4](x: Int) -> Mod[n] { x as Mod[n] }\n",
+        "  test \"S3s nested arrays\" { sample()[1][0] == 3 }\n",
+        "  test \"S3t static moduli\" { (reduce[2](5) == 1) && (reduce[3](5) == 2) }\n",
+        "}\n",
+    );
+    for _ in 0..2 {
+        let output = run_with_stdin(&["test", "-"], source.as_bytes());
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stderr, b"");
+        assert_eq!(
+            output.stdout,
+            b"test \"S3s nested arrays\" ... ok\ntest \"S3t static moduli\" ... ok\n2 tests: 2 passed, 0 failed\n"
+        );
+    }
+}
+
+#[test]
 fn daylight_horizon_example_matches_upstream_frame_deterministically() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let example = root.join("examples/daylight/daylight-horizon.or");
-    let core = root.join("examples/daylight/daylight.or");
-    let checked = orangec()
-        .arg("check")
-        .arg(&core)
-        .arg(&example)
-        .output()
-        .unwrap();
+    let checked = orangec().arg("check").arg(&example).output().unwrap();
     assert!(checked.status.success(), "{:?}", checked);
     assert!(checked.stdout.is_empty());
     assert!(checked.stderr.is_empty());
@@ -1159,19 +1214,40 @@ fn daylight_horizon_example_matches_upstream_frame_deterministically() {
         frame.push(u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap());
     }
     assert_eq!(frame.len(), 219);
-    let expected = format!(
-        "daylight::example: Word[8]^219 = [{}]\n",
-        frame
-            .iter()
+    let bytes = |data: &[u8]| {
+        data.iter()
             .map(|b| format!("0x{b:02x}"))
             .collect::<Vec<_>>()
             .join(", ")
+    };
+    let plaintext = bytes(b"Daylight Horizon runs in Orange.");
+    // The program seals the example, carries the pinned frame as a literal, and
+    // opens it again; the named inputs and constants print before them.
+    let expected = format!(
+        concat!(
+            "daylight::initial_hash: Word[32]^8 = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, ",
+            "0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]\n",
+            "daylight::prime: Int = 1361129467683753853853498429727072845819\n",
+            "daylight::magic: Word[8]^7 = [0x44, 0x4c, 0x54, 0x48, 0x56, 0x31, 0x41]\n",
+            "daylight::root: Word[8]^32 = [{root}]\n",
+            "daylight::nonce: Word[8]^12 = [{nonce}]\n",
+            "daylight::authorization_tag: Word[8]^32 = [{tag}]\n",
+            "daylight::plaintext: Word[8]^32 = [{plaintext}]\n",
+            "daylight::example: Word[8]^219 = [{frame}]\n",
+            "daylight::pinned_frame: Word[8]^219 = [{frame}]\n",
+            "daylight::recovered: Word[8]^32 = [{plaintext}]\n",
+        ),
+        root = bytes(&(0..32).collect::<Vec<u8>>()),
+        nonce = bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        tag = bytes(&[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef].repeat(4)),
+        plaintext = plaintext,
+        frame = bytes(&frame),
     );
     for _ in 0..2 {
         let result = orangec().arg("eval").arg(&example).output().unwrap();
         assert!(result.status.success(), "{:?}", result);
         assert!(result.stderr.is_empty());
-        assert_eq!(result.stdout, expected.as_bytes());
+        assert_eq!(String::from_utf8(result.stdout).unwrap(), expected);
     }
 }
 
