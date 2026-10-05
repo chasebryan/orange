@@ -4,6 +4,7 @@
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -84,6 +85,100 @@ def codes(stderr: str) -> list[str]:
     return CODE.findall(stderr)
 
 
+def loop_source(lower: str, upper: str) -> str:
+    return (
+        "edition 2026;\n"
+        "module bounds {\n"
+        f"  spec f() -> Int {{ for i in {lower}..{upper} with s: Int = 0 {{ s }} }}\n"
+        "}\n"
+    )
+
+
+def compare_codes(rust_compiler: Path, c_compiler: Path, name: str, source: str) -> bool:
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory) / f"{name}.or")
+        Path(path).write_text(source)
+        rust = run(rust_compiler, ["check", path])
+        c_result = run(c_compiler, ["check", path])
+    rust_codes = codes(rust.stderr)
+    c_codes = codes(c_result.stderr)
+    if rust.returncode == 0 or c_result.returncode == 0 or rust_codes != c_codes:
+        print(f"FAIL check {name}")
+        print(f"  rust {rust_codes}")
+        print(f"  c    {c_codes}")
+        return False
+    print(f"ok   check {name}")
+    return True
+
+
+def index_source(index: str) -> str:
+    return (
+        "edition 2026;\n"
+        "module bounds {\n"
+        f"  spec f(x: Word[8]^4) -> Word[8] {{ x[{index}] }}\n"
+        "}\n"
+    )
+
+
+def loop_bound_magnitude(rust_compiler: Path, c_compiler: Path) -> int:
+    """An oversized literal is the magnitude limit, not a range error."""
+    over = "0x" + ("f" * 4097)
+    fits = "0x" + ("f" * 4096)
+    half = "0x4" + ("0" * 4095)
+    full = "0x8" + ("0" * 4095)
+    wide = (
+        "edition 2026;\n"
+        "module bounds {\n"
+        "  spec f(x: Word[8]^4) -> Word[8] { for i in 1..5 with s: Word[8] = 0 "
+        f"{{ s ^ x[{full} + {full} - {full} - {full} + i - 1] }} }}\n"
+        "}\n"
+    )
+    cases = [
+        ("loop-bound-magnitude-upper", loop_source("0", over), ["ORC0205"]),
+        ("loop-bound-magnitude-lower", loop_source(over, "1"), ["ORC0205"]),
+        ("loop-bound-magnitude-before-range", loop_source("70000", over), ["ORC0205"]),
+        ("loop-bound-magnitude-both", loop_source(over, over), ["ORC0205"]),
+        ("loop-bound-fits-but-too-wide", loop_source("0", fits), ["ORC0225"]),
+        ("loop-bound-65537", loop_source("0", "65537"), ["ORC0225"]),
+        ("index-magnitude-grouped", index_source(f"({over})"), ["ORC0205"]),
+        ("index-magnitude-sum", index_source(f"1 + {over}"), ["ORC0205"]),
+        ("index-range-overflow", wide, ["ORC0223"]),
+    ]
+    failures = 0
+    for name, source, expected in cases:
+        if not compare_codes(rust_compiler, c_compiler, name, source):
+            failures += 1
+            continue
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / f"{name}.or")
+            Path(path).write_text(source)
+            observed = codes(run(c_compiler, ["check", path]).stderr)
+        if observed != expected:
+            failures += 1
+            print(f"FAIL check {name} expected {expected} got {observed}")
+    admitted = (
+        "edition 2026;\n"
+        "module bounds {\n"
+        "  spec witness(x: Word[8]^4) -> Word[8] { x[0] }\n"
+        "  spec f(x: Word[8]^4) -> Word[8] { for i in 1..5 with s: Word[8] = 0 "
+        f"{{ s ^ x[{half} + {half} - {half} - {half} + i - 1] }} }}\n"
+        "}\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory) / "index-range-admitted.or")
+        Path(path).write_text(admitted)
+        rust = run(rust_compiler, ["check", path])
+        c_result = run(c_compiler, ["check", path])
+    if rust.returncode != 0 or c_result.returncode != 0 or rust.stderr != "" or c_result.stderr != "":
+        failures += 1
+        print("FAIL check index-range-admitted")
+        print(f"  rust exit {rust.returncode} {codes(rust.stderr)}")
+        print(f"  c    exit {c_result.returncode} {codes(c_result.stderr)}")
+    else:
+        print("ok   check index-range-admitted")
+    return failures
+
+
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -138,6 +233,8 @@ def main() -> int:
             print("  c:   ", first.stdout.splitlines()[:8])
     else:
         print("ok   lex valid-int-arithmetic.or")
+
+    failures += loop_bound_magnitude(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")

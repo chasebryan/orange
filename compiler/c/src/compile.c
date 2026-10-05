@@ -3026,12 +3026,19 @@ static int report_duplicate_loop_name(Compiler *c, uint32_t func_index, uint32_t
     return 1;
 }
 
-static int bound_above(Compiler *c, uint32_t start, uint32_t end, int *above, uint32_t *value) {
+/* Returns whether the bound fits the integer literal budget. A failure is
+   ORC0205, the same code as any other oversized literal. A bound that fits
+   but is outside 0..65536 sets *above; the caller reports ORC0225. */
+static int decode_loop_bound(Compiler *c, uint32_t start, uint32_t end, int *above, uint32_t *value) {
     Big magnitude = big_zero();
     *above = 0;
     *value = 0;
-    if (!big_from_digits(&c->arena, c->text + start, (size_t)(end - start), 0, &magnitude) || magnitude.negative ||
-        magnitude.nlimbs > 1 || (magnitude.nlimbs == 1 && magnitude.limbs[0] > MAX_LOOP_BOUND)) {
+    if (!big_from_digits(&c->arena, c->text + start, (size_t)(end - start), 0, &magnitude)) {
+        add_diag(c, "ORC0205", start, end, "integer magnitude exceeds 16384 significant bits",
+                 "literal is too large", "Int is unbounded, but one literal must fit the representation budget", 2);
+        return 0;
+    }
+    if (magnitude.nlimbs > 1 || (magnitude.nlimbs == 1 && magnitude.limbs[0] > MAX_LOOP_BOUND)) {
         *above = 1;
         return 1;
     }
@@ -3311,6 +3318,7 @@ static int check_index_expr(Compiler *c, uint32_t index_expr, uint32_t length, u
     Big lo = big_zero();
     Big hi = big_zero();
     const Expr *expr = &c->exprs[index_expr];
+    uint32_t diags_before = c->ndiags;
     if (!check_expr(c, index_expr, TY_INT, 0, func_index, locals_in_scope)) {
         return 0;
     }
@@ -3318,6 +3326,11 @@ static int check_index_expr(Compiler *c, uint32_t index_expr, uint32_t length, u
         add_diag(c, "ORC0226", c->exprs[bad].start, c->exprs[bad].end,
                  "an index may use only integer literals and loop indices", "index is not static",
                  "build the index from literals and enclosing loop indices with +, -, *, /, and %", 2);
+        return 1;
+    }
+    /* A literal that does not fit the bit budget is already ORC0205. A second
+       ORC0223 would treat that failed decode as an ordinary out-of-range index. */
+    if (c->ndiags != diags_before) {
         return 1;
     }
     if (!range_of(c, index_expr, &lo, &hi) || (lo.negative && lo.nlimbs != 0) || !big_below_u32(&hi, length)) {
@@ -3337,15 +3350,19 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     uint32_t b_value = 0;
     int index_dup;
     int acc_dup;
-    bound_above(c, loop->a_start, loop->a_end, &a_above, &a_value);
-    bound_above(c, loop->b_start, loop->b_end, &b_above, &b_value);
-    if (a_above) {
+    int bounds_decoded;
+    /* Magnitude is checked before the range, and the lower bound first, so
+       70000..(a literal over 16384 bits) is ORC0205 on the upper bound rather than
+       ORC0225 on 70000. */
+    bounds_decoded = decode_loop_bound(c, loop->a_start, loop->a_end, &a_above, &a_value) &&
+                     decode_loop_bound(c, loop->b_start, loop->b_end, &b_above, &b_value);
+    if (bounds_decoded && a_above) {
         add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
                  "a loop runs over a nonempty range within 0 through 65536", 2);
-    } else if (b_above || a_value >= b_value) {
+    } else if (bounds_decoded && (b_above || a_value >= b_value)) {
         add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop range must be nonempty and within 0 through 65536",
                  "loop bounds", "write a..b with 0 <= a < b <= 65536", 2);
-    } else {
+    } else if (bounds_decoded) {
         loop->bounds_ok = 1;
         loop->bound_a = a_value;
         loop->bound_b = b_value;
