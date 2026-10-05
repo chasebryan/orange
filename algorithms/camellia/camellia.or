@@ -75,9 +75,9 @@ module camellia {
     else { w as Word[8] }
   }
 
-  // Entry x of a 256-entry table packed eight entries to a word. Indices
-  // must be static, so the lookup selects the word holding x and then the
-  // byte within it.
+  // Entry x of a 256-entry table packed eight entries to a word. A byte may
+  // index a table of 256 entries; this rendering still selects the word
+  // holding x and then the byte within it.
   spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
     let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
       if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
@@ -162,9 +162,10 @@ module camellia {
     ]
   }
 
-  // Section 2.2: the 128-bit rotations (x <<< n) of the key schedule, one
-  // spec per amount, since a shift amount is a literal. For n above 64 the
-  // words change places and the rotation by n - 64 remains.
+  // Section 2.2: the 128-bit rotations (x <<< n) of the key schedule. A
+  // shift amount may be computed; this rendering still writes one spec per
+  // amount. For n above 64 the words change places and the rotation by
+  // n - 64 remains.
   spec rotl128_15(x: Word[64]^2) -> Word[64]^2 {
     [(x[0] << 15) | (x[1] >> 49), (x[1] << 15) | (x[0] >> 49)]
   }
