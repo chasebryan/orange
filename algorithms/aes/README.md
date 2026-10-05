@@ -128,16 +128,19 @@ steps and an AES-256 block about 81,000; `key_expansion_128` costs about
 16,000 and `key_expansion_256` about 22,000; an AES-128 inverse block about
 65,000, InvMixColumns being the costlier half.
 
-An `Int` is not an index, and a slice bound is a literal or a loop index.
-The round key of round `round` is `w[4 round .. 4 round + 3]`, and `nr` is
-an `Int`, so the round index is the loop index: `cipher` loops over rounds
-1 through 14 and lets the rounds above `Nr` pass the state through, and
-`inv_cipher` counts a loop index up and takes `round = 14 - j`. The schedule
-is `Word[32]^60` for all three key sizes, with AES-128 and AES-192 leaving
-the tail at zero, and the recurrence `w[i] = w[i - Nk] ^ temp` is written
-once per `Nk`, because `w[i - nk]` with `nk: Int` is rejected. A size is an
-index, including `w[i - nk]` when `nk` is a size and `i` is a loop index;
-this file does not use one.
+A bounded `Int` index checks when every value the index expression can take
+selects an element: a loop index, an expression built from one, or a word
+converted with `as Int`. An `Int` with no bound is `ORC0226`, including an
+`Int` parameter. A slice bound is a literal or a loop index. The round key
+of round `round` is `w[4 round .. 4 round + 3]`. `nr` is an `Int` parameter,
+so the round index is the loop index: `cipher` loops over rounds 1 through
+14 and lets the rounds above `Nr` pass the state through, and `inv_cipher`
+counts a loop index up and takes `round = 14 - j`. The schedule is
+`Word[32]^60` for all three key sizes, with AES-128 and AES-192 leaving the
+tail at zero, and the recurrence `w[i] = w[i - Nk] ^ temp` is written once
+per `Nk`, because `w[i - nk]` with `nk` an `Int` parameter is rejected. A
+size is an index, including `w[i - nk]` when `nk` is a size and `i` is a
+loop index; this file does not use one.
 
 The budget sized the vectors. The seven FIPS 197 cases of `aes.or` cost about
 594,000 of the 1,048,576 steps a file has (measured with a filler spec). The
@@ -245,7 +248,7 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
 - A byte may index a table of 256 entries. The lookup is still a 32-way
   selection at 295 steps, which makes a block cost 58,000 to 81,000 steps
   and limits the modes file to two blocks of each example. `nr` and `nk` are
-  `Int` values, and an `Int` is not an index, so `cipher` and `inv_cipher`
+  `Int` parameters with no bound (`ORC0226`), so `cipher` and `inv_cipher`
   iterate over 14 rounds for every key size, the schedule is sized for
   AES-256, and the key expansion recurrence is written once per `Nk`.
 - A size parameter covers a finite family of lengths. The modes are still
