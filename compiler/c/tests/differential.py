@@ -65,8 +65,8 @@ def main() -> int:
     parser.add_argument("--c-compiler", required=True)
     parser.add_argument("--rust-compiler", default=str(RUST))
     args = parser.parse_args()
-    c_compiler = Path(args.c_compiler)
-    rust_compiler = Path(args.rust_compiler)
+    c_compiler = Path(args.c_compiler).resolve()
+    rust_compiler = Path(args.rust_compiler).resolve()
     if not c_compiler.is_file() or not rust_compiler.is_file():
         print("missing compiler binary", file=sys.stderr)
         return 2
