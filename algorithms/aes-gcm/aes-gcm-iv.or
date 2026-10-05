@@ -50,8 +50,9 @@ module aes_gcm {
 
   // FIPS 197 section 5.1.1, Table 4 (Figure 7 in the 2001 text): the S-box,
   // packed eight entries to a word so that each literal reads as a row of
-  // the table (0x637c777bf26b6fc5 is 63 7c 77 7b f2 6b 6f c5); an index must
-  // be static, so a lookup is a selection over the 32 words.
+  // the table (0x637c777bf26b6fc5 is 63 7c 77 7b f2 6b 6f c5). A byte may
+  // index a table of 256 entries; this rendering still selects over the 32
+  // words.
   spec s_box() -> Word[64]^32 {
     [
       0x637c777bf26b6fc5, 0x3001672bfed7ab76, 0xca82c97dfa5947f0, 0xadd4a2af9ca472c0,
@@ -287,8 +288,8 @@ module aes_gcm {
     }
   }
 
-  // The word at index i of eight, i a value: a selection, as an index must
-  // be static.
+  // The word at index i of eight. `i` is an `Int`, and an `Int` is not an
+  // index, so the word is selected by comparing the loop index with `i`.
   spec word_at(x: Word[64]^8, i: Int) -> Word[64] {
     for k in 0..8 with acc: Word[64] = 0 { if k == i { x[k] } else { acc } }
   }

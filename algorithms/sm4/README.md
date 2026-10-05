@@ -123,10 +123,11 @@ RFC 8998 fail entirely under a repeated nonce), not on the cipher.
 ### What the Orange rendering shows
 
 The only data-dependent operation in SM4 is the S-box lookup, of which there
-are 128 in the 32 rounds and 128 in the key expansion, 256 per block. Orange
-has no data-dependent index, so `lookup` scans the 32 packed words with a
-static index, keeps the one whose position matches the top five bits of the
-byte, and selects one of its eight bytes with a conditional: about 290 steps
+are 128 in the 32 rounds and 128 in the key expansion, 256 per block. A byte
+may index a table of 256 entries. This rendering's `lookup` still scans the
+32 packed words with a static index, keeps the one whose position matches
+the top five bits of the byte, and selects one of its eight bytes with a
+conditional: about 290 steps
 per lookup, where a table-driven implementation spends one memory access.
 Everything else is xor and rotation by a literal on `Word[32]`, one to one
 with the standard's formulas for F, L and L'. The Feistel rounds and the key
@@ -220,11 +221,11 @@ and it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Two features of the language shaped the file:
-indices must be static, so each S-box lookup is a 32-word selection costing
-about 290 steps, which makes a block cost about 80,000 to 87,000 steps and
-bounds one file to twelve blocks; and a loop's step is one expression, so
-the key expansion carries all 36 K words in one array rather than binding
-the four latest in the step. Example 2 of Appendix A (10^6 iterations) is
-beyond the step budget by five orders of magnitude and is recorded above as
-not reproduced.
+None that prevented anything. This rendering's S-box lookup is a 32-word
+selection costing about 290 steps, which makes a block cost about 80,000 to
+87,000 steps and bounds one file to twelve blocks, and the key expansion
+carries all 36 K words in one array. A byte may index a table of 256
+entries, and a loop step may begin with `let`; neither shape is a limit of
+the current language. Example 2 of Appendix A (10^6 iterations) is beyond
+the step budget by five orders of magnitude and is recorded above as not
+reproduced.

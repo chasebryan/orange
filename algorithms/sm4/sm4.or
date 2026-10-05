@@ -40,8 +40,9 @@ module sm4 {
     }
   }
 
-  // Clause 6.2: the S-box is a table. Indices in Orange are static, so a
-  // lookup selects the word holding the entry and then the byte in it.
+  // Clause 6.2: the S-box is a table. A byte may index a table of 256
+  // entries; this rendering selects the word holding the entry and then the
+  // byte in it.
   // The byte at position k of a word holding eight table entries.
   spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
     if k == 0 { (w >> 56) as Word[8] }

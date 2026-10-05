@@ -148,10 +148,11 @@ vectors together use about 486,000 of the 1,048,576-step budget, so every
 planned vector sits in one file with room for roughly the same again.
 
 Not expressed: a message of arbitrary length. Each padding spec takes an
-array of one fixed length, so a new length needs a new `pad_n`. A single
-`Word[8]` array holds at most 256 bytes, so a message longer than 239 bytes
-(256 minus the 17 bytes of SHA-512 padding) would have to arrive as several
-arrays or as `Word[64]` words; none of the standard's examples needs that.
+array of one fixed length, so a new length needs a new `pad_n`. A `Word[8]`
+array holds 1 through 65,536 bytes. These padding specs were written when
+the bound was 256, so a message longer than 239 bytes (256 minus the 17
+bytes of SHA-512 padding) is not one spec here; none of the standard's
+examples needs that.
 
 ## Dissemination
 
@@ -226,9 +227,10 @@ corpus entry in the sense of The Orange Book chapter 12.
 - No length-generic arrays or specs, so padding is written once per message
   length (`pad_3`, `pad_56`, `pad_64`, `pad_512_3`, `pad_512_112`) instead of
   once. Each is five lines; the cost is repetition, not expressiveness.
-- Arrays hold at most 256 elements, so a `Word[8]` message is at most 239
-  bytes for SHA-512 (256 less the 17 bytes of padding) and 247 for SHA-256
-  in this style. No vector here needs more.
+- A `Word[8]` array holds 1 through 65,536 elements. In this entry a message
+  is at most 239 bytes for SHA-512 (256 less the 17 bytes of padding) and
+  247 for SHA-256, the lengths written when the bound was 256. No vector
+  here needs more.
 - Single-element updates cost the array's length in steps, so padding a
   112-byte message into a 256-byte array (about 37,000 steps) costs more
   than the two SHA-512 compressions it feeds (about 19,500 each). It did not
