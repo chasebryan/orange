@@ -25,7 +25,7 @@ Edition: `2026`
 ## Contents
 
 - [Preface](#preface)
-  - [§1. Mission, Doctrine, and Philosophical Basis](#1-mission-doctrine-and-philosophical-basis)
+  - [§1. Scope of This Manual](#1-scope-of-this-manual)
   - [§2. Conformance, Formality, and Normative Terminology](#2-conformance-formality-and-normative-terminology)
   - [§3. Mathematical Notations and Typographical Conventions](#3-mathematical-notations-and-typographical-conventions)
   - [§4. Language Status Register and Slice Traceability](#4-language-status-register-and-slice-traceability)
@@ -44,7 +44,7 @@ Edition: `2026`
   - [§13. Compilation Units, Edition Invariants, and Header Syntax](#13-compilation-units-edition-invariants-and-header-syntax)
   - [§14. Module Enclosures, Top-Level Member Ordering, and Syntax Trees](#14-module-enclosures-top-level-member-ordering-and-syntax-trees)
   - [§15. Hermetic Module Resolution and Filesystem Path Mapping](#15-hermetic-module-resolution-and-filesystem-path-mapping)
-  - [§16. Import Dependency Graphs and Tarjan Cycle Elimination](#16-import-dependency-graphs-and-tarjan-cycle-elimination)
+  - [§16. Import Dependency Graphs and Cycle Rejection](#16-import-dependency-graphs-and-cycle-rejection)
   - [§17. Type Aliases, Structural Equivalence, and Shadowing Restrictions](#17-type-aliases-structural-equivalence-and-shadowing-restrictions)
   - [§18. Multi-Strata Architectural Separation and Disjoint Namespaces](#18-multi-strata-architectural-separation-and-disjoint-namespaces)
 
@@ -57,7 +57,7 @@ Edition: `2026`
   - [§24. Fixed-Length Array Spaces ($T^n$ for $1 \le n \le 65,536$)](#24-fixed-length-array-spaces-tn-for-1-le-n-le-65536)
   - [§25. Multi-Dimensional Rectangular Matrices and Nested Arrays](#25-multi-dimensional-rectangular-matrices-and-nested-arrays)
   - [§26. Heterogeneous Product Types: Tuples ($(T_0, \dots, T_{k-1})$ for $2 \le k \le 16$)](#26-heterogeneous-product-types-tuples-t_0-dots-t_k-1-for-2-le-k-le-16)
-  - [§27. Byte Arrays (`Byte` and `Word[8]^n`)](#27-byte-arrays-byte-and-word8n)
+  - [§27. Byte Arrays (`Word[8]^n`)](#27-byte-arrays-word8n)
   - [§28. Explicit Value Conversions (`expr as T`) and Typing Judgments](#28-explicit-value-conversions-expr-as-t-and-typing-judgments)
   - [§29. Endianness Homomorphisms and Bit-Preserving Packing (`as big T`, `as little T`)](#29-endianness-homomorphisms-and-bit-preserving-packing-as-big-t-as-little-t)
   - [§30. Dependent Finite Size Parameters and Monomorphization](#30-dependent-finite-size-parameters-and-monomorphization)
@@ -68,7 +68,7 @@ Edition: `2026`
   - [§33. Subtyping, Coercion Freedom, and Structural Type Equality](#33-subtyping-coercion-freedom-and-structural-type-equality)
   - [§34. Expression Typing Rules and Formal Judgments](#34-expression-typing-rules-and-formal-judgments)
   - [§35. Expression Grouping Envelopes and Syntactic Ambiguity Rejection](#35-expression-grouping-envelopes-and-syntactic-ambiguity-rejection)
-  - [§36. Static Array Bounds Verification and Abstract Interval Analysis](#36-static-array-bounds-verification-and-abstract-interval-analysis)
+  - [§36. Static Index Ranges](#36-static-index-ranges)
   - [§37. Data-Dependent Indexing, Range Narrowing, and S-Box Lookups](#37-data-dependent-indexing-range-narrowing-and-s-box-lookups)
 
 - [Part V: Dynamic Semantics (Operational & Reduction Rules)](#part-v-dynamic-semantics-operational--reduction-rules)
@@ -80,10 +80,10 @@ Edition: `2026`
   - [§43. Known-Answer Specification Tests (`test`) and Whole-Aggregate Equality](#43-known-answer-specification-tests-test-and-whole-aggregate-equality)
 
 - [Part VI: Formal Metatheory of the Specification Stratum](#part-vi-formal-metatheory-of-the-specification-stratum)
-  - [§44. Metatheorem 1: Strong Normalization and Totality](#44-metatheorem-1-strong-normalization-and-totality)
-  - [§45. Metatheorem 2: Type Safety (Progress and Subject Reduction)](#45-metatheorem-2-type-safety-progress-and-subject-reduction)
-  - [§46. Metatheorem 3: Determinism and Semantic Confluence](#46-metatheorem-3-determinism-and-semantic-confluence)
-  - [§47. Metatheorem 4: Endianness Packing Isomorphism](#47-metatheorem-4-endianness-packing-isomorphism)
+  - [§44. Evaluation Bounds](#44-evaluation-bounds)
+  - [§45. Checking Before Evaluation](#45-checking-before-evaluation)
+  - [§46. Determinism of the Reference Evaluator](#46-determinism-of-the-reference-evaluator)
+  - [§47. Byte-Order Conversions at Equal Width](#47-byte-order-conversions-at-equal-width)
 
 - [Part VII: Specification Corpus & Reference Cryptographic Standards](#part-vii-specification-corpus--reference-cryptographic-standards)
   - [§48. Mathematical Transcription Methodology and Traceability](#48-mathematical-transcription-methodology-and-traceability)
@@ -164,59 +164,26 @@ Edition: `2026`
 - [Part XVI: Toolchain, Evaluator & Formal EBNF Grammar](#part-xvi-toolchain-evaluator--formal-ebnf-grammar)
   - [§101. The Driver CLI: `orangec` Commands, Options, and Determinism](#101-the-driver-cli-orangec-commands-options-and-determinism)
   - [§102. Deterministic Resource Limits and Denial-of-Service Defense](#102-deterministic-resource-limits-and-denial-of-service-defense)
-  - [§103. Complete Unified Formal EBNF Grammar](#103-complete-unified-formal-ebnf-grammar)
+  - [§103. Proposed Surface Grammar](#103-proposed-surface-grammar)
 
 ---
 
 ## Preface
 
-### §1. Mission, Doctrine, and Philosophical Basis
+### §1. Scope of This Manual
 
-High-assurance cryptographic software occupies a distinct niche in computer science:
-a single algorithmic defect, memory safety violation, or microarchitectural side
-channel completely destroys the confidentiality and integrity guarantees of an entire
-cryptosystem. Historically, this assurance has been sought by assembling a polyglot,
-disconnected pipeline:
+The Current language, through implemented slice S3u, is the `spec` stratum:
+pure functions over `Int`, `Bool`, `Word[n]`, `Mod[m]`, arrays, and tuples, plus
+`test`. `impl` may be declared and has no semantics (`ORC0202`). `game`, `proof`,
+and `claim` are reserved words and are not declarations (`ORC0103`).
 
-1. Standards committees write specifications in mathematical prose, LaTeX, or pseudocode.
-2. Software engineers transcribe these specifications into C, Rust, or assembly to
-   achieve production execution speed.
-3. Verification specialists formalize mathematical models in interactive theorem
-   provers (such as Rocq, Lean, or Isabelle/HOL) to prove functional correctness.
-4. Security researchers construct paper-and-pencil or EasyCrypt reduction proofs
-   establishing asymptotic or concrete computational hardness bounds.
-5. Timing analyzers inspect emitted binaries with heuristic statistical tests
-   (e.g., dudect) to detect data-dependent execution variations.
-6. Build engineers write ad-hoc shell scripts to compile, package, and link these
-   disparate artifacts.
+The five-stratum architecture (`impl`, `machine impl`, `game`, `proof`, `claim`)
+is Proposed. Parts VIII–XVI record it. Those parts are not conformance
+requirements for `orangec` 0.0.1.
 
-The fundamental vulnerability of this methodology resides at the **seams**. A
-functional correctness theorem proved about an abstract mathematical model guarantees
-nothing about a compiled machine binary if the compilation passes introduce undefined
-behavior, if the C compiler eliminates memory zeroization loops, or if register
-allocation creates variable-latency memory spills.
-
-Orange addresses these seams directly under two governing principles:
-
-- **One language, several semantic worlds:** Rather than forcing all cryptographic
-  tasks into an unprincipled universal language or relying on fragile multi-language
-  glue, Orange unifies five distinct semantic strata within one editioned module
-  system:
-  - **`spec`**: Pure, total, mathematical functions over rings and fields.
-  - **`impl`**: First-order, terminating imperative procedures governed by affine
-    ownership, explicit regions, and contracts.
-  - **`machine impl`**: Target-aware low-level routines with register capabilities,
-    SIMD intrinsics, and explicit layout.
-  - **`game`**: Probabilistic execution, stateful oracles, and polynomial-time adversaries.
-  - **`proof`**: Elaborated lambda terms and deductive evidence in Proof IR.
-- **Claims, not labels:** Rather than marketing software under qualitative
-  adjectives like "verified", Orange records atomic, machine-checkable **claims**.
-  Every claim binds an exact subject to an explicit formal relation, named assumptions,
-  cryptographic evidence, and an unambiguous verification outcome.
-
-Orange is engineered under an uncompromising doctrine: **build the end product directly
-through permanent, production-lineage components**. There is no disposable prototype
-phase, no relaxed semantic mode, and no silent failure.
+- **Claims, not labels** remains the Proposed assurance rule (D-005): a claim
+  would bind a subject, a relation, assumptions, and evidence. The Current
+  compiler does not check claims.
 
 ### §2. Conformance, Formality, and Normative Terminology
 
@@ -226,11 +193,10 @@ document are to be interpreted as described in BCP 14 (RFC 2119 / RFC 8174).
 
 - A **conforming Orange source file** is a valid UTF-8 sequence conforming to the
   lexical and syntactic grammar defined herein, beginning with an edition declaration.
-- A **conforming Orange compiler** (such as `orangec`) is an executable toolchain
-  that strictly enforces all lexical, syntactic, semantic, and typing rules,
-  rejecting invalid programs with stable, deterministic diagnostic identifiers
-  (`ORCxxxx`), and compiling or evaluating valid programs in exact accordance with
-  the operational semantics defined herein.
+- A **conforming Orange compiler** for this manual's Current text is an
+  executable that enforces the lexical, syntactic, and semantic rules of Parts
+  I–V, evaluates by Part V under the step budget of §39, and reports the codes
+  in Part XV. Parts VIII–XVI are not part of that conformance claim.
 - An **accepted slice** is a language feature subset formally ratified under the
   project governance model and recorded as immutable normative baseline.
 - An **in-review slice** is a feature subset implemented in the authoritative
@@ -273,30 +239,30 @@ programming language theory conventions:
 The development of Orange follows a gated, incremental slice roadmap. The table
 below records the formal status of every feature slice and architectural stratum:
 
-| Slice / Stratum | Grammar Status | Static Type Rules | Operational Rules | Compiler Status (`orangec 0.0.1`) | Governing Ratification |
+| Slice / Stratum | Grammar Status | Static Type Rules | Operational Rules | Compiler Status (`orangec 0.0.1`) | Record |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **S1 / S2**: Lexical & Syntax Foundation | Normative | Normative | N/A (Syntax Only) | Accepted | D-025, OEP-0002 |
 | **S3a**: Typed `spec` Literals (`Int`, `Word[8]`) | Normative | Normative | Reference Core Eval | Accepted | D-026, OEP-0003 |
-| **S3b**: Pure Expressions, Word Rings, Operators | Normative | Normative | Small-Step Reductions | Implemented | OEP-0005 |
-| **S3c**: Typed `let` Bindings & `as` Conversions | Normative | Normative | Environment Substitution | Implemented | OEP-0006 |
-| **S3d**: Fixed-Length Arrays `T^n` & Indexing | Normative | Normative | Exact Bound Array Eval | Implemented | OEP-0007 |
-| **S3e**: Bounded Loops `for..in..with` & Updates | Normative | Normative | Deterministic Iteration | Implemented | OEP-0008 |
-| **S3f**: `Bool`, Conditionals `if/else`, Division | Normative | Normative | Exhaustive Branch Eval | Implemented | OEP-0009 |
-| **S3g**: Data-Dependent Lookups & S-Boxes | Normative | Normative | Range-Proved Lookups | Implemented | OEP-0010 |
-| **S3h**: Multi-Module Programs & `use` Imports | Normative | Normative | Acyclic Module Eval | Implemented | OEP-0011 |
-| **S3i**: Residue Fields `Mod[m]` & `type` Aliases | Normative | Normative | Modular Reduction Eval | Implemented | OEP-0012 |
-| **S3j**: Local `let` in Loop & Branch Blocks | Normative | Normative | Nested Scope Eval | Implemented | OEP-0013 |
-| **S3k**: Tuple Types `(T, U)` & Patterns | Normative | Normative | Product Destruction | Implemented | OEP-0014 |
-| **S3l**: Byte Strings `"..."`, `hex"..."`, Slices | Normative | Normative | Byte Vector Operations | Implemented | OEP-0015 |
-| **S3m**: Finite Size Parameters `[n in low..high]` | Normative | Normative | Eager Monomorphization | Implemented | OEP-0016 |
-| **S3n**: Explicit Byte Ordering (`big`, `little`) | Normative | Normative | Bit-Preserving Packing | Implemented | OEP-0017 |
-| **S3o**: Finite Type Parameters `[K in {T...}]` | Normative | Normative | Eager Monomorphization | Implemented | OEP-0018 |
-| **S3p**: Array Lengths to 65,536 & Eval Limits | Normative | Normative | Bounded Step Counter | Implemented | OEP-0019 |
-| **S3q**: Known-Answer Specification `test` Blocks | Normative | Normative | Automated Test Runner | Implemented | OEP-0020 |
-| **S3r**: Variable Shift & Rotation Amounts | Normative | Normative | Ring Turn Reduction | Implemented | OEP-0021 |
-| **S3s**: Bounded Rectangular Nested Arrays | Normative | Normative | Chained Indexing | Implemented | OEP-0023 |
-| **S3t**: Static Moduli with Own Size Names | Normative | Normative | Size-Dependent Moduli | Implemented | OEP-0024 |
-| **S3u**: Rank 3 and 4 Arrays, Update Paths | Normative | Normative | Nested Path Update | Implemented | OEP-0025 |
+| **S3b**: Pure Expressions, Word Rings, Operators | In review | In review | Small-Step Reductions | Implemented | OEP-0005 |
+| **S3c**: Typed `let` Bindings & `as` Conversions | In review | In review | Environment Substitution | Implemented | OEP-0006 |
+| **S3d**: Fixed-Length Arrays `T^n` & Indexing | In review | In review | Exact Bound Array Eval | Implemented | OEP-0007 |
+| **S3e**: Bounded Loops `for..in..with` & Updates | In review | In review | Deterministic Iteration | Implemented | OEP-0008 |
+| **S3f**: `Bool`, Conditionals `if/else`, Division | In review | In review | Exhaustive Branch Eval | Implemented | OEP-0009 |
+| **S3g**: Data-Dependent Lookups & S-Boxes | In review | In review | Range-Proved Lookups | Implemented | OEP-0010 |
+| **S3h**: Multi-Module Programs & `use` Imports | In review | In review | Acyclic Module Eval | Implemented | OEP-0011 |
+| **S3i**: Residue Fields `Mod[m]` & `type` Aliases | In review | In review | Modular Reduction Eval | Implemented | OEP-0012 |
+| **S3j**: Local `let` in Loop & Branch Blocks | In review | In review | Nested Scope Eval | Implemented | OEP-0013 |
+| **S3k**: Tuple Types `(T, U)` & Patterns | In review | In review | Product Destruction | Implemented | OEP-0014 |
+| **S3l**: Byte Strings `"..."`, `hex"..."`, Slices | In review | In review | Byte Vector Operations | Implemented | OEP-0015 |
+| **S3m**: Finite Size Parameters `[n in low..high]` | In review | In review | Eager Monomorphization | Implemented | OEP-0016 |
+| **S3n**: Explicit Byte Ordering (`big`, `little`) | In review | In review | Bit-Preserving Packing | Implemented | OEP-0017 |
+| **S3o**: Finite Type Parameters `[K in {T...}]` | In review | In review | Eager Monomorphization | Implemented | OEP-0018 |
+| **S3p**: Array Lengths to 65,536 & Eval Limits | In review | In review | Bounded Step Counter | Implemented | OEP-0019 |
+| **S3q**: Known-Answer Specification `test` Blocks | In review | In review | Automated Test Runner | Implemented | OEP-0020 |
+| **S3r**: Variable Shift & Rotation Amounts | In review | In review | Ring Turn Reduction | Implemented | OEP-0021 |
+| **S3s**: Bounded Rectangular Nested Arrays | In review | In review | Chained Indexing | Implemented | OEP-0023 |
+| **S3t**: Static Moduli with Own Size Names | In review | In review | Size-Dependent Moduli | Implemented | OEP-0024 |
+| **S3u**: Rank 3 and 4 Arrays, Update Paths | In review | In review | Nested Path Update | Implemented | OEP-0025 |
 | **Implementation Stratum (`impl`)** | Proposed | Proposed | Imperative Place Semantics | Not implemented | D-004, ST-REL |
 | **Machine Stratum (`machine impl`)** | Proposed | Proposed | Target ISA Simulation | Not implemented | D-004, D-011 |
 | **Game Stratum (`game`)** | Proposed | Proposed | Probabilistic Sampling | Not implemented | D-004, ST-REL |
@@ -316,24 +282,23 @@ judgments are those of OEP-0025 and `docs/DIMENSIONS_2026.md` on that tip.
 
 1. **Source Encoding:** An Orange source compilation unit MUST consist of a contiguous
    sequence of octets representing valid UTF-8 according to RFC 3629 / Unicode Standard.
-2. **Byte Order Mark Prohibition:**
-   $$\text{Source}[0..3] = \langle \text{0xEF}, \text{0xBB}, \text{0xBF} \rangle \implies \text{Diagnostic}(\text{ORC0001})$$
-   A source file MUST NOT contain the UTF-8 Byte Order Mark (U+FEFF) at byte offset 0.
-   Encountering a BOM halts lexing immediately with diagnostic `ORC0001`.
+2. **U+FEFF:**
+   U+FEFF has no lexical production, at offset 0 or elsewhere. The lexer reports
+   it as an unexpected character, diagnostic `ORC0001`. There is no separate BOM
+   check.
 3. **File Size Ceiling:**
    $$|\text{Source}| \le 16,777,216 \text{ bytes} \ (16 \text{ MiB})$$
-   Source files exceeding $16 \text{ MiB}$ are rejected with diagnostic `ORC0008`.
+   A source longer than 16 MiB is rejected by the driver before lexing, diagnostic
+   `ORC1003`. `ORC0008` is not that rejection. `ORC0008` means the lexer could not
+   reserve its bounded token stream.
 4. **Line Endings:**
-   The concrete lexical grammar permits only two line terminators:
-   - Line Feed (`LF`, ASCII `0x0A`, U+000A).
-   - Carriage Return followed immediately by Line Feed (`CRLF`, ASCII `0x0D 0x0A`, U+000D U+000A).
-   - An isolated Carriage Return (`CR`, ASCII `0x0D`) not immediately followed by `0x0A`
-     is forbidden and emits diagnostic `ORC0001`.
+   A logical line ends at U+000A, at U+000D, or at U+000D U+000A. A bare carriage
+   return is a line ending. It is not `ORC0001`.
 5. **Bidirectional Control Character Defense:**
    To guarantee protection against source spoofing and Trojan Source attacks (CVE-2021-42574),
    the compiler strictly rejects any code point in the following sets outside of
    string literals:
-   - C0 control characters (U+0000 through U+001F, excluding `\t`, `\n`, `\r` in CRLF).
+   - C0 control characters (U+0000 through U+001F), except U+0009, U+000A, and U+000D, which are whitespace.
    - C1 control characters (U+0080 through U+009F) and DEL (U+007F).
    - U+061C (Arabic Letter Mark).
    - U+200E, U+200F (LRM and RLM).
@@ -371,7 +336,7 @@ judgments are those of OEP-0025 and `docs/DIMENSIONS_2026.md` on that tip.
    Whitespace consists of:
    - Space (`0x20`, U+0020)
    - Horizontal Tab (`0x09`, U+0009)
-   - Carriage Return (`0x0D`, U+000D, only when followed by `0x0A`)
+   - Carriage Return (`0x0D`, U+000D), including a bare CR
    - Line Feed (`0x0A`, U+000A)
 2. Whitespace serves solely to delimit tokens and has no syntactic significance
    except inside string literals.
@@ -469,10 +434,10 @@ binary_digit    = "0" | "1" ;
    valid digit of that base (e.g. `0b102` or `0x1g`) causes the token to fail
    with diagnostic `ORC0005`.
 5. **Magnitude Representation Budget:**
-   The compiler represents integer magnitudes exactly. A literal MUST NOT exceed
-   the internal magnitude representation budget of **4,096 bits** ($2^{4096} - 1$,
-   approximately $1,234$ decimal digits). Exceeding this magnitude emits diagnostic
-   `ORC0205`.
+   The compiler represents integer magnitudes exactly. A value whose magnitude
+   has more than **16,384 significant bits** ($|x| \ge 2^{16384}$) emits
+   diagnostic `ORC0205`. A value with 16,384 significant bits is admitted.
+   The check is `magnitude_bits`, not a decimal-digit budget.
 
 ### §11. Byte Sequences, Escape Grammar, and Hexadecimal Strings
 
@@ -535,11 +500,15 @@ hex_string_literal = "hex\"" (hex_digit hex_digit | " ")* "\"" ;
    ```
 
 2. **Lexical Resource Limits:**
-   - Maximum non-trivia tokens per source: **1,048,576 tokens** ($2^{20}$).
-     Exceeding this budget emits diagnostic `ORC0006`.
-   - Lexical error reporting threshold: **32 errors**. Subsequent errors are
-     suppressed, emitting diagnostic `ORC0007`.
-   - Lexer memory allocation exhaustion emits diagnostic `ORC0008`.
+   - Maximum non-trivia tokens per source, excluding EOF: **262,144**.
+     Exceeding this budget emits diagnostic `ORC0006`
+     (`source exceeds the 262144-token lexical limit`).
+   - Ordinary lexical errors: **100**, then one suppression diagnostic `ORC0007`.
+     The same count of 100, then one suppression, applies to parse errors
+     (`ORC0105`) and semantic errors (`ORC0208`).
+   - `ORC0008` means the lexer could not reserve its bounded token stream, or
+     the source cursor was not on a UTF-8 boundary. It is not the 16 MiB file
+     limit (`ORC1003`) and it is not the token-count limit (`ORC0006`).
 
 ---
 
@@ -578,44 +547,48 @@ hex_string_literal = "hex\"" (hex_digit hex_digit | " ")* "\"" ;
        // Declarations in strict order:
        // 1. Imports: use ...;
        // 2. Type Aliases: type ... = ...;
-       // 3. Members: spec, impl, game, proof, claim, test
+       // 3. Members: spec, impl, test
    }
    ```
 
 2. Any tokens appearing after the closing brace `}` of the module declaration
    emit diagnostic `ORC0104`.
 3. **Top-Level Member Ordering Rules:**
-   - All `use` declarations MUST precede all other module declarations.
-   - All `type` declarations MUST precede all function, game, proof, or claim declarations.
-   - Function (`spec`, `impl`), `game`, `proof`, `claim`, and `test` declarations
-     may follow in arbitrary source order.
+   - All `use` declarations precede every `type` declaration and every function.
+   - All `type` declarations precede every function and every `test`.
+   - A `use` after a `type`, or a `use` or `type` after a function, is `ORC0103`.
+   - Members after that are `spec`, `impl`, and `test`, in any order among themselves.
+   - `game`, `proof`, and `claim` are reserved words. Using one where a member
+     was expected is `ORC0103` (`expected a spec or impl function declaration`).
+     They are not grammar productions of the Current language.
 
 ### §15. Hermetic Module Resolution and Filesystem Path Mapping
 
 1. **Hermeticity:** Orange modules are resolved hermetically without ambient
    network queries or implicit system paths.
 2. **File Mapping:**
-   - An import `use m;` directs the compiler to load the file `m.or`.
-   - The compiler searches:
-     1. The directory containing the importing source file.
-     2. Declared package source roots configured in `Orange.toml`.
-   - If `m.or` cannot be found or read, the compiler halts with diagnostic `ORC0228`.
+   - An import `use m;` names the file `m.or`.
+   - `orangec` reads that file from the directory of the **root** source, or
+     from the current directory when the root is standard input. It does not
+     search the directory of the importing file, and it does not read
+     `Orange.toml`. There is no package-root configuration.
+   - A name that is not a module of the program is diagnostic `ORC0228`.
 3. **Qualified Identifiers:**
    - Imported definitions are referenced using the module prefix: `m::symbol`.
    - Calling `m::symbol` when `use m;` was not declared in the importing module
      emits diagnostic `ORC0229`.
    - Unqualified imports (wildcards like `use m::*;`) do not exist in Orange.
 
-### §16. Import Dependency Graphs and Tarjan Cycle Elimination
+### §16. Import Dependency Graphs and Cycle Rejection
 
 1. **Dependency Graph Invariant:**
    Let $G = (V, E)$ be the module dependency graph where $V$ is the set of all
    modules and $(u, v) \in E \iff u \text{ contains } \texttt{use } v;$.
    $G$ MUST be a Directed Acyclic Graph (DAG).
-2. **Tarjan Cycle Elimination:**
-   The compiler constructs $G$ and executes Tarjan's Strongly Connected Components
-   (SCC) algorithm. If any component contains a cycle (length $\ge 1$), compilation
-   halts immediately with diagnostic `ORC0230`:
+2. **Cycle Rejection:**
+   The compiler walks uses depth-first from the root and reports a cycle at the
+   `use` that closes it, diagnostic `ORC0230`. It does not run Tarjan's
+   algorithm, and the diagnostic does not name an SCC.
    $$\exists v_0, v_1, \dots, v_k.\ (v_i, v_{i+1}) \in E \land v_k = v_0 \implies \text{Diagnostic}(\text{ORC0230})$$
 3. **Duplicate Imports:**
    - Importing the same module twice in one source file emits `ORC0231`.
@@ -637,29 +610,22 @@ hex_string_literal = "hex\"" (hex_digit hex_digit | " ")* "\"" ;
    strictly structural:
    $$\text{type } A = T \implies A \equiv T$$
 3. **Anti-Shadowing Invariants:**
-   - A type alias identifier MUST NOT shadow built-in types (`Int`, `Bool`, `Byte`,
-     `Word`, `Mod`). Defining `type Int = Word[64];` emits `ORC0233`.
+   - A type alias identifier MUST NOT name a built-in type. The built-in types
+     are `Int`, `Bool`, `Word[n]`, and `Mod[m]`. `Byte` is not one of them.
+     `type Byte = Word[8];` is a legal alias. `type Int = Word[64];` emits
+     `ORC0233` (`Int` is a built-in type).
    - Declaring duplicate type alias names within the same module emits `ORC0233`.
 
 ### §18. Multi-Strata Architectural Separation and Disjoint Namespaces
 
-1. Orange enforces an ontological separation between distinct modes of cryptographic
-   computation:
-   - **`spec`**: Pure mathematical functions. Computes over algebraic rings and fields.
-     Total, acyclic, and terminating.
-   - **`impl`**: Imperative executable procedures. Computes over physical memory places
-     and mutable buffers. Affine ownership, contracts, and zeroization.
-   - **`machine impl`**: Low-level machine code with register constraints, SIMD types,
-     and hardware crypto intrinsics.
-   - **`game`**: Probabilistic programs, uniform sampling, stateful oracles, and
-     cryptographic reductions.
-   - **`proof`**: Proof IR terms establishing refinement, equivalence, and safety.
-2. **Disjoint Namespace Invariant:**
-   Each stratum maintains an independent symbol table within a module.
-   - A module may legitimately declare both `spec sha256` and `impl sha256`.
-   - They do not conflict in name resolution: call sites explicitly specify the stratum.
-   - They are formally connected only when an explicit `claim` record proves a
-     refinement theorem between them.
+1. **Current declarations.** `spec` and `impl` are separate declaration
+   namespaces (`ORC0201`). The same module may declare `spec sha256` and
+   `impl sha256`. A call names a typed `spec` function. There is no stratum
+   selector at the call. A typed `impl` body has no semantics (`ORC0202`); an
+   empty `impl` declares a name and does not evaluate. `game`, `proof`, and
+   `claim` are not declaration forms (§14).
+2. **Proposed strata.** Affine ownership, machine intrinsics, games, proof
+   terms, and claims are Parts VIII–XIII. They are not the Current evaluator.
 
 ---
 
@@ -674,7 +640,7 @@ $$\mathbb{V} = \mathbb{V}_{\text{Int}} \uplus \mathbb{V}_{\text{Word}} \uplus \m
 
 Where:
 
-- $\mathbb{V}_{\text{Int}} = \mathbb{Z} \cap [-(2^{4096}-1), 2^{4096}-1]$
+- $\mathbb{V}_{\text{Int}} = \{ x \in \mathbb{Z} \mid |x| < 2^{16384} \}$
 - $\mathbb{V}_{\text{Word}} = \biguplus_{W \in \{8, 16, 32, 64\}} (\mathbb{Z} / 2^W \mathbb{Z})$
 - $\mathbb{V}_{\text{Mod}} = \biguplus_{m \in [2, 2^{521}-1]} (\mathbb{Z} / m \mathbb{Z})$
 - $\mathbb{V}_{\text{Bool}} = \{\text{true}, \text{false}\}$
@@ -686,10 +652,13 @@ Where:
 1. The `Int` type models the algebraic ring of mathematical integers:
    $$(\mathbb{Z}, +, \cdot, -, 0, 1)$$
 2. **Exact Arithmetic:** Operations on `Int` never overflow or wrap.
-3. **Safety Bound:** Evaluated magnitudes are bounded by $2^{4096} - 1$. Producing
-   an integer $|x| \ge 2^{4096}$ emits diagnostic `ORC0205`.
-4. **Absence of Coercion:** An `Int` CANNOT be passed to a function expecting `Word[W]`
-   or `Mod[m]` without an explicit `as` cast.
+3. **Safety Bound:** An integer with more than 16,384 significant bits
+   ($|x| \ge 2^{16384}$) emits diagnostic `ORC0205`. Shifts and rotations are
+   not defined on `Int` (`ORC0215`); `1 << 4096` is that diagnostic, not
+   `ORC0205`.
+4. **Absence of Coercion:** An `Int` cannot be passed where a `Word[W]` or
+   `Mod[m]` is required without an explicit `as` cast. The cast reduces; it
+   does not assert that the value already lies in the destination (§28).
 
 ### §21. Word Rings: Algebraic Foundations of $\mathbb{Z}/2^W\mathbb{Z}$ ($W \in \{8, 16, 32, 64\}$)
 
@@ -874,11 +843,13 @@ bytes, and evaluation steps.
    $$\frac{\Gamma \vdash t : (T_0, \dots, T_{k-1}) \quad 0 \le j < k}{\Gamma \vdash t.j : T_j}$$
    Attempting field projection on a non-tuple emits `ORC0234`.
 
-### §27. Byte Arrays (`Byte` and `Word[8]^n`)
+### §27. Byte Arrays (`Word[8]^n`)
 
-1. The identifier `Byte` is syntactically and semantically identical to `Word[8]`.
-2. String literals `"..."` and hexadecimal literals `hex"..."` are first-class values
-   of type `Word[8]^n`, where $n$ is the byte length.
+1. There is no type `Byte`. A byte is a `Word[8]`. Naming `Byte` as a type,
+   without a `type` alias, is `ORC0203`. `type Byte = Word[8];` is allowed,
+   because `Byte` is not built in (§17).
+2. String literals `"..."` and hexadecimal literals `hex"..."` have type
+   `Word[8]^n`, where $n$ is the number of bytes.
 3. **Concatenation Typing:**
    $$\frac{\Gamma \vdash A : T^a \quad \Gamma \vdash B : T^b \quad a + b \le 65,536}{\Gamma \vdash (A \mathbin{+\!+} B) : T^{a+b}}$$
 
@@ -892,12 +863,15 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{AdmissibleCast}(\tau_{\t
 
 | Source Type ($\tau_{\text{src}}$) | Target Type ($\tau_{\text{dst}}$) | Operational Semantic Meaning |
 | :--- | :--- | :--- |
-| `Word[W]` | `Int` | Maps residue $x \in [0, 2^W-1]$ to exact integer $x \in \mathbb{Z}$. |
-| `Int` | `Word[W]` | Asserts $0 \le x < 2^W$; maps to word residue $x \bmod 2^W$. |
-| `Word[W1]` | `Word[W2]` ($W_1 < W_2$) | Zero-extends: high-order bits set to 0. |
-| `Word[W1]` | `Word[W2]` ($W_1 > W_2$) | Truncates: retains low $W_2$ bits ($x \bmod 2^{W_2}$). |
-| `Int` | `Mod[m]` | Canonical reduction: $x \bmod m \in [0, m-1]$. |
-| `Word[W]` | `Mod[m]` | Canonical reduction: $(x \text{ as Int}) \bmod m$. |
+| `Word[W]` | `Int` | The residue in $[0, 2^W-1]$ as an `Int`. |
+| `Int` | `Word[W]` | The residue of $x$ modulo $2^W$. Negative values wrap. The cast does not require $0 \le x < 2^W$. |
+| `Word[W1]` | `Word[W2]` ($W_1 < W_2$) | Zero-extends. |
+| `Word[W1]` | `Word[W2]` ($W_1 > W_2$) | Keeps the low $W_2$ bits. |
+| `Int` | `Mod[m]` | Least residue of $x$ modulo $m$. |
+| `Word[W]` | `Mod[m]` | Least residue of the word's unsigned value modulo $m$. |
+| `Mod[m]` | `Int` | The least residue in $[0, m-1]$. |
+| `Mod[m]` | `Word[W]` | The least residue, then reduced modulo $2^W$. |
+| `Bool` | any scalar | Not a cast. `ORC0215`: `as` does not convert to or from `Bool`. |
 
 Applying `as` to an untyped literal (e.g. `(42) as Word[32]`) emits diagnostic `ORC0220`.
 
@@ -967,7 +941,7 @@ $$\mathcal{C} = \langle \Sigma, \Theta, \Delta, \Gamma \rangle$$
    Maps qualified function identifiers to their declared parameter and return signatures.
 2. **Size Parameter Context ($\Theta$):**
    $$\Theta : \text{SizeIdent} \to [\text{low}, \text{high}]$$
-   Maps static size parameter identifiers to their closed integer bounding intervals.
+   Maps static size parameter identifiers to half-open ranges `low..high` (§30).
 3. **Type Parameter Context ($\Delta$):**
    $$\Delta : \text{TypeIdent} \to \mathcal{P}(\text{Types})$$
    Maps type parameter variables to their finite, explicitly admitted type candidate sets.
@@ -1008,9 +982,9 @@ $$\frac{x \notin \Gamma \quad x \notin \text{dom}(\Sigma)}{\langle \Sigma, \Thet
 
 #### 2. Literals and Constants
 
-$$\frac{n \in \mathbb{Z} \quad -(2^{4096}-1) \le n \le 2^{4096}-1}{\mathcal{C} \vdash n : \text{Int}} \quad (\text{T-Int-Lit})$$
+$$\frac{n \in \mathbb{Z} \quad |n| < 2^{16384}}{\mathcal{C} \vdash n : \text{Int}} \quad (\text{T-Int-Lit})$$
 
-$$\frac{|n| \ge 2^{4096}}{\mathcal{C} \vdash n : \text{Error}(\text{ORC0205})} \quad (\text{T-Int-Overflow})$$
+$$\frac{|n| \ge 2^{16384}}{\mathcal{C} \vdash n : \text{Error}(\text{ORC0205})} \quad (\text{T-Int-Overflow})$$
 
 $$\frac{b \in \{\text{true}, \text{false}\}}{\mathcal{C} \vdash b : \text{Bool}} \quad (\text{T-Bool-Lit})$$
 
@@ -1055,7 +1029,11 @@ $$\frac{\mathcal{C} \vdash a : \text{Word}[W] \quad k \in \text{Literals} \quad 
 
 Relational equality and orderings operate over homogeneous scalars:
 
-$$\frac{\mathcal{C} \vdash a : \tau \quad \mathcal{C} \vdash b : \tau \quad \tau \in \{\text{Int}, \text{Word}[W], \text{Mod}[m]\}}{\mathcal{C} \vdash a \mathbin{\text{cmp}} b : \text{Bool}} \quad (\text{cmp} \in \{==, !=, <, <=, >, >=\}) \quad (\text{T-Rel})$$
+$$\frac{\mathcal{C} \vdash a : \tau \quad \mathcal{C} \vdash b : \tau \quad \tau \in \{\text{Int}, \text{Word}[W]\}}{\mathcal{C} \vdash a \mathbin{\text{cmp}} b : \text{Bool}} \quad (\text{cmp} \in \{==, !=, <, <=, >, >=\}) \quad (\text{T-Rel})$$
+
+$$\frac{\mathcal{C} \vdash a : \text{Mod}[m] \quad \mathcal{C} \vdash b : \text{Mod}[m]}{\mathcal{C} \vdash a \mathbin{\text{cmp}} b : \text{Bool}} \quad (\text{cmp} \in \{==, !=\}) \quad (\text{T-Rel-Mod})$$
+
+An order comparison of residues (`<`, `<=`, `>`, `>=`) is `ORC0215`. Residues have no order. Compare least residues, as in `(x as Int) < (y as Int)`.
 
 $$\frac{\mathcal{C} \vdash a : \tau_1 \quad \mathcal{C} \vdash b : \tau_2 \quad \tau_1 \not\equiv \tau_2}{\mathcal{C} \vdash a \mathbin{\text{cmp}} b : \text{Error}(\text{ORC0214})} \quad (\text{T-Rel-Mismatch})$$
 
@@ -1071,7 +1049,9 @@ $$\frac{\mathcal{C} \vdash a : \text{Bool}}{\mathcal{C} \vdash !a : \text{Bool}}
 
 $$\frac{\mathcal{C} \vdash e : \tau \quad x \notin \Gamma \quad \langle \Sigma, \Theta, \Delta, (\Gamma, x : \tau) \rangle \vdash \text{body} : \tau_{\text{body}}}{\mathcal{C} \vdash (\text{let } x : \tau = e; \ \text{body}) : \tau_{\text{body}}} \quad (\text{T-Let})$$
 
-$$\frac{\mathcal{C} \vdash e : (T_0, \dots, T_{k-1}) \quad (\forall i \ne j.\ x_i \ne x_j) \quad (\forall i.\ x_i \notin \Gamma) \quad \langle \Sigma, \Theta, \Delta, (\Gamma, x_0 : T_0, \dots, x_{k-1} : T_{k-1}) \rangle \vdash \text{body} : \tau_{\text{body}}}{\mathcal{C} \vdash (\text{let } (x_0, \dots, x_{k-1}) = e; \ \text{body}) : \tau_{\text{body}}} \quad (\text{T-Let-Tuple})$$
+$$\frac{\mathcal{C} \vdash e : (T_0, \dots, T_{k-1}) \quad (\forall i.\ x_i \text{ is written } x_i : T_i)}{\mathcal{C} \vdash (\text{let } (x_0 : T_0, \dots, x_{k-1} : T_{k-1}) = e; \ \text{body}) : \tau_{\text{body}}} \quad (\text{T-Let-Tuple})$$
+
+Every name in a `let` pattern carries a type, as in `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`. A pattern that omits a type is a syntax error, not an inferred binding. An array is not a tuple: `let (a, b) = state` on a `Word[32]^8` is `ORC0214`.
 
 $$\frac{x \in \Gamma}{\mathcal{C} \vdash (\text{let } x : \tau = e; \ \text{body}) : \text{Error}(\text{ORC0219})} \quad (\text{T-Let-Shadow})$$
 
@@ -1123,48 +1103,43 @@ The parser constructs expression ASTs according to the grouping envelope grammar
 
 $$\text{Group}(op_1) \ne \text{Group}(op_2) \implies \text{ParenRequirement}(op_1, op_2)$$
 
-1. **Equi-Precedence Groups:**
-   - Group 1 (Additive): `+`, `-`
-   - Group 2 (Multiplicative): `*`, `/`, `%`
-   - Group 3 (Bitwise AND): `&`
-   - Group 4 (Bitwise OR): `|`
-   - Group 5 (Bitwise XOR): `^`
-   - Group 6 (Shifts / Rotates): `<<`, `>>`, `<<<`, `>>>`
-   - Group 7 (Relational): `==`, `!=`, `<`, `<=`, `>`, `>=`
-   - Group 8 (Logical): `&&`, `||`
-2. **Ambiguity Rejection Rule:**
-   If an expression contains binary operators from distinct groups without explicit
-   parenthesizing sub-expressions, the syntax tree parser halts immediately with
-   diagnostic `ORC0108`. Operator precedence trees cannot resolve across group boundaries.
+1. **What may share an expression without parentheses:**
+   - `+` and `-` chain, left to right.
+   - `*` chains, and it binds tighter than `+` and `-`, so `a + b * c` is one expression.
+   - `&` chains only with `&`. `|` chains only with `|`. `^` chains only with `^`.
+   - `&&` chains only with `&&`. `||` chains only with `||`.
+   - `++` chains only with `++`.
+2. **What takes exactly two operands:**
+   Each of `/`, `%`, `<<`, `>>`, `<<<`, `>>>`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
+   takes two operands. A second one, or one of them beside an operator from
+   another group, is `ORC0108`. In particular `a / b / c`, `a << 1 << 2`, and
+   `a == b == c` are rejected, and `*` does not share a group with `/` or `%`.
+3. **`as` and `with`:**
+   A cast or an update is a postfix of its operand. Mixing one with a binary
+   operator from another group, without parentheses, is `ORC0108`.
 
-### §36. Static Array Bounds Verification and Abstract Interval Analysis
+### §36. Static Index Ranges
 
-Orange guarantees zero runtime bounds checks by verifying all array indexing statically.
+Every index is proved in range before evaluation. The proof is the range of
+the index expression, not a general interval lattice and not a dataflow
+analysis over $\pm\infty$.
 
-#### 1. The Abstract Interval Domain Lattice ($\mathbb{I}$)
+`docs/LOOKUPS_2026.md` is the lookup. The rules a reader applies are:
 
-The compiler tracks values in the complete lattice:
-
-$$\mathbb{I} = \{ [l, u] \mid l, u \in \mathbb{Z} \cup \{-\infty, +\infty\}, l \le u \} \cup \{ \bot, \top \}$$
-
-ordered by interval inclusion: $[l_1, u_1] \sqsubseteq [l_2, u_2] \iff l_2 \le l_1 \land u_1 \le u_2$.
-
-#### 2. Lattice Transfer Operations
-
-- **Join ($\sqcup$):** $[l_1, u_1] \sqcup [l_2, u_2] = [\min(l_1, l_2), \max(u_1, u_2)]$
-- **Meet ($\sqcap$):** $[l_1, u_1] \sqcap [l_2, u_2] = [\max(l_1, l_2), \min(u_1, u_2)]$ (or $\bot$ if $\max > \min$)
-- **Addition ($+$):** $[l_1, u_1] + [l_2, u_2] = [l_1 + l_2, u_1 + u_2]$
-- **Subtraction ($-$):** $[l_1, u_1] - [l_2, u_2] = [l_1 - u_2, u_1 - l_2]$
-- **Bitwise AND with Mask ($\&$):** For $M = 2^k - 1$:
-  $$[l, u] \mathbin{\&} [0, M] = [0, \min(u, M)] \quad (\text{if } l \ge 0)$$
-
-#### 3. Bounds Judgment for Array Indexing
-
-$$\text{Index}(n) \triangleq \{ e \mid \mathcal{I}(e) = [l, u] \land 0 \le l \land u < n \}$$
-
-$$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{I}(e) = [l, u] \quad 0 \le l \quad u < n}{\mathcal{C} \vdash A[e] : T} \quad (\text{T-Index-Proven})$$
-
-$$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{I}(e) = [l, u] \quad (l < 0 \lor u \ge n)}{\mathcal{C} \vdash A[e] : \text{Error}(\text{ORC0223})} \quad (\text{T-Index-Out-Of-Bounds})$$
+1. A `Word[n]` index ranges over its type, narrowed by the operator table in
+   that document: `&` takes an upper bound from a mask, a conversion from a
+   narrower word keeps a range that still fits, and an operator that can wrap
+   ranges over the whole type.
+2. An `Int` index is a static index: a literal, a loop index, a size name, or
+   `a as Int` whose operand is a word, plus `+`, `-`, and parentheses. Its
+   range is the range of that expression. `(x as Int)` for `x: Word[8]` is
+   $[0, 255]$, so it indexes `Word[8]^256`.
+3. A conditional's range runs from the least lower bound to the greatest upper
+   bound of its branches. A condition does not narrow the index. `if x < 16`
+   does not prove `t[x]` in range.
+4. An index that is not inside $[0, n)$ is `ORC0223`, reported with the range
+   the index would have had. There is no runtime bounds check in the `spec`
+   evaluator.
 
 ### §37. Data-Dependent Indexing, Range Narrowing, and S-Box Lookups
 
@@ -1180,8 +1155,8 @@ are statically admitted by range narrowing:
    For $w : \text{Word}[W]$ and constant $k < W$:
    $$\mathcal{I}((w \mathbin{\&} (2^k - 1)) \text{ as Int}) = [0, 2^k - 1]$$
    Provably safe for indexing any array of length $N \ge 2^k$.
-3. If an index expression cannot be statically bounded within $[0, n-1]$, compilation halts
-   with `ORC0223`. Runtime bounds checks are formally forbidden in compiled machine kernels.
+3. If an index expression is not proved inside $[0, n)$, compilation rejects
+   it with `ORC0223`. The `spec` evaluator does not check bounds at run time.
 
 ---
 
@@ -1226,9 +1201,15 @@ An immutable association mapping variable identifiers to semantic values.
 
 #### 3. Deterministic Step Budget ($K$)
 
-Dynamic execution is guarded by a monotonically decreasing step counter $K \in \mathbb{N}$,
-initialized to $K_0 = 1,048,576$ (configurable via `--steps`). Every primitive reduction step
-decrements $K$ by 1. Reaching $K = 0$ triggers diagnostic `ORC0301`, eliminating unbounded execution.
+Dynamic execution is guarded by a step budget. The default is $K_0 = 1,048,576$.
+`orangec eval --steps N` and `orangec test --steps N` admit $N$ from 1 through
+1,073,741,824. Exhausting the budget emits `ORC0301`.
+
+A step is not one primitive. An array update, fill, join, or slice of $n$
+elements costs $\lceil n / 64 \rceil$ steps. A byte-order conversion costs one
+step for each 64 bits. A shift or a rotation costs one step at any amount.
+`docs/LENGTHS_2026.md`, `docs/ORDER_2026.md`, and `docs/AMOUNTS_2026.md` are
+the cost tables.
 
 ### §40. Small-Step Operational Semantics (SOS) and Big-Step Reduction
 
@@ -1323,8 +1304,10 @@ $$L = \text{for } i \text{ in } \text{low}..\text{high} \text{ with } a = e_{\te
 1. **Test Execution Semantics:**
    A test `test "Title" { e }` is evaluated under the empty environment $\rho_0$:
    $$\langle e, \rho_0, K_0 \rangle \Downarrow \langle v, K' \rangle$$
-   - If $v = \text{true}$, the test outcome is `PASSED`.
-   - If $v = \text{false}$, the test outcome is `FAILED` with non-zero exit code.
+   - If $v = \text{true}$, `orangec test` prints `test "Title" ... ok`.
+   - If $v = \text{false}$, it prints `test "Title" ... FAILED` and exits nonzero.
+   - The expression must have type `Bool`. A failed step budget emits `ORC0301`
+     and reports no test outcome.
 2. **Whole-Aggregate Structural Equality (`==`):**
    Structural equality recursively compares compound elements:
    - For arrays $A, B : T^n$:
@@ -1336,232 +1319,46 @@ $$L = \text{for } i \text{ in } \text{low}..\text{high} \text{ with } a = e_{\te
 
 ## Part VI: Formal Metatheory of the Specification Stratum
 
-### §44. Metatheorem 1: Strong Normalization and Totality
+This part states what the implemented `spec` evaluator guarantees. It is not a
+machine-checked metatheory. There is no proof of strong normalization, subject
+reduction, or an endianness isomorphism in this repository, and `orangec` does
+not check one.
 
-The specification stratum models terminating mathematical functions. We formalize this
-via Strong Normalization: every closed, well-typed expression evaluates in a finite number
-of steps to a canonical value.
+### §44. Evaluation Bounds
 
-#### 1. Definition of the Complexity Measure ($\mathcal{M}$)
+A closed, well-typed `spec` expression is evaluated under the step budget of
+§39. The evaluator returns a value, or it stops with `ORC0301` when the budget
+is exhausted, or it stops with `ORC0205` when an integer magnitude exceeds
+16,384 significant bits.
 
-We define a well-founded termination metric $\mathcal{M} : \text{Expr} \to \mathbb{N} \times \mathbb{N} \times \mathbb{N}$
-equipped with standard lexicographic ordering $<_{\text{lex}}$:
+Calls among typed `spec` functions are acyclic. A cycle is `ORC0217` and is
+not evaluated. Module uses are acyclic (`ORC0230`, §16).
 
-$$\mathcal{M}(e) = \langle \mathcal{H}(e), \mathcal{L}(e), \mathcal{S}(e) \rangle$$
+Those two budgets are the termination argument. They are not a proof that
+every well-typed expression normalizes in unbounded arithmetic.
 
-Where:
+### §45. Checking Before Evaluation
 
-- $\mathcal{H}(e) \in \mathbb{N}$ is the **Call Graph DAG Height**: The maximum height of
-  any function symbol appearing in $e$ within the acyclic module call graph DAG $G = (V, E)$.
-  Since recursive calls are strictly rejected by diagnostic `ORC0217`, $G$ is a DAG of
-  finite height $\le |V|$.
-- $\mathcal{L}(e) \in \mathbb{N}$ is the **Loop Complexity Sum**: The sum of remaining iteration
-  counts $(high - i)$ for all active loop constructs in $e$.
-- $\mathcal{S}(e) \in \mathbb{N}$ is the **Syntactic AST Size**: The total number of nodes
-  in the abstract syntax tree of $e$.
+`orangec` does not evaluate a program that has an error. A program that fails
+a judgment in Parts III or IV produces diagnostics and no value. Progress and
+subject reduction are not theorems of this manual.
 
-#### 2. Metatheorem 1 Statement and Proof
+### §46. Determinism of the Reference Evaluator
 
-**Theorem 1 (Strong Normalization / Totality):**
-*For every closed expression $e$ and type $\tau$ such that $\emptyset \vdash e : \tau$, there exists a unique value $v \in \mathbb{V}_\tau$ and finite step count $k \in \mathbb{N}$ such that:*
-$$e \longrightarrow^k v$$
+The reference evaluator is a function of the source text, the step budget, and,
+for `replay`, the witness file. The same inputs produce the same values, the
+same diagnostics, and the same step count. `orangec` does not sample, does not
+read a clock, and does not consult a package file.
 
-*Proof.*
-We proceed by well-founded induction on the measure $\mathcal{M}(e) \in (\mathbb{N}^3, <_{\text{lex}})$:
+`replay` prints `holds_for_this_witness` or `falsified`.
 
-1. **Base Cases (Values):** If $e \in \mathbb{V}$, $k = 0$, $v = e$, and normalization holds vacuously.
-2. **Primitive Reductions ($r \longrightarrow r'$):**
-   - *Arithmetic/Bitwise:* Computing $(v_1 + v_2) \bmod 2^W$ or $(v_1 \cdot v_2) \bmod m$ strictly
-     decreases AST size $\mathcal{S}(r) > \mathcal{S}(r')$ while preserving $\mathcal{H}$ and $\mathcal{L}$.
-     Thus $\mathcal{M}(r) >_{\text{lex}} \mathcal{M}(r')$.
-   - *Totalization:* Division by zero ($x / 0 = 0$) and modular division with $\gcd(b, m) \ne 1$
-     evaluate deterministically to $0$ without divergence or trapping.
-   - *Conditionals:* Branching reduces $\text{if } \text{true} \{ e_1 \} \text{ else } \{ e_2 \}$
-     to $e_1$, strictly decreasing $\mathcal{S}$.
-   - *Let-bindings:* $\text{let } x = v; e_2 \longrightarrow e_2[v/x]$ eliminates the let-binder
-     node, strictly reducing $\mathcal{S}$.
-3. **Loop Stepping:**
-   Each loop iteration reduces the remaining loop bounds from $(high - low)$ to $(high - low - 1)$,
-   strictly decreasing the second component $\mathcal{L}(e)$. By lexicographic order,
-   $\langle \mathcal{H}, \mathcal{L}, \mathcal{S} \rangle >_{\text{lex}} \langle \mathcal{H}, \mathcal{L} - 1, \mathcal{S}' \rangle$.
-4. **Function Invocations ($f(v_0, \dots)$):**
-   Let $f$ have body $e_f$. Because the call graph is an acyclic DAG (verified by `ORC0217`),
-   every callee satisfies $\mathcal{H}(e_f) < \mathcal{H}(f)$. Thus, the first component
-   of the metric strictly decreases:
-   $$\langle \mathcal{H}(f), \mathcal{L}, \mathcal{S} \rangle >_{\text{lex}} \langle \mathcal{H}(e_f), \mathcal{L}', \mathcal{S}' \rangle$$
-5. Since $(\mathbb{N}^3, <_{\text{lex}})$ contains no infinite descending chains, the reduction
-   sequence MUST terminate in a finite number of steps $k \le \mathcal{M}(e)$ at a normal form $v$.
-   By Progress (Theorem 3), this normal form is a value $v \in \mathbb{V}_\tau$.
-$\blacksquare$
+### §47. Byte-Order Conversions at Equal Width
 
-### §45. Metatheorem 2: Type Safety (Progress and Subject Reduction)
-
-Type safety establishes that evaluation never gets stuck on malformed states or trapped operations.
-
-#### Lemma 2.1 (Weakening Context)
-
-*If $\Gamma \vdash e : \tau$ and $x \notin \text{dom}(\Gamma)$, then $\Gamma, x : \tau' \vdash e : \tau$.*
-
-*Proof.* By straightforward induction on the derivation tree of $\Gamma \vdash e : \tau$.
-The presence of additional disjoint bindings does not alter any typing premise. $\blacksquare$
-
-#### Lemma 2.2 (Substitution Lemma)
-
-*If $\Gamma, x : \tau' \vdash e : \tau$ and $\Gamma \vdash v : \tau'$, then $\Gamma \vdash e[v / x] : \tau$.*
-
-*Proof.*
-We proceed by induction on the derivation of $\Gamma, x : \tau' \vdash e : \tau$:
-
-- **Case T-Var:**
-  - If $e = x$, then $e[v/x] = v$. The derivation gave $\tau = \tau'$. We have $\Gamma \vdash v : \tau'$, so $\Gamma \vdash e[v/x] : \tau$.
-  - If $e = y \ne x$, then $e[v/x] = y$. Since $y \in \Gamma$, $\Gamma \vdash y : \tau$.
-- **Case T-Arith / T-Bitwise / T-Rel:**
-  $e = e_1 \mathbin{op} e_2$. By induction hypothesis, $\Gamma \vdash e_1[v/x] : \tau_1$ and
-  $\Gamma \vdash e_2[v/x] : \tau_2$. Applying the matching inference rule yields $\Gamma \vdash (e_1 \mathbin{op} e_2)[v/x] : \tau$.
-- **Case T-Let:**
-  $e = \text{let } y : \tau_y = e_1; e_2$. By $\alpha$-conversion, assume $y \ne x$ and $y \notin \text{FV}(v)$.
-  By IH, $\Gamma \vdash e_1[v/x] : \tau_y$. By IH on the body, $\Gamma, y : \tau_y \vdash e_2[v/x] : \tau$.
-  Applying T-Let gives $\Gamma \vdash (\text{let } y = e_1[v/x]; e_2[v/x]) : \tau$.
-- **Other cases (If, Index, Update, Array, Tuple, Call):**
-  Follow directly by applying the induction hypothesis to all constituent subterms.
-$\blacksquare$
-
-#### Lemma 2.3 (Canonical Forms)
-
-*Let $v$ be a closed value such that $\emptyset \vdash v : \tau$. Then:*
-
-1. *If $\tau = \text{Int}$, then $v = c \in \mathbb{Z} \cap [-(2^{4096}-1), 2^{4096}-1]$.*
-2. *If $\tau = \text{Word}[W]$, then $v = c \in [0, 2^W - 1]$.*
-3. *If $\tau = \text{Mod}[m]$, then $v = c \in [0, m - 1]$.*
-4. *If $\tau = \text{Bool}$, then $v \in \{\text{true}, \text{false}\}$.*
-5. *If $\tau = T^n$, then $v = [v_0, \dots, v_{n-1}]$ where $\forall i.\ \emptyset \vdash v_i : T$.*
-6. *If $\tau = (T_0, \dots, T_{k-1})$, then $v = (v_0, \dots, v_{k-1})$ where $\forall j.\ \emptyset \vdash v_j : T_j$.*
-
-*Proof.* Immediate by inspecting the value grammar $\mathbb{V}$ and literal typing rules. $\blacksquare$
-
-#### Theorem 2 (Subject Reduction / Preservation)
-
-*If $\Gamma \vdash e : \tau$ and $e \longrightarrow e'$, then $\Gamma \vdash e' : \tau$.*
-
-*Proof.*
-We induct on the small-step transition derivation $e \longrightarrow e'$:
-
-- **Case Contextual Rule $E[r] \longrightarrow E[r']$:**
-  By induction on the structure of evaluation context $E[\cdot]$. The typing of $E[\cdot]$
-  decomposes into a typing sub-derivation for redex $r$ with some intermediate type $\tau_r$.
-  Preservation of the primitive redex $r \longrightarrow r'$ ensures $\Gamma \vdash r' : \tau_r$,
-  which re-composes under $E[\cdot]$ to yield $\Gamma \vdash E[r'] : \tau$.
-- **Case R-Add-Word:**
-  $r = v_1 +_W v_2$. By Lemma 2.3, $v_1, v_2 \in [0, 2^W - 1]$. The redex contracts to
-  $r' = (v_1 + v_2) \bmod 2^W$. Since $(v_1 + v_2) \bmod 2^W \in [0, 2^W - 1]$,
-  applying T-Word-Lit yields $\Gamma \vdash r' : \text{Word}[W]$.
-- **Case R-Let:**
-  $r = \text{let } x : \tau_x = v; e_2 \longrightarrow e_2[v/x]$.
-  From T-Let, $\Gamma \vdash v : \tau_x$ and $\Gamma, x : \tau_x \vdash e_2 : \tau$.
-  By the Substitution Lemma (Lemma 2.2), $\Gamma \vdash e_2[v/x] : \tau$.
-- **Case R-If-True / R-If-False:**
-  $\text{if } \text{true} \{ e_1 \} \text{ else } \{ e_2 \} \longrightarrow e_1$.
-  From T-If, $\Gamma \vdash e_1 : \tau$ and $\Gamma \vdash e_2 : \tau$. The result $e_1$ has type $\tau$.
-- **Case R-Index:**
-  $[v_0, \dots, v_{n-1}][k] \longrightarrow v_k$.
-  From T-Array-Lit and T-Index, $\Gamma \vdash [v_0, \dots, v_{n-1}] : T^n$ and $0 \le k < n$.
-  Each element satisfies $\Gamma \vdash v_i : T$. Therefore $\Gamma \vdash v_k : T$.
-All other primitive contractions follow analogously. $\blacksquare$
-
-#### Theorem 3 (Progress)
-
-*If $e$ is a closed, well-typed expression ($\emptyset \vdash e : \tau$), then either $e \in \mathbb{V}$ or there exists $e'$ such that $e \longrightarrow e'$.*
-
-*Proof.*
-By induction on the typing derivation $\emptyset \vdash e : \tau$:
-
-- If $e$ is a literal, variable in empty context (impossible by well-typedness), or value, $e \in \mathbb{V}$.
-- If $e = e_1 \mathbin{op} e_2$:
-  By induction hypothesis, $e_1$ either steps ($e_1 \longrightarrow e_1'$, so $E[e_1] \longrightarrow E[e_1']$)
-  or is a value $v_1$. If $v_1$ is a value, $e_2$ either steps or is a value $v_2$.
-  If both are values, by Canonical Forms (Lemma 2.3), they match the domain of $\text{op}$.
-  Word and modular arithmetic are algebraically total for all operands (including division by zero).
-  Thus a primitive redex contraction rule applies.
-- If $e = A[i]$:
-  By IH, $A$ either steps or is a value $[v_0, \dots, v_{n-1}]$; $i$ either steps or is a value $k$.
-  By bounds typing T-Index-Proven, the interval analysis guarantees $0 \le k < n$.
-  Thus R-Index applies: $[v_0, \dots, v_{n-1}][k] \longrightarrow v_k$.
-- If $e = \text{if } c \{ e_1 \} \text{ else } \{ e_2 \}$:
-  By IH, $c$ either steps or is a boolean value. If $c = \text{true}$, R-If-True applies;
-  if $c = \text{false}$, R-If-False applies.
-No well-typed closed expression can be stuck. $\blacksquare$
-
-### §46. Metatheorem 3: Determinism and Semantic Confluence
-
-Evaluation in Orange is purely deterministic: every program execution path is unique.
-
-#### Lemma 3.1 (Unique Decomposition)
-
-*For every closed expression $e$, either $e \in \mathbb{V}$ or there exists a UNIQUE evaluation context $E$ and UNIQUE redex $r$ such that $e = E[r]$.*
-
-*Proof.*
-By induction on the abstract syntax tree of $e$. The grammar of evaluation contexts $E$
-is deterministic: left-to-right evaluation specifies that the leftmost, innermost redex
-is the unique active redex. $\blacksquare$
-
-#### Theorem 4 (Deterministic Evaluation)
-
-*If $e \longrightarrow e_1$ and $e \longrightarrow e_2$, then $e_1 = e_2$.*
-*Furthermore, if $\langle e, \rho \rangle \Downarrow v_1$ and $\langle e, \rho \rangle \Downarrow v_2$, then $v_1 = v_2$.*
-
-*Proof.*
-By Lemma 3.1, $e$ decomposes uniquely into $E[r]$. The primitive redex contractions
-$r \longrightarrow_{\text{redex}} r'$ are defined by mathematical functions:
-
-- Modular arithmetic computes the unique mathematical remainder.
-- Division by zero returns canonical zero ($0$).
-- Conditionals evaluate unique truth values.
-Since the decomposition is unique and the contraction is a mathematical function,
-$e_1 = E[r'] = e_2$. Determinism of multi-step and big-step reduction follows immediately
-by induction on step count. $\blacksquare$
-
-### §47. Metatheorem 4: Endianness Packing Isomorphism
-
-Cryptographic routines continually convert between sequences of bytes and integer words.
-Orange formalizes this equivalence via bijective algebraic homomorphisms.
-
-#### 1. Definition of Packing Homomorphisms
-
-Let $W \in \{16, 32, 64\}$ and $k = W / 8$.
-We define the packing maps $\beta_W^{\text{big}}, \beta_W^{\text{little}} : \text{Word}[8]^k \to \text{Word}[W]$:
-
-$$\beta_W^{\text{big}}(B) = \sum_{i=0}^{k-1} B[i] \cdot 2^{8(k - 1 - i)} \pmod{2^W}$$
-
-$$\beta_W^{\text{little}}(B) = \sum_{i=0}^{k-1} B[i] \cdot 2^{8i} \pmod{2^W}$$
-
-and their inverse unpacking maps $\beta_W^{\text{big},-1}, \beta_W^{\text{little},-1} : \text{Word}[W] \to \text{Word}[8]^k$:
-
-$$\beta_W^{\text{big},-1}(w)[i] = \lfloor w / 2^{8(k - 1 - i)} \rfloor \bmod 256$$
-
-$$\beta_W^{\text{little},-1}(w)[i] = \lfloor w / 2^{8i} \rfloor \bmod 256$$
-
-#### Theorem 5 (Bijective Invertibility and Bit-Level Isomorphism)
-
-*The packing maps $\beta_W^{\text{big}}$ and $\beta_W^{\text{little}}$ are bijections between $\text{Word}[8]^k$ and $\text{Word}[W]$:*
-$$\beta_W^{-1} \circ \beta_W = \text{id}_{\text{Word}[8]^k} \quad \text{and} \quad \beta_W \circ \beta_W^{-1} = \text{id}_{\text{Word}[W]}$$
-
-*Furthermore, packing preserves exact bit-level representation:*
-$$\text{bin}_W(\beta_W^{\text{big}}(B)) = \text{bin}_8(B[0]) \mathbin{\Vert} \text{bin}_8(B[1]) \mathbin{\Vert} \dots \mathbin{\Vert} \text{bin}_8(B[k-1])$$
-$$\text{bin}_W(\beta_W^{\text{little}}(B)) = \text{bin}_8(B[k-1]) \mathbin{\Vert} \dots \mathbin{\Vert} \text{bin}_8(B[1]) \mathbin{\Vert} \text{bin}_8(B[0])$$
-
-*Proof.*
-We verify the identity for $\beta_W^{\text{big}}$ (the little-endian case is symmetric):
-
-1. **Left Inverse:** For any $B \in \text{Word}[8]^k$, let $w = \beta_W^{\text{big}}(B) = \sum_{j=0}^{k-1} B[j] 2^{8(k-1-j)}$.
-   For any index $i \in [0, k-1]$:
-   $$\lfloor w / 2^{8(k-1-i)} \rfloor = \sum_{j=0}^i B[j] 2^{8(i-j)}$$
-   Taking modulo 256 isolates the term $j = i$ (since for $j < i$, $8(i-j) \ge 8$, so $2^{8(i-j)} \equiv 0 \pmod{256}$):
-   $$\lfloor w / 2^{8(k-1-i)} \rfloor \bmod 256 = B[i]$$
-   Thus $\beta_W^{\text{big},-1}(\beta_W^{\text{big}}(B)) = B$.
-2. **Right Inverse:** For any $w \in [0, 2^W - 1]$, by radix-256 integer representation,
-   $w = \sum_{i=0}^{k-1} (\lfloor w / 2^{8(k-1-i)} \rfloor \bmod 256) 2^{8(k-1-i)} = \beta_W^{\text{big}}(\beta_W^{\text{big},-1}(w))$.
-3. Since both domain and codomain have cardinality $2^W$, invertibility establishes bijection and bitwise isomorphism.
-$\blacksquare$
+`as big T` and `as little T` require the source and the target to have the
+same number of bits. A mismatch is `ORC0240`. An array of arrays is neither a
+source nor a target, at any rank. At equal width the two orders are the two
+layouts of those bits, and each is the inverse of the other. The equations are
+those of §29 and `docs/ORDER_2026.md`.
 
 ---
 
@@ -6438,12 +6235,17 @@ pub mod chacha20 {
 
 ## Part XV: Complete Diagnostic Reference Catalog
 
-**Status: Proposed predicate writeup of the Current codes.** The identifiers
-from `ORC0001` through `ORC0301` are codes slice S3u emits. The predicate
-notation in this part is reference text for those codes, not a separate checker.
-S3u's rank limit is `ORC0203`; a shape whose scalar product exceeds 65,536 is
-`ORC0221`; a path that indexes past the scalars is `ORC0224`; a path with a
-slice, an empty index, or a fifth index is `ORC0101`.
+**Status: Current codes, through slice S3u.** The identifiers `ORC0001`
+through `ORC0301` are codes the implemented compiler emits. Each entry below
+is a lookup for that code. It is not a second checker, and it is not a
+transcript of `orangec` output: invented rendering blocks have been removed.
+Where an entry and `compiler/crates/orange-compiler/src/diagnostic.rs` differ,
+the compiler source controls.
+
+S3u's rank limit is `ORC0203`. A shape whose scalar product exceeds 65,536 is
+`ORC0221`. A path that indexes past the scalars is `ORC0224`. A path with a
+slice, an empty index, or a fifth index is `ORC0101`. Driver limits such as
+the 16 MiB source ceiling are `ORC1003`, outside this range.
 
 ### §93. Diagnostic Philosophy, Severity Structure, and Error Budgets
 
@@ -6453,18 +6255,15 @@ slice, an empty index, or a fifth index is `ORC0101`.
    reordered across releases.
 2. **Severity Hierarchy:**
    - The severity of all compile-time diagnostic failures is fixed as `error`.
-   - Any emitted error immediately invalidates downstream compiler phases (e.g. an
-     error during parsing prevents semantic analysis; an error during semantic analysis
-     prevents evaluation or code generation).
+   - A lexical or parse error prevents semantic analysis of that source. A
+     semantic error prevents evaluation. The Current driver does not generate code.
 3. **Structured Diagnostic Record:**
    Every emitted diagnostic is a record:
    $$\text{Diag} = \langle \text{Code}, \text{Severity}, \text{PrimarySpan}, \text{Label}, \text{SecondarySpans}, \text{Notes} \rangle$$
 4. **Deterministic Error Suppression Budgets:**
-   - The compiler reports at most **32 errors per compiler phase** before halting
-     diagnostic accumulation.
-   - Upon encountering the 33rd error in any phase, the compiler emits a phase-specific
-     suppression diagnostic (`ORC0007` for lexing, `ORC0105` for parsing, `ORC0208`
-     for semantic analysis) and halts further analysis.
+   - Each of lexing, parsing, and semantic analysis reports at most **100**
+     ordinary errors, then one suppression diagnostic: `ORC0007`, `ORC0105`, or
+     `ORC0208`.
 
 ---
 
@@ -6571,7 +6370,7 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Lexical Analyzer
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{Count}(\text{NonTriviaTokens}) > 1,048,576$$
+  $$\text{Trigger} \iff \text{Count}(\text{NonTriviaTokens excluding EOF}) > 262{,}144$$
 - **Rationale:** Protects the compiler against algorithmic complexity attacks and out-of-memory crashes.
 - **Remediation:** Partition large compilation units into multiple modular source files.
 
@@ -6579,15 +6378,17 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Lexical Analyzer
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{Count}(\text{LexicalErrors}) \ge 33$$
+  $$\text{Trigger} \iff \text{Count}(\text{ordinary lexical errors}) > 100$$
 - **Remediation:** Fix early lexical errors and re-run compilation.
 
 #### `ORC0008` — `LexicalResourceLimit`
 
 - **Subsystem:** Lexical Analyzer
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff |\text{SourceFile}| > 16,777,216 \text{ bytes} \lor \text{MemoryAllocationFailed}()$$
-- **Remediation:** Keep source files under 16 MiB.
+  The lexer could not reserve its bounded token stream, or the cursor was not
+  on a UTF-8 boundary. A source longer than 16 MiB is `ORC1003`, not `ORC0008`.
+- **Remediation:** This code is a resource failure of the lexer, not a file-size
+  rejection. Split a source that trips `ORC0006` before it can trip `ORC0008`.
 
 #### `ORC0009` — `MalformedHexString`
 
@@ -6666,15 +6467,17 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Parser
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{Count}(\text{SyntaxErrors}) \ge 33$$
+  $$\text{Trigger} \iff \text{Count}(\text{ordinary parse errors}) > 100$$
 - **Remediation:** Resolve initial syntactic failures.
 
 #### `ORC0106` — `ParserResourceLimit`
 
 - **Subsystem:** Parser
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{RecursionDepth} > 1,024 \lor \text{ASTNodeCount} > 1,048,576$$
-- **Remediation:** Simplify deeply nested parenthesized expressions.
+  The parser stops when it cannot stay inside its budgets: 262,144 syntax
+  nodes, 1,048,576 parse events, expression nesting 64, expression height 256,
+  or recovery depth 64.
+- **Remediation:** Simplify or split the source. The message names the budget.
 
 #### `ORC0107` — `InvalidParserInput`
 
@@ -6733,17 +6536,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0201]: duplicate function definition 'process'
-   --> crypto.or:4:10
-    |
-  3 |     spec process(x: Word[32]) -> Word[32] { x + 1 }
-    |          ------- previous definition of 'process' here
-  4 |     spec process(x: Word[64]) -> Word[64] { x + 1 }
-    |          ^^^^^^^ duplicate definition in module 'crypto'
-  ```
 
 - **Remediation:** Disambiguate by assigning distinct semantic function identifiers:
 
@@ -6772,15 +6564,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0202]: unsupported typed function in active slice
-   --> test_impl.or:3:5
-    |
-  3 |     impl compute(x: Word[32]) -> Word[32] { x + 1 }
-    |     ^^^^ 'impl' procedures require slice S4 or higher; active slice is S3t
-  ```
 
 - **Remediation:** Use `spec` for pure mathematical specifications in slice S3t:
 
@@ -6796,7 +6579,7 @@ slice, an empty index, or a fifth index is `ORC0101`.
 - **Subsystem:** Semantic Analyzer (Type Elaborator)
 - **Formal Trigger Predicate:**
   $$\text{Trigger}(\tau) \iff \tau \notin \text{Universe}(\text{Orange 2026}) \lor \operatorname{rank}(\tau) > 4$$
-  where the universe is $\{\text{Int}, \text{Bool}, \text{Byte}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n \mid \operatorname{rank}(T^n) \le 4\} \cup \{(T_0, \dots, T_{k-1})\}$.
+  where the universe is $\{\text{Int}, \text{Bool}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n \mid \operatorname{rank}(T^n) \le 4\} \cup \{(T_0, \dots, T_{k-1})\}$. `Byte` is not in it (§27).
 - **Theoretical Rationale:** IEEE-754 floating-point numbers, unbounded dynamic pointers,
   and recursive algebraic data types introduce nondeterministic rounding, platform divergence,
   and side-channel leakages. They are strictly excluded from Orange's type universe.
@@ -6811,15 +6594,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0203]: unsupported type 'Float64'
-   --> bad_type.or:3:22
-    |
-  3 |     spec float_op(x: Float64) -> Float64 { x }
-    |                      ^^^^^^^ type 'Float64' is not part of Orange 2026
-  ```
 
 - **Remediation:** Model computations using fixed-width words, modular rings, or exact integers:
 
@@ -6847,15 +6621,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0204]: unsupported word width '24'
-   --> word_width.or:3:24
-    |
-  3 |     spec bad_word(x: Word[24]) -> Word[24] { x }
-    |                        ^^ word width must be exactly 8, 16, 32, or 64
-  ```
 
 - **Remediation:** Use standard machine word widths ($8, 16, 32, 64$):
 
@@ -6870,30 +6635,17 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Semantic Analyzer (Constant Evaluator)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(x) \iff x \in \mathbb{Z} \land |x| \ge 2^{4096}$$
-- **Theoretical Rationale:** Prevents denial-of-service and algorithmic complexity attacks
-  on the compiler's big-integer arithmetic engine. $4,096$ bits is sufficient to model
-  arbitrary RSA/ECC parameters (including Curve448 and E-521) while maintaining bounded memory.
-- **Erroneous Example:**
+  $$\text{Trigger}(x) \iff x \in \mathbb{Z} \land |x| \ge 2^{16384}$$
+- **Rationale:** `Int` is exact up to 16,384 significant bits. A wider magnitude
+  is rejected rather than truncated. `1 << 4096` is not an example: shifts are
+  not defined on `Int` (`ORC0215`).
+- **Trigger:** A literal or a constant integer expression whose magnitude has
+  more than 16,384 significant bits. The message is
+  `integer magnitude exceeds the 16384-significant-bit limit`.
+  `1 << 4096` is not this code: a shift of an `Int` is `ORC0215`.
 
-  ```orange
-  edition 2026;
-  module limits {
-      spec huge() -> Int { 1 << 4096 }
-  }
-  ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0205]: integer magnitude limit exceeded
-   --> limits.or:3:28
-    |
-  3 |     spec huge() -> Int { 1 << 4096 }
-    |                            ^^^^^^^ evaluated magnitude >= 2^4096
-  ```
-
-- **Remediation:** Keep integer operands within the 4,096-bit representation budget.
+- **Remediation:** Keep the magnitude within 16,384 significant bits.
 
 #### `ORC0206` — `NegativeWordLiteral`
 
@@ -6912,15 +6664,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0206]: negative word literal '-1'
-   --> neg_word.or:3:30
-    |
-  3 |     spec mask() -> Word[8] { -1 }
-    |                              ^^ word literals must be non-negative in [0, 2^W - 1]
-  ```
 
 - **Remediation:** Use canonical unsigned hex literals or ring subtraction:
 
@@ -6948,15 +6691,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0207]: word literal '256' out of range for Word[8]
-   --> out_of_range.or:3:27
-    |
-  3 |     spec b() -> Word[8] { 256 }
-    |                           ^^^ maximum value for Word[8] is 255
-  ```
 
 - **Remediation:** Specify canonical residues in $[0, 2^W - 1]$ or $[0, m - 1]$:
 
@@ -6972,7 +6706,7 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Semantic Analyzer (Error Recovery Driver)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{Count}(\text{SemanticErrors}) \ge 33$$
+  $$\text{Trigger} \iff \text{Count}(\text{ordinary semantic errors}) > 100$$
 - **Theoretical Rationale:** Bounds diagnostic output to prevent terminal flooding and
   cascading nonsensical error reports.
 - **Remediation:** Resolve initial semantic typing failures and re-run `orangec check`.
@@ -6981,7 +6715,10 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Semantic Analyzer (Memory Monitor)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger} \iff \text{TypeInferenceDepth} > 1,024 \lor \text{TypeTableAllocBytes} > 67,108,864$$
+  Semantic analysis could not reserve a bounded table, or it exceeded
+  262,144 Core nodes or 1,048,576 semantic events. The message is
+  `semantic analysis resource limit exceeded`. There is no type-inference
+  depth of 1,024 and no 64 MiB type-table budget.
 - **Theoretical Rationale:** Protects the compiler against pathological type structures
   and cyclic elaboration attacks.
 - **Remediation:** Simplify deeply nested tuple expressions or split huge modules.
@@ -7011,15 +6748,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0211]: cannot find value 'y' in this scope
-   --> scoping.or:3:49
-    |
-  3 |     spec add_one(x: Word[32]) -> Word[32] { x + y }
-    |                                                 ^ not found in this scope
-  ```
 
 - **Remediation:** Bind `y` as a function parameter or in a local `let` binding:
 
@@ -7046,15 +6774,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0212]: cannot find function 'helper' in module 'calls'
-   --> calls.or:3:36
-    |
-  3 |     spec test_call() -> Word[32] { helper(42) }
-    |                                    ^^^^^^ function 'helper' is not defined
-  ```
 
 - **Remediation:** Define `spec helper(...)` or import its declaring module using `use`.
 
@@ -7075,17 +6794,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0213]: this function takes 2 arguments but 1 was supplied
-   --> arity.or:4:28
-    |
-  3 |     spec add(a: Int, b: Int) -> Int { a + b }
-    |          --- defined here with 2 parameters
-  4 |     spec invoke() -> Int { add(1) }
-    |                            ^^^ expected 2 arguments, found 1
-  ```
 
 - **Remediation:** Supply all required arguments: `add(1, 2)`.
 
@@ -7108,17 +6816,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0214]: mismatched types: expected 'Word[32]', found 'Word[8]'
-   --> mismatch.or:4:27
-    |
-  4 |         let x: Word[32] = 42 as Word[8];
-    |                --------   ^^^^^^^^^^^^^ expected 'Word[32]', found 'Word[8]'
-    |                |
-    |                expected due to this type annotation
-  ```
 
 - **Remediation:** Use explicit conversion to the expected type: `42 as Word[32]`.
 
@@ -7138,15 +6835,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0215]: binary operator '^' cannot be applied to type 'Int'
-   --> bad_op.or:3:45
-    |
-  3 |     spec int_xor(a: Int, b: Int) -> Int { a ^ b }
-    |                                           ^ bitwise operators require 'Word[W]'
-  ```
 
 - **Remediation:** Convert integer operands to fixed-width words before bitwise operations:
 
@@ -7174,15 +6862,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0216]: shift amount '32' is out of range for 'Word[32]'
-   --> bad_shift.or:3:47
-    |
-  3 |     spec rot(x: Word[32]) -> Word[32] { x <<< 32 }
-    |                                               ^^ shift amount must be in 0..31
-  ```
 
 - **Remediation:** Specify a literal shift amount $0 \le k < W$:
 
@@ -7210,15 +6889,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0217]: cycle detected in call graph: 'f' -> 'g' -> 'f'
-   --> cycle.or:3:5
-    |
-  3 |     spec f(x: Int) -> Int { g(x) }
-    |     ^^^^ recursive function call cycle is prohibited in Orange
-  ```
 
 - **Remediation:** Eliminate recursion; formulate algorithms using bounded `for` loops.
 
@@ -7238,17 +6908,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0218]: duplicate parameter name 'x'
-   --> dup_param.or:3:25
-    |
-  3 |     spec f(x: Word[32], x: Word[32]) -> Word[32] { x }
-    |            -            ^ duplicate parameter 'x'
-    |            |
-    |            previously declared here
-  ```
 
 - **Remediation:** Provide unique identifiers for each parameter: `spec f(a: Word[32], b: Word[32])`.
 
@@ -7271,17 +6930,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0219]: duplicate binding 'x' shadows existing variable
-   --> shadow.or:4:13
-    |
-  3 |     spec f(x: Word[32]) -> Word[32] {
-    |            - first binding of 'x' declared here
-  4 |         let x: Word[32] = 10;
-    |             ^ re-declaration of 'x' in the same scope is prohibited
-  ```
 
 - **Remediation:** Assign a distinct variable name: `let x1: Word[32] = 10;`.
 
@@ -7301,15 +6949,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0220]: untyped conversion operand: cannot cast untyped literal with 'as'
-   --> untyped_cast.or:3:30
-    |
-  3 |     spec bad() -> Word[32] { (42) as Word[32] }
-    |                              ^^^^ cannot cast untyped literal; bind to a typed variable first
-  ```
 
 - **Remediation:** Bind to a typed local variable or use typed literal syntax:
 
@@ -7343,15 +6982,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0221]: unsupported array length: '0'
-   --> bad_array.or:3:26
-    |
-  3 |     type Empty = Word[8]^0;
-    |                          ^ array length must be between 1 and 65,536
-  ```
 
 - **Remediation:** Declare array dimensions within the closed interval $[1, 65536]$:
 
@@ -7380,15 +7010,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0222]: array literal element count mismatch: expected 4, found 3
-   --> arr_len.or:4:9
-    |
-  4 |         [0x10, 0x20, 0x30]
-    |         ^^^^^^^^^^^^^^^^^^ expected 4 elements for type 'Word[32]^4', found 3
-  ```
 
 - **Remediation:** Provide exactly $n$ elements, or use the fill expression `[val; n]`:
 
@@ -7419,15 +7040,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0223]: array index out of bounds: index 16 is out of range for length 16
-   --> bounds.or:4:13
-    |
-  4 |         arr[16]
-    |             ^^ index must be strictly less than 16 (valid range: 0..15)
-  ```
 
 - **Remediation:** Use indices within $[0, n-1]$:
 
@@ -7461,15 +7073,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0224]: cannot index into value of type 'Word[32]'
-   --> not_arr.or:4:9
-    |
-  4 |         w[0]
-    |         ^ indexing syntax '[...]' can only be applied to array types 'T^n'
-  ```
 
 - **Remediation:** Convert word to a byte array before indexing:
 
@@ -7501,15 +7104,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0225]: invalid loop range: start '10' is greater than end '5'
-   --> bad_loop.or:4:18
-    |
-  4 |         for i in 10..5 with acc = 0 { acc + i }
-    |                  ^^^^ loop bounds must satisfy 0 <= low <= high <= 65536
-  ```
 
 - **Remediation:** Ensure bounds satisfy $0 \le \text{low} \le \text{high} \le 65,536$:
 
@@ -7540,15 +7134,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0226]: non-static array index in slice S2
-   --> static_idx.or:4:15
-    |
-  4 |         table[dynamic_i]
-    |               ^^^^^^^^^ array index must be a compile-time constant in active slice
-  ```
 
 - **Remediation:** In S3g+, use data-dependent lookups with typed word indices narrowed to bounds.
 
@@ -7569,15 +7154,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0227]: untyped comparison operands
-   --> cmp_err.or:3:32
-    |
-  3 |     spec test_cmp() -> Bool { (10 == 20) }
-    |                                ^^    ^^ cannot compare two untyped literals
-  ```
 
 - **Remediation:** Bind operands to typed variables before comparing:
 
@@ -7608,17 +7184,8 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
 
-  ```text
-  error[ORC0228]: cannot find module 'missing_module'
-   --> app.or:3:9
-    |
-  3 |     use missing_module;
-    |         ^^^^^^^^^^^^^^ file 'missing_module.or' not found in package roots
-  ```
-
-- **Remediation:** Create `missing_module.or` or verify package search paths in `Orange.toml`.
+- **Remediation:** Put `missing_module.or` in the directory of the root file. There is no `Orange.toml` search path (§15).
 
 #### `ORC0229` — `ModuleNotUsed`
 
@@ -7638,21 +7205,12 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0229]: module 'sha256' was not declared with 'use'
-   --> client.or:4:9
-    |
-  4 |         sha256::hash_word(0)
-    |         ^^^^^^ module 'sha256' must be imported via 'use sha256;'
-  ```
 
 - **Remediation:** Add `use sha256;` to the module's import header.
 
 #### `ORC0230` — `ModuleCycle`
 
-- **Subsystem:** Semantic Analyzer (Tarjan SCC Module DAG Validator)
+- **Subsystem:** Semantic Analyzer (module-use depth-first search)
 - **Formal Trigger Predicate:**
   $$\text{Trigger}(G_{\text{mod}}) \iff \exists m.\ m \to^+ m \text{ in } G_{\text{mod}}$$
 - **Theoretical Rationale:** Cyclically dependent modules create mutually referential
@@ -7669,15 +7227,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   module b { use a; }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0230]: cyclic dependency detected between modules: 'a' -> 'b' -> 'a'
-   --> a.or:3:5
-    |
-  3 |     use b;
-    |     ^^^^^ module import creates a circular dependency
-  ```
 
 - **Remediation:** Factor shared declarations into a leaf module `c.or` imported by both `a` and `b`.
 
@@ -7706,15 +7255,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0232]: invalid modulus '1'
-   --> bad_mod.or:3:27
-    |
-  3 |     type Degenerate = Mod[1];
-    |                           ^ modulus must satisfy 2 <= m <= 2^521 - 1
-  ```
 
 - **Remediation:** Specify an admitted modulus $2 \le m \le 2^{521} - 1$.
 
@@ -7723,8 +7263,7 @@ slice, an empty index, or a fifth index is `ORC0101`.
 - **Subsystem:** Semantic Analyzer (Type Alias Resolver)
 - **Formal Trigger Predicate:**
   $$\text{Trigger}(T) \iff T \in \text{BuiltinTypes} \lor T \in \text{dom}(\text{DeclaredAliases})$$
-- **Theoretical Rationale:** Prevents shadowing of builtin primitive types (`Int`, `Bool`, `Word`)
-  and rejects re-declarations of type aliases in the same module.
+- **Rationale:** A `type` declaration cannot name `Int`, `Bool`, `Word`, or `Mod`, and it cannot repeat a name. `Byte` is not built in.
 - **Erroneous Example:**
 
   ```orange
@@ -7734,15 +7273,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0233]: duplicate type name 'Int'
-   --> dup_type.or:3:10
-    |
-  3 |     type Int = Word[64];
-    |          ^^^ 'Int' is a reserved builtin type
-  ```
 
 - **Remediation:** Choose an unreserved, unique type alias name.
 
@@ -7764,15 +7294,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0234]: cannot access tuple field '.0' on non-tuple type 'Word[32]'
-   --> tuple_err.or:4:10
-    |
-  4 |         w.0
-    |          ^^ field access is only valid on tuple types '(T0, T1, ...)'
-  ```
 
 - **Remediation:** Apply `.j` projections only to tuple values: `(x, y).0`.
 
@@ -7803,15 +7324,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0236]: invalid slice range: start '10' is greater than end '5'
-   --> slice_err.or:4:13
-    |
-  4 |         arr[10..5]
-    |             ^^^^^ slice bounds must satisfy 0 <= a <= b <= n
-  ```
 
 - **Remediation:** Ensure $0 \le a \le b \le n$: `arr[5..10]`.
 
@@ -7828,35 +7340,26 @@ slice, an empty index, or a fifth index is `ORC0101`.
 
 - **Subsystem:** Semantic Analyzer (Monomorphization Engine)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(k, [\text{low}, \text{high}]) \iff k < \text{low} \lor k > \text{high}$$
-- **Theoretical Rationale:** Passing a size argument outside the callee's declared size
-  interval $[low..high]$ violates the function's monomorphization domain contract.
+  A declared range `n in a..b` is rejected when it is empty, when `b` is
+  greater than 65,536, or when `a` is not strictly less than `b`. A function
+  with more than 256 instances is the same code. The note is: `a < b <= 65536`,
+  and a function has at most 256 instances.
+- **Rationale:** This code is about the declaration of the range, not about a
+  call. A call whose size is outside the half-open range is `ORC0239`.
 - **Erroneous Example:**
 
   ```orange
   edition 2026;
   module size_range {
-      spec pad[n in 1..64](x: Word[8]^n) -> Word[8]^64 { ... }
-      spec call_pad(x: Word[8]^70) -> Word[8]^64 {
-          pad[70](x) // 70 exceeds declared high bound of 64
-      }
+      spec pad[n in 1..1](x: Word[8]^n) -> Word[8]^64 { x ++ x }
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
+  `1..1` is empty. `n in 1..64` is the lengths 1 through 63, so `pad[64]` is
+  not an instance of that function.
 
-  ```text
-  error[ORC0238]: size parameter '70' is out of range for 'pad'
-   --> size_range.or:5:13
-    |
-  3 |     spec pad[n in 1..64](x: Word[8]^n) -> Word[8]^64 { ... }
-    |              ---------- declared interval is 1..64
-  4 |     spec call_pad(x: Word[8]^70) -> Word[8]^64 {
-  5 |         pad[70](x)
-    |             ^^ size argument must be between 1 and 64
-  ```
 
-- **Remediation:** Pass a size argument residing in the declared range: `pad[64](x)`.
+- **Remediation:** Declare a non-empty range with `a < b <= 65536` and at most 256 instances. For `n in 1..64`, the largest instance is `pad[63]`.
 
 #### `ORC0239` — `SizeCount`
 
@@ -7885,15 +7388,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0240]: bit width mismatch in packing conversion: 120 bits vs 128 bits
-   --> packed_err.or:4:9
-    |
-  4 |         bytes as big Word[32]^4
-    |         ^^^^^^^^^^^^^^^^^^^^^^^ cannot pack 120-bit type 'Word[8]^15' into 128-bit type 'Word[32]^4'
-  ```
 
 - **Remediation:** Ensure both source and target types have identical total bit widths:
 
@@ -7926,18 +7420,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0241]: type argument 'Int' is not in the declared parameter set
-   --> type_param.or:5:16
-    |
-  3 |     spec square[K in {Mod[17], Mod[31]}](x: K) -> K { x * x }
-    |                      ------------------ permitted types are Mod[17], Mod[31]
-  4 |     spec call_sq() -> Int {
-  5 |         square[Int](42)
-    |                ^^^ unpermitted type parameter
-  ```
 
 - **Remediation:** Pass one of the types listed in the parameter set: `square[Mod[17]](x)`.
 
@@ -7978,15 +7460,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   $$\text{Trigger}(\text{src}) \iff \text{SourceBytes}(\text{src}) \ne \text{FormattedBytes}(\text{src})$$
 - **Theoretical Rationale:** Enforces canonical source formatting in CI pipelines.
 - **Erroneous Example:** Unformatted source text evaluated under `--check`.
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0252]: source formatting required
-   --> crypto.or:1:1
-    |
-  1 | edition 2026;module crypto{spec a()->Int{1}}
-    | ^ file is not canonically formatted
-  ```
 
 - **Remediation:** Run `orangec fmt FILE` to canonically reformat whitespace.
 
@@ -8057,15 +7530,6 @@ slice, an empty index, or a fifth index is `ORC0101`.
   }
   ```
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0273]: invalid witness replay target: function 'hash' does not return 'Bool'
-   --> bad_replay.or:3:5
-    |
-  3 |     spec hash(x: Word[32]) -> Word[32] { x }
-    |     ^^^^ replay target must be a specification function returning 'Bool'
-  ```
 
 - **Remediation:** Target a boolean predicate function `spec prop(...) -> Bool`.
 
@@ -8090,20 +7554,9 @@ slice, an empty index, or a fifth index is `ORC0101`.
   evaluating computationally intensive algorithms, defending against infinite evaluation loops.
 - **Erroneous Example:**
 
-  ```console
-  $ orangec eval --steps 100 sha256.or
-  error[ORC0301]: evaluation resource limit exceeded: step budget '100' exhausted
-  ```
+  The message is `reference evaluation step limit exceeded`, with the note
+  `at most N evaluation steps are permitted`.
 
-- **Compiler Diagnostic Rendering:**
-
-  ```text
-  error[ORC0301]: evaluation resource limit exceeded
-   --> sha256.or:15:9
-    |
-  15|         for i in 0..64 with state = init_state { ... }
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ execution exceeded allocated budget of 100 steps
-  ```
 
 - **Remediation:** Increase step budget using `--steps <COUNT>`:
 
@@ -8138,15 +7591,18 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 | `fmt FILE` | Reformats source whitespace canonically to stdout. | 0 on success, 1 on resource limit. |
 | `fmt --check FILE...` | Verifies source byte equality against canonical formatting. | 0 if identical, 1 if reformatting required (`ORC0252`). |
 | `doc FILE` | Generates self-contained, offline HTML documentation to stdout. | 0 on success, 1 on limit breach. |
-| `lex FILE` | Dumps the deterministic non-trivia token stream. | 0 on success. |
-| `replay FILE` | Replays a witness vector against a boolean spec function. | 0 on success, printing `HoldsForThisWitness` or `Falsified`. |
+| `lex FILE` | Prints the deterministic non-trivia token stream. | 0 on success. |
+| `replay` | Replays one Boolean function instance on a witness file (`--function`, `--witness`). | Prints `holds_for_this_witness` or `falsified`. |
+| `keygen` | Writes a secret key for a scheme. The default scheme is `xchacha20_poly1305`. | |
+| `enc` / `dec` | Seal or open a file with the scheme its key belongs to. | Reference code. Not constant-time. |
+| `schemes` | Lists the built-in sealing schemes, or describes the named ones. | |
 
 #### Global Options
 
 - `--edition 2026`: Explicitly specifies the source edition.
-- `--steps <COUNT>`: Configures the reference evaluation step budget (default: $2^{20} = 1,048,576$).
-- `--spec <NAME>`: Restricts evaluation to the named `spec` function.
-- `--stats`: Emits exact step counts and memory words consumed during execution.
+- `--steps <COUNT>`: Evaluation step budget, from 1 through 1,073,741,824. The default is 1,048,576.
+- `--spec <NAME>`: Evaluate only this function without parameters. Repeatable, at most 64 names. `eval` only.
+- `--stats`: Report the steps each function or test used, on stderr. It does not report memory words. It applies to `eval`, `test`, and `replay`.
 - `--version`: Emits package version, edition, and latest implemented slice:
 
   ```console
@@ -8156,12 +7612,12 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 
 ### §102. Deterministic Resource Limits and Denial-of-Service Defense
 
-| Parameter | Normative Threshold | Diagnostic on Breach |
+| Parameter | Implemented limit | Diagnostic on Breach |
 | :--- | :--- | :--- |
-| **Maximum Source File Size** | 16,777,216 bytes (16 MiB) | `ORC0008` |
-| **Maximum Non-Trivia Tokens** | 1,048,576 tokens ($2^{20}$) | `ORC0006` |
-| **Maximum Reported Errors** | 32 per phase before suppression | `ORC0007`, `ORC0105`, `ORC0208` |
-| **Maximum Integer Magnitude** | $2^{4096} - 1$ ($\approx 1234$ decimal digits) | `ORC0205` |
+| **Maximum Source File Size** | 16,777,216 bytes (16 MiB) | `ORC1003` |
+| **Maximum Non-Trivia Tokens** | 262,144, excluding EOF | `ORC0006` |
+| **Maximum Reported Errors** | 100 ordinary errors per phase, then one suppression | `ORC0007`, `ORC0105`, `ORC0208` |
+| **Maximum Integer Magnitude** | 16,384 significant bits ($|x| < 2^{16384}$) | `ORC0205` |
 | **Admitted Word Bit Widths ($W$)** | Exactly $\{8, 16, 32, 64\}$ bits | `ORC0204` |
 | **Admitted Modular Moduli ($m$)** | $2 \le m \le 2^{521} - 1$ | `ORC0232` |
 | **Maximum Array Length ($n$)** | 65,536 elements ($2^{16}$) | `ORC0221` |
@@ -8172,14 +7628,19 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 | **Documentation Work Items** | 1,048,576 items ($2^{20}$) | `ORC0260` |
 | **Documentation Output Size** | 16,777,216 HTML bytes (16 MiB) | `ORC0260` |
 
-### §103. Complete Unified Formal EBNF Grammar
+### §103. Proposed Surface Grammar
+
+This grammar is Proposed. It is not the Current concrete syntax. The
+Current member forms are `spec`, `impl`, and `test` (§14). `Byte` is not a
+type (§27). A bare carriage return is whitespace (§7). Where this section and
+Parts I–V differ, Parts I–V control.
 
 ```text
-(* Orange 2026 Complete Formal EBNF Grammar *)
+(* Proposed surface. Not the Current grammar. *)
 
-source_file         = byte* ; (* UTF-8 encoded, <= 16 MiB, no BOM *)
+source_file         = byte* ; (* UTF-8, at most 16 MiB; U+FEFF is ORC0001 *)
 
-whitespace          = " " | "\t" | "\n" | "\r\n" ;
+whitespace          = " " | "\t" | "\n" | "\r" | "\r\n" ;
 line_comment        = "//" (any_char - "\n")* ;
 block_comment       = "/*" (block_comment | any_char)* "*/" ;
 
@@ -8230,7 +7691,6 @@ parsed_type         = scalar_type
 
 scalar_type         = "Int"
                     | "Bool"
-                    | "Byte"
                     | "Word" "[" integer_literal "]"
                     | "Mod" "[" modulus_expr "]" ;
 
