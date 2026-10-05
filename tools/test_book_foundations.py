@@ -302,7 +302,7 @@ class ContinuationExamples(unittest.TestCase):
             encoding='utf-8')
         exercises = re.findall(r'^\*\*Exercise (N7\.\d+) —', text, re.M)
         answers = re.findall(r'^\*\*(N7\.\d+)\.\*\*', text, re.M)
-        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 11)])
+        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 13)])
         self.assertEqual(sorted(exercises), sorted(answers))
         self.assertNotIn('Chapter 7', text)
         index = INDEX.read_text(encoding='utf-8')
@@ -346,6 +346,16 @@ class ContinuationExamples(unittest.TestCase):
             self.assertEqual(value > 0x7f, (value & 0x80) != 0)
         self.assertEqual(abs(-12), 12)
         self.assertFalse(True and False)
+        words = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567]
+        self.assertEqual(words, [286331153, 16909060, 2609737539, 19088743])
+        self.assertEqual(sum(words), 2932066495)
+        self.assertLess(sum(words), 2 ** 32)
+        self.assertEqual((0xffffffff + 1) % (2 ** 32), 0)
+        self.assertNotEqual(0xffffffff + 1, 0)
+        self.assertEqual([3 - i for i in range(4)], [3, 2, 1, 0])
+        self.assertEqual([i + 1 for i in range(4)], [1, 2, 3, 4])
+        self.assertTrue(all(0 <= 3 - i < 4 for i in range(4)))
+        self.assertFalse(all(0 <= i + 1 < 4 for i in range(4)))
 
     def test_opening_retained_byte_for_byte(self):
         import hashlib

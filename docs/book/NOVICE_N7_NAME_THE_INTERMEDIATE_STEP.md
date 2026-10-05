@@ -628,11 +628,121 @@ named updates, four outputs. The standard updates a letter in place.
 Orange names the new value. The tuple is what makes those four new values
 one result.
 
-### N7.9 The finish line
+### N7.9 Repeat only where the index is already safe
+
+A tuple names four results. A loop names a step that is applied to each
+position. Orange's loop in this lesson is bounded by two integer literals:
+
+```text
+for i in start..end with s: Type = start_value { step }
+```
+
+Read it as: `i` takes the integers `start`, `start + 1`, and so on, up to
+but not including `end`. The accumulator `s` begins as `start_value`. Each
+step replaces the mathematical value of `s` by the step's result. The
+value of the loop is `s` after the last step. Nothing inside the array is
+overwritten. `s with [i] = v` is a new array equal to `s` except at
+position `i`, where it holds `v`.
+
+**Assumption A6.** The bounds are integer literals with `0 ≤ start < end`.
+The index `i` is an `Int` whose only values are `start` through `end - 1`.
+An index expression built from integer literals and that loop index, using
+addition, subtraction, and multiplication, is accepted only when every
+value it can take selects an element. The checker computes that range
+before any step runs. Evaluation of an accepted loop does not meet an
+index outside the array.
+
+`for i in 0..4` therefore gives `i` the values 0, 1, 2, and 3. It does
+not give `i` the value 4.
+
+**Proposition N7.7.** If `i` is an integer and `0 ≤ i ≤ 3`, then
+`0 ≤ 3 - i ≤ 3`. If instead the index is `i + 1`, its values include 4,
+which does not select an element of a length-4 array.
+
+*Proof.* From `i ≥ 0`, subtracting `i` from 3 gives `3 - i ≤ 3`. From
+`i ≤ 3`, `3 - i ≥ 0`. So `3 - i` lies in 0 through 3, which is every
+legal position of a length-4 array and no others. For the second claim,
+the four values of `i` produce `i + 1` equal to 1, 2, 3, and 4. The last
+of those fails `4 < 4`. □
+
+The first family is the reversal below. The second is the rejected
+listing. The rejection is the proof's second claim, reported before the
+body runs. There is no partial array and no wrapped index.
+
+**Listing N7.10 — `bounded.or`**
+
+```orange
+edition 2026;
+module bounded {
+  spec reversed() -> Word[32]^4 {
+    let x: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567];
+    for i in 0..4 with s: Word[32]^4 = x { s with [3 - i] = x[i] }
+  }
+
+  spec total() -> Int {
+    let x: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567];
+    for i in 0..4 with s: Int = 0 { s + (x[i] as Int) }
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+bounded::reversed: Word[32]^4 = [0x01234567, 0x9b8d6f43, 0x01020304, 0x11111111]
+bounded::total: Int = 2932066495
+```
+
+Follow `reversed` for each `i`. The accumulator starts as `x`.
+
+| `i` | `3 - i` | value written |
+| --- | --- | --- |
+| 0 | 3 | `0x11111111` |
+| 1 | 2 | `0x01020304` |
+| 2 | 1 | `0x9b8d6f43` |
+| 3 | 0 | `0x01234567` |
+
+After the last step the array is the original four words in reverse
+order. Each index in the table is inside 0 through 3, which is
+Proposition N7.7's first claim. The checker accepts the loop because of
+that range, not because a particular run happened to stay inside.
+
+`total` converts each selected word to `Int` and adds it to an
+accumulator that starts at 0. Conversion to `Int` keeps the word's
+integer value, so the four addends are 286331153, 16909060, 2609737539,
+and 19088743. Their sum is 2932066495. That integer is less than 2³², so
+reducing it modulo 2³² would leave it unchanged. `Int` addition and
+`Word[32]` addition are still different functions: the word sum is the
+residue modulo 2³², and the integer sum is not. They agree on these four
+inputs because the integer fits. They disagree as soon as a sum reaches
+2³². For example, `0xffffffff + 1` is 4294967296 as an `Int` and `0` as
+a `Word[32]`.
+
+**Listing N7.11 — `slipped.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module slipped {
+  spec shift(x: Word[8]^4) -> Word[8]^4 {
+    for i in 0..4 with s: Word[8]^4 = x { s with [i] = x[i + 1] }
+  }
+}
+```
+
+The diagnostic is `ORC0223`: this index runs from 1 through 4, which is
+out of range for `Word[8]^4`, whose indices run from 0 through 3. The
+note says that every value the index can take must select an element.
+No step runs. The parameter `x` is never read for a value, because the
+program is rejected first. An `Int` that is not built from the loop index
+and integer literals, such as a parameter used directly in brackets, is a
+different rejection, `ORC0226`: the checker has no range it can prove.
+Listing N7.11 is the case where a range can be proved, and the proof says
+the range leaves the array. [E1]
+
+### N7.10 The finish line
 
 The reading index stated this lesson before it was written. Finishing N7
-means four outcomes, in dependency order. This section is the finish line,
-not a claim that every outcome is already demonstrated above.
+means four outcomes, in dependency order. This section is that finish line.
 
 1. **Name the step.** You can bind an intermediate value with a name, a
    stated type, and one evaluation, and you can write the ChaCha20 quarter
@@ -648,19 +758,25 @@ not a claim that every outcome is already demonstrated above.
    can use that index only where it has already been shown to lie inside
    the array.
 
-Outcomes 1 and 2 are Listings N7.1 through N7.4. Outcome 3 is Listing N7.7
-through Listing N7.9: one array, a `Bool` choice, and one tuple whose
-positions are the quarter round's four words. Outcome 4, a bounded loop
-whose index is proved in range before it runs, is the rest of this same
-lesson. It is not yet claimed. A feature is added here only when this
-branch's compiler accepts it. If it is unsupported, the lesson stops here
-and says so.
+All four are now in the listings above, and each stops at a stated
+boundary.
 
-What finishing does not mean: that you have proved ChaCha20 secure, that
-the compiler is correct, or that the original manuscript has been
-renumbered.
+1. Listings N7.1 and N7.4 name each step. Proposition N7.2 still assumes
+   what `+`, `^`, and `<<<` denote.
+2. Listing N7.2 shows the two conversions, and Listing N7.3 is rejected
+   with `ORC0108` rather than silently picking one.
+3. Listings N7.5, N7.7, N7.8, and N7.9 hold several values: an array at
+   literal indices, a `Bool` choice, and one tuple for the four words.
+4. Listing N7.10 repeats inside `0..4`. Proposition N7.7 is why `3 - i`
+   is in range. Listing N7.11 is rejected with `ORC0223` before any step
+   runs, because `i + 1` is not.
 
-### N7.7 Work at the desk
+This compiler accepts every one of those forms. The lesson does not stop
+early for a missing feature. Finishing the four outcomes still does not
+prove ChaCha20 secure, does not prove the compiler correct, and does not
+renumber the original manuscript.
+
+### N7.11 Work at the desk
 
 **Exercise N7.1 — Name the byte steps.** Starting from `0xfa`, compute
 `added`, `masked`, and the final rotation in Listing N7.1. Which of those
@@ -706,6 +822,17 @@ later reader treated the condition of `if` as a number that can be added?
 selects final `b`? Why is that `.1` rather than `.2`? Which element of
 the RFC test vector must it equal, and which part of that equality is the
 tuple's order rather than a new arithmetic step?
+
+**Exercise N7.11 — Stay inside the length.** For each `i` in 0, 1, 2, and
+3, compute `3 - i` and `i + 1`. Which of those two families is entirely
+inside 0 through 3? What does the compiler do with the other family, and
+does the loop body run?
+
+**Exercise N7.12 — Add the words as integers.** Convert each of
+`0x11111111`, `0x01020304`, `0x9b8d6f43`, and `0x01234567` to an integer
+and add them. Compare the sum with `bounded::total`. Does this particular
+sum change if it is reduced modulo 2³²? Give a different pair of
+`Word[32]` values whose `Int` sum and `Word[32]` sum disagree.
 
 ## Worked answers
 
@@ -774,6 +901,18 @@ the tuple and the identification of `b2` with the standard's final `b`.
 The `.1` does not add, XOR, or rotate. A second call of `quarter_round`
 does recompute the body; the projection only reads the element.
 
+**N7.11.** `3 - i` is 3, 2, 1, 0, all inside 0 through 3. `i + 1` is
+1, 2, 3, 4. The value 4 is not a legal index of a length-4 array, so
+Listing N7.11 is rejected with `ORC0223` before any step. The body does
+not run, and no array is printed.
+
+**N7.12.** The integers are 286331153, 16909060, 2609737539, and
+19088743. Their sum is 2932066495, which is `bounded::total`, because
+`as Int` keeps each word's value and the accumulator adds those integers.
+`2³² = 4294967296`, and 2932066495 is smaller, so the residue modulo 2³²
+is the same integer. The functions still differ. `0xffffffff + 1` is
+4294967296 as an `Int` and 0 as a `Word[32]`.
+
 ## Sources
 
 **[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
@@ -812,3 +951,11 @@ repository. A tuple lists two through sixteen elements, and `.k` selects
 element `k` counting from zero. The quarter round in Listing N7.9 is the
 shape of the S3k quarter round reduced to the RFC §2.1.1 vector. The tuple
 slice is implemented here; that is not acceptance of the proposal.
+
+**[E1] Orange loops.** `docs/LOOPS_2026.md` and the S3e fixtures in this
+repository. A loop's bounds are integer literals, and an index built from
+a loop index is proved in range before evaluation. The diagnostic quoted
+for Listing N7.11 is `ORC0223`, including the computed range. `ORC0226` is
+the separate rejection for an `Int` index that has no such range. Bounded
+iteration here is not a general `while`, and it adds no cryptographic
+claim.

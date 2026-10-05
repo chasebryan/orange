@@ -127,7 +127,7 @@ fn n7_sources() -> Vec<&'static str> {
 fn n7_positive_listings_check_and_evaluate_repeatably() {
     let sources = n7_sources();
     let outputs = fences(N7, "text");
-    let rejected = ["mixed_conversion", "past_end"];
+    let rejected = ["mixed_conversion", "past_end", "slipped"];
     let mut checked = 0;
     for source in &sources {
         let name = module_name(source);
@@ -162,8 +162,8 @@ fn n7_positive_listings_check_and_evaluate_repeatably() {
         assert_eq!(first.stderr, second.stderr);
         checked += 1;
     }
-    assert_eq!(checked, 7, "named_round through paired");
-    assert_eq!(sources.len(), 9);
+    assert_eq!(checked, 8, "named_round through bounded");
+    assert_eq!(sources.len(), 11);
 }
 
 #[test]
@@ -171,6 +171,7 @@ fn n7_rejected_listings_print_no_value() {
     for (name, marker) in [
         ("mixed_conversion", "ORC0108"),
         ("past_end", "ORC0223"),
+        ("slipped", "ORC0223"),
     ] {
         let source = n7_sources()
             .into_iter()
@@ -193,4 +194,14 @@ fn n7_rejected_listings_print_no_value() {
         diagnostic.contains("`as` follows `+` without grouping parentheses"),
         "{diagnostic}"
     );
+    let slipped = n7_sources()
+        .into_iter()
+        .find(|source| module_name(source) == "slipped")
+        .expect("slipped index listing");
+    let slipped_diagnostic = String::from_utf8(run("check", slipped).stderr).expect("UTF-8");
+    assert!(
+        slipped_diagnostic.contains("1 through 4"),
+        "{slipped_diagnostic}"
+    );
+    assert!(slipped_diagnostic.contains("ORC0223"), "{slipped_diagnostic}");
 }
