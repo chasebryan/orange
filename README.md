@@ -1158,7 +1158,8 @@ cryptography.
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
-| Cryptography corpus (hashes, AEADs, signatures, KEMs) | Planned |
+| Reference algorithm entries under [`algorithms/`](algorithms/README.md) | Working as analysis and dissemination; 20 entries reproduce published vectors under `orangec eval` / the algorithms gate; no constant-time, packaging, proof, or certification claim |
+| S7 cryptography corpus (packaged proofs, packages, and corpus membership) | Planned; D-015 and related decisions remain open |
 | Packages and releases | Planned; no release exists |
 
 The target remains the complete 1.0 product. The
@@ -1180,6 +1181,8 @@ cd orange
 # Build and try the compiler
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-sha3.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3s/valid-matrices.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3t/valid-rings.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --stats compiler/fixtures/s3p/valid-rfc8439.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
@@ -1189,6 +1192,8 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtu
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- fmt compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- doc compiler/fixtures/hello.or
+# Typed local witness replay: see docs/WITNESS_REPLAY_2026.md for the contract
+# and orangec replay --function MODULE::NAME --witness FILE SOURCE
 
 # Run the compiler test suite
 cargo test --manifest-path compiler/Cargo.toml --workspace
@@ -1279,7 +1284,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, and computed amounts in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, computed amounts, nested arrays, and static moduli in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -1310,9 +1315,13 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [byte order](docs/ORDER_2026.md),
   [type parameters](docs/TYPE_PARAMETERS_2026.md),
   [lengths and evaluation controls](docs/LENGTHS_2026.md),
-  [known-answer tests](docs/TESTS_2026.md), and
-  [computed amounts](docs/AMOUNTS_2026.md): the definition of what the
+  [known-answer tests](docs/TESTS_2026.md),
+  [computed amounts](docs/AMOUNTS_2026.md),
+  [nested arrays](docs/NESTED_ARRAYS_2026.md), and
+  [static moduli](docs/STATIC_MODULI_2026.md): the definition of what the
   compiler accepts today.
+- [Documentation index](docs/README.md): map of the Book, language specs, tool
+  contracts, roadmap, decisions, and security records.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a
@@ -1333,8 +1342,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 | Path | Contents |
 | --- | --- |
 | [`compiler/`](compiler/README.md) | The Rust workspace: the `orange-compiler` library and the `orangec` CLI |
+| [`algorithms/`](algorithms/README.md) | Standards-sourced reference programs evaluated against published vectors |
 | [`tabula/`](tabula/README.md) | A local workbench for writing Orange; a separate tool, not part of the language |
-| [`docs/`](docs/) | The Orange Book, language specification, architecture, assurance, roadmap, and decisions |
+| [`docs/`](docs/README.md) | The Orange Book, language specifications, tool contracts, architecture, assurance, roadmap, and decisions |
 | [`research/decisions/`](research/decisions/) | Decision laboratories that compare design candidates |
 | [`schemas/`](schemas/README.md) and [`conformance/`](conformance/foundation/README.md) | Provisional evidence schemas and their test fixtures |
 | [`policy/`](policy/README.md) and [`tools/`](tools/) | Repository policy and the Python checks that enforce it |

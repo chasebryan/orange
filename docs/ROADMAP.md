@@ -2,7 +2,7 @@
 
 Status: directed active roadmap under D-023 and OEP-0001
 
-Snapshot: 2026-07-26
+Snapshot: 2026-10-05
 
 Orange is developed by one owner. This roadmap assumes no contributors,
 independent reviewers, auditors, laboratories, partner organizations, or

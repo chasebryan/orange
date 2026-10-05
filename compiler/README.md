@@ -1157,10 +1157,11 @@ through S3s rules, limits, and non-claims are in
 [`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
 [`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md),
 [`docs/TESTS_2026.md`](../docs/TESTS_2026.md),
-[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md), and
-[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md). None of them defines
-unbounded loops, effects, proof meaning, implementation refinement, timing,
-target behavior, ABI, leakage property, output code, package or release
+[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md),
+[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md), and
+[`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md). None of them
+defines unbounded loops, effects, proof meaning, implementation refinement,
+timing, target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
 standard's example value is not thereby a verified transcription of that
 standard.
@@ -1797,6 +1798,17 @@ equal costs at different mismatch positions. The 12-rule index in
 They establish implementation behavior and do not accept OEP-0023 or prove
 ML-KEM, transformation, leakage, or refinement properties.
 
+## S3t static-modulus conformance
+
+`fixtures/s3t/` and `crates/orangec/tests/s3t_conformance.rs` cover modulus
+expressions that use a function's own finite size names, eager checking of
+every concrete instance, exact residue-domain identity across signatures,
+bindings, conversions, loops, tuples, matrices, and calls, rejected out-of-
+scope or non-static moduli, and retained Core costs. The 10-rule index in
+`docs/STATIC_MODULI_2026.md` binds these checks to proposed S3t behavior.
+They establish implementation behavior and do not accept OEP-0024 or prove
+soundness, cryptographic correctness, or release readiness.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1808,9 +1820,9 @@ ML-KEM, transformation, leakage, or refinement properties.
   packet, transport-identity, and synthetic capture-integrity checks;
 - `crates/orange-compiler/tests/d006_decision_suite.rs`: input-only D-006
   pre-epoch packet, case-index, and identity-inventory checks;
-- `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
-  `lex` behavior, and the sealing commands `keygen`, `enc`, `dec`, and
-  `schemes`;
+- `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`,
+  `test`, `lex`, `fmt`, `doc`, and `replay` behavior, and the sealing commands
+  `keygen`, `enc`, `dec`, and `schemes`;
 - `crates/orangec/src/crypt.rs`: the sealing commands and sealed-file format 1;
 - `crates/orangec/tests/crypt.rs`: black-box sealing tests, including files
   sealed by an independent implementation of the format;
@@ -1854,6 +1866,8 @@ ML-KEM, transformation, leakage, or refinement properties.
   rule-index, reference-amount, and amount-cost runner;
 - `crates/orangec/tests/s3s_conformance.rs`: repeatable nested-array corpus,
   rule-index, shape-limit, and recursive-cost runner;
+- `crates/orangec/tests/s3t_conformance.rs`: repeatable static-modulus corpus,
+  rule-index, domain-identity, and instance-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1877,7 +1891,7 @@ ML-KEM, transformation, leakage, or refinement properties.
   corpus;
 - `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
 - `fixtures/s3s/`: nested-array positive, negative, and failed-equality corpus;
-  and
+- `fixtures/s3t/`: static-modulus positive and negative corpus; and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and
   sealed-file format 1.

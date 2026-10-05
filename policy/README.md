@@ -316,8 +316,9 @@ the archive tool, the bundle, the overlay and the committed run archive under
 closed of 35 required units and 105 of 105 result records. Both are
 contributor-produced and unreviewed, and both `roadmap_gate_credit` and
 `readiness_credit` remain `none`. None of these inventories contains an accepted
-D-004 decision or release evidence; D-004 remains proposed, S3b through S3r are
-implemented and await owner review under OEP-0005 through OEP-0021, and the
+D-004 decision or release evidence; D-004 remains proposed, S3b through S3t are
+implemented and await owner review under OEP-0005 through OEP-0021, OEP-0023,
+and OEP-0024, and the
 3-of-10 (30%) binary gate-closure score is unchanged. D-005's protected Rust
 laboratory may construct canonical adapter requests and validate synthetic
 captured transport envelopes, enumerate the exact 192 in-memory transport

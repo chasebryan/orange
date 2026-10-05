@@ -33,6 +33,7 @@ from tools.validate_foundation import (
     ORANGE_BOOK_APPENDICES,
     ORANGE_BOOK_CHAPTERS,
     ORANGE_BOOK_CONTENTS,
+    ORANGE_BOOK_VERSION,
     _fallback_repository_files,
     audit_schema_vocabulary,
     git_index_entries,
@@ -2694,7 +2695,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.26
+Manuscript version: {ORANGE_BOOK_VERSION}
 
 This is not a normative language specification.
 
@@ -2848,12 +2849,13 @@ under Chase Bryan's direction on 2026-09-28.
             self.assertEqual({finding.code for finding in validator.findings}, {"book.snapshot"})
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
+        version_line = f"Manuscript version: {ORANGE_BOOK_VERSION}"
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.26\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.26", "Manuscript version: 0.19", 1),
+            lambda text: text.replace(f"{version_line}\n\n", "", 1),
+            lambda text: text.replace(version_line, "Manuscript version: 0.19", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.26",
-                "Manuscript version: 0.26\n\nManuscript version: 0.26",
+                version_line,
+                f"{version_line}\n\n{version_line}",
                 1,
             ),
         )
