@@ -25,6 +25,9 @@
 #define MAX_LOOP_BOUND 65536u
 #define MAX_OPEN_LOOPS 64
 #define ARENA_BYTES (16u * 1024u * 1024u)
+#define MAX_MODULES 64
+#define MAX_PROGRAM_SLOTS 65
+#define MAX_USES 64
 
 typedef enum TokenKind {
     TK_EOF,
@@ -321,6 +324,15 @@ typedef struct Value {
     Big big;
 } Value;
 
+typedef struct Program Program;
+
+typedef struct UseDecl {
+    uint32_t span_start;
+    uint32_t span_end;
+    uint32_t name_start;
+    uint32_t name_end;
+} UseDecl;
+
 typedef struct Compiler {
     char *text;
     size_t length;
@@ -374,7 +386,26 @@ typedef struct Compiler {
     size_t cond_arm_cap;
     uint64_t steps;
     int failed;
+    Program *program;
+    uint16_t self_index;
+    UseDecl uses[MAX_USES];
+    uint16_t nuses;
+    /* Stem this file was loaded as. Null on the root. Owned by the compiler. */
+    char *requested;
+    int own_text;
+    int own_filename;
 } Compiler;
+
+struct Program {
+    Compiler *mods[MAX_PROGRAM_SLOTS];
+    int nmods;
+    uint16_t order[MAX_MODULES];
+    int norder;
+    /* Program index named by each use, or UINT16_MAX when unresolved.
+       Index 0 is the root, so an unresolved use must not default to 0. */
+    uint16_t use_target[MAX_PROGRAM_SLOTS][MAX_USES];
+    int graph_error;
+};
 
 static TokenKind peek_kind(const Compiler *c) {
     return c->tokens[c->at].kind;
@@ -401,6 +432,17 @@ static int same_span(const Compiler *c, uint32_t a0, uint32_t a1, uint32_t b0, u
 static int span_is(const Compiler *c, uint32_t start, uint32_t end, const char *word) {
     size_t length = strlen(word);
     return (size_t)(end - start) == length && memcmp(c->text + start, word, length) == 0;
+}
+
+static void span_copy(char *dest, size_t cap, const char *text, uint32_t start, uint32_t end) {
+    size_t length = end >= start ? (size_t)(end - start) : 0;
+    if (length >= cap) {
+        length = cap - 1;
+    }
+    if (length > 0) {
+        memcpy(dest, text + start, length);
+    }
+    dest[length] = '\0';
 }
 
 static void copy_text(char *dest, size_t cap, const char *src) {
@@ -2017,6 +2059,65 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             return parse_conditional(c, token, out);
         }
         advance_token(c);
+        if (peek_kind(c) == TK_COLONCOLON) {
+            Token module_name = name;
+            Token func_name;
+            uint32_t arg0 = 0;
+            uint16_t argc = 0;
+            Token close;
+            advance_token(c);
+            func_name = peek_token(c);
+            if (func_name.kind != TK_IDENT) {
+                add_diag(c, "ORC0101", func_name.start, func_name.end, "expected a function name",
+                         "expected an identifier", NULL, 1);
+                return 0;
+            }
+            advance_token(c);
+            if (peek_kind(c) != TK_LPAREN) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                         "expected `(` after the qualified function name", "expected `(`",
+                         "a name qualified by its module is always called, as in `sha256::initial()`", 1);
+                return 0;
+            }
+            advance_token(c);
+            if (!enter_nest(c, module_name.start, module_name.end)) {
+                return 0;
+            }
+            if (!parse_args(c, &arg0, &argc)) {
+                leave_nest(c);
+                return 0;
+            }
+            leave_nest(c);
+            close = peek_token(c);
+            if (close.kind != TK_RPAREN) {
+                add_diag(c, "ORC0101", close.start, close.end, "expected `)`", "unclosed argument list", NULL, 1);
+                return 0;
+            }
+            advance_token(c);
+            if (!new_expr(c, out)) {
+                return 0;
+            }
+            c->exprs[*out].kind = EX_CALL;
+            c->exprs[*out].start = module_name.start;
+            c->exprs[*out].end = close.end;
+            c->exprs[*out].left = module_name.start;
+            c->exprs[*out].right = module_name.end;
+            c->exprs[*out].name_start = func_name.start;
+            c->exprs[*out].name_end = func_name.end;
+            c->exprs[*out].arg0 = arg0;
+            c->exprs[*out].argc = argc;
+            c->exprs[*out].height = 1;
+            for (uint16_t index = 0; index < argc; index++) {
+                int child = height_of(c, c->args[arg0 + index]);
+                if (1 + child > c->exprs[*out].height) {
+                    c->exprs[*out].height = 1 + child;
+                }
+            }
+            if (!note_height(c, *out)) {
+                return 0;
+            }
+            return parse_index(c, *out, out);
+        }
         if (peek_kind(c) != TK_LPAREN) {
             for (open_index = c->nopen - 1; open_index >= 0; open_index--) {
                 OpenLoop *open = &c->open_loops[open_index];
@@ -2517,6 +2618,35 @@ static int parse_function(Compiler *c) {
     return parse_typed_tail(c, func, 1);
 }
 
+static int parse_use(Compiler *c) {
+    Token use_token = peek_token(c);
+    Token name;
+    Token semi;
+    advance_token(c);
+    name = peek_token(c);
+    if (name.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", name.start, name.end, "expected a module name", "expected an identifier", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    semi = peek_token(c);
+    if (semi.kind != TK_SEMI) {
+        add_diag(c, "ORC0101", semi.start, semi.end, "expected `;`", "a `use` declaration ends with `;`", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (c->nuses >= MAX_USES) {
+        resource_diag(c, "ORC0106", use_token.start, semi.end, "module has more than 64 `use` declarations");
+        return 1;
+    }
+    c->uses[c->nuses].span_start = use_token.start;
+    c->uses[c->nuses].span_end = semi.end;
+    c->uses[c->nuses].name_start = name.start;
+    c->uses[c->nuses].name_end = name.end;
+    c->nuses++;
+    return 1;
+}
+
 static int parse_source(Compiler *c) {
     Token token = peek_token(c);
     Token year;
@@ -2559,8 +2689,31 @@ static int parse_source(Compiler *c) {
         return 1;
     }
     advance_token(c);
-    while (peek_kind(c) == TK_SPEC || peek_kind(c) == TK_IMPL) {
-        if (!parse_function(c) || c->resource) {
+    {
+        int saw_function = 0;
+        while (peek_kind(c) != TK_RBRACE && peek_kind(c) != TK_EOF) {
+            if (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "use")) {
+                if (saw_function) {
+                    add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end,
+                             "expected a `spec` or `impl` function declaration",
+                             "a `use` declaration cannot follow a function",
+                             "`use` declarations come first in a module, before its functions", 1);
+                    return 1;
+                }
+                if (!parse_use(c) || c->resource) {
+                    return 1;
+                }
+                continue;
+            }
+            if (peek_kind(c) == TK_SPEC || peek_kind(c) == TK_IMPL) {
+                saw_function = 1;
+                if (!parse_function(c) || c->resource) {
+                    return 1;
+                }
+                continue;
+            }
+            add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end, "expected a function declaration",
+                     "a module member must be `spec` or `impl`", NULL, 1);
             return 1;
         }
     }
@@ -2633,14 +2786,17 @@ static int signature_is_usable(const Compiler *c, uint32_t func_index) {
     return 1;
 }
 
-static int find_function(const Compiler *c, uint32_t start, uint32_t end, uint32_t *index, int *empty_spec, int *impl) {
+static int find_function_in(const Compiler *mod, const char *text, uint32_t start, uint32_t end, uint32_t *index,
+                           int *empty_spec, int *impl) {
     uint32_t cursor;
+    size_t length = (size_t)(end - start);
     *empty_spec = 0;
     *impl = 0;
     *index = UINT32_MAX;
-    for (cursor = 0; cursor < c->nfuncs; cursor++) {
-        const Func *func = &c->funcs[cursor];
-        if (func->duplicate || !same_span(c, func->name_start, func->name_end, start, end)) {
+    for (cursor = 0; cursor < mod->nfuncs; cursor++) {
+        const Func *func = &mod->funcs[cursor];
+        if (func->duplicate || (size_t)(func->name_end - func->name_start) != length ||
+            memcmp(mod->text + func->name_start, text + start, length) != 0) {
             continue;
         }
         if (func->is_impl) {
@@ -2655,6 +2811,78 @@ static int find_function(const Compiler *c, uint32_t start, uint32_t end, uint32
         return 1;
     }
     return 0;
+}
+
+static int find_function(const Compiler *c, uint32_t start, uint32_t end, uint32_t *index, int *empty_spec, int *impl) {
+    return find_function_in(c, c->text, start, end, index, empty_spec, impl);
+}
+
+static int module_declares_spec(const Compiler *mod, const char *text, uint32_t start, uint32_t end) {
+    uint32_t cursor;
+    size_t length = (size_t)(end - start);
+    for (cursor = 0; cursor < mod->nfuncs; cursor++) {
+        const Func *func = &mod->funcs[cursor];
+        if (func->is_impl || func->duplicate) {
+            continue;
+        }
+        if ((size_t)(func->name_end - func->name_start) == length &&
+            memcmp(mod->text + func->name_start, text + start, length) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+typedef struct Callee {
+    Compiler *mod;
+    uint16_t mod_index;
+    uint32_t func;
+    int found;
+    int empty_spec;
+    int is_impl;
+    int not_used;
+    int is_self;
+    int qualified;
+} Callee;
+
+static void resolve_callee(Compiler *c, const Expr *expr, Callee *out) {
+    memset(out, 0, sizeof *out);
+    out->func = UINT32_MAX;
+    out->mod = c;
+    out->mod_index = c->self_index;
+    out->qualified = expr->left != UINT32_MAX;
+    if (!out->qualified) {
+        out->found = find_function(c, expr->name_start, expr->name_end, &out->func, &out->empty_spec, &out->is_impl);
+        return;
+    }
+    if (same_span(c, c->module_start, c->module_end, expr->left, expr->right)) {
+        out->not_used = 1;
+        out->is_self = 1;
+        return;
+    }
+    {
+        uint16_t use_index;
+        int matched = 0;
+        uint16_t target = UINT16_MAX;
+        for (use_index = 0; use_index < c->nuses; use_index++) {
+            if (!same_span(c, c->uses[use_index].name_start, c->uses[use_index].name_end, expr->left, expr->right)) {
+                continue;
+            }
+            matched = 1;
+            if (c->program != NULL) {
+                target = c->program->use_target[c->self_index][use_index];
+            }
+            break;
+        }
+        if (!matched || c->program == NULL || target == UINT16_MAX || target >= c->program->nmods) {
+            out->not_used = 1;
+            return;
+        }
+        out->mod = c->program->mods[target];
+        out->mod_index = target;
+        out->found = find_function_in(out->mod, c->text, expr->name_start, expr->name_end, &out->func, &out->empty_spec,
+                                      &out->is_impl);
+    }
 }
 
 static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end,
@@ -2771,18 +2999,17 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return 0;
     }
     if (expr->kind == EX_CALL) {
-        uint32_t callee = UINT32_MAX;
-        int empty_spec = 0;
-        int is_impl = 0;
-        if (!find_function(c, expr->name_start, expr->name_end, &callee, &empty_spec, &is_impl)) {
+        Callee callee;
+        resolve_callee(c, expr, &callee);
+        if (callee.not_used || !callee.found) {
             return 0;
         }
-        if (!signature_is_usable(c, callee)) {
+        if (!signature_is_usable(callee.mod, callee.func)) {
             *silent = 1;
             return -1;
         }
-        *type = c->funcs[callee].result;
-        *length = c->funcs[callee].result_len;
+        *type = callee.mod->funcs[callee.func].result;
+        *length = callee.mod->funcs[callee.func].result_len;
         return 1;
     }
     if (expr->kind == EX_ACCUM || expr->kind == EX_LOOP) {
@@ -2870,18 +3097,17 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return -1;
     }
     case EX_CALL: {
-        uint32_t callee = UINT32_MAX;
-        int empty_spec = 0;
-        int is_impl = 0;
-        if (!find_function(c, expr->name_start, expr->name_end, &callee, &empty_spec, &is_impl)) {
+        Callee callee;
+        resolve_callee(c, expr, &callee);
+        if (callee.not_used || !callee.found) {
             return -1;
         }
-        if (!signature_is_usable(c, callee)) {
+        if (!signature_is_usable(callee.mod, callee.func)) {
             *silent = 1;
             return -1;
         }
-        *type = c->funcs[callee].result;
-        *length = c->funcs[callee].result_len;
+        *type = callee.mod->funcs[callee.func].result;
+        *length = callee.mod->funcs[callee.func].result_len;
         return 1;
     }
     case EX_LOOP_INDEX:
@@ -4030,62 +4256,122 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         return 1;
     }
     case EX_CALL: {
-        uint32_t callee = UINT32_MAX;
-        int empty_spec = 0;
-        int is_impl = 0;
-        int found = find_function(c, expr->name_start, expr->name_end, &callee, &empty_spec, &is_impl);
+        Callee callee;
         char ident[64];
-        size_t ident_len = expr->name_end - expr->name_start;
-        if (ident_len >= sizeof ident) {
-            ident_len = sizeof ident - 1;
+        char module_name[64];
+        Compiler *target;
+        resolve_callee(c, expr, &callee);
+        span_copy(ident, sizeof ident, c->text, expr->name_start, expr->name_end);
+        if (callee.qualified) {
+            span_copy(module_name, sizeof module_name, c->text, expr->left, expr->right);
+        } else {
+            module_name[0] = '\0';
         }
-        memcpy(ident, c->text + expr->name_start, ident_len);
-        ident[ident_len] = '\0';
-        if (!found) {
+        if (callee.not_used) {
             char message[192];
-            if (empty_spec) {
-                snprintf(message, sizeof message, "`spec` function `%s` has no typed body and cannot be called", ident);
-                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "no value to call",
-                         "calls name a typed `spec` declared in the same module", 2);
-            } else if (is_impl) {
-                snprintf(message, sizeof message, "no typed `spec` function named `%s` in this module", ident);
-                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "unknown function",
-                         "`impl` functions have no semantics yet and cannot be called", 2);
+            if (callee.is_self) {
+                snprintf(message, sizeof message, "`%s` is the calling module", module_name);
+                add_diag(c, "ORC0229", expr->left, expr->right, message, "a module does not qualify calls to itself",
+                         "call a function of the same module without a module name, as in `f(x)`", 2);
             } else {
-                snprintf(message, sizeof message, "no typed `spec` function named `%s` in this module", ident);
-                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "unknown function",
-                         "calls name a typed `spec` declared in the same module", 2);
+                char own[64];
+                char note[192];
+                span_copy(own, sizeof own, c->text, c->module_start, c->module_end);
+                snprintf(message, sizeof message, "module `%s` is not used by `%s`", module_name, own);
+                snprintf(note, sizeof note, "declare `use %s;` at the head of the module to call its functions",
+                         module_name);
+                add_diag(c, "ORC0229", expr->left, expr->right, message, "no `use` declaration names this module", note,
+                         2);
             }
             return 1;
         }
-        expr->callee = callee;
-        if (!record_edge(c, func_index, callee, expr->start, expr->end)) {
-            return 0;
-        }
-        if (!signature_is_usable(c, callee)) {
+        if (!callee.found) {
+            char message[192];
+            char note[320];
+            const char *note_text;
+            if (callee.is_impl) {
+                note_text = "`impl` functions have no semantics yet and cannot be called";
+            } else if (callee.qualified) {
+                note_text = "a qualified call names a typed `spec` of the used module";
+            } else if (c->nuses == 0) {
+                note_text = "calls name a typed `spec` declared in the same module";
+            } else if (!callee.empty_spec) {
+                uint16_t use_index;
+                int imported = 0;
+                note[0] = '\0';
+                for (use_index = 0; use_index < c->nuses; use_index++) {
+                    uint16_t target_index;
+                    Compiler *used;
+                    char used_name[64];
+                    if (c->program == NULL) {
+                        break;
+                    }
+                    target_index = c->program->use_target[c->self_index][use_index];
+                    if (target_index == UINT16_MAX || target_index >= c->program->nmods) {
+                        continue;
+                    }
+                    used = c->program->mods[target_index];
+                    if (!module_declares_spec(used, c->text, expr->name_start, expr->name_end)) {
+                        continue;
+                    }
+                    span_copy(used_name, sizeof used_name, used->text, used->module_start, used->module_end);
+                    snprintf(note, sizeof note, "the used module `%s` declares `%s`; call it as `%s::%s(...)`",
+                             used_name, ident, used_name, ident);
+                    imported = 1;
+                    break;
+                }
+                note_text = imported ? note
+                                     : "calls name a typed `spec` declared in the same module, or one of a used "
+                                       "module as `NAME::f(...)`";
+            } else {
+                note_text = "calls name a typed `spec` declared in the same module, or one of a used "
+                            "module as `NAME::f(...)`";
+            }
+            if (callee.empty_spec) {
+                snprintf(message, sizeof message, "`spec` function `%s` has no typed body and cannot be called", ident);
+                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "no value to call", note_text, 2);
+            } else if (callee.qualified) {
+                snprintf(message, sizeof message, "no typed `spec` function named `%s` in module `%s`", ident,
+                         module_name);
+                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "unknown function", note_text, 2);
+            } else {
+                snprintf(message, sizeof message, "no typed `spec` function named `%s` in this module", ident);
+                add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "unknown function", note_text, 2);
+            }
             return 1;
         }
-        if (expr->argc != c->funcs[callee].nparams) {
+        target = callee.mod;
+        expr->callee = callee.func;
+        if (callee.qualified) {
+            expr->name_index = callee.mod_index;
+        } else if (!record_edge(c, func_index, callee.func, expr->start, expr->end)) {
+            return 0;
+        }
+        if (!signature_is_usable(target, callee.func)) {
+            return 1;
+        }
+        if (expr->argc != target->funcs[callee.func].nparams) {
             char message[192];
             snprintf(message, sizeof message, "`%s` takes %u argument%s but %u %s supplied", ident,
-                     c->funcs[callee].nparams, c->funcs[callee].nparams == 1 ? "" : "s", expr->argc,
+                     target->funcs[callee.func].nparams, target->funcs[callee.func].nparams == 1 ? "" : "s", expr->argc,
                      expr->argc == 1 ? "was" : "were");
             add_diag(c, "ORC0213", expr->start, expr->end, message, "wrong number of arguments",
                      "every parameter receives exactly one argument", 2);
             return 1;
         }
-        if (c->funcs[callee].result != expected || c->funcs[callee].result_len != expected_len) {
+        if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len) {
             char message[192];
             char expected_text[64];
             char found_text[64];
             write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, c->funcs[callee].result, c->funcs[callee].result_len);
+            write_type(found_text, sizeof found_text, target->funcs[callee.func].result,
+                       target->funcs[callee.func].result_len);
             snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
             add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
                      "Orange does not convert between types implicitly", 2);
         }
         for (uint16_t arg = 0; arg < expr->argc; arg++) {
-            Param *param = &c->params[c->funcs[callee].param0 + arg];
+            Param *param = &target->params[target->funcs[callee.func].param0 + arg];
             if (!param->type_ok) {
                 continue;
             }
@@ -4669,12 +4955,29 @@ static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
 
+static int ensure_loops(Compiler *c) {
+    if (c->nloops == 0 || c->loop_k != NULL) {
+        return 1;
+    }
+    c->loop_k = calloc(c->nloops, sizeof *c->loop_k);
+    c->loop_acc = calloc(c->nloops, sizeof *c->loop_acc);
+    if (c->loop_k == NULL || c->loop_acc == NULL) {
+        resource_diag(c, "ORC0106", 0, 0, "evaluation could not retain loop state");
+        return 0;
+    }
+    return 1;
+}
+
 static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int depth, Value *out) {
     Func *func = &c->funcs[func_index];
     Value *params;
     Value *locals;
     uint16_t index;
     int ok;
+    if (!ensure_loops(c)) {
+        c->failed = 1;
+        return 0;
+    }
     if (depth > MAX_CALL_DEPTH) {
         c->failed = 1;
         add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation exceeded the call depth",
@@ -4877,12 +5180,42 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 return 0;
             }
         }
-        if (!charge(c, expr->start, expr->end, 1) || expr->callee >= c->nfuncs) {
+        if (!charge(c, expr->start, expr->end, 1)) {
             c->failed = 1;
             value_list_clear(arguments, count);
             return 0;
         }
-        ok = eval_function(c, expr->callee, arguments, depth + 1, out);
+        if (expr->left != UINT32_MAX) {
+            Compiler *target;
+            if (c->program == NULL || expr->name_index >= c->program->nmods) {
+                c->failed = 1;
+                value_list_clear(arguments, count);
+                return 0;
+            }
+            target = c->program->mods[expr->name_index];
+            if (expr->callee >= target->nfuncs) {
+                c->failed = 1;
+                value_list_clear(arguments, count);
+                return 0;
+            }
+            /* One step budget and one failure flag for the whole program.
+               Copy them across the call so a nested module spends the same
+               counter, then copy the result back. */
+            target->steps = c->steps;
+            target->failed = c->failed;
+            ok = eval_function(target, expr->callee, arguments, depth + 1, out);
+            c->steps = target->steps;
+            if (target->failed) {
+                c->failed = 1;
+            }
+        } else {
+            if (expr->callee >= c->nfuncs) {
+                c->failed = 1;
+                value_list_clear(arguments, count);
+                return 0;
+            }
+            ok = eval_function(c, expr->callee, arguments, depth + 1, out);
+        }
         value_list_clear(arguments, count);
         return ok;
     }
@@ -5652,14 +5985,9 @@ static void release_loop_values(Compiler *c) {
 static int evaluate_source(Compiler *c, FILE *out) {
     TextBuf program = {0};
     uint32_t index;
-    if (c->nloops > 0) {
-        c->loop_k = calloc(c->nloops, sizeof *c->loop_k);
-        c->loop_acc = calloc(c->nloops, sizeof *c->loop_acc);
-        if (c->loop_k == NULL || c->loop_acc == NULL) {
-            resource_diag(c, "ORC0106", 0, 0, "evaluation could not retain loop state");
-            release_loop_values(c);
-            return 1;
-        }
+    if (!ensure_loops(c)) {
+        release_loop_values(c);
+        return 1;
     }
     for (index = 0; index < c->nfuncs && !c->failed; index++) {
         Func *func = &c->funcs[index];
@@ -5711,81 +6039,535 @@ static int evaluate_source(Compiler *c, FILE *out) {
     return c->failed ? 1 : 0;
 }
 
+static char *read_path(const char *path, size_t *length, char *error, size_t error_cap);
+
+static Compiler *compiler_new(char *text, size_t length, const char *filename, int own_text, int own_filename) {
+    Compiler *compiler = calloc(1, sizeof *compiler);
+    if (compiler == NULL) {
+        return NULL;
+    }
+    compiler->text = text;
+    compiler->length = length;
+    compiler->filename = filename;
+    compiler->own_text = own_text;
+    compiler->own_filename = own_filename;
+    if (!arena_init(&compiler->arena, ARENA_BYTES)) {
+        free(compiler);
+        return NULL;
+    }
+    return compiler;
+}
+
+static void compiler_free(Compiler *compiler) {
+    if (compiler == NULL) {
+        return;
+    }
+    release_loop_values(compiler);
+    arena_dispose(&compiler->arena);
+    free(compiler->tokens);
+    free(compiler->exprs);
+    free(compiler->args);
+    free(compiler->funcs);
+    free(compiler->params);
+    free(compiler->locals);
+    free(compiler->edges);
+    free(compiler->loops);
+    free(compiler->cond_arms);
+    free(compiler->loop_k);
+    free(compiler->loop_acc);
+    free(compiler->requested);
+    if (compiler->own_text) {
+        free(compiler->text);
+    }
+    if (compiler->own_filename) {
+        free((char *)compiler->filename);
+    }
+    free(compiler);
+}
+
+static void program_free(Program *program) {
+    int index;
+    if (program == NULL) {
+        return;
+    }
+    for (index = 0; index < program->nmods; index++) {
+        compiler_free(program->mods[index]);
+    }
+    free(program);
+}
+
+static void clear_diags(Compiler *compiler) {
+    compiler->ndiags = 0;
+    compiler->lex_diags = 0;
+    compiler->parse_diags = 0;
+    compiler->sema_diags = 0;
+    compiler->lex_limited = 0;
+    compiler->parse_limited = 0;
+    compiler->sema_limited = 0;
+}
+
+static int module_name_eq(const Compiler *mod, const char *text, uint32_t start, uint32_t end) {
+    size_t length = (size_t)(end - start);
+    return (size_t)(mod->module_end - mod->module_start) == length &&
+           memcmp(mod->text + mod->module_start, text + start, length) == 0;
+}
+
+static int find_module_named(const Program *program, const char *text, uint32_t start, uint32_t end, uint16_t *index) {
+    int cursor;
+    for (cursor = 0; cursor < program->nmods; cursor++) {
+        if (module_name_eq(program->mods[cursor], text, start, end)) {
+            *index = (uint16_t)cursor;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void report_namesakes(Program *program, uint16_t module) {
+    Compiler *mod = program->mods[module];
+    int other;
+    char spelling[128];
+    span_copy(spelling, sizeof spelling, mod->text, mod->module_start, mod->module_end);
+    for (other = 0; other < program->nmods; other++) {
+        Compiler *candidate;
+        Compiler *later;
+        char message[192];
+        if (other == (int)module) {
+            continue;
+        }
+        candidate = program->mods[other];
+        if (!module_name_eq(candidate, mod->text, mod->module_start, mod->module_end)) {
+            continue;
+        }
+        later = other > (int)module ? candidate : mod;
+        snprintf(message, sizeof message, "duplicate module `%s`", spelling);
+        add_diag(later, "ORC0231", later->module_start, later->module_end, message,
+                 "this module repeats the name of a module of the program",
+                 "a `use` names one module, so no other supplied module may share the name of a module of the program",
+                 2);
+        program->graph_error = 1;
+    }
+}
+
+static void resolve_uses(Program *program, uint16_t module) {
+    Compiler *mod = program->mods[module];
+    uint16_t index;
+    for (index = 0; index < mod->nuses; index++) {
+        UseDecl *use = &mod->uses[index];
+        uint16_t earlier;
+        int repeated = 0;
+        char spelling[128];
+        char message[192];
+        span_copy(spelling, sizeof spelling, mod->text, use->name_start, use->name_end);
+        for (earlier = 0; earlier < index; earlier++) {
+            if (same_span(mod, mod->uses[earlier].name_start, mod->uses[earlier].name_end, use->name_start,
+                          use->name_end)) {
+                repeated = 1;
+                break;
+            }
+        }
+        if (repeated) {
+            snprintf(message, sizeof message, "module `%s` is used twice", spelling);
+            add_diag(mod, "ORC0231", use->span_start, use->span_end, message,
+                     "this declaration repeats an earlier `use`", "a module names each module it uses once", 2);
+            program->use_target[module][index] = UINT16_MAX;
+            program->graph_error = 1;
+            continue;
+        }
+        if (same_span(mod, mod->module_start, mod->module_end, use->name_start, use->name_end)) {
+            snprintf(message, sizeof message, "module `%s` uses itself", spelling);
+            add_diag(mod, "ORC0230", use->span_start, use->span_end, message, "this `use` names its own module",
+                     "a module calls its own functions without a module name, as in `f(x)`", 2);
+            program->use_target[module][index] = UINT16_MAX;
+            program->graph_error = 1;
+            continue;
+        }
+        {
+            uint16_t target = UINT16_MAX;
+            if (find_module_named(program, mod->text, use->name_start, use->name_end, &target)) {
+                program->use_target[module][index] = target;
+            } else {
+                snprintf(message, sizeof message, "no module named `%s` in this program", spelling);
+                add_diag(mod, "ORC0228", use->name_start, use->name_end, message, "unknown module",
+                         "a `use` declaration names another module of the program; `orangec` reads the module `NAME` "
+                         "from the file `NAME.or` beside the file that uses it",
+                         2);
+                program->use_target[module][index] = UINT16_MAX;
+                program->graph_error = 1;
+            }
+        }
+    }
+}
+
+static void append_route(char *route, size_t cap, size_t *used, const char *text) {
+    size_t length = strlen(text);
+    if (*used >= cap) {
+        return;
+    }
+    if (length >= cap - *used) {
+        length = cap - *used - 1;
+    }
+    if (length > 0) {
+        memcpy(route + *used, text, length);
+        *used += length;
+    }
+    route[*used] = '\0';
+}
+
+static void report_cycle(Program *program, const uint16_t *path_mod, int path_len, uint16_t node, uint16_t use_index,
+                         uint16_t target) {
+    Compiler *mod = program->mods[node];
+    UseDecl *use = &mod->uses[use_index];
+    char route[384];
+    char message[512];
+    char name[128];
+    size_t used = 0;
+    int start = 0;
+    int cursor;
+    route[0] = '\0';
+    for (cursor = 0; cursor < path_len; cursor++) {
+        if (path_mod[cursor] == target) {
+            start = cursor;
+            break;
+        }
+    }
+    for (cursor = start; cursor < path_len; cursor++) {
+        Compiler *step = program->mods[path_mod[cursor]];
+        if (cursor - start >= 8) {
+            append_route(route, sizeof route, &used, " -> ...");
+            break;
+        }
+        if (cursor != start) {
+            append_route(route, sizeof route, &used, " -> ");
+        }
+        span_copy(name, sizeof name, step->text, step->module_start, step->module_end);
+        append_route(route, sizeof route, &used, "`");
+        append_route(route, sizeof route, &used, name);
+        append_route(route, sizeof route, &used, "`");
+    }
+    span_copy(name, sizeof name, program->mods[target]->text, program->mods[target]->module_start,
+              program->mods[target]->module_end);
+    snprintf(message, sizeof message, "module cycle %s -> `%s`", route, name);
+    add_diag(mod, "ORC0230", use->span_start, use->span_end, message, "this `use` closes the cycle",
+             "modules may not depend on each other in a cycle; move the functions they share into a module that both use",
+             2);
+    program->graph_error = 1;
+}
+
+static int link_program(Program *program) {
+    uint8_t state[MAX_PROGRAM_SLOTS];
+    uint16_t path_mod[MAX_MODULES];
+    uint16_t path_use[MAX_MODULES];
+    int path_len = 0;
+    int entered = 0;
+    int slot;
+    int use_slot;
+    memset(state, 0, sizeof state);
+    for (slot = 0; slot < MAX_PROGRAM_SLOTS; slot++) {
+        for (use_slot = 0; use_slot < MAX_USES; use_slot++) {
+            program->use_target[slot][use_slot] = UINT16_MAX;
+        }
+    }
+    if (program->nmods == 0) {
+        return 0;
+    }
+    state[0] = 1;
+    path_mod[0] = 0;
+    path_use[0] = 0;
+    path_len = 1;
+    entered = 1;
+    report_namesakes(program, 0);
+    resolve_uses(program, 0);
+    while (path_len > 0) {
+        uint16_t node = path_mod[path_len - 1];
+        uint16_t next = path_use[path_len - 1];
+        Compiler *mod = program->mods[node];
+        uint16_t target;
+        if (next >= mod->nuses) {
+            state[node] = 2;
+            if (program->norder < MAX_MODULES) {
+                program->order[program->norder++] = node;
+            }
+            path_len--;
+            continue;
+        }
+        target = program->use_target[node][next];
+        path_use[path_len - 1] = (uint16_t)(next + 1);
+        if (target == UINT16_MAX || target >= program->nmods) {
+            continue;
+        }
+        if (state[target] == 0) {
+            if (entered >= MAX_MODULES) {
+                Compiler *root = program->mods[0];
+                for (slot = 0; slot < program->nmods; slot++) {
+                    clear_diags(program->mods[slot]);
+                }
+                program->norder = 0;
+                add_diag(root, "ORC0209", root->module_start, root->module_end,
+                         "semantic analysis resource limit exceeded", "program reaches more than 64 modules",
+                         "semantic analysis stopped without producing Core", 2);
+                program->graph_error = 1;
+                return 0;
+            }
+            entered++;
+            state[target] = 1;
+            path_mod[path_len] = target;
+            path_use[path_len] = 0;
+            path_len++;
+            report_namesakes(program, target);
+            resolve_uses(program, target);
+        } else if (state[target] == 1) {
+            report_cycle(program, path_mod, path_len, node, next, target);
+        }
+    }
+    return program->graph_error ? 0 : 1;
+}
+
+static void print_use_note(FILE *err, const char *name, const char *user) {
+    fprintf(err, "  = note: `use %s;` in module `%s` reads the module `%s` from this file\n", name, user, name);
+}
+
+static char *module_path(const char *root_path, const char *name) {
+    const char *slash;
+    size_t dir_len;
+    size_t name_len = strlen(name);
+    size_t total;
+    char *path;
+    int bare = 0;
+    int root_dir = 0;
+    if (strcmp(root_path, "-") == 0 || strchr(root_path, '/') == NULL) {
+        bare = 1;
+        dir_len = 0;
+    } else {
+        slash = strrchr(root_path, '/');
+        if (slash == root_path) {
+            root_dir = 1;
+            dir_len = 1;
+        } else {
+            dir_len = (size_t)(slash - root_path);
+        }
+    }
+    total = dir_len + name_len + 8;
+    path = malloc(total);
+    if (path == NULL) {
+        return NULL;
+    }
+    if (bare) {
+        memcpy(path, name, name_len);
+        memcpy(path + name_len, ".or", 4);
+    } else if (root_dir) {
+        path[0] = '/';
+        memcpy(path + 1, name, name_len);
+        memcpy(path + 1 + name_len, ".or", 4);
+    } else {
+        memcpy(path, root_path, dir_len);
+        path[dir_len] = '/';
+        memcpy(path + dir_len + 1, name, name_len);
+        memcpy(path + dir_len + 1 + name_len, ".or", 4);
+    }
+    return path;
+}
+
+static int name_requested(const Program *program, const char *name) {
+    int index;
+    for (index = 1; index < program->nmods; index++) {
+        if (program->mods[index]->requested != NULL && strcmp(program->mods[index]->requested, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int load_one(Program *program, const char *path, const char *name, const char *user, FILE *err) {
+    char error[1024];
+    char *text;
+    size_t length = 0;
+    char *stored_path;
+    char *stored_name;
+    Compiler *mod;
+    text = read_path(path, &length, error, sizeof error);
+    if (text == NULL) {
+        fprintf(err, "error[ORC1001]: %s\n", error);
+        print_use_note(err, name, user);
+        return 0;
+    }
+    if (!utf8_ok((const unsigned char *)text, length)) {
+        fprintf(err, "error[ORC1002]: source file `%s` is not valid UTF-8\n", path);
+        print_use_note(err, name, user);
+        free(text);
+        return 0;
+    }
+    stored_path = malloc(strlen(path) + 1);
+    stored_name = malloc(strlen(name) + 1);
+    if (stored_path == NULL || stored_name == NULL) {
+        free(stored_path);
+        free(stored_name);
+        free(text);
+        fprintf(err, "error[ORC0008]: compiler could not reserve its work area\n");
+        return 0;
+    }
+    memcpy(stored_path, path, strlen(path) + 1);
+    memcpy(stored_name, name, strlen(name) + 1);
+    mod = compiler_new(text, length, stored_path, 1, 1);
+    if (mod == NULL) {
+        free(stored_path);
+        free(stored_name);
+        free(text);
+        fprintf(err, "error[ORC0008]: compiler could not reserve its work area\n");
+        return 0;
+    }
+    mod->requested = stored_name;
+    mod->program = program;
+    mod->self_index = (uint16_t)program->nmods;
+    program->mods[program->nmods++] = mod;
+    lex_source(mod);
+    if (mod->lex_diags > 0 || mod->resource) {
+        render_diags(mod, err);
+        return 0;
+    }
+    parse_source(mod);
+    if (mod->parse_diags > 0 || mod->resource) {
+        render_diags(mod, err);
+        print_use_note(err, name, user);
+        return 0;
+    }
+    return 1;
+}
+
+static int load_used_modules(Program *program, const char *root_path, FILE *err) {
+    Compiler *root = program->mods[0];
+    int next = 0;
+    for (;;) {
+        Compiler *user;
+        char user_name[256];
+        uint16_t use_index;
+        if (next == 0) {
+            user = root;
+        } else if (next < program->nmods) {
+            user = program->mods[next];
+            if (user->requested == NULL || !span_is(user, user->module_start, user->module_end, user->requested)) {
+                next++;
+                continue;
+            }
+        } else {
+            return 1;
+        }
+        span_copy(user_name, sizeof user_name, user->text, user->module_start, user->module_end);
+        for (use_index = 0; use_index < user->nuses; use_index++) {
+            UseDecl *use = &user->uses[use_index];
+            size_t name_len = (size_t)(use->name_end - use->name_start);
+            char name[256];
+            char *path;
+            if (name_len == 0 || name_len >= sizeof name) {
+                span_copy(name, sizeof name, user->text, use->name_start, use->name_end);
+                fprintf(err, "error[ORC1001]: could not read source file `%s.or`\n", name);
+                print_use_note(err, name, user_name);
+                return 0;
+            }
+            memcpy(name, user->text + use->name_start, name_len);
+            name[name_len] = '\0';
+            if (((size_t)(root->module_end - root->module_start) == name_len &&
+                 memcmp(root->text + root->module_start, name, name_len) == 0) ||
+                name_requested(program, name)) {
+                continue;
+            }
+            if (program->nmods - 1 >= MAX_MODULES) {
+                return 1;
+            }
+            path = module_path(root_path, name);
+            if (path == NULL) {
+                fprintf(err, "error[ORC0008]: compiler could not reserve its work area\n");
+                return 0;
+            }
+            if (!load_one(program, path, name, user_name, err)) {
+                free(path);
+                return 0;
+            }
+            free(path);
+        }
+        next++;
+    }
+}
+
+static void render_program_diags(Program *program, FILE *err, int dependency_order) {
+    int index;
+    int count = dependency_order ? program->norder : program->nmods;
+    for (index = 0; index < count; index++) {
+        Compiler *mod = dependency_order ? program->mods[program->order[index]] : program->mods[index];
+        if (mod->ndiags > 0) {
+            render_diags(mod, err);
+        }
+    }
+}
+
 static int compile_text(char *text, size_t length, const char *filename, int command, FILE *out, FILE *err) {
-    Compiler compiler;
-    int status;
-    memset(&compiler, 0, sizeof compiler);
-    compiler.text = text;
-    compiler.length = length;
-    compiler.filename = filename;
-    if (!arena_init(&compiler.arena, ARENA_BYTES)) {
+    Program *program = calloc(1, sizeof *program);
+    Compiler *root;
+    int status = 1;
+    int index;
+    if (program == NULL) {
         fprintf(err, "error[ORC0008]: compiler could not reserve its work area\n");
         return 1;
     }
-    lex_source(&compiler);
-    if (command == 2) {
-        status = run_lex_command(&compiler, out);
-        render_diags(&compiler, err);
-        arena_dispose(&compiler.arena);
-        free(compiler.tokens);
-        free(compiler.exprs);
-        free(compiler.args);
-        free(compiler.funcs);
-        free(compiler.params);
-        free(compiler.locals);
-        free(compiler.edges);
-        free(compiler.loops);
-        free(compiler.cond_arms);
-        free(compiler.loop_k);
-        free(compiler.loop_acc);
-        return status;
-    }
-    if (compiler.lex_diags > 0 || compiler.resource) {
-        render_diags(&compiler, err);
-        arena_dispose(&compiler.arena);
-        free(compiler.tokens);
-        free(compiler.exprs);
-        free(compiler.args);
-        free(compiler.funcs);
-        free(compiler.params);
-        free(compiler.locals);
-        free(compiler.edges);
-        free(compiler.loops);
-        free(compiler.cond_arms);
-        free(compiler.loop_k);
-        free(compiler.loop_acc);
+    root = compiler_new(text, length, filename, 0, 0);
+    if (root == NULL) {
+        free(program);
+        fprintf(err, "error[ORC0008]: compiler could not reserve its work area\n");
         return 1;
     }
-    parse_source(&compiler);
-    if (compiler.parse_diags > 0 || compiler.resource) {
-        render_diags(&compiler, err);
-        status = 1;
-    } else {
-        analyze(&compiler);
-        if (compiler.ndiags > 0 || compiler.failed) {
-            render_diags(&compiler, err);
+    program->mods[0] = root;
+    program->nmods = 1;
+    root->program = program;
+    root->self_index = 0;
+    lex_source(root);
+    if (command == 2) {
+        status = run_lex_command(root, out);
+        render_diags(root, err);
+        program_free(program);
+        return status;
+    }
+    if (root->lex_diags > 0 || root->resource) {
+        render_diags(root, err);
+        program_free(program);
+        return 1;
+    }
+    parse_source(root);
+    if (root->parse_diags > 0 || root->resource) {
+        render_diags(root, err);
+        program_free(program);
+        return 1;
+    }
+    if (root->nuses > 0 && !load_used_modules(program, filename, err)) {
+        program_free(program);
+        return 1;
+    }
+    if (!link_program(program)) {
+        render_program_diags(program, err, 0);
+        program_free(program);
+        return 1;
+    }
+    status = 0;
+    for (index = 0; index < program->norder; index++) {
+        Compiler *mod = program->mods[program->order[index]];
+        analyze(mod);
+        if (mod->ndiags > 0 || mod->failed) {
             status = 1;
-        } else if (command == 1) {
-            status = evaluate_source(&compiler, out);
-            if (status != 0) {
-                render_diags(&compiler, err);
-            }
-        } else {
-            status = 0;
         }
     }
-    arena_dispose(&compiler.arena);
-    free(compiler.tokens);
-    free(compiler.exprs);
-    free(compiler.args);
-    free(compiler.funcs);
-    free(compiler.params);
-    free(compiler.locals);
-    free(compiler.edges);
-    free(compiler.loops);
-    free(compiler.cond_arms);
-    free(compiler.loop_k);
-    free(compiler.loop_acc);
+    if (status != 0) {
+        render_program_diags(program, err, 1);
+        program_free(program);
+        return 1;
+    }
+    if (command == 1) {
+        status = evaluate_source(root, out);
+        if (status != 0) {
+            render_program_diags(program, err, 0);
+        }
+    } else {
+        status = 0;
+    }
+    program_free(program);
     return status;
 }
 
@@ -5888,13 +6670,13 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, conditional, and lookup fragment. It does not use the\n"
-        "Rust compiler.\n"
+        "conversion, array, loop, conditional, lookup, and module fragment.\n"
+        "It does not use the Rust compiler.\n"
         "\n"
         "Commands:\n"
-        "  check    Lex, parse, and check one source\n"
-        "  eval     Check one source and reference-evaluate it\n"
-        "  lex      Print the token stream\n"
+        "  check    Lex, parse, and check one program\n"
+        "  eval     Check one program and reference-evaluate its root\n"
+        "  lex      Print the token stream of one source\n"
         "\n"
         "  --self-test  Run exact-integer self-tests\n"
         "  -h, --help   Print this help\n"
@@ -5915,7 +6697,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3g\n", stdout);
+            fputs("orangec (standalone C) slice S3h\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
