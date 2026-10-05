@@ -314,7 +314,9 @@ typedef struct Diag {
 typedef struct Value {
     TypeKind type;
     uint32_t length;
-    uint32_t elem0;
+    /* Owned element block when length > 0. A copy duplicates the block;
+       value_clear releases it. Scalar values leave this null. */
+    struct Value *elems;
     uint64_t word;
     Big big;
 } Value;
@@ -358,9 +360,6 @@ typedef struct Compiler {
     uint32_t module_start;
     uint32_t module_end;
     Arena arena;
-    Value *elems;
-    uint32_t nelems;
-    size_t elem_cap;
     LoopDesc *loops;
     uint32_t nloops;
     size_t loop_cap;
@@ -4162,6 +4161,93 @@ static void analyze(Compiler *c) {
     }
 }
 
+static void value_clear(Value *value) {
+    Value *elems;
+    uint32_t length;
+    uint32_t index;
+    if (value == NULL) {
+        return;
+    }
+    elems = value->elems;
+    length = value->length;
+    memset(value, 0, sizeof *value);
+    if (elems == NULL) {
+        return;
+    }
+    for (index = 0; index < length; index++) {
+        value_clear(&elems[index]);
+    }
+    free(elems);
+}
+
+static void value_list_clear(Value *items, uint32_t count) {
+    uint32_t index;
+    if (items == NULL) {
+        return;
+    }
+    for (index = 0; index < count; index++) {
+        value_clear(&items[index]);
+    }
+    free(items);
+}
+
+static void value_move(Value *dst, Value *src) {
+    if (dst == src) {
+        return;
+    }
+    value_clear(dst);
+    *dst = *src;
+    memset(src, 0, sizeof *src);
+}
+
+static int value_clone(Compiler *c, Value *dst, const Value *src, uint32_t start, uint32_t end) {
+    Value *elems;
+    uint32_t index;
+    if (c->failed) {
+        return 0;
+    }
+    value_clear(dst);
+    if (src->length == 0) {
+        *dst = *src;
+        dst->elems = NULL;
+        return 1;
+    }
+    if (src->elems == NULL) {
+        c->failed = 1;
+        return 0;
+    }
+    elems = calloc(src->length, sizeof(Value));
+    if (elems == NULL) {
+        c->failed = 1;
+        add_diag(c, "ORC0301", start, end, "evaluation could not retain an array", "resource limit reached", NULL, 2);
+        return 0;
+    }
+    for (index = 0; index < src->length; index++) {
+        if (!value_clone(c, &elems[index], &src->elems[index], start, end)) {
+            value_list_clear(elems, src->length);
+            return 0;
+        }
+    }
+    *dst = *src;
+    dst->elems = elems;
+    dst->length = src->length;
+    return 1;
+}
+
+static int alloc_array(Compiler *c, Value **items, uint32_t length, uint32_t start, uint32_t end) {
+    if (c->failed || length == 0) {
+        c->failed = 1;
+        return 0;
+    }
+    *items = calloc(length, sizeof(Value));
+    if (*items == NULL) {
+        c->failed = 1;
+        add_diag(c, "ORC0301", start, end, "evaluation could not retain an array", "resource limit reached", NULL, 2);
+        return 0;
+    }
+    return 1;
+}
+
 static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
     if (c->failed) {
         return 0;
@@ -4200,17 +4286,22 @@ static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int
                  "resource limit reached", NULL, 2);
         return 0;
     }
+    ok = 1;
+    for (index = 0; index < func->nparams && ok; index++) {
+        ok = value_clone(c, &params[index], &arguments[index], func->name_start, func->name_end);
+    }
+    for (index = 0; index < func->nlocals && ok; index++) {
+        ok = eval_expr(c, c->locals[func->local0 + index].value, params, locals, depth, &locals[index]);
+    }
+    if (ok) {
+        ok = eval_expr(c, func->body, params, locals, depth, out);
+    }
     for (index = 0; index < func->nparams; index++) {
-        params[index] = arguments[index];
+        value_clear(&params[index]);
     }
     for (index = 0; index < func->nlocals; index++) {
-        if (!eval_expr(c, c->locals[func->local0 + index].value, params, locals, depth, &locals[index])) {
-            free(params);
-            free(locals);
-            return 0;
-        }
+        value_clear(&locals[index]);
     }
-    ok = eval_expr(c, func->body, params, locals, depth, out);
     free(params);
     free(locals);
     return ok;
@@ -4275,26 +4366,26 @@ static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, 
     }
 }
 
-static int push_elem(Compiler *c, Value value, uint32_t *slot) {
-    if (c->nelems >= MAX_EXPRS) {
-        c->failed = 1;
-        return 0;
-    }
-    if (!ensure_cap((void **)&c->elems, &c->elem_cap, c->nelems + 1, sizeof(Value), MAX_EXPRS)) {
-        c->failed = 1;
-        return 0;
-    }
-    *slot = c->nelems;
-    c->elems[c->nelems++] = value;
-    return 1;
-}
+static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
+    int ok;
+    memset(out, 0, sizeof *out);
+    if (c->failed) {
+        return 0;
+    }
+    ok = eval_expr_in(c, index, params, locals, depth, out);
+    if (!ok) {
+        value_clear(out);
+    }
+    return ok;
+}
+
+static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
     const Expr *expr = &c->exprs[index];
     if (c->failed) {
         return 0;
     }
-    memset(out, 0, sizeof *out);
     switch (expr->kind) {
     case EX_GROUP:
         return eval_expr(c, expr->left, params, locals, depth, out);
@@ -4333,75 +4424,87 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             out->big = big_zero();
             return 1;
         }
-        *out = expr->name_res == NAME_LOCAL ? locals[expr->name_index] : params[expr->name_index];
-        return 1;
+        return value_clone(c, out,
+                           expr->name_res == NAME_LOCAL ? &locals[expr->name_index] : &params[expr->name_index],
+                           expr->start, expr->end);
     case EX_CALL: {
         Value *arguments;
         uint16_t arg;
+        uint16_t count;
         int ok;
-        arguments = calloc(expr->argc ? expr->argc : 1, sizeof(Value));
+        count = expr->argc == 0 ? 1u : expr->argc;
+        arguments = calloc(count, sizeof(Value));
         if (arguments == NULL) {
             c->failed = 1;
+            add_diag(c, "ORC0301", expr->start, expr->end, "evaluation could not retain a call frame",
+                     "resource limit reached", NULL, 2);
             return 0;
         }
         for (arg = 0; arg < expr->argc; arg++) {
             if (!eval_expr(c, c->args[expr->arg0 + arg], params, locals, depth, &arguments[arg])) {
-                free(arguments);
+                value_list_clear(arguments, count);
                 return 0;
             }
         }
-        if (!charge(c, expr->start, expr->end, 1)) {
-            free(arguments);
-            return 0;
-        }
-        if (expr->callee >= c->nfuncs) {
+        if (!charge(c, expr->start, expr->end, 1) || expr->callee >= c->nfuncs) {
             c->failed = 1;
-            free(arguments);
+            value_list_clear(arguments, count);
             return 0;
         }
         ok = eval_function(c, expr->callee, arguments, depth + 1, out);
-        free(arguments);
+        value_list_clear(arguments, count);
         return ok;
     }
     case EX_UNARY: {
         Value operand;
+        memset(&operand, 0, sizeof operand);
         if (!eval_expr(c, expr->left, params, locals, depth, &operand)) {
             return 0;
         }
         if (expr->op == TK_BANG) {
             if (!charge(c, expr->start, expr->end, 1)) {
+                value_clear(&operand);
                 return 0;
             }
             out->type = TY_BOOL;
             out->word = operand.word == 0 ? 1u : 0u;
             out->length = 0;
             out->big = big_zero();
+            value_clear(&operand);
             return 1;
         }
         if (expr->op == TK_MINUS) {
             uint64_t cost = 1 + big_limbs(&operand.big);
             Big negated;
             if (!charge(c, expr->start, expr->end, cost) || !big_neg(&operand.big, &negated)) {
+                value_clear(&operand);
                 return 0;
             }
             out->type = TY_INT;
             out->big = negated;
             out->word = 0;
+            value_clear(&operand);
             return 1;
         }
         if (!charge(c, expr->start, expr->end, 1)) {
+            value_clear(&operand);
             return 0;
         }
         out->type = operand.type;
         out->word = (~operand.word) & word_mask_of(type_width(operand.type));
         out->big = big_zero();
+        value_clear(&operand);
         return 1;
     }
     case EX_BINARY: {
         Value left;
         Value right;
+        memset(&left, 0, sizeof left);
+        memset(&right, 0, sizeof right);
         if (!eval_expr(c, expr->left, params, locals, depth, &left) ||
             !eval_expr(c, expr->right, params, locals, depth, &right)) {
+            value_clear(&left);
+            value_clear(&right);
             return 0;
         }
         if (is_compare_op(expr->op)) {
@@ -4409,6 +4512,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             uint64_t cost = 1;
             if (left.type != right.type || left.length != 0 || right.length != 0) {
                 c->failed = 1;
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             if (left.type == TY_INT) {
@@ -4420,15 +4525,21 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 ordering = word_ordering(left.word, right.word);
             } else {
                 c->failed = 1;
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             if (!charge(c, expr->op_start, expr->op_end, cost)) {
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             out->type = TY_BOOL;
             out->word = relation_holds(expr->op, ordering) ? 1u : 0u;
             out->length = 0;
             out->big = big_zero();
+            value_clear(&left);
+            value_clear(&right);
             return 1;
         }
         if (expr->op == TK_AMPAMP || expr->op == TK_PIPEPIPE) {
@@ -4436,9 +4547,13 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             int right_true;
             if (left.type != TY_BOOL || right.type != TY_BOOL) {
                 c->failed = 1;
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             if (!charge(c, expr->op_start, expr->op_end, 1)) {
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             left_true = left.word != 0;
@@ -4447,6 +4562,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             out->word = (uint64_t)(expr->op == TK_AMPAMP ? (left_true && right_true) : (left_true || right_true));
             out->length = 0;
             out->big = big_zero();
+            value_clear(&left);
+            value_clear(&right);
             return 1;
         }
         if (expr->op == TK_SLASH || expr->op == TK_PERCENT) {
@@ -4457,6 +4574,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 Big quotient = big_zero();
                 Big remainder = big_zero();
                 if (!charge(c, expr->op_start, expr->op_end, 1 + (uint64_t)dividend_limbs * divisor_cost)) {
+                    value_clear(&left);
+                    value_clear(&right);
                     return 0;
                 }
                 if (right.big.nlimbs == 0) {
@@ -4465,12 +4584,16 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                     c->failed = 1;
                     add_diag(c, "ORC0301", expr->op_start, expr->op_end,
                              "integer result exceeds 16384 significant bits", "magnitude limit reached", NULL, 2);
+                    value_clear(&left);
+                    value_clear(&right);
                     return 0;
                 }
                 out->type = TY_INT;
                 out->word = 0;
                 out->length = 0;
                 out->big = expr->op == TK_SLASH ? quotient : remainder;
+                value_clear(&left);
+                value_clear(&right);
                 return 1;
             }
             {
@@ -4480,6 +4603,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 uint64_t divisor = right.word & mask;
                 if (width == 0 || !charge(c, expr->op_start, expr->op_end, 1)) {
                     c->failed = 1;
+                    value_clear(&left);
+                    value_clear(&right);
                     return 0;
                 }
                 if (divisor == 0) {
@@ -4492,6 +4617,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 out->type = left.type;
                 out->length = 0;
                 out->big = big_zero();
+                value_clear(&left);
+                value_clear(&right);
                 return 1;
             }
         }
@@ -4507,6 +4634,8 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 cost = 1 + (left_limbs > right_limbs ? left_limbs : right_limbs);
             }
             if (!charge(c, expr->op_start, expr->op_end, cost)) {
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             if (expr->op == TK_PLUS) {
@@ -4520,19 +4649,27 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
                 c->failed = 1;
                 add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
                          "magnitude limit reached", NULL, 2);
+                value_clear(&left);
+                value_clear(&right);
                 return 0;
             }
             out->type = TY_INT;
             out->big = result;
             out->word = 0;
+            value_clear(&left);
+            value_clear(&right);
             return 1;
         }
         if (!charge(c, expr->op_start, expr->op_end, 1) ||
             !binary_words(expr->op, left.word, right.word, type_width(left.type), &out->word)) {
+            value_clear(&left);
+            value_clear(&right);
             return 0;
         }
         out->type = left.type;
         out->big = big_zero();
+        value_clear(&left);
+        value_clear(&right);
         return 1;
     }
     case EX_SHIFT: {
@@ -4543,6 +4680,7 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         int width;
         uint64_t mask;
         uint64_t value;
+        memset(&left, 0, sizeof left);
         if (!eval_expr(c, expr->left, params, locals, depth, &left)) {
             return 0;
         }
@@ -4556,6 +4694,7 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         mask = word_mask_of(width);
         value = left.word & mask;
         if (!charge(c, expr->op_start, expr->op_end, 1)) {
+            value_clear(&left);
             return 0;
         }
         if (shift == 0) {
@@ -4571,189 +4710,248 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         }
         out->type = left.type;
         out->big = big_zero();
+        value_clear(&left);
         return 1;
     }
     case EX_CONV: {
         Value operand;
         uint64_t word = 0;
+        memset(&operand, 0, sizeof operand);
         if (!eval_expr(c, expr->left, params, locals, depth, &operand) || !charge(c, expr->op_start, expr->op_end, 1)) {
+            value_clear(&operand);
             return 0;
         }
         if (operand.type == TY_INT) {
             if (expr->conv_ty == TY_INT) {
-                *out = operand;
+                value_move(out, &operand);
                 return 1;
             }
             if (!big_mod_pow2(&operand.big, (uint32_t)type_width(expr->conv_ty), &word)) {
+                value_clear(&operand);
                 return 0;
             }
             out->type = expr->conv_ty;
             out->word = word;
             out->big = big_zero();
+            value_clear(&operand);
             return 1;
         }
         if (expr->conv_ty == TY_INT) {
             if (!big_from_u64(&c->arena, operand.word, &out->big)) {
+                value_clear(&operand);
                 return 0;
             }
             out->type = TY_INT;
             out->word = 0;
+            value_clear(&operand);
             return 1;
         }
         out->type = expr->conv_ty;
         out->word = operand.word & word_mask_of(type_width(expr->conv_ty));
         out->big = big_zero();
+        value_clear(&operand);
         return 1;
     }
     case EX_ARRAY: {
-        uint32_t first = 0;
+        Value *items = NULL;
         uint32_t element;
         if (!charge(c, expr->start, expr->end, expr->argc == 0 ? 1 : expr->argc)) {
             return 0;
         }
+        if (expr->argc == 0) {
+            out->type = expr->ty;
+            out->length = 0;
+            return 1;
+        }
+        if (!alloc_array(c, &items, expr->argc, expr->start, expr->end)) {
+            return 0;
+        }
         for (element = 0; element < expr->argc; element++) {
-            Value item;
-            uint32_t slot = 0;
-            if (!eval_expr(c, c->args[expr->arg0 + element], params, locals, depth, &item) ||
-                !push_elem(c, item, &slot)) {
-                c->failed = 1;
+            if (!eval_expr(c, c->args[expr->arg0 + element], params, locals, depth, &items[element])) {
+                value_list_clear(items, expr->argc);
                 return 0;
-            }
-            if (element == 0) {
-                first = slot;
             }
         }
         out->type = expr->ty;
         out->length = expr->argc;
-        out->elem0 = first;
+        out->elems = items;
         return 1;
     }
     case EX_INDEX: {
         Value base;
         Big magnitude = big_zero();
         uint32_t position = 0;
+        memset(&base, 0, sizeof base);
         if (!eval_expr(c, expr->left, params, locals, depth, &base)) {
             return 0;
         }
         if (!decode_literal(c, expr, &magnitude) || !index_below(&magnitude, base.length) ||
             !charge(c, expr->start, expr->end, 1)) {
             c->failed = 1;
+            value_clear(&base);
             return 0;
         }
         if (magnitude.nlimbs > 0) {
             position = magnitude.limbs[0];
         }
-        if (base.elem0 > UINT32_MAX - position || base.elem0 + position >= c->nelems) {
+        if (position >= base.length || base.elems == NULL) {
             c->failed = 1;
+            value_clear(&base);
             return 0;
         }
-        *out = c->elems[base.elem0 + position];
+        if (!value_clone(c, out, &base.elems[position], expr->start, expr->end)) {
+            value_clear(&base);
+            return 0;
+        }
+        value_clear(&base);
         return 1;
     }
     case EX_SELECT: {
         Value base;
         Value index_value;
         uint32_t position = 0;
+        memset(&base, 0, sizeof base);
+        memset(&index_value, 0, sizeof index_value);
         if (!eval_expr(c, expr->left, params, locals, depth, &base) ||
             !eval_expr(c, expr->right, params, locals, depth, &index_value)) {
+            value_clear(&base);
+            value_clear(&index_value);
             return 0;
         }
         if (index_value.type != TY_INT || index_value.big.negative || index_value.big.nlimbs > 1 ||
             !charge(c, expr->start, expr->end, 1)) {
             c->failed = 1;
+            value_clear(&base);
+            value_clear(&index_value);
             return 0;
         }
         if (index_value.big.nlimbs > 0) {
             position = index_value.big.limbs[0];
         }
-        if (position >= base.length || base.elem0 > UINT32_MAX - position || base.elem0 + position >= c->nelems) {
+        if (position >= base.length || base.elems == NULL) {
             c->failed = 1;
+            value_clear(&base);
+            value_clear(&index_value);
             return 0;
         }
-        *out = c->elems[base.elem0 + position];
+        if (!value_clone(c, out, &base.elems[position], expr->start, expr->end)) {
+            value_clear(&base);
+            value_clear(&index_value);
+            return 0;
+        }
+        value_clear(&base);
+        value_clear(&index_value);
         return 1;
     }
     case EX_UPDATE: {
         Value base;
         Value index_value;
         Value element;
+        Value *items = NULL;
         uint32_t position = 0;
-        uint32_t first = 0;
         uint32_t slot;
+        uint32_t length;
         uint64_t cost;
+        TypeKind element_type;
+        memset(&base, 0, sizeof base);
+        memset(&index_value, 0, sizeof index_value);
+        memset(&element, 0, sizeof element);
         if (!eval_expr(c, expr->left, params, locals, depth, &base) ||
             !eval_expr(c, expr->right, params, locals, depth, &index_value) ||
             !eval_expr(c, expr->callee, params, locals, depth, &element)) {
+            value_clear(&base);
+            value_clear(&index_value);
+            value_clear(&element);
             return 0;
         }
-        if (base.length == 0 || index_value.type != TY_INT || index_value.big.negative ||
+        if (base.length == 0 || base.elems == NULL || index_value.type != TY_INT || index_value.big.negative ||
             index_value.big.nlimbs > 1) {
             c->failed = 1;
+            value_clear(&base);
+            value_clear(&index_value);
+            value_clear(&element);
             return 0;
         }
         if (index_value.big.nlimbs > 0) {
             position = index_value.big.limbs[0];
         }
-        cost = ((uint64_t)base.length + 63u) / 64u;
-        if (position >= base.length || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+        length = base.length;
+        element_type = base.type;
+        cost = ((uint64_t)length + 63u) / 64u;
+        if (position >= length || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
             c->failed = 1;
+            value_clear(&base);
+            value_clear(&index_value);
+            value_clear(&element);
             return 0;
         }
-        for (slot = 0; slot < base.length; slot++) {
-            Value copied;
-            uint32_t stored;
-            if (base.elem0 > UINT32_MAX - slot || base.elem0 + slot >= c->nelems) {
-                c->failed = 1;
+        if (!alloc_array(c, &items, length, expr->start, expr->end)) {
+            value_clear(&base);
+            value_clear(&index_value);
+            value_clear(&element);
+            return 0;
+        }
+        for (slot = 0; slot < length; slot++) {
+            const Value *source = slot == position ? &element : &base.elems[slot];
+            if (!value_clone(c, &items[slot], source, expr->start, expr->end)) {
+                value_list_clear(items, length);
+                value_clear(&base);
+                value_clear(&index_value);
+                value_clear(&element);
                 return 0;
-            }
-            copied = c->elems[base.elem0 + slot];
-            if (slot == position) {
-                copied = element;
-            }
-            if (!push_elem(c, copied, &stored)) {
-                return 0;
-            }
-            if (slot == 0) {
-                first = stored;
             }
         }
-        out->type = base.type;
-        out->length = base.length;
-        out->elem0 = first;
+        value_clear(&base);
+        value_clear(&index_value);
+        value_clear(&element);
+        out->type = element_type;
+        out->length = length;
+        out->elems = items;
         return 1;
     }
     case EX_FILL: {
         Value element;
+        Value *items = NULL;
         uint32_t count = expr->ty_len;
-        uint32_t first = 0;
         uint32_t slot;
         uint64_t cost;
+        TypeKind element_type;
+        memset(&element, 0, sizeof element);
         if (count == 0 || !eval_expr(c, expr->left, params, locals, depth, &element)) {
-            c->failed = count == 0;
+            if (count == 0) {
+                c->failed = 1;
+            }
+            value_clear(&element);
             return 0;
         }
         cost = ((uint64_t)count + 63u) / 64u;
         if (!charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+            value_clear(&element);
+            return 0;
+        }
+        if (!alloc_array(c, &items, count, expr->start, expr->end)) {
+            value_clear(&element);
             return 0;
         }
         for (slot = 0; slot < count; slot++) {
-            uint32_t stored;
-            if (!push_elem(c, element, &stored)) {
+            if (!value_clone(c, &items[slot], &element, expr->start, expr->end)) {
+                value_list_clear(items, count);
+                value_clear(&element);
                 return 0;
             }
-            if (slot == 0) {
-                first = stored;
-            }
         }
-        out->type = element.type;
+        element_type = element.type;
+        value_clear(&element);
+        out->type = element_type;
         out->length = count;
-        out->elem0 = first;
+        out->elems = items;
         return 1;
     }
     case EX_LOOP: {
         const LoopDesc *loop = &c->loops[expr->arg0];
         Value acc;
         uint32_t step_index;
+        memset(&acc, 0, sizeof acc);
         if (!loop->bounds_ok || c->loop_k == NULL || c->loop_acc == NULL || loop->init_expr == UINT32_MAX ||
             loop->step_expr == UINT32_MAX) {
             c->failed = 1;
@@ -4761,19 +4959,25 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         }
         if (!eval_expr(c, loop->init_expr, params, locals, depth, &acc) ||
             !charge(c, expr->start, expr->end, 1)) {
+            value_clear(&acc);
             return 0;
         }
         for (step_index = loop->bound_a; step_index < loop->bound_b; step_index++) {
             if (!charge(c, expr->start, expr->end, 1)) {
+                value_clear(&acc);
+                value_clear(&c->loop_acc[expr->arg0]);
                 return 0;
             }
             c->loop_k[expr->arg0] = step_index;
-            c->loop_acc[expr->arg0] = acc;
+            value_clear(&c->loop_acc[expr->arg0]);
+            value_move(&c->loop_acc[expr->arg0], &acc);
             if (!eval_expr(c, loop->step_expr, params, locals, depth, &acc)) {
+                value_clear(&c->loop_acc[expr->arg0]);
                 return 0;
             }
         }
-        *out = acc;
+        value_move(out, &acc);
+        value_clear(&c->loop_acc[expr->arg0]);
         return 1;
     }
     case EX_LOOP_INDEX: {
@@ -4791,8 +4995,7 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             c->failed = 1;
             return 0;
         }
-        *out = c->loop_acc[expr->arg0];
-        return 1;
+        return value_clone(c, out, &c->loop_acc[expr->arg0], expr->start, expr->end);
     }
     case EX_COND: {
         uint32_t arg0 = expr->arg0;
@@ -4805,16 +5008,20 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             Value condition;
             uint32_t condition_expr = c->cond_arms[arg0 + arm].cond;
             uint32_t value_expr = c->cond_arms[arg0 + arm].value;
+            memset(&condition, 0, sizeof condition);
             if (!eval_expr(c, condition_expr, params, locals, depth, &condition)) {
                 return 0;
             }
             if (condition.type != TY_BOOL || condition.length != 0 || !charge(c, span_start, span_end, 1)) {
                 c->failed = 1;
+                value_clear(&condition);
                 return 0;
             }
             if (condition.word != 0) {
+                value_clear(&condition);
                 return eval_expr(c, value_expr, params, locals, depth, out);
             }
+            value_clear(&condition);
         }
         return eval_expr(c, otherwise, params, locals, depth, out);
     }
@@ -4824,56 +5031,84 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
     }
 }
 
-static int format_value(const Compiler *c, const Value *value, char *buffer, size_t cap) {
-    int width;
-    if (value->length > 0) {
-        size_t used = 0;
-        uint32_t index;
-        if (cap < 3) {
+typedef struct TextBuf {
+    char *data;
+    size_t length;
+    size_t cap;
+} TextBuf;
+
+static int text_append(TextBuf *buf, const char *bytes, size_t count) {
+    size_t need;
+    size_t next;
+    char *grown;
+    if (count == 0) {
+        return 1;
+    }
+    if (buf->length > SIZE_MAX - count - 1) {
+        return 0;
+    }
+    need = buf->length + count + 1;
+    if (need > buf->cap) {
+        next = buf->cap == 0 ? 64 : buf->cap;
+        while (next < need) {
+            if (next > SIZE_MAX / 2) {
+                next = need;
+                break;
+            }
+            next *= 2;
+        }
+        grown = realloc(buf->data, next);
+        if (grown == NULL) {
             return 0;
         }
-        buffer[used++] = '[';
-        for (index = 0; index < value->length; index++) {
-            char element[8192];
-            size_t element_len;
-            if (value->elem0 > UINT32_MAX - index || value->elem0 + index >= c->nelems) {
-                return 0;
-            }
-            if (index > 0) {
-                if (used + 2 >= cap) {
-                    return 0;
-                }
-                buffer[used++] = ',';
-                buffer[used++] = ' ';
-            }
-            if (!format_value(c, &c->elems[value->elem0 + index], element, sizeof element)) {
-                return 0;
-            }
-            element_len = strlen(element);
-            if (used + element_len + 2 >= cap) {
-                return 0;
-            }
-            memcpy(buffer + used, element, element_len);
-            used += element_len;
+        buf->data = grown;
+        buf->cap = next;
+    }
+    memcpy(buf->data + buf->length, bytes, count);
+    buf->length += count;
+    buf->data[buf->length] = '\0';
+    return 1;
+}
+
+/* Decimal spelling of an admitted Int. 2^16384-1 is 4933 digits, plus a sign. */
+#define MAX_INT_DECIMAL 8192u
+
+static int format_value(const Value *value, TextBuf *buf) {
+    uint32_t index;
+    if (value->length > 0) {
+        if (value->elems == NULL || !text_append(buf, "[", 1)) {
+            return 0;
         }
-        buffer[used++] = ']';
-        buffer[used] = '\0';
-        return 1;
+        for (index = 0; index < value->length; index++) {
+            if (index > 0 && !text_append(buf, ", ", 2)) {
+                return 0;
+            }
+            if (!format_value(&value->elems[index], buf)) {
+                return 0;
+            }
+        }
+        return text_append(buf, "]", 1);
     }
     if (value->type == TY_BOOL) {
         const char *spelling = value->word != 0 ? "true" : "false";
-        size_t spelling_len = strlen(spelling);
-        if (spelling_len + 1 > cap) {
-            return 0;
-        }
-        memcpy(buffer, spelling, spelling_len + 1);
-        return 1;
+        return text_append(buf, spelling, strlen(spelling));
     }
     if (value->type == TY_INT) {
-        return big_format(&value->big, buffer, cap);
+        char digits[MAX_INT_DECIMAL];
+        if (!big_format(&value->big, digits, sizeof digits)) {
+            return 0;
+        }
+        return text_append(buf, digits, strlen(digits));
     }
-    width = type_width(value->type) / 4;
-    return snprintf(buffer, cap, "0x%0*llx", width, (unsigned long long)value->word) >= 0;
+    {
+        char hex[32];
+        int width = type_width(value->type) / 4;
+        int length = snprintf(hex, sizeof hex, "0x%0*llx", width, (unsigned long long)value->word);
+        if (length < 0 || (size_t)length >= sizeof hex) {
+            return 0;
+        }
+        return text_append(buf, hex, (size_t)length);
+    }
 }
 
 static int compare_diag(const void *left_ptr, const void *right_ptr) {
@@ -4979,73 +5214,75 @@ static int run_lex_command(Compiler *c, FILE *out) {
     return c->ndiags == 0 ? 0 : 1;
 }
 
+static void release_loop_values(Compiler *c) {
+    uint32_t index;
+    if (c->loop_acc == NULL) {
+        return;
+    }
+    for (index = 0; index < c->nloops; index++) {
+        value_clear(&c->loop_acc[index]);
+    }
+}
+
 static int evaluate_source(Compiler *c, FILE *out) {
-    char *buffer = NULL;
-    size_t used = 0;
-    size_t cap = 0;
+    TextBuf program = {0};
     uint32_t index;
     if (c->nloops > 0) {
         c->loop_k = calloc(c->nloops, sizeof *c->loop_k);
         c->loop_acc = calloc(c->nloops, sizeof *c->loop_acc);
         if (c->loop_k == NULL || c->loop_acc == NULL) {
             resource_diag(c, "ORC0106", 0, 0, "evaluation could not retain loop state");
-            free(buffer);
+            release_loop_values(c);
             return 1;
         }
     }
     for (index = 0; index < c->nfuncs && !c->failed; index++) {
         Func *func = &c->funcs[index];
         Value result;
+        TextBuf value = {0};
         char type_text[64];
-        char value_text[8192];
-        char line[8700];
-        int length;
+        int stop = 0;
         if (!func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
             continue;
         }
         memset(&result, 0, sizeof result);
         if (!eval_function(c, index, NULL, 1, &result)) {
+            value_clear(&result);
             break;
         }
         if (func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL) {
             result.type = func->result;
-            result.length = 0;
+            if (result.elems == NULL) {
+                result.length = 0;
+            }
             result.word &= word_mask_of(type_width(func->result));
         }
         write_type(type_text, sizeof type_text, func->result, func->result_len);
-        if (!format_value(c, &result, value_text, sizeof value_text)) {
+        if (!format_value(&result, &value) ||
+            !text_append(&program, c->text + c->module_start, (size_t)(c->module_end - c->module_start)) ||
+            !text_append(&program, "::", 2) ||
+            !text_append(&program, c->text + func->name_start, (size_t)(func->name_end - func->name_start)) ||
+            !text_append(&program, ": ", 2) ||
+            !text_append(&program, type_text, strlen(type_text)) ||
+            !text_append(&program, " = ", 3) ||
+            !text_append(&program, value.data == NULL ? "" : value.data, value.length) ||
+            !text_append(&program, "\n", 1)) {
             c->failed = 1;
+            add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a value",
+                     "resource limit reached", NULL, 2);
+            stop = 1;
+        }
+        free(value.data);
+        value_clear(&result);
+        if (stop) {
             break;
         }
-        length = snprintf(line, sizeof line, "%.*s::%.*s: %s = %s\n", (int)(c->module_end - c->module_start),
-                          c->text + c->module_start, (int)(func->name_end - func->name_start),
-                          c->text + func->name_start, type_text, value_text);
-        if (length < 0 || (size_t)length >= sizeof line) {
-            c->failed = 1;
-            break;
-        }
-        if (used + (size_t)length + 1 > cap) {
-            size_t next = cap == 0 ? 4096 : cap * 2;
-            char *grown;
-            while (next < used + (size_t)length + 1) {
-                next *= 2;
-            }
-            grown = realloc(buffer, next);
-            if (grown == NULL) {
-                c->failed = 1;
-                break;
-            }
-            buffer = grown;
-            cap = next;
-        }
-        memcpy(buffer + used, line, (size_t)length);
-        used += (size_t)length;
-        buffer[used] = '\0';
     }
-    if (!c->failed && buffer != NULL) {
-        fwrite(buffer, 1, used, out);
+    if (!c->failed && program.data != NULL) {
+        fwrite(program.data, 1, program.length, out);
     }
-    free(buffer);
+    free(program.data);
+    release_loop_values(c);
     return c->failed ? 1 : 0;
 }
 
@@ -5072,7 +5309,6 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.params);
         free(compiler.locals);
         free(compiler.edges);
-        free(compiler.elems);
         free(compiler.loops);
         free(compiler.cond_arms);
         free(compiler.loop_k);
@@ -5089,7 +5325,6 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.params);
         free(compiler.locals);
         free(compiler.edges);
-        free(compiler.elems);
         free(compiler.loops);
         free(compiler.cond_arms);
         free(compiler.loop_k);
@@ -5122,7 +5357,6 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     free(compiler.params);
     free(compiler.locals);
     free(compiler.edges);
-    free(compiler.elems);
     free(compiler.loops);
     free(compiler.cond_arms);
     free(compiler.loop_k);
