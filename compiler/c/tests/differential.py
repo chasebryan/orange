@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Compare the standalone C compiler with the Rust frontend on the S3b/S3c fixtures."""
 
-import argparse
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+C_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "compiler" / "fixtures"
 RUST = ROOT / "compiler" / "target" / "debug" / "orangec"
+C_COMPILER = C_DIR / "out" / "orangec-asan"
 CODE = re.compile(r"^error\[(ORC[0-9]+)\]", re.MULTILINE)
 
 VALID = [
@@ -61,12 +62,8 @@ def codes(stderr: str) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--c-compiler", required=True)
-    parser.add_argument("--rust-compiler", default=str(RUST))
-    args = parser.parse_args()
-    c_compiler = Path(args.c_compiler).resolve()
-    rust_compiler = Path(args.rust_compiler).resolve()
+    c_compiler = C_COMPILER
+    rust_compiler = RUST
     if not c_compiler.is_file() or not rust_compiler.is_file():
         print("missing compiler binary", file=sys.stderr)
         return 2

@@ -20,7 +20,7 @@ test: $(OUT)
 	$(CC) $(CPPFLAGS) -std=c11 -Wall -Wextra -Wpedantic -Werror -g -fsanitize=address,undefined -fno-omit-frame-pointer -o out/orangec-asan $(SRCS) $(LDFLAGS)
 	out/orangec --self-test
 	out/orangec-asan --self-test
-	python3 tests/differential.py --c-compiler out/orangec-asan
+	python3 tests/differential.py
 
 clean:
 	rm -rf out
