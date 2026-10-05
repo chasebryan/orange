@@ -33,11 +33,12 @@ remain in owner review; the accepted semantic boundary is S3a.
 The algorithm directories contain executable mathematical specifications and
 tested vectors. The P2 five-limb field definitions supply representation
 predicates, addition, carrying and canonicalization. Partial P4 mathematical
-preparation adds exact `Int` product accumulators and three-pass normalization
-observations. A predicate returning `true` is not a checked refinement proof;
-P4 remains incomplete. The CLI also has file-sealing commands that run
-Orange specifications through the reference evaluator. Neither these commands
-nor their vectors establish verified native cryptography or a release claim.
+preparation adds exact `Int` product accumulators and three-pass normalization,
+biased subtraction, dedicated squaring and a24 multiplication observations. A
+predicate returning `true` is not a checked refinement proof; P4 remains
+incomplete. The CLI also has file-sealing commands that run Orange
+specifications through the reference evaluator. Neither these commands nor
+their vectors establish verified native cryptography or a release claim.
 
 Tabula is an implemented local editor and reference-evaluation workbench.
 The syntax-only [formatter](FORMATTER_2026.md) is permanent W3 tooling. It
@@ -90,9 +91,10 @@ completion from another area's tests.
    finite size instances, and S3u matrices of polynomials. P2 supplies five-limb reconstruction, abstraction,
    tight/loose/canonical predicates, addition, carrying and canonicalization.
    Partial P4 preparation supplies exact `Int` multiplication with three-pass
-   normalization observations. Machine limb multiplication and
-   checked representation contracts remain later work: wrapping `Word[64]`
-   multiplication cannot stand in for these exact accumulators.
+   normalization, biased subtraction, dedicated squaring and a24 multiplication
+   observations. Machine limb multiplication and checked representation
+   contracts remain later work: wrapping `Word[64]` multiplication cannot stand
+   in for these exact accumulators.
    Review the existing pure slices and define remaining shapes and parameter
    domains without claiming universal proof from finite specialization.
 2. Close the semantic/assurance foundation with actual decision evidence.

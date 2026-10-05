@@ -227,11 +227,13 @@ chapter 12.
 ## Mathematical limb representations
 
 [`field25519-limbs.or`](field25519-limbs.or) implements the executable P2
-representation definitions and partial P4 mathematical product preparation of
+representation definitions and partial P4 mathematical field-operation
+preparation of
 [OEP-0022](../../docs/governance/oeps/OEP-0022-crypto-language-development-plan.md).
 It is separate from the existing ladder. It supplies exact mathematical field
-products, while inversion, coordinate decoding, and full X25519 refinement
-remain absent from this source.
+products, biased subtraction, dedicated squaring and a24 multiplication, while
+inversion, coordinate decoding, and full X25519 refinement remain absent from
+this source.
 The five `Word[64]` limbs are least significant first, with B = 2^51 and
 p = B^5 - 19. This radix and carry schedule are original definitions;
 RFC 7748 does not require this storage format.
@@ -270,15 +272,27 @@ the second at most 1, and the third zero. The third pass preserves tightness:
 adding 19 only to the second low digit can exceed B despite the right residue.
 `multiply_tight` uses this schedule, and `multiply_canonical` applies the
 existing single-subtraction canonicalization. Tight inputs need not be
-canonical. These intended contracts remain unchecked predicates; this
-mathematical preparation does not complete P4 or supply P3 checked proofs.
+canonical.
+
+Biased subtraction adds the limb form of 2p before subtracting, so every
+result limb of two tight inputs lies in [B - 37, 3B - 3] ⊂ [0, 4B). That range
+is wider than loose; `bounded_difference` records it and `carry_difference`
+uses its own two-pass schedule rather than inheriting `carry_loose`. Dedicated
+`square_accumulators` uses the same folded pairing as the product schedule but
+counts each off-diagonal pair once with factor 2. Multiplication by
+a24 = 121665 keeps each coefficient in `Int` because (B - 1) · 121665 exceeds
+2^64; `bounded_a24` records that bound and reuses the three-pass product carry.
+These intended contracts remain unchecked predicates; this mathematical
+preparation does not complete P4 or supply P3 checked proofs.
 
 Seven P2 computed/expected pairs distinguish zero, p - 1, p, p + 1, maximum
-tight storage, componentwise addition and both addition folds. Five partial P4
-pairs add exact product coefficient maxima, every product carry stage, product
-boundaries and a product requiring the third pass.
-The expected values follow directly from B^5 = p + 19, rather than from a
-published X25519 vector. The external
+tight storage, componentwise addition and both addition folds. Fourteen partial
+P4 pairs add exact product coefficient maxima, every product carry stage,
+product boundaries, a product requiring the third pass, biased-subtraction
+boundaries and a wide difference, dedicated-square maxima and boundaries, and
+a24 coefficient maxima and boundaries.
+The expected values follow directly from B^5 = p + 19 and a24 = 121665, rather
+than from a published X25519 vector. The external
 [`field25519_limbs.rs`](../../compiler/crates/orangec/tests/field25519_limbs.rs)
 test runs the CLI twice and independently reconstructs the storage bits into
 a 320-bit integer, reduces by binary long division, and extracts canonical
@@ -288,7 +302,9 @@ deterministic generated tight/loose inputs. Addition tests compare exact limb
 sums and canonical residues for 50 tight-input pairs. Product tests use 129
 tight-input pairs and an independent 640-bit binary product/reference carry
 calculation to check coefficients, each carry stage, tight output and canonical
-residues. Forty-one boundary observations separate the intended input and
+residues. Separate suites check biased differences, dedicated squares against
+the product schedule, and a24 products whose limb coefficients exceed
+`Word[64]`. Forty-one boundary observations separate the intended input and
 accumulator predicates from a coincidentally correct residue outside them.
 
 The following are exact reference-evaluator step counts for the named
@@ -309,15 +325,25 @@ this source and evaluator cost model, not native execution time.
 | `product_maximum` | 1,768 |
 | `product_third_pass` | 1,474 |
 | `product_boundaries` | 8,824 |
+| `subtract_zero` | 548 |
+| `subtract_boundaries` | 4,248 |
+| `subtract_wide` | 175 |
+| `square_accumulator_maxima` | 1,249 |
+| `square_maximum` | 1,996 |
+| `square_boundaries` | 7,919 |
+| `a24_accumulator_maxima` | 72 |
+| `a24_maximum` | 793 |
+| `a24_boundaries` | 3,030 |
 
-Default `eval --stats` takes 19,999 steps including constants and expected
-values. The ten executable test blocks take 15,751 steps. The external tests
-check the exact 380-step budget for `second_fold` and 1,474-step budget for
-`product_third_pass`: each succeeds at its stated budget and returns ORC0301
-with no partial value output one step below it. All loops have five iterations;
-no array is larger than twelve scalar elements. Boolean examples and test
-results establish no checked refinement type, universal theorem, timing,
-machine layout, or native security guarantee.
+Default `eval --stats` takes 40,197 steps including constants and expected
+values. The fifteen executable test blocks take 28,745 steps. The external
+tests check the exact 380-step budget for `second_fold`, the 1,474-step budget
+for `product_third_pass`, and the 793-step budget for `a24_maximum`: each
+succeeds at its stated budget and returns ORC0301 with no partial value output
+one step below it. All loops have five iterations; no array is larger than
+twelve scalar elements. Boolean examples and test results establish no checked
+refinement type, universal theorem, timing, machine layout, or native security
+guarantee.
 
 ## Gaps
 
