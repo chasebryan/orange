@@ -6345,6 +6345,27 @@ module sha3_spec {
 }
 ```
 
+#### 5. Generic Form and Post-Quantum
+
+**Proposed.** Neither is a listing this tree accepts.
+
+A generic SHA-3 form is one spec for every function FIPS 202 section 6
+names, including SHA3-224 and SHA3-384, with the rate and the output
+length as parameters. Slice S3o admits finite type parameters. The listing
+above does not use one: each rate and each output length is its own spec.
+The prerequisite is a transcription that does use them, and `orangec test`
+accepting the SHA3-224 and SHA3-384 known answers together with a SHAKE
+length this listing does not name. Until that transcription exists,
+SHA3-224 and SHA3-384 stay unrestated.
+
+No file under `algorithms/` is ML-KEM, ML-DSA, or SLH-DSA.
+`algorithms/README.md` says ML-KEM-512 is being written and is not in the
+index. The SHA-3 README names FIPS 203, FIPS 204, and SLH-DSA as users of
+SHA3-256, SHA3-512, SHAKE128, and SHAKE256. Those names are not a
+transcription. The prerequisite is an Orange listing mapped onto the
+published text of one of those algorithms, with known-answer tests this
+compiler has accepted. The hash section above is not that algorithm.
+
 ## Part VIII: Implementation Stratum (`impl`) & Memory Model
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
