@@ -365,6 +365,192 @@ class ContinuationExamples(unittest.TestCase):
                          '62f7463f9008d3b56f935c84195adb1289b59d1b')
 
 
+def n9_answers(text: str) -> dict[str, str]:
+    """Split lesson N9 worked answers. The region stops before the source notes."""
+    region = text.split('## Worked answers: N9', 1)[1]
+    region = region.split('## Sources and epigraph record', 1)[0]
+    parts = re.split(r'\n\*\*(N9\.\d+)\.\*\* ', '\n' + region)
+    answers = {}
+    items = iter(parts[1:])
+    for ident, body in zip(items, items):
+        answers[ident] = body
+    return answers
+
+
+def imply(hypothesis: int, conclusion: int) -> int:
+    """Material implication on the lesson's two truth values."""
+    return 0 if hypothesis == 1 and conclusion == 0 else 1
+
+
+def bit_or_via_xor_and(left: int, right: int) -> tuple[int, int]:
+    """Return (left OR right, (left XOR right) XOR (left AND right))."""
+    return (left | right, (left ^ right) ^ (left & right))
+
+
+def rotate_left_byte(value: int) -> int:
+    """One-position mathematical left rotation, not an Orange interpreter."""
+    return ((value << 1) | (value >> 7)) & 255
+
+
+class LessonN9Reference(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_LOGIC.md').read_text(encoding='utf-8')
+        cls.answers = n9_answers(cls.text)
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_twenty_exercises_have_one_answer_each(self):
+        exercises = re.findall(r'^\*\*Exercise (N9\.\d+) —', self.text, re.M)
+        self.assertEqual(exercises, [f'N9.{n}' for n in range(1, 21)])
+        self.assertEqual(set(self.answers), set(exercises))
+
+    def test_membership_cardinality_products_and_congruence(self):
+        byte = {n for n in range(-2, 300) if 0 <= n <= 255}
+        for member in (0, 1, 2, 255):
+            self.assertIn(member, byte)
+        for outsider in (256, -1):
+            self.assertNotIn(outsider, byte)
+        self.assertEqual(len({1, 0, 1}), 2)
+        evens = {n for n in byte if n % 2 == 0}
+        self.assertEqual(len(evens), 128)
+        self.assertEqual(len(list(product((0, 1), repeat=2))), 4)
+        self.assertEqual(256 * 256, 65536)
+        self.assertEqual((2 ** 16) * (2 ** 16), 4294967296)
+        # Congruence is transitive because differences add.
+        self.assertEqual((19 - 3) + (3 - 35), 19 - 35)
+        self.assertEqual((19 - 35) % 16, 0)
+        answer = self.answers['N9.1'] + self.answers['N9.3'] + self.answers['N9.4']
+        self.assertIn('Belong: 0, 1, 2, and 255.', self.answers['N9.1'])
+        self.assertIn('Do not belong: 256 and -1.', self.answers['N9.1'])
+        self.assertIn('The set has two elements.', self.answers['N9.2'])
+        self.assertIn('The empty set is a subset.', self.answers['N9.3'])
+        self.assertIn('`{256}` is not a subset.', self.answers['N9.3'])
+        folded = re.sub(r'\s+', ' ', self.answers['N9.3'])
+        self.assertIn(f'The even byte values number {len(evens)}.', folded)
+        self.assertIn('There are 4 pairs.', self.answers['N9.4'])
+        self.assertIn('The byte pair set has 65536 elements', self.answers['N9.4'])
+        self.assertIn('4294967296', self.answers['N9.19'])
+        self.assertIn('Belong: 0, 1, 2, and 255.', answer)
+
+    def test_doubling_successor_rotation_and_induction_counts(self):
+        image = {(2 * value) % 256 for value in range(256)}
+        self.assertEqual((2 * 0) % 256, 0)
+        self.assertEqual((2 * 128) % 256, 0)
+        self.assertNotIn(1, image)
+        self.assertEqual(image, set(range(0, 256, 2)))
+        self.assertEqual(len(image), 128)
+        for value in range(5):
+            self.assertNotEqual(value + 1, 0)
+        self.assertEqual(2 ** 0, 1)
+        self.assertEqual(2 ** 3, 8)
+        self.assertEqual(f'{0x81:08b}', '10000001')
+        self.assertEqual(f'{rotate_left_byte(0x81):08b}', '00000011')
+        self.assertEqual(f'{(0x81 << 1) & 255:08b}', '00000010')
+        self.assertEqual(bin(0x81).count('1'), 2)
+        self.assertEqual(bin(rotate_left_byte(0x81)).count('1'), 2)
+        self.assertEqual(bin((0x81 << 1) & 255).count('1'), 1)
+        self.assertEqual((0x80 * 2) % 256, 0)
+        self.assertEqual(bin(0x80).count('1'), 1)
+        self.assertEqual(bin(0).count('1'), 0)
+        for value in range(256):
+            self.assertEqual(bin(rotate_left_byte(value)).count('1'), bin(value).count('1'))
+            self.assertEqual(rotate_left_byte(rotate_left_byte(value) & 255) & 255,
+                             rotate_left_byte(rotate_left_byte(value)))
+            undone = rotate_left_byte(value)
+            # Right rotation by one undoes left rotation by one.
+            restored = ((undone >> 1) | ((undone & 1) << 7)) & 255
+            self.assertEqual(restored, value)
+        self.assertIn('Both 0 and 128 send to 0. The value 1 is missed.', self.answers['N9.7'])
+        self.assertIn('the 128 even byte values', self.answers['N9.7'])
+        self.assertIn('true; false; false; false; true.', self.answers['N9.12'])
+        self.assertIn('`2^0 = 1` and `2^3 = 8`', self.answers['N9.17'])
+        self.assertIn('`00000011`, which still has two ones', self.answers['N9.18'])
+        self.assertIn('`00000010`, which has one', self.answers['N9.18'])
+        self.assertIn('`N(0) = 0`', self.answers['N9.18'])
+        self.assertIn('send 0 to both 0 and 128', self.answers['N9.15'])
+
+    def test_printed_truth_tables_match_definitions(self):
+        rows = re.findall(
+            r'^\| `([01])` \| `([01])` \| `([01])` \|$',
+            self.text,
+            re.M,
+        )
+        self.assertEqual(rows, [('0', '0', '1'), ('0', '1', '1'), ('1', '0', '0'), ('1', '1', '1')])
+        for left, right, result in rows:
+            self.assertEqual(imply(int(left), int(right)), int(result))
+
+        contra_section = self.text.split('¬ Q ⇒ ¬ P', 1)[1].split('The third column', 1)[0]
+        contra = re.findall(
+            r'^\| `([01])` \| `([01])` \| `([01])` \| `([01])` \| `([01])` \| `([01])` \|$',
+            contra_section,
+            re.M,
+        )
+        self.assertEqual(len(contra), 4)
+        for p, q, forward, not_q, not_p, backward in contra:
+            p, q = int(p), int(q)
+            self.assertEqual(int(forward), imply(p, q))
+            self.assertEqual(int(not_q), 1 - q)
+            self.assertEqual(int(not_p), 1 - p)
+            self.assertEqual(int(backward), imply(1 - q, 1 - p))
+            self.assertEqual(int(forward), int(backward))
+
+        or_section = self.text.split('`(a XOR b) XOR (a AND b)` |', 1)[1]
+        or_section = or_section.split('Each row uses', 1)[0]
+        or_rows = []
+        for line in or_section.splitlines():
+            cells = re.findall(r'`([01])`', line)
+            if len(cells) == 6:
+                or_rows.append(tuple(int(cell) for cell in cells))
+        self.assertEqual(len(or_rows), 4)
+        for a, b, or_bit, xor_bit, and_bit, combined in or_rows:
+            self.assertEqual((a | b, a ^ b, a & b), (or_bit, xor_bit, and_bit))
+            self.assertEqual(bit_or_via_xor_and(a, b), (or_bit, combined))
+        folded_cases = re.sub(r'\s+', ' ', self.answers['N9.14'])
+        self.assertIn('the common values `0`, `1`, `1`, `1`', folded_cases)
+        self.assertIn('The implication is true.', self.answers['N9.11'])
+
+    def test_quantified_doubling_answers_match_the_image(self):
+        byte = range(256)
+        doubling = lambda value: (2 * value) % 256
+        claims = (
+            all(doubling(value) % 2 == 0 for value in byte),
+            any(doubling(value) == 1 for value in byte),
+            all(any(doubling(value) == target for value in byte) for target in byte),
+            any(all(doubling(value) == target for target in byte) for value in byte),
+            all(any(output == doubling(value) for output in byte) for value in byte),
+        )
+        self.assertEqual(claims, (True, False, False, False, True))
+        words = ['true' if claim else 'false' for claim in claims]
+        self.assertIn('; '.join(words) + '.', self.answers['N9.12'])
+        self.assertIn('that negation is false', self.answers['N9.13'])
+        self.assertIn('that negation is true', self.answers['N9.13'])
+
+    def test_labels_links_epigraph_and_scope(self):
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        self.assertIn('N9: Say What You Mean', headings)
+        for heading in headings:
+            self.assertNotRegex(heading, r'Chapter\s+(?:[1-9]|1[0-7])\b')
+            self.assertNotRegex(heading, r'\bN[78]\b')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual([len(quote.split()) for quote in quotes], [11])
+        self.assertIn('**[S7]', self.text)
+        self.assertIn('pp. 644–654', self.text)
+        self.assertNotIn('```orange', self.text)
+        anchors = {github_anchor(heading) for heading in headings}
+        for fragment in re.findall(r'NOVICE_LOGIC\.md#([^)]+)', self.index):
+            self.assertIn(fragment, anchors)
+        programming = (ROOT / 'docs' / 'book' / 'NOVICE_PROGRAMMING.md').read_text(encoding='utf-8')
+        programming_anchors = {
+            github_anchor(heading)
+            for heading in re.findall(r'^#{1,6} (.+)$', programming, re.M)
+        }
+        for fragment in re.findall(r'NOVICE_PROGRAMMING\.md#([^)]+)', self.text):
+            self.assertIn(fragment, programming_anchors)
+        self.assertIn('from the output alone, both', self.answers['N9.20'])
+        self.assertIn('hides nothing', self.answers['N9.8'])
+        self.assertGreaterEqual(len(set(re.findall(r'NOVICE_LOGIC\.md#([^)]+)', self.index))), 3)
+
+
 def rotate_byte(value: int, amount: int) -> int:
     """Reference mathematical rotation, not an Orange interpreter."""
     if not 0 <= value < 256:

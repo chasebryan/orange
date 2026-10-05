@@ -75,18 +75,25 @@ understand each operation rather than memorize its notation.
   index is proved in range before it runs. Twelve exercises with worked
   answers. The lesson's finish line is the four outcomes in that section.
   N7 is not the manuscript chapter titled No Disposable Prototype.
+- **N9.** [Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean):
+  sets, membership, subsets, relations, functions and inverses, quantifiers,
+  implication, equivalence, negation, cases, contradiction, contrapositive,
+  induction, invariants, and finite exhaustive arguments. Twenty exercises
+  with worked answers. The label is lesson N9. It is not a manuscript
+  chapter numeral. [Worked answers](NOVICE_LOGIC.md#worked-answers-n9).
 
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
-corrected source. Chapters 4–6 and the new executable checks remain
+corrected source. Chapters 4–6, N7, N9, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
-worked answers. N7 adds twelve further exercises in its own file.
+worked answers. N7 adds twelve further exercises in its own file. N9 adds
+20. N8 is not in that count.
 
 ### Remaining teaching sequence
 
-Items 2–6 remain a curriculum specification, not a claim that those lessons
-have been written. Item 1 is underway. Extend the manuscript in the
+Item 1 is drafted as N7. Item 3 is drafted as N9 and listed above. Items
+2, 4, 5, and 6 have not been written. Extend the manuscript in the
 following dependency order:
 
 1. **Name the Intermediate Step.** Under way in
@@ -98,10 +105,10 @@ following dependency order:
 2. **Read and Repair a Program.** Parsing, type checking, evaluation,
    diagnostics, minimal counterexamples, known-answer tests and reference
    calculations. Explain each command before asking the reader to run it.
-3. **Say What You Mean.** Sets, relations, functions, quantifiers, implication,
-   equivalence, proof by cases, contradiction, induction, invariants, and
-   finite exhaustive arguments. Build on the earlier concrete proofs without
-   copying their explanations.
+3. **Say What You Mean.** Drafted as
+   [N9: Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean).
+   The locked label is N9. It does not use a manuscript chapter numeral.
+   N7 and N8 stay ahead of it in this order and are not part of that file.
 4. **Count What You Do Not Know.** Fractions, ratios, probability,
    conditional knowledge, independent choices, powers and logarithms;
    distinguish key length, distribution and adversary uncertainty.
@@ -221,6 +228,8 @@ reader completed it.
   [epigraph record](NOVICE_OPENING.md#source-notes-and-epigraph-record).
 - [Continuation worked answers](NOVICE_PROGRAMMING.md#worked-answers-chapters-46) and
   [source record](NOVICE_PROGRAMMING.md#sources-and-epigraph-record).
+- [N9 worked answers](NOVICE_LOGIC.md#worked-answers-n9) and
+  [N9 epigraph record](NOVICE_LOGIC.md#sources-and-epigraph-record).
 
 Expand the final reference matter with a notation register, topic and
 algorithm indexes, symbol-to-language mapping, prerequisites, exercise
@@ -267,10 +276,10 @@ Run the reference checks from the repository root:
 python3 tools/test_book_foundations.py
 ```
 
-These 32 checks validate the worked examples, finite models, 52 exercise
-answers and document structure. Python test discovery through
-`tools/tests/test_book_foundations.py` loads those checks and the two
-printed-continuation audits.
+These checks validate the worked examples, finite models, the 52 chapter
+answers, the N7 answers, the 20 lesson-N9 answers, and document structure.
+Python test discovery through `tools/tests/test_book_foundations.py` loads
+those checks and the two printed-continuation audits.
 They do not execute Orange, establish a cryptographic security claim, or
 constitute independent review. The index preserves all seventeen original
 chapter links without changing the original file. Check repository-wide
@@ -292,8 +301,9 @@ The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
 
-New drafting and integration are AI-assisted with ChatGPT (GPT-6 Astra Pro),
-2026-10-05, at the owner's direction. The opening is owner-approved;
-continuation review is pending. The working
-names, legal boundaries and source disclosures of the original manuscript
-continue to apply.
+New drafting and integration through Chapters 4–6 are AI-assisted with
+ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lesson N9
+is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
+direction. The opening is owner-approved; continuation and N9 review are
+pending. The working names, legal boundaries and source disclosures of the
+original manuscript continue to apply.
