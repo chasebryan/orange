@@ -697,11 +697,94 @@ Where:
 
 ### §23. Boolean Truth Values and Propositional Logic (`Bool`)
 
-1. The `Bool` type forms a Boolean algebra $(\mathbb{B}, \land, \lor, \neg, \text{false}, \text{true})$.
-2. Relational operators produce `Bool`:
-   $$\frac{\Gamma \vdash a : \tau \quad \Gamma \vdash b : \tau \quad \tau \in \{\text{Int}, \text{Word}[W], \text{Mod}[m]\}}{\Gamma \vdash a \mathbin{\text{cmp}} b : \text{Bool}} \quad (\text{cmp} \in \{==, !=, <, <=, >, >=\})$$
-3. In `spec`, `&&` and `||` evaluate both operands. Short-circuit control flow
-   for `impl` is Proposed (Part VIII) and is not the Current evaluator.
+`Bool` has two values. The operators the S3t checker defines for an expected
+type `Bool` are `!`, `&&`, `||`, `==`, and `!=`. That list is
+`BOOL_OPERATOR_NOTE` in `compiler/crates/orange-compiler/src/semantics.rs`.
+Slice S3f in §4 is the register row: grammar in review, compiler implemented.
+These judgments are that checker. Secrecy labels are §67.
+
+`true` and `false` are identifiers. Section 32 resolves an unbound spelling
+as the `Bool` literal. A binding of that spelling hides the literal.
+
+**Negation.** `!` is defined only when the expected type is `Bool`.
+
+$$
+\frac{\Gamma \vdash e : \mathrm{Bool}}{\Gamma \vdash {!}\,e : \mathrm{Bool}}
+$$
+
+`!x` where `x: Int` and `Int` is required is `ORC0215`, message
+`` prefix `!` is not defined for `Int` ``, note
+`` `!` negates a `Bool`; `-` negates an `Int` or a residue ``.
+
+**Conjunction and disjunction.** Both operands have type `Bool`, and the
+result is `Bool`.
+
+$$
+\frac{\Gamma \vdash a : \mathrm{Bool} \quad \Gamma \vdash b : \mathrm{Bool}}{\Gamma \vdash a \mathbin{\&\&} b : \mathrm{Bool}}
+\qquad
+\frac{\Gamma \vdash a : \mathrm{Bool} \quad \Gamma \vdash b : \mathrm{Bool}}{\Gamma \vdash a \mathbin{\vert\vert} b : \mathrm{Bool}}
+$$
+
+`x && x` where `x: Int` and the result type is `Int` is `ORC0215`, message
+`` `&&` is not defined for `Int` ``, note
+`` `&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words ``.
+
+**Strict evaluation.** A `Bool` binary node evaluates both operands, then the
+operator. The comment in `compiler/crates/orange-compiler/src/eval.rs` on that
+arm is "Both operands are evaluated". On this tree, `orangec eval --stats`
+reports 19 steps for `false && (costly() == 0)` and 19 steps for
+`true || (costly() == 0)`, where `costly` is `1 + 1 + 1 + 1 + 1` (13 steps)
+and `false` alone is 1 step. Both calls pay for `costly`. Short-circuit
+control flow for `impl` is Proposed (Part VIII).
+
+**Equality.** `==` and `!=` are defined for every type `check_comparison`
+assigns to the operands, including `Bool`, `Mod[m]`, arrays, and tuples. Both
+operands are checked at that one type. The comparison's type is `Bool`.
+
+$$
+\frac{\Gamma \vdash a : \tau \quad \Gamma \vdash b : \tau}{\Gamma \vdash (a \mathbin{==} b) : \mathrm{Bool}}
+\qquad
+\frac{\Gamma \vdash a : \tau \quad \Gamma \vdash b : \tau}{\Gamma \vdash (a \mathbin{!=} b) : \mathrm{Bool}}
+$$
+
+**Order.** `<`, `<=`, `>`, and `>=` require `CoreType::is_ordered`
+(`compiler/crates/orange-compiler/src/core.rs`): the type is `Int` or
+`Word[W]`. `Bool`, `Mod[m]`, an array, and a tuple fail that predicate.
+
+$$
+\frac{\Gamma \vdash a : \tau \quad \Gamma \vdash b : \tau \quad \mathrm{ordered}(\tau)}{\Gamma \vdash a \mathbin{\mathrm{ord}} b : \mathrm{Bool}}
+$$
+
+`x < y` at `Mod[7]` is `ORC0215`, message `` `<` is not defined for `Mod[7]` ``,
+note that residues are compared with `==` and `!=` and have no order.
+`a < b` at `Bool` is the same code, note
+`` `Bool` values are compared with `==` and `!=`; they have no order ``.
+
+**Result context.** A comparison whose context is some type other than `Bool`
+is `ORC0214`. `x == 0` where `Int` is required is the message
+`` a comparison gives `Bool`, but `Int` is required here ``. Two operands with
+no typed leaf are `ORC0227`.
+
+**Conditional.** Every condition of `if` / `else` is checked as `Bool`, and
+every arm is checked against the expected type (`check_conditional`).
+Evaluation enters one arm: `begin_branch` pops the condition and selects that
+part. On this tree, `if true { 1 + 1 + 1 } else { 2 }` is 9 steps and
+`if false { 1 + 1 + 1 } else { 2 }` is 3 steps. Both arms are type-checked.
+The unselected arm is not stepped.
+
+**Worked derivation.** `orangec check` accepts this program:
+
+```orange
+edition 2026;
+module m {
+    spec both(x: Int) -> Bool { (x < 0) && (0 < x) }
+}
+```
+
+`x` is the parameter, of type `Int`. `Int` is ordered. Each comparison's
+context is `Bool`, because `&&` requires `Bool`, so `x < 0 : Bool` and
+`0 < x : Bool`. `&&` is defined for that expected type, so the body has type
+`Bool`, the declared result.
 
 ### §24. Fixed-Length Array Spaces ($T^n$ for $1 \le n \le 65,536$)
 
