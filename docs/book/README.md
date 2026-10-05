@@ -67,9 +67,12 @@ understand each operation rather than memorize its notation.
   explicit grouping and the inverse of a small nonsecure composition.
   Twelve exercises with answers; includes a deliberately ungrouped program.
 
-The opening was approved by the owner before this continuation. Its source
-is unchanged. Chapters 4–6 and the new executable checks remain reviewable
-new work. Across the six chapters there are 52 exercises with worked answers.
+The opening was approved by the owner before this continuation. Later
+corrections to its worked reversal example, counting argument, and
+hexadecimal answer are in the opening file; this index describes that
+corrected source. Chapters 4–6 and the new executable checks remain
+reviewable new work. Across the six chapters there are 52 exercises with
+worked answers.
 
 ### Remaining teaching sequence
 
@@ -251,9 +254,10 @@ Run the reference checks from the repository root:
 python3 tools/test_book_foundations.py
 ```
 
-These 29 checks validate the worked examples, finite models, 52 exercise
-answers and document structure. The normal Python test discovery loads the
-same suite through `tools/tests/test_book_foundations.py`.
+These 30 checks validate the worked examples, finite models, 52 exercise
+answers and document structure. Python test discovery through
+`tools/tests/test_book_foundations.py` loads those checks and the two
+printed-continuation audits.
 They do not execute Orange, establish a cryptographic security claim, or
 constitute independent review. The index preserves all seventeen original
 chapter links without changing the original file. Check repository-wide

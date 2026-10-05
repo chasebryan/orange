@@ -39,6 +39,28 @@ class FoundationExamples(unittest.TestCase):
         self.assertEqual('AB CD'[::-1], 'DC BA')
         self.assertEqual(' '.join(w[::-1] for w in 'AB CD'.split(' ')), 'BA DC')
 
+    def test_named_reverse_readings_and_counting_proof_are_checkable(self):
+        # §1.4 names three readings. One-letter words collapse two of them.
+        collapsed = 'A B'
+        self.assertEqual(
+            collapsed[::-1], ' '.join(reversed(collapsed.split(' ')))
+        )
+        example = 'AB C'
+        full = example[::-1]
+        within = ' '.join(word[::-1] for word in example.split(' '))
+        order = ' '.join(reversed(example.split(' ')))
+        self.assertEqual((full, within, order), ('C BA', 'BA C', 'C AB'))
+        self.assertEqual(len({full, within, order}), 3)
+        text = MANUSCRIPT.read_text(encoding='utf-8')
+        section = text.split('### 1.4 ', 1)[1].split('### 1.5 ', 1)[0]
+        for result in (full, within, order):
+            self.assertIn(f'`{result}`', section)
+        counting = text.split('### 2.4 ', 1)[1].split('### 2.5 ', 1)[0]
+        counting = re.sub(r'\s+', ' ', counting)
+        self.assertIn('misses none and counts none twice', counting)
+        self.assertIn('(1 × 16) + 3 = 19', text)
+        self.assertEqual((1 * 16) + 3, 19)
+
     def test_reversal_finite_reference(self):
         # 1,093 strings, including empty; not every possible finite sequence.
         checked = 0
@@ -280,7 +302,7 @@ class ContinuationExamples(unittest.TestCase):
         data = MANUSCRIPT.read_bytes()
         blob = b'blob ' + str(len(data)).encode('ascii') + b'\0' + data
         self.assertEqual(hashlib.sha1(blob).hexdigest(),
-                         '0b544b89995d8b6198300ca1cc24fe91609a18e8')
+                         '62f7463f9008d3b56f935c84195adb1289b59d1b')
 
 
 def rotate_byte(value: int, amount: int) -> int:
