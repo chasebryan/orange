@@ -916,7 +916,7 @@ is the same integer. The functions still differ. `0xffffffff + 1` is
 ## Sources
 
 **[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
-Protocols,” May 2015, §2.1 and §2.1.1. The four update lines and the
+Protocols,” June 2018, §2.1 and §2.1.1. The four update lines and the
 quarter-round test vector are those sections. `+`, `^`, and `<<<` in the
 quotation have the meanings the RFC states there: addition modulo 2³²,
 XOR, and left rotation. Consulted 2026-10-05. This lesson transcribes the
