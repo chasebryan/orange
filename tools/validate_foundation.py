@@ -375,6 +375,7 @@ compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
 compiler/crates/orangec/tests/book_j2.rs
 compiler/crates/orangec/tests/book_j3.rs
+compiler/crates/orangec/tests/book_journeyman.rs
 compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
@@ -617,6 +618,7 @@ docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md
 docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md
+docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
 docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md

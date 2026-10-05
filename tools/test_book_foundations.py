@@ -1731,6 +1731,202 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
         self.assertNotIn('C5', records)
 
 
+class J4ByteOrder(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j4_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (J4\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J4\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J4.{n}' for n in range(1, 13)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter 4\b')
+        self.assertNotIn('Chapter 4', self.text)
+        self.assertRegex(self.text, r'(?m)^## J4: Byte Order and Format Boundaries$')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'We agree that the difference between sending eggs with the little- or the big-end '
+            'first is trivial, but we insist that everyone must do it in the same way, to avoid '
+            'anarchy. Since the difference is trivial we may choose either way, but a decision '
+            'must be made.'
+        ])
+        self.assertIn('https://www.ietf.org/rfc/ien/ien137.html', self.text)
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.180-4', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc7748.txt', self.text)
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.197-upd1', self.text)
+        self.assertIn('**J4.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#j4-byte-order-and-format-boundaries',
+            self.index,
+        )
+        self.assertIn(
+            'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#worked-answers',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j4-byte-order-and-format-boundaries', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J4.', self.text)
+        self.assertIn('The locked label is J4.', self.index)
+        for tag, referent in (
+            ('J4S1', 'Danny Cohen.'),
+            ('J4S2', 'FIPS PUB 180-4.'),
+            ('J4S3', 'NIST SHA-256 examples.'),
+            ('J4S4', 'Y. Nir and A. Langley.'),
+            ('J4S5', 'A. Langley, M. Hamburg, and S. Turner.'),
+            ('J4S6', 'FIPS 197.'),
+            ('J4T1', 'Orange edition.'),
+            ('J4T2', 'Orange byte order.'),
+            ('J4C1', 'Match surface.'),
+        ):
+            self.assertIn(f'**[{tag}] {referent}**', self.text)
+        self.assertNotIn('provisional', self.text.lower())
+        self.assertNotIn('integration plan', self.text.lower())
+
+    def test_j4_stops_at_the_byte_and_checks_eighteen_listings(self):
+        """Byte order only. No compression function, schedule, or invented syntax."""
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 18)
+        names = []
+        for source in sources:
+            tokens = source.split()
+            names.append(tokens[tokens.index('module') + 1])
+        self.assertEqual(names, [
+            'spell', 'roundtrip', 'disagree', 'reversal', 'short', 'residue',
+            'sha_words', 'length_wrong', 'sha_wrong', 'chacha_load', 'chacha_wrong',
+            'chacha_repair', 'poly_read', 'x_coord', 'x_scalar_wrong', 'x_scalar',
+            'aes_state', 'aes_wrong',
+        ])
+        self.assertIn('as little', self.text)
+        self.assertIn('as big', self.text)
+        self.assertIn('ORC0240', self.text)
+        self.assertIn('orangec 0.0.1 (Orange edition 2026; implemented slice S3t)', self.text)
+        for forbidden in (
+            '0x428a2f98',
+            'spec compress(',
+            'spec schedule(',
+            'small_sigma0',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('does not accept OEP-0017', self.text)
+        self.assertIn('Do not call the Match verified.', self.text)
+
+    def test_j4_ledgers_match_the_place_arithmetic(self):
+        place = {1: 1, 2: 256, 3: 65536, 4: 16777216}
+        main = re.search(r'^```text\nj4-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        exercise = re.search(
+            r'^```text\nj4-exercise-ledger\n(.*?)\n```', self.text, re.M | re.S
+        )
+        self.assertIsNotNone(main)
+        self.assertIsNotNone(exercise)
+        printed = {}
+        for line in main.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        expected = {
+            'little-01020304': 0x04030201,
+            'big-01020304': 0x01020304,
+            'low-first-little': 1,
+            'low-first-big': 1 << 24,
+            'place-256': place[2],
+            'place-65536': place[3],
+            'place-16777216': place[4],
+            'sum-little-parts': 1 + 2 * place[2] + 3 * place[3] + 4 * place[4],
+            'sum-big-parts': 1 * place[4] + 2 * place[3] + 3 * place[2] + 4,
+            'word32-modulus': 2 ** 32,
+            'all-ones-32': 2 ** 32 - 1,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['sum-little-parts'], expected['little-01020304'])
+        self.assertEqual(expected['sum-big-parts'], expected['big-01020304'])
+        printed_exercise = {}
+        for line in exercise.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed_exercise[name] = int(value)
+        block2 = int.from_bytes(
+            bytes.fromhex('72756d2052657365617263682047726f'), 'little'
+        )
+        expected_exercise = {
+            'ab-cd-little': 0xab + 0xcd * 256,
+            'ab-cd-big': 0xab * 256 + 0xcd,
+            'palindrome': 1 + 2 * place[2] + 2 * place[3] + 1 * place[4],
+            'nonce-4a': 0x4a * place[4],
+            'block2': block2,
+            'state-cell-14': 2 + 4 * 3,
+            'ff00-little': 0xff,
+            'ff00-big': 0xff * 256,
+            'top-bit': 2 ** 255,
+        }
+        self.assertEqual(printed_exercise, expected_exercise)
+        self.assertEqual(expected_exercise['ab-cd-little'], 52651)
+        self.assertEqual(expected_exercise['ab-cd-big'], 43981)
+        self.assertEqual(expected_exercise['state-cell-14'], 14)
+        self.assertNotEqual(
+            expected_exercise['ff00-little'], expected_exercise['ff00-big']
+        )
+
+    def test_j4_tags_share_one_namespace_with_the_novice_arc(self):
+        """Prefixed J4 tags and unprefixed novice tags have one referent each."""
+        definition = re.compile(r'\*\*\[((?:J\d+)?[STC]\d+)\] ([^*]+)\*\*')
+        citation = re.compile(r'\[((?:J\d+)?[STC]\d+)\]')
+        records = {}
+        texts = []
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            texts.append((path.name, text))
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        for name, text in texts:
+            for tag in citation.findall(text):
+                self.assertIn(tag, records, f'{name} cites undefined [{tag}]')
+        lesson = 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md'
+        self.assertEqual(records['J4S1'], (lesson, 'Danny Cohen.'))
+        self.assertEqual(records['J4S2'], (lesson, 'FIPS PUB 180-4.'))
+        self.assertEqual(records['J4S3'], (lesson, 'NIST SHA-256 examples.'))
+        self.assertEqual(records['J4S4'], (lesson, 'Y. Nir and A. Langley.'))
+        self.assertEqual(records['J4S5'], (
+            lesson, 'A. Langley, M. Hamburg, and S. Turner.',
+        ))
+        self.assertEqual(records['J4S6'], (lesson, 'FIPS 197.'))
+        self.assertEqual(records['J4T1'], (lesson, 'Orange edition.'))
+        self.assertEqual(records['J4T2'], (lesson, 'Orange byte order.'))
+        self.assertEqual(records['J4C1'], (lesson, 'Match surface.'))
+        self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertEqual(records['T8'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertEqual(records['C2'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        j4_tags = {
+            tag for tag, (name, _) in records.items() if name == lesson
+        }
+        self.assertEqual(j4_tags, {
+            'J4S1', 'J4S2', 'J4S3', 'J4S4', 'J4S5', 'J4S6', 'J4T1', 'J4T2', 'J4C1',
+        })
+        self.assertNotIn('S12', j4_tags)
+        self.assertNotIn('T8', j4_tags)
+        self.assertNotIn('C2', j4_tags)
+
+
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
