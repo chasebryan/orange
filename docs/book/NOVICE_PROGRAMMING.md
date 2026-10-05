@@ -497,8 +497,9 @@ expression. A **literal** writes a value directly. An **expression** is
 source that denotes a value or a computation of a value. Here, the expression
 is just the literal itself.
 
-The final expression supplies the result. There is no `return` keyword in
-this example and no semicolon after `13`. Do not add punctuation merely
+The final expression supplies the result. Orange has no `return` keyword,
+and there is no semicolon after `13`. A semicolon ends the edition
+declaration; it does not end this expression. Do not add punctuation merely
 because a different programming language uses it. The permitted grammar
 belongs to Orange. [O2]
 
@@ -751,9 +752,11 @@ operation, one might produce a wider result, and one might retain eight
 positions according to an explicit wrapping rule. The machine's finite
 storage does not, by itself, specify which language rule applies.
 
-Orange defines `+`, `-` and `*` on `Word[w]` using arithmetic modulo `2ʷ`.
-The width is part of the type and remains the width of the result. We will
-now give that sentence a meaning you can calculate by hand. [O3]
+The implemented baseline defines `+`, `-`, and `*` on `Word[w]` by arithmetic
+modulo two to the power `w`. The letter `w` stands for that width, and the
+result keeps it. This is the baseline's rule for the fragment these chapters
+run, not an acceptance of the proposal that states it. We will now calculate
+the rule by hand. [O3]
 
 ### 6.2 Count in complete turns
 
@@ -819,23 +822,46 @@ the word operation:
 Do not write `-1 = 255` as an ordinary integer equation. They are congruent
 modulo 256, not equal as integers.
 
-For any integer `n` and positive modulus `m`, there is a unique pair of
-integers `q` and `r` such that `n = q × m + r` and `0 ≤ r < m`. Here `q`
-counts complete turns, and `r` is the chosen representative. The symbol
-`≤` means “less than or equal to”; `<` means “strictly less than.” For a
-negative `n`, the complete-turn count can be negative. [M1]
+**Proposition 6.1 — A nonnegative remainder.** Take any integer `n` and any
+positive integer `m`. There is exactly one pair of integers `q` and `r`
+such that `n = q × m + r` and `0 ≤ r < m`. The symbol `≤` means “less than
+or equal to,” and `<` means “strictly less than.” `q` counts complete turns.
+`r` is the representative. When `n` is negative, `q` may be negative. [M1]
 
-For existence, take consecutive multiples of `m` bracketing `n`: the lower
-one is `q × m`, and the next is `(q + 1) × m`. Their distance is `m`.
-The distance from the lower one to `n` is therefore at least zero and less
-than `m`, giving the required `r`. Integer multiples of a positive `m`
-extend without bound in both directions, so such a bracketing pair exists.
+**Proof.** The positive integer `m` is at least one.
 
-For uniqueness, suppose two allowed representatives differed by a multiple
-of `m`. Both are between zero and `m - 1`, so their difference is strictly
-between `-m` and `m`. The only multiple of `m` in that interval is zero.
-They must be the same representative; then the complete-turn counts agree
-as well. We have specified a result rather than a menu of acceptable answers.
+Suppose `n` is at least zero. Consider the finite list whose step `k` is
+`k × m`, for `k` from zero through `n + 1`. Step zero is zero, which does
+not exceed `n`. Step `n + 1` is `(n + 1) × m`, which is at least `n + 1`
+and therefore exceeds `n`. Let `q × m` be the last entry in this list that
+does not exceed `n`. The final entry exceeds `n`, so `q × m` has a successor
+in the list. Set `r = n - (q × m)`. Then `r` is at least zero. The successor
+is `(q × m) + m` and exceeds `n`, so `r` is strictly less than `m`.
+
+Suppose `n` is negative. Let `t` be the positive distance from `n` up to
+zero, so `n` lies `t` ones below zero. Start at zero and subtract `m` once
+per step, for `t` steps. Each subtraction moves down by at least one,
+because `m` is at least one, so `t` subtractions move down by at least `t`
+and reach or pass `n`. In that finite list, from the starting zero through
+the result of the `t`-th subtraction, take the first entry that is less
+than or equal to `n`. That entry is a multiple of `m`; call it `q × m`.
+Here `q` is negative. Zero itself is greater than `n`, so this entry has
+a preceding one, and that preceding entry is greater than `n`. Consecutive
+entries differ by `m`, so `n` is at least `q × m` and strictly less than
+`(q × m) + m`. Set `r = n - (q × m)`. Then `0 ≤ r < m`.
+
+For uniqueness, suppose two pairs both express `n` in the required form.
+Their remainders then differ by an integer multiple of `m`. Each remainder
+lies from zero through `m - 1`, so that difference lies strictly between
+`-m` and `m`. The only multiple of `m` strictly between those bounds is
+zero. Thus the remainders agree. The two turn counts then differ by an
+integer, and that integer's product with `m` is zero. A positive `m` times
+a positive integer is positive, and a positive `m` times a negative integer
+is negative, so the only integer with product zero is zero. The turn counts
+agree as well.
+
+Each integer is therefore congruent to exactly one representative in range.
+Congruent integers share that representative.
 
 ### 6.4 Let the type choose the arithmetic
 
@@ -912,6 +938,15 @@ complete turns were removed. Information has been discarded by that map.
 But adding a retained constant to an already byte-sized value is reversible
 within the byte-sized domain: subtract the same constant modulo 256. For
 example, 250 plus ten wraps to four, and four minus ten wraps back to 250.
+
+The example is one pair, not the argument. Let `x` be any byte, so
+`0 ≤ x < 256`, and let `c` be the retained integer. Proposition 6.1 supplies
+`q` and `r` with `x + c = (q × 256) + r` and `0 ≤ r < 256`. Then
+`r - c = x - (q × 256)`, so `r - c` and `x` differ by a multiple of 256.
+They are congruent. Their shared representative is `x`, because `x` is
+already in range. Word subtraction denotes that representative, so
+subtracting `c` from `r` returns `x` for every byte.
+
 There is no contradiction. One statement concerns arbitrary integers mapped
 into a smaller domain; the other concerns a transformation within a fixed
 domain with the added constant retained.
@@ -950,7 +985,7 @@ The original integer value is 129. Left shift by one corresponds to
 multiplication by two followed by reduction to the word width: 258 becomes
 two. Right shift by one corresponds to integer division by two with the
 nonnegative remainder discarded: 129 gives quotient 64 and remainder one.
-For a nonnegative shift amount `s`, use a factor of `2ˢ`. [O4]
+For a nonnegative shift amount `s`, the factor is two to the power `s`. [O4]
 
 A **rotation** keeps the departing bits and brings them back at the other
 end. It changes positions without dropping the bits:
@@ -1014,8 +1049,14 @@ movement::restored: Word[8] = 0x81
 Use `check` and `eval` with `../movement.or`, as you did for the previous
 files. The final function rotates and then reverses that rotation. It
 returns the original byte because every position returns to its starting
-place. This statement holds for any fixed width and retained rotation
-amount, not just for a byte with two ones.
+place. Number the positions `0` through `w - 1`, starting at the most
+significant end. One left rotation sends the bit at position `0` to position
+`w - 1` and sends every other bit one step toward position `0`. One right
+rotation sends each of those bits back. Repeat the left rotation a retained
+number of times, then the right rotation the same number of times: each bit
+is back in its starting position. The listing is that accounting for one
+step on a byte. It does not depend on which positions held ones, or on the
+width being eight.
 
 By contrast, shifting left and then shifting right can fail to restore the
 original. In our example, `0x81` shifts left to `0x02`, then right to
@@ -1028,12 +1069,16 @@ A rotation by zero changes no positions. A rotation by exactly the word
 width makes one complete turn and also returns the original. A rotation
 by the width plus one has the same effect as a rotation by one.
 For a positive width `w`, the effective rotation amount is the amount
-reduced modulo `w`.
+reduced modulo `w`. That reduction is Proposition 6.1 with modulus `w`.
+A negative amount is a positive number of steps in the other direction;
+its representative is how many forward steps land in the same place.
 
 A shift is different. In the implemented S3r rules at this baseline, a
-computed shift of an unsigned word by its width or more produces zero.
-There is no returning bit. These rules also define negative amounts by reversing the
-direction. These are Orange's specified reference semantics, not a promise
+computed shift by a distance of the width or more produces zero. There is
+no returning bit. A negative amount reverses the direction, and the distance
+is then the absolute value. If that distance is still the width or more,
+the result is zero. Unlike a rotation, the shift amount is not folded
+modulo the width. These are the baseline's reference rules, not a promise
 that every host language or processor interprets its shift instructions
 the same way. [O4]
 
@@ -1185,8 +1230,8 @@ The particular trace is a worked example. The general argument identifies
 the intermediate value after each inverse operation. Right rotation undoes
 the final left rotation. XOR with the retained mask undoes the preceding
 XOR by Proposition 3.1. Subtracting seven modulo 256 undoes the initial
-addition. Every permitted byte therefore returns to itself under the
-mathematical definitions.
+addition, by the argument in §6.5. Every permitted byte therefore returns
+to itself under those definitions.
 
 Notice the order. Subtracting seven first would generally act on the
 rotated, masked value rather than on the value to which seven was added.
@@ -1252,7 +1297,7 @@ no longer undoes the corresponding forward step.
 rotation preserves the number of one bits. Does preserving that number,
 by itself, establish that an arbitrary transformation is a rotation?
 
-The next chapter will name intermediate values and let a program carry
+The next lesson will name intermediate values and let a program carry
 several of them at once. You will be able to inspect a computation at each
 stage rather than hiding its order inside one long expression.
 
@@ -1392,19 +1437,25 @@ Neither qualifies the construction for production use.
 XOR then gives `0x4f`; rotating right gives `0xa7`, not `0xfa`.
 The inverse went wrong in its first step, not only in its final result.
 
-**6.12.** A rotation permutes positions without changing their bit values,
-so every original one occupies exactly one resulting position. No one
-is added or removed. The converse is false: swapping only the first two
-positions preserves the number of ones but is not generally a fixed
-rotation of an entire byte.
+**6.12.** A rotation moves every bit by the same number of positions around
+the word, so each original one occupies exactly one resulting position.
+None is created or destroyed. The converse is false. Exchanging only the
+two most significant bits preserves the count of ones, but it is not a
+rotation. On `10100000` the exchange yields `01100000`. The eight rotations
+of `10100000` are `10100000`, `01000001`, `10000010`, `00000101`,
+`00001010`, `00010100`, `00101000`, and `01010000`. The exchanged byte is
+not among them. Some other bytes hide the difference: exchanging the same
+two bits of `10000000` yields `01000000`, which is one of its rotations.
+One agreeing byte does not make the operations the same.
 
 ## Sources and epigraph record
 
 **[S4] Bruce Schneier.** “The Process of Security,” *Information Security*,
-April 2000. The seven-word quotation is the opening sentence of the
-fourth introductory paragraph on the author's page. Wording and context
-checked 2026-10-05. It concerns security as continuing practice, not a
-claim that the shell setup in this book guarantees security.
+April 2000. The seven-word quotation is the opening sentence of the third
+paragraph of the essay on the author's page, the paragraph immediately
+before the heading “Will We Ever Learn?”. Wording and context checked
+2026-10-05. It concerns security as continuing practice, not a claim that
+the shell setup in this book guarantees security.
 
 <https://www.schneier.com/essays/archives/2000/04/the_process_of_secur.html>
 
@@ -1422,9 +1473,12 @@ No translation or alteration of the quoted sentence is involved.
 
 **[S6] Ronald L. Rivest.** “The RC5 Encryption Algorithm,” *Fast Software
 Encryption*, proceedings of the 1994 Leuven workshop, published 1995,
-pp. 86–96. Ten quoted words from the first design objective on printed
-p. 87. Checked visually against the author-hosted paper, PDF page 2,
-on 2026-10-05. The historical design objective is not contemporary
+pp. 86–96. Ten quoted words from the introduction's simplicity objective
+on printed p. 87, checked visually against the author-hosted paper, PDF
+page 2, on 2026-10-05. That objective follows the objectives for a
+symmetric cipher, hardware or software, speed, adaptable word length, a
+variable number of rounds, and a variable-length key. It is not the first
+objective in the list. The historical design objective is not contemporary
 security guidance or an endorsement of RC5 deployment.
 
 <https://people.csail.mit.edu/rivest/pubs/Riv94.pdf>

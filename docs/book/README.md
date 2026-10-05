@@ -74,28 +74,31 @@ new work. Across the six chapters there are 52 exercises with worked answers.
 ### Remaining teaching sequence
 
 This is a curriculum specification, not a claim that these lessons have been
-written. Extend the manuscript in the following dependency order:
+written. Extend the manuscript in the following dependency order. These new
+lessons are N7 through N12. They are not Chapters 7–12. Those numerals
+belong to the existing manuscript until the whole sequence is renumbered
+together.
 
-1. **Name the Intermediate Step.** Expressions, grouping, bindings, explicit
-   conversions, arrays, indexing, bounds, conditions, tuples and bounded
-   iteration, introduced in dependency order with supported examples.
-2. **Read and Repair a Program.** Parsing, type checking, evaluation,
-   diagnostics, minimal counterexamples, known-answer tests and reference
-   calculations. Explain each command before asking the reader to run it.
-3. **Say What You Mean.** Sets, relations, functions, quantifiers, implication,
-   equivalence, proof by cases, contradiction, induction, invariants, and
-   finite exhaustive arguments. Build on the earlier concrete proofs without
-   copying their explanations.
-4. **Count What You Do Not Know.** Fractions, ratios, probability,
-   conditional knowledge, independent choices, powers and logarithms;
-   distinguish key length, distribution and adversary uncertainty.
-5. **Protect More Than Appearance.** Explicitly educational classical
-   constructions; encoding, encryption, hashing, authentication; keys,
-   randomness, nonces and counters; the conditions of the one-time pad.
-   Do not introduce a practical primitive before its prerequisites.
-6. **The First Complete Study.** A supported small Orange construction,
-   a hand-derived expected result, documented tests, a deliberate error,
-   a repair, and a precisely scoped explanation of what was established.
+- **N7 — Name the Intermediate Step.** Expressions, grouping, bindings, explicit
+  conversions, arrays, indexing, bounds, conditions, tuples and bounded
+  iteration, introduced in dependency order with supported examples.
+- **N8 — Read and Repair a Program.** Parsing, type checking, evaluation,
+  diagnostics, minimal counterexamples, known-answer tests and reference
+  calculations. Explain each command before asking the reader to run it.
+- **N9 — Say What You Mean.** Sets, relations, functions, quantifiers, implication,
+  equivalence, proof by cases, contradiction, induction, invariants, and
+  finite exhaustive arguments. Build on the earlier concrete proofs without
+  copying their explanations.
+- **N10 — Count What You Do Not Know.** Fractions, ratios, probability,
+  conditional knowledge, independent choices, powers and logarithms;
+  distinguish key length, distribution and adversary uncertainty.
+- **N11 — Protect More Than Appearance.** Explicitly educational classical
+  constructions; encoding, encryption, hashing, authentication; keys,
+  randomness, nonces and counters; the conditions of the one-time pad.
+  Do not introduce a practical primitive before its prerequisites.
+- **N12 — The First Complete Study.** A supported small Orange construction,
+  a hand-derived expected result, documented tests, a deliberate error,
+  a repair, and a precisely scoped explanation of what was established.
 
 The readiness check for Part 2 is demonstrated reasoning, not a certificate
 or an assertion that reading alone confers competence. The reader should be
@@ -251,9 +254,10 @@ Run the reference checks from the repository root:
 python3 tools/test_book_foundations.py
 ```
 
-These 29 checks validate the worked examples, finite models, 52 exercise
-answers and document structure. The normal Python test discovery loads the
-same suite through `tools/tests/test_book_foundations.py`.
+These 32 checks validate the worked examples, finite models, 52 exercise
+answers and document structure. Normal Python test discovery loads them
+through `tools/tests/test_book_foundations.py`, and adds two audits of the
+printed evaluation lines and the continuation links.
 They do not execute Orange, establish a cryptographic security claim, or
 constitute independent review. The index preserves all seventeen original
 chapter links without changing the original file. Check repository-wide

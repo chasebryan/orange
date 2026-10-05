@@ -275,6 +275,43 @@ class ContinuationExamples(unittest.TestCase):
         self.assertEqual((1 + 1) ^ 1, 3)
         self.assertEqual(1 + (1 ^ 1), 1)
 
+    def test_ones_preservation_is_not_a_rotation(self):
+        original = 0b10100000
+        exchanged = 0b01100000
+        rotations = {rotate_byte(original, amount) for amount in range(8)}
+        self.assertEqual(len(rotations), 8)
+        self.assertNotIn(exchanged, rotations)
+        self.assertEqual(exchanged.bit_count(), original.bit_count())
+        agreeing = 0b10000000
+        self.assertEqual(rotate_byte(agreeing, 7), 0b01000000)
+        self.assertIn('10100000', self.text)
+        self.assertIn('01100000', self.text)
+
+    def test_continuation_links_resolve(self):
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = [github_anchor(heading) for heading in headings]
+        self.assertEqual(len(anchors), len(set(anchors)))
+        for fragment in re.findall(r'\(#([^)]+)\)', self.text):
+            self.assertIn(fragment, anchors)
+        opening = MANUSCRIPT.read_text(encoding='utf-8')
+        opening_anchors = {github_anchor(heading) for heading in
+                           re.findall(r'^#{1,6} (.+)$', opening, re.M)}
+        linked = re.findall(r'NOVICE_OPENING\.md#([^)]+)', self.text)
+        self.assertGreaterEqual(len(linked), 1)
+        for fragment in linked:
+            self.assertIn(fragment, opening_anchors)
+
+    def test_lesson_labels_and_checked_epigraph_locations(self):
+        self.assertNotIn('The next chapter', self.text)
+        self.assertNotRegex(self.text, r'Chapter (?:[7-9]|1[0-7])\b')
+        self.assertNotIn('fourth introductory paragraph', self.text)
+        self.assertNotIn('first design objective', self.text)
+        self.assertIn('opening sentence of the third', self.text)
+        self.assertIn('simplicity objective', self.text)
+        index = INDEX.read_text(encoding='utf-8')
+        for label in ('N7', 'N8', 'N9', 'N10', 'N11', 'N12'):
+            self.assertIn(f'**{label} —', index)
+
     def test_opening_retained_byte_for_byte(self):
         import hashlib
         data = MANUSCRIPT.read_bytes()
