@@ -414,11 +414,12 @@ Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the 375-byte text of A.3 vectors 2
-  and 3 is authenticated in two segments (`poly1305_mac_long`), and the
-  265-byte ciphertext and plaintext of A.5 are a 256-byte head and a
-  9-byte tail, the tail's block counter (5) set by hand; the RFC's single
-  call over the whole message is not one spec.
+- The 375-byte text of A.3 vectors 2 and 3 is authenticated in two segments
+  (`poly1305_mac_long`), and the 265-byte ciphertext and plaintext of A.5
+  are a 256-byte head and a 9-byte tail, the tail's block counter (5) set
+  by hand. An array holds 1 through 65,536 elements, so those lengths fit
+  in one array; the sources keep the split written when the bound was 256,
+  and the RFC's single call over the whole message is not one spec.
 - No length polymorphism: the message length of the Poly1305 MAC is a
   value beside a fixed buffer, but the AEAD's encryption, ciphertext
   absorption, tag and seal are written once per size the vectors need

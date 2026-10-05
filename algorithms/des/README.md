@@ -63,10 +63,12 @@ expanded half block and a key in flight are arrays of bits, `Word[8]^65`,
 file exactly as it is in the standard. Each S-box is four `Word[64]` words, one
 per row, sixteen nibbles per word with column 0 in the most significant
 nibble, so that `0xe4d12fb83a6c5907` reads as the first row of S1, `14 4 13 1
-2 15 11 8 3 10 6 12 5 9 0 7`. The sixteen subkeys are more bits than one array
-may hold (768 of at most 256), so the schedule delivers them as `Word[64]^16`
-and each iteration unpacks its subkey back to bits. FIPS 46-3 does not number
-the sections of its body; the table uses the standard's own headings.
+2 15 11 8 3 10 6 12 5 9 0 7`. The sixteen subkeys are 768 bits. One bit per
+element is 768 elements, and an array holds 1 through 65,536, so they fit.
+The schedule still delivers them as `Word[64]^16`, the packing written when
+the bound was 256, and each iteration unpacks its subkey back to bits.
+FIPS 46-3 does not number the sections of its body; the table uses the
+standard's own headings.
 
 | Standard section | Orange spec |
 | --- | --- |
@@ -335,9 +337,10 @@ files:
   reads like the standard but costs one step per bit plus the literal, and
   the S-box lookup is a four-arm and a sixteen-arm conditional (about 110
   steps per S-box, about 900 of the 1,800 steps of f).
-- An array holds at most 256 scalars, so the sixteen 48-bit subkeys are
-  packed into `Word[64]` words and unpacked in every iteration (about 240
-  steps of the 2,200 of an iteration).
+- The sixteen 48-bit subkeys are packed into `Word[64]` words and unpacked
+  in every iteration (about 240 steps of the 2,200 of an iteration). One bit
+  per element is 768 elements, inside the current bound of 65,536; the
+  packing remains from when the bound was 256.
 - A loop's step is one expression without bindings and cannot store at a
   computed index, so the schedule appends each subkey to a rotating array
   rather than writing K_n at position n.

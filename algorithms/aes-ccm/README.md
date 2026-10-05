@@ -168,15 +168,17 @@ per file; so `aes-ccm.or` holds C.1 and C.2 (about 802,000), `aes-ccm-c3.or`
 C.3 and the Wycheproof case (about 941,000) and `aes-ccm-decrypt.or` the
 three decryption pairs (about 763,000). Nothing planned was dropped.
 
-Not expressed: associated data of `2^16 - 2^8` bytes or more, whose 6- and
-10-byte length encodings of A.2.2 need a buffer no Orange array can hold;
-payloads over 32 bytes and associated data over 32 bytes, since an array's
-length is part of its type (a second set of specs over `Word[8]^64` would be
-the same text); AES-192 and AES-256 as the block cipher (the Appendix C
-examples are all `Klen = 128`); and the validity requirements on `N`, `A`,
-`P` and `Tlen` of section 5.3 and Appendix A.1, which section 6.1 takes as
-prerequisites and section 6.2 step 7 checks, and which are stated in
-comments here rather than computed.
+Not expressed: associated data of `2^16 - 2^8` bytes or more. The shortest
+6-byte length encoding of A.2.2 is 65,286 bytes and fits in an array (the
+bound is 65,536); the 10-byte encoding is for `a >= 2^32` and does not.
+This entry writes neither. Also not expressed: payloads over 32 bytes and
+associated data over 32 bytes, since an array's length is part of its type
+(a second set of specs over `Word[8]^64` would be the same text); AES-192
+and AES-256 as the block cipher (the Appendix C examples are all
+`Klen = 128`); and the validity requirements on `N`, `A`, `P` and `Tlen` of
+section 5.3 and Appendix A.1, which section 6.1 takes as prerequisites and
+section 6.2 step 7 checks, and which are stated in comments here rather
+than computed.
 
 ## Dissemination
 
@@ -270,10 +272,12 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
   `byte_of`, `block_byte` and `received_tag`; they cost about 19,000 steps
   per formatting, small next to the cipher, but they are the least
   standard-like lines of the file.
-- No length polymorphism and arrays of at most 256 elements: the associated
-  data and payload are 32-byte buffers with their lengths beside them, the
-  nonce a 13-byte buffer with `n`, and the long associated-data encodings of
-  A.2.2 (6 and 10 bytes) are out of reach.
+- No length polymorphism: the associated data and payload are 32-byte
+  buffers with their lengths beside them, and the nonce a 13-byte buffer
+  with `n`. An array holds 1 through 65,536 elements, not at most 256. The
+  long associated-data encodings of A.2.2 are still not written: the
+  shortest 6-byte form is 65,286 bytes and fits, and the 10-byte form does
+  not.
 - No sum type: `INVALID` or `P` of section 6.2 is a `Bool` verdict and a
   separate payload spec, and the caller carries the rule that the payload
   counts only when the verdict is `true`; a `Bool` result also cannot be

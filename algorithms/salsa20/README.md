@@ -293,9 +293,11 @@ corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the files' long cases (1024 to 2600
-  bytes) are reproduced as their first 128 or 192 bytes, and Crypto++'s
-  131072-byte XOR digests are not reproduced at all.
+- The files' long cases (1024 to 2600 bytes) are reproduced as their first
+  128 or 192 bytes. Those lengths fit in one array (the bound is 65,536);
+  the sources were written when it was 256 and were not widened. Crypto++'s
+  131072-byte XOR digests are longer than 65,536 elements and are not
+  reproduced.
 - Arrays have no length parameter, so the encryption of section 10 is
   written once per message length (`encrypt_32` to `encrypt_238`), eight
   copies of the same few lines.
