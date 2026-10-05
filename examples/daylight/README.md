@@ -98,16 +98,17 @@ What the language fixes today, the program states rather than hides:
   authorization tag, and a 32-byte plaintext, and writes the public
   interoperability header of `test_daylight.py`, canonical JSON of 160 bytes
   with the tag and the nonce as hexadecimal digits. A vault header carries more
-  fields and is longer than an Orange array, which holds at most 256 elements;
-  the bridge below serves the vault.
+  fields than that fixed header. An Orange array holds 1 through 65,536
+  elements, so the old 256-element cap is not what keeps this header fixed;
+  the program does not parse JSON, and the bridge below serves the vault.
 - **Lengths are literal.** `sha256` hashes a message of up to 183 bytes held in
   a three-block buffer, `hmac` a text of up to 119 bytes, and `hkdf_32` an
   `info` of up to 118 bytes, which is what the contract needs. Orange has no
   strings, so every text is its bytes with the text in a comment.
 - **Evaluation is bounded.** The program's parameterless specifications share
-  the reference evaluator's budget of 1,048,576 steps and use about 870,000 of
-  them, most in key derivation; `seal` alone costs about 460,000 and `open`
-  about 390,000.
+  the reference evaluator's budget of 1,048,576 steps and use 366,834 of
+  them. `example`, which is `seal` on the public vector, uses 184,638, and
+  `recovered`, which is `open` on the pinned frame, uses 180,926.
 - **Nothing here claims timing.** A conditional is a choice between two values
   and `&&` evaluates both sides; whether any of it runs in constant time on a
   machine is not a property the source states.
@@ -124,8 +125,11 @@ What the language fixes today, the program states rather than hides:
 
 ## General inputs and Horizon integration
 
-Orange 2026 has fixed-length arrays, literal loop bounds, and no data-dependent
-indices, JSON parser, native code generation, or foreign-function interface.
+Orange 2026 has fixed-length arrays and literal loop bounds, and no JSON
+parser, native code generation, or foreign-function interface. An index may
+depend on data when every value it can take is in range, including a
+`Word[8]` index into an array of 256 elements.
+
 The bridge loads the program up to its `Examples` line, since `orangec eval`
 prints every specification without parameters, appends one entry point, and
 runs it through `orangec eval -`. Python performs byte encoding, padding,
