@@ -929,6 +929,37 @@ class N11Protect(unittest.TestCase):
             posterior = joint[(0, 0)] / cipher
             self.assertEqual(posterior, expected_posterior)
 
+    def test_n11_bezout_is_the_successor_step(self):
+        self.assertEqual(self.text.count('Assumption N9.4'), 5)
+        self.assertIn('the base `P(0)`, and the step', self.text)
+        self.assertIn('`P(n) ⇒ P(n + 1)` with hypothesis `P(n)` alone', self.text)
+        self.assertIn('The step is `Q(n) ⇒ Q(n + 1)`.', self.text)
+        self.assertIn('The hypothesis was `Q(n)` only.', self.text)
+        self.assertIn(
+            'The second paragraph of Assumption N9.4 therefore',
+            self.text,
+        )
+        self.assertIn(
+            'Assumption N9.4 only as the successor step `Q(n) ⇒ Q(n + 1)`',
+            self.text,
+        )
+        self.assertNotIn('complete induction', self.text.lower())
+        self.assertNotIn('modulus strictly less than', self.text)
+        self.assertNotIn('descent cannot', self.text)
+        self.assertNotIn('Induct on the positive integer', self.text)
+        for modulus in range(1, 41):
+            for integer in range(-40, 41):
+                coefficient_x, coefficient_y = successor_bezout(integer, modulus)
+                divisor = positive_gcd(integer, modulus)
+                self.assertEqual(
+                    integer * coefficient_x + modulus * coefficient_y,
+                    divisor,
+                )
+        for multiplier, inverse in ((5, 21), (9, 3), (25, 25)):
+            coefficient_x, _coefficient_y = successor_bezout(multiplier, 26)
+            self.assertEqual(coefficient_x % 26, inverse)
+            self.assertEqual((multiplier * inverse) % 26, 1)
+
 
 class N12CompleteStudy(unittest.TestCase):
     @classmethod
@@ -1075,6 +1106,28 @@ def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
     return left
+
+
+def positive_gcd(left: int, right: int) -> int:
+    value = math_gcd(left, right)
+    return value if value >= 0 else -value
+
+
+def successor_bezout(integer: int, modulus: int) -> tuple[int, int]:
+    """Coefficients from the one step in Proposition N11.8.
+
+    Modulus 1 is Q(0). A larger modulus divides once, as §6.3 does, and
+    applies the same step to the remainder.
+    """
+    if modulus < 1:
+        raise ValueError('modulus must be positive')
+    if modulus == 1:
+        return 0, 1
+    quotient, remainder = divmod(integer, modulus)
+    if remainder == 0:
+        return 0, 1
+    inner_x, inner_y = successor_bezout(modulus, remainder)
+    return inner_y, inner_x - quotient * inner_y
 
 
 def rotate_byte(value: int, amount: int) -> int:
