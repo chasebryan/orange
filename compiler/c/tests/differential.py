@@ -92,6 +92,13 @@ module slots {
 """,
 }
 INVALID = [
+    "s3a/invalid-duplicate-spec.or",
+    "s3a/invalid-int-magnitude.or",
+    "s3a/invalid-negative-word.or",
+    "s3a/invalid-typed-impl.or",
+    "s3a/invalid-unsupported-type.or",
+    "s3a/invalid-word-range.or",
+    "s3a/invalid-word-width.or",
     "s3b/invalid-call-cycles.or",
     "s3b/invalid-diagnostic-order.or",
     "s3b/invalid-names-and-calls.or",
@@ -687,14 +694,13 @@ def main() -> int:
         path = str(FIXTURES / relative)
         rust = run(rust_compiler, ["check", path])
         c_result = run(c_compiler, ["check", path])
-        rust_codes = codes(rust.stderr)
-        c_codes = codes(c_result.stderr)
-        if rust.returncode == 0 or c_result.returncode == 0 or rust_codes != c_codes:
+        if rust.returncode == 0 or c_result.returncode == 0 or rust.stderr != c_result.stderr:
             failures += 1
             print(f"FAIL check {relative}")
-            print(f"  rust {rust_codes}")
-            print(f"  c    {c_codes}")
-            if rust_codes != c_codes:
+            print(f"  rust {codes(rust.stderr)}")
+            print(f"  c    {codes(c_result.stderr)}")
+            if rust.stderr != c_result.stderr:
+                print("  rust stderr:", rust.stderr)
                 print("  c stderr:", c_result.stderr)
         else:
             print(f"ok   check {relative}")
