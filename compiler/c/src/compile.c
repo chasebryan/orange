@@ -3177,8 +3177,10 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return 1;
     }
     case EX_CONV:
+        /* An invalid target is still a leaf. Callers check this node so the
+           width or unsupported type is reported; silencing it dropped that
+           diagnostic when the conversion was itself an operand. */
         if (!expr->conv_ok) {
-            *silent = 1;
             return -1;
         }
         *type = expr->conv_ty;
@@ -4557,11 +4559,12 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t leaf = index;
         int silent = 0;
         int state;
+        /* A rejected target is not a type, so it is not also a mismatch with
+           `expected`. The operand is still checked: Rust reports both the
+           target and whatever the operand itself has wrong. */
         if (!expr->conv_ok) {
             reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
-            return 1;
-        }
-        if (expr->conv_ty != expected || expected_len != 0) {
+        } else if (expr->conv_ty != expected || expected_len != 0) {
             char message[192];
             char expected_text[64];
             char found_text[64];
