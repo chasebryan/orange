@@ -95,7 +95,7 @@ Edition: `2026`
   - [§52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-complete-reference-specification-poly1305-field-mac-rfc-8439)
   - [§52A. Complete Reference Specification: FIPS 197 AES](#52a-complete-reference-specification-fips-197-aes)
   - [§52B. Complete Reference Specification: FIPS 198-1 HMAC](#52b-complete-reference-specification-fips-198-1-hmac)
-  - [HKDF, RFC 5869](#hkdf-rfc-5869)
+  - [§52C. Complete Reference Specification: RFC 5869 HKDF](#52c-complete-reference-specification-rfc-5869-hkdf)
   - [AEAD, RFC 8439](#aead-rfc-8439)
   - [SHA-3 and SHAKE, FIPS 202](#sha-3-and-shake-fips-202)
 
@@ -3762,7 +3762,7 @@ The binary is the S3t compiler of §52A.
 | The full 32-byte MAC of RFC 4231 case 5 | Checked, not printed by the RFC | Section 4.6 prints 128 bits. The other 128 bits are a local `hmac` computation, named below |
 | A text longer than 183 bytes, or a key longer than 247 bytes | Same functions, outside this buffer | The buffer is `Word[32]^64`, 256 bytes |
 | HMAC with a hash other than SHA-256 | Not this section | FIPS 198-1 allows any Approved iterative hash. No such listing here |
-| HKDF | The next section | Not in this listing |
+| HKDF | §52C | Not in this listing |
 | Constant time, a CMVP certificate, or a security reduction | Not claimed | RFC 4231 section 5 refers the reader to RFC 2104 and asserts no particular use |
 
 #### 1. Parameters (FIPS 198-1, section 2.3)
@@ -4410,65 +4410,102 @@ The 32-byte case 5 MAC is not a line of the RFC. Nothing here is a timing
 measurement, a CMVP result, or the security discussion RFC 4231 section 5
 declines to make.
 
-### HKDF, RFC 5869
+### §52C. Complete Reference Specification: RFC 5869 HKDF
 
-HKDF as RFC 5869 (2010) sections 2.2 and 2.3 write it. The pseudorandom
-function is HMAC-SHA-256 of the previous section. The listing restates that
-HMAC, and the SHA-256 it calls, because a module has no imports. `orangec
-test` accepts the three SHA-256 cases of appendix A, each as Extract and as
-Expand. The RFC 4231 cases stay in the HMAC section. One evaluation budget
+HKDF-SHA-256 as RFC 5869 writes it. The cited text is RFC 5869, May 2010,
+category Informational, Krawczyk and Eronen: sections 2.2 and 2.3, and
+appendix A test cases 1 through 3. The option Hash is SHA-256, so HashLen
+is 32 octets. The pseudorandom function is HMAC-SHA-256 of §52B. The
+listing restates that HMAC, and the SHA-256 it calls, because a module has
+no imports. Appendix A test cases 4 through 7 are SHA-1. This section does
+not restate them. The RFC 4231 cases stay in §52B. One evaluation budget
 is $1\,048\,576$ steps, and the two groups do not both fit in it.
-`algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or` is the same split.
+`algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or` is the same HKDF text, module
+`hmac_hkdf`, with no `test` member.
+
+#### Status
+
+**Current** for the listing in this section, on the three tests named
+below. The binary is the S3t compiler of §52A.
+
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing: appendix A test cases 1, 2, and 3, each as Extract and as Expand | Current | Checked, as recorded after the listing |
+| `algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or` | Same algorithm, eval pairs | No `test` member. The A.1 pair under `orangec eval --spec` is recorded below |
+| A salt or an IKM longer than 247 bytes, or info longer than 150 bytes | Same functions, outside this buffer | The buffer is `Word[32]^64`, 256 bytes |
+| An output length other than 42 or 82 | Same Expand rule, another array length | An array length is part of its type. The listing names the two lengths appendix A uses for SHA-256 |
+| A PRK longer than HashLen | Not this listing | Section 2.3 allows a PRK of at least HashLen octets. `t_i` keys HMAC with 32 bytes |
+| Appendix A test cases 4 through 7 | Not this section | Each prints `Hash = SHA-1` |
+| Section 3, constant time, or a security proof | Not claimed | Section 3 is guidance and points at the HKDF paper. This listing does not transcribe it |
 
 #### 1. Extract (section 2.2)
 
-HashLen is 32. Extract is
+Section 2.2 prints
 
-$$\mathrm{PRK} = \mathrm{HMAC}(\mathrm{salt}, \mathrm{IKM}).$$
+$$\mathrm{PRK} = \mathrm{HMAC\text{-}Hash}(\mathrm{salt}, \mathrm{IKM}).$$
 
-The salt is the HMAC key and the IKM is the text. A salt that is not
-provided is a string of HashLen zero bytes. `hkdf_extract` treats length 0
-as that string: the buffer is already zero, and the length passed to HMAC
-is 32. A salt longer than the SHA-256 block is hashed first, by the same
-$K_0$ rule as HMAC.
+The salt is the HMAC key. The IKM is the text. A salt that is not provided
+is a string of HashLen zero octets. `hkdf_extract` takes a length of 0 as
+that string: the buffer is already zero, and the length passed to HMAC is
+32. A provided salt of positive length is passed at that length. A salt
+longer than the SHA-256 block is hashed first, by the $K_0$ rule of §52B.
+Test case 2's salt is 80 octets, so that rule applies. Test case 1's salt
+is 13 octets, shorter than the block, so zeros are appended.
+
+Test case 3 prints `salt = (0 octets)`. The length-0 path feeds HMAC 32
+zero octets, which is the substitution section 2.2 writes for a salt that
+is not provided. Both keys are shorter than the block, so $K_0$ is 64 zero
+octets either way. The PRK the test returns is the PRK test case 3 prints.
+Test case 7, which is the SHA-1 line that says the salt is not provided, is
+not this section.
 
 #### 2. Expand (section 2.3)
 
-For a context string info and a length $L$ at most $255 \times 32$, with
-$N = \lceil L / 32 \rceil$ and the counter $i$ a single octet,
+Section 2.3 prints, for $L \le 255 \times \mathrm{HashLen}$,
 
-$$T(1) = \mathrm{HMAC}(\mathrm{PRK}, \mathrm{info} \parallel \mathtt{0x01}), \qquad T(i) = \mathrm{HMAC}(\mathrm{PRK}, T(i-1) \parallel \mathrm{info} \parallel i)\ (i > 1).$$
+$$N = \lceil L / \mathrm{HashLen} \rceil, \qquad T(0) = \text{the empty string},$$
 
-OKM is the first $L$ octets of $T(1) \parallel \cdots \parallel T(N)$. The
-listing writes two output lengths, because an array length is part of its
-type. `hkdf_expand_42` is $L = 42$, so $N = 2$. `hkdf_expand_82` is
-$L = 82$, so $N = 3$. $T(i-1)$ is eight words, so info starts at word 8 of
-the data buffer, and `put_byte` writes the counter at byte $32 + \mathrm{len}(\mathrm{info})$.
-For $i = 1$ the counter is written at byte $\mathrm{len}(\mathrm{info})$ of
-info itself. An empty info is a zero buffer at length 0, so $T(1)$ is
-HMAC of the single byte `0x01`.
+$$T(1) = \mathrm{HMAC\text{-}Hash}(\mathrm{PRK}, T(0) \parallel \mathrm{info} \parallel \mathtt{0x01}),$$
 
-For $i > 1$ the inner message is the 64-byte pad, the 32-byte block
-$T(i-1)$, info, and one counter byte. SHA-256 padding needs nine further
-bytes, and the buffer is 256 bytes, so info in this listing is at most 150
-bytes. Appendix A.2, at 80 bytes of info, sits inside that bound.
+$$T(i) = \mathrm{HMAC\text{-}Hash}(\mathrm{PRK}, T(i-1) \parallel \mathrm{info} \parallel i)\ (i > 1),$$
 
-#### 3. Known Answers (appendix A)
+and OKM as the first $L$ octets of $T(1) \parallel \cdots \parallel T(N)$.
+The counter is one octet.
 
-| Case | Salt, IKM, info, $L$ | PRK |
+| RFC 5869 | Orange |
+| :--- | :--- |
+| $T(0)$ empty, so $T(1)$ is HMAC of $\mathrm{info} \parallel \mathtt{0x01}$ | `t_i` with `i == 1` copies info and sets the length to `info_len`. `put_byte` then writes the counter at that length |
+| $T(i)$ for $i > 1$ prepends the previous block | the eight words of `previous`, then info, length `32 + info_len`, then the counter byte |
+| the counter octet | `i as Word[8]` |
+| the first $L$ octets | `hkdf_expand_42` keeps 42 bytes of $T(1) \parallel T(2)$. `hkdf_expand_82` keeps 82 bytes of $T(1) \parallel T(2) \parallel T(3)$ |
+
+$N = \lceil 42 / 32 \rceil = 2$ and $N = \lceil 82 / 32 \rceil = 3$. An empty
+info is a zero buffer at length 0, so $T(1)$ is HMAC of the single byte
+`0x01`. That is test case 3.
+
+For $i > 1$ the HMAC text is the 64-byte pad, the 32-byte block $T(i-1)$,
+info, and one counter byte. SHA-256 padding needs nine further bytes, and
+the buffer is 256 bytes, so info in this listing is at most 150 bytes.
+Test case 2, at 80 bytes of info, sits inside that bound. `put_byte` walks
+`for i in 0..64` because an index `buf[n / 4]`, with `n` a parameter, is
+`ORC0226`, recorded below.
+
+#### 3. Known Answers (appendix A, test cases 1 through 3)
+
+Each line below is the value that appendix prints for `Hash = SHA-256`.
+The hex is concatenated from the line breaks in the RFC.
+
+| Case | Inputs, as printed | PRK |
 | :--- | :--- | :--- |
-| A.1 | salt `000102030405060708090a0b0c`, IKM `0x0b` repeated 22 times, info `f0` through `f9`, $L = 42$ | `077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5` |
-| A.2 | salt `60` through `af` (80 bytes), IKM `00` through `4f` (80 bytes), info `b0` through `ff`, $L = 82$ | `06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244` |
-| A.3 | salt empty, the IKM of A.1, info empty, $L = 42$ | `19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04` |
+| A.1, Basic test case with SHA-256 | IKM `0x0b` 22 times; salt `000102030405060708090a0b0c` (13 octets); info `f0f1f2f3f4f5f6f7f8f9` (10 octets); $L = 42$ | `077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5` |
+| A.2, longer inputs and outputs | IKM `00` through `4f`; salt `60` through `af`; info `b0` through `ff`; 80 octets each; $L = 82$ | `06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244` |
+| A.3, zero-length salt and info | the IKM of A.1; salt `(0 octets)`; info `(0 octets)`; $L = 42$ | `19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04` |
 
-| Case | OKM |
+| Case | OKM, as printed |
 | :--- | :--- |
 | A.1 | `3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865` |
 | A.2 | `b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87` |
 | A.3 | `8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8` |
-
-A.2's salt is longer than the block, so Extract hashes it before the inner
-pad. A.3's salt length is 0, so Extract uses 32 zero bytes.
 
 #### 4. Compiler-Checked Transcription
 
@@ -4730,12 +4767,10 @@ module hkdf_spec {
     for i in 0..20 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
   }
 
-  // RFC 5869 appendix A.1, test case 1: IKM 0x0b repeated 22 times, salt
-  // 0x00 to 0x0c, info 0xf0 to 0xf9, L = 42. PRK as printed in Botan's
-  // hkdf.vec, [HKDF-Extract(HMAC(SHA-256))], OpenSSL's evpkdf_hkdf.txt and
-  // pyca/cryptography's rfc-5869-HKDF-SHA256.txt; OKM as printed in the
-  // same three files, Botan's under [HKDF(HMAC(SHA-256))], and in
-  // Wycheproof's hkdf_sha256_test.json tcId 1 (also cryptography's HKDF).
+  // RFC 5869 appendix A.1, test case 1, "Basic test case with SHA-256":
+  // IKM 0x0b repeated 22 times, salt 0x000102030405060708090a0b0c (13
+  // octets), info 0xf0f1f2f3f4f5f6f7f8f9 (10 octets), L = 42. PRK and OKM
+  // are the values that appendix prints.
   spec rfc5869_a_1_prk() -> Word[32]^8 {
     hkdf_extract(
       words_4([0x00010203, 0x04050607, 0x08090a0b, 0x0c000000]), 13,
@@ -4758,10 +4793,11 @@ module hkdf_spec {
     ]
   }
 
-  // RFC 5869 appendix A.2, test case 2: IKM 0x00 to 0x4f, salt 0x60 to
-  // 0xaf and info 0xb0 to 0xff, 80 bytes each, L = 82. The salt is longer
-  // than the block, so HMAC hashes it first, and N = 3. PRK and OKM from
-  // the same files as A.1 (Wycheproof tcId 3).
+  // RFC 5869 appendix A.2, test case 2, "Test with SHA-256 and longer
+  // inputs/outputs": IKM 0x00 to 0x4f, salt 0x60 to 0xaf, info 0xb0 to
+  // 0xff, 80 octets each, L = 82. The salt is longer than the block, so
+  // HMAC hashes it first, and N = 3. PRK and OKM are the values that
+  // appendix prints.
   spec rfc5869_a_2_prk() -> Word[32]^8 {
     hkdf_extract(
       words_20([
@@ -4803,9 +4839,10 @@ module hkdf_spec {
     ]
   }
 
-  // RFC 5869 appendix A.3, test case 3: the IKM of A.1 with the salt and
-  // info both empty, L = 42; the salt becomes 32 zero bytes. PRK and OKM
-  // from the same files as A.1 (Wycheproof tcId 2).
+  // RFC 5869 appendix A.3, test case 3, "Test with SHA-256 and zero-length
+  // salt/info": the IKM of A.1, salt (0 octets), info (0 octets), L = 42.
+  // Length 0 is the HashLen zero string of section 2.2. PRK and OKM are
+  // the values that appendix prints.
   spec rfc5869_a_3_prk() -> Word[32]^8 {
     hkdf_extract(
       [0; 64], 0,
@@ -4842,6 +4879,60 @@ module hkdf_spec {
   }
 }
 ```
+
+#### 5. What This Binary Printed
+
+`orangec test --stats` on the listing, the S3t binary of §52A, default
+budget 1,048,576:
+
+```text
+test "RFC 5869 A.1 extract and expand" ... ok
+test "RFC 5869 A.2 extract and expand, L = 82" ... ok
+test "RFC 5869 A.3 empty salt and empty info" ... ok
+3 tests: 3 passed, 0 failed
+```
+
+The step counts on stderr were 160,410, 287,335, and 160,189. The total
+was 607,934 of 1,048,576.
+
+`orangec eval --spec rfc5869_a_1_prk --spec rfc5869_a_1_prk_expected` on
+`algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or` printed two lines and exited 0.
+Both were
+
+`Word[32]^8 = [0x07770936, 0x2c2e32df, 0x0ddc3f0d, 0xc47bba63, 0x90b6c73b, 0xb50f9c31, 0x22ec844a, 0xd7c2b3e5]`.
+
+That is appendix A test case 1's PRK. The same command on
+`rfc5869_a_1_okm` and `rfc5869_a_1_okm_expected` printed two copies of
+
+`Word[8]^42 = [0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90, 0x43, 0x4f, 0x64, 0xd0, 0x36, 0x2f, 0x2a, 0x2d, 0x2d, 0x0a, 0x90, 0xcf, 0x1a, 0x5a, 0x4c, 0x5d, 0xb0, 0x2d, 0x56, 0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65]`.
+
+`rfc5869_a_2_prk` and `rfc5869_a_3_prk` each matched its `_expected` spec
+and exited 0. The repository module is `hmac_hkdf`. The manual listing is
+`hkdf_spec`.
+
+#### 6. Rejections
+
+A byte position taken from a length is not an index the checker accepts.
+`put_byte` walks the buffer for that reason. The same diagnostic is the
+one §52B records:
+
+```orange
+edition 2026;
+module neg_put {
+  spec bad(buf: Word[32]^64, n: Int) -> Word[32] { buf[n / 4] }
+}
+```
+
+`` error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``
+
+#### 7. Non-Claims
+
+The three tests show appendix A test cases 1, 2, and 3, Extract and Expand,
+at the PRK and OKM those cases print. They do not show test cases 4
+through 7. They do not show an output length other than 42 or 82, a PRK
+longer than 32 octets, info longer than 150 bytes, or a salt or IKM longer
+than 247 bytes. Section 3 is not transcribed. Nothing here is a timing
+measurement or a proof of the construction.
 
 ### AEAD, RFC 8439
 
