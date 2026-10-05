@@ -7,7 +7,7 @@ champion: Chase Bryan
 status: Draft
 type: Informational
 created: 2026-09-30
-updated: 2026-10-02
+updated: 2026-10-05
 discussion: owner-direction-2026-09-30-crypto-language-development-plan
 related-decisions:
   - D-002
@@ -263,15 +263,19 @@ The permanent source
 now supplies **partial P4 mathematical preparation** alongside its P2
 representation definitions: five exact `Int` product accumulators, an explicit
 coefficient-bound predicate, three-pass normalization with each digit/carry
-stage exposed, and tight/canonical mathematical products. Five additional
-hand-derived answer pairs and 129 tight-input pairs checked against independent
-640-bit binary arithmetic exercise products and every carry stage. The selected
-`product_third_pass` uses 1,474 reference steps and rejects a 1,473-step budget
-without value output. This is proof-neutral preparation using existing S3
-specifications; it supplies no native wide primitive, P3 checked contract or
-P4 completion. P3/P4 dependencies and the acceptance criteria above remain
-unchanged. Subtraction, dedicated squaring and ladder-constant operations,
-checked bounds, and complete X25519 refinement remain later work.
+stage exposed, tight/canonical mathematical products, biased subtraction with a
+dedicated difference carry for limbs below 4B, dedicated squaring that counts
+each off-diagonal pair once with factor 2, and multiplication by a24 = 121665
+with exact coefficients that exceed `Word[64]`. Nine additional hand-derived
+answer pairs beyond the product set, 129 tight-input product pairs, and
+independent binary-reference checks for differences, squares and a24 products
+exercise those schedules. The selected `product_third_pass` uses 1,474
+reference steps and rejects a 1,473-step budget without value output;
+`a24_maximum` uses 793 steps and rejects 792. This is proof-neutral preparation
+using existing S3 specifications; it supplies no native wide primitive, P3
+checked contract or P4 completion. P3/P4 dependencies and the acceptance
+criteria above remain unchanged. Checked bounds and complete X25519 refinement
+remain later work.
 
 ### P5 Lowering effects secrecy and leakage
 
@@ -366,8 +370,11 @@ Acceptance criteria:
   criteria; record no P3 or semantic acceptance from their tests.
 - [ ] Prepare the P3 operation-obligation inventory while the existing S4
   decision work progresses; select no proof foundation or solver by doing so.
-- [ ] Define wide arithmetic and operation schedules before scheduling P4
-  multiplication or complete X25519 implementation refinement.
+- [x] Define proof-neutral mathematical schedules for field products, biased
+  subtraction, dedicated squaring and a24 multiplication before native wide
+  primitives or complete X25519 implementation refinement.
+- [ ] Define native wide arithmetic and checked operation schedules before
+  completing P4 X25519 implementation refinement.
 
 ## Alternatives
 
