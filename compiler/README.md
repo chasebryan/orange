@@ -13,8 +13,9 @@ the expression, binding, conversion, fixed-length array, bounded-loop,
 conditional, lookup, module, residue, block, and tuple fragment (`Bool`, comparisons, Euclidean division,
 `if` / `else`, data-dependent indices proved in range, `use` with
 qualified calls `m::f(...)`, `Mod[m]`, `type` declarations, `let` bindings
-at the start of a loop step or a conditional branch, and tuples with `.k`
-and tuple patterns) without the Rust
+at the start of a loop step or a conditional branch, tuples with `.k`
+and tuple patterns, and bytes: `"..."`, `hex"..."`, `++`, slices, and slice
+updates) without the Rust
 toolchain. The Rust frontend in this workspace remains the implementation
 through the later slices.
 
