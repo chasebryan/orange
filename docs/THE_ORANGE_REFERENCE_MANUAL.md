@@ -2151,21 +2151,58 @@ functions of section 6.1. The field is the integers modulo
 
 $$p = 2^{255} - 19,$$
 
-and $a_{24} = (A - 2) / 4 = 121665$ for $A = 486662$. The listing uses exact
-`Int` and reduces a product with `%` at once. It is accepted by `orangec
-test` on the first vector of section 5.2. One evaluation costs about 568,000
-of the 1,048,576 steps of a file, so this listing holds that one vector. The
-same algorithm with the second vector, the section 6.1 Diffie-Hellman run,
-and a Wycheproof case is `algorithms/x25519/`.
+which is the integer `prime()` prints,
+$57896044618658097711785492504343953926634992332820282019728792003956564819949$.
+Section 4.1 sets $A = 486662$. Section 5 sets $a_{24} = (A - 2) / 4 = 121665$.
+The listing uses exact `Int`. A product or a square is reduced by `%` at
+once. `Int` remainder is Euclidean (`divide_euclid` in
+`compiler/crates/orange-compiler/src/eval.rs`), so `x % prime()` is the
+residue in $[0, p - 1]$ when `x` is negative. Sums and differences inside a
+product are not reduced on their own; the product's `%` is the field
+operation.
+
+#### Status
+
+**Current** for the listing in this section. `orangec test` on that listing,
+with the S3t binary of §49, accepts the first vector of section 5.2 and fails
+none. One `X25519` evaluation costs about 565,000 of the 1,048,576 steps in
+`MAX_EVALUATION_STEPS_PER_SOURCE` (`compiler/crates/orange-compiler/src/eval.rs`).
+A file that evaluates two of them exceeds that budget and the evaluator
+reports `ORC0301`. That is why each further vector is its own file.
+`algorithms/x25519/x25519.or` is the same text as the listing, without a
+`test` member. `orangec check` accepts that file. The other three files are
+the same algorithm with a different vector spec.
+
+| Text | Status | Check |
+| :--- | :--- | :--- |
+| Listing, section 5.2 vector 1 | Current | `orangec test`: 1 passed |
+| `algorithms/x25519/x25519-second-vector.or`, section 5.2 vector 2 | Checked by `orangec eval` | `rfc7748_5_2_vector_2` equals `rfc7748_5_2_vector_2_expected`, 565,070 steps |
+| `algorithms/x25519/x25519-diffie-hellman.or`, section 6.1 shared secret | Checked by `orangec eval` | `rfc7748_6_1_shared_secret` equals its `_expected` spec, 565,257 steps. This run does not also evaluate $K_A = \mathrm{X25519}(a, 9)$ |
+| `algorithms/x25519/x25519-wycheproof.or`, Wycheproof tcId 1 | Checked by `orangec eval` | `wycheproof_x25519_tc_1` equals its `_expected` spec, 564,808 steps. Not an RFC 7748 vector |
+| `all_zero` on a computed shared secret | Not evaluated | A second X25519 in the same file exceeds 1,048,576 steps (`ORC0301`) |
+| Section 5.2 iterated test: after 1, after 1,000, and after 1,000,000 iterations, starting from the 32-byte string whose first byte is 9 | Not transcribed | The one-iteration output is one X25519 call and would fit the budget. 1,000 and 1,000,000 calls do not, under the default 1,048,576 steps. No listing in the tree evaluates them |
+| X448 (sections 5 and 6.2) | Not this section | 56-byte scalars, $p = 2^{448} - 2^{224} - 1$, $a_{24} = 39081$. Not labeled Current here |
+| The RFC's arithmetic `cswap` mask | Not this listing | The listing swaps with `if`. A specification has no timing. An `impl` mask is Proposed (Part VIII) |
 
 #### 1. Decoding (section 5)
 
-`decode_little_endian` is the RFC's little-endian integer of 32 bytes.
-`decode_u_coordinate` clears the most significant bit of the last byte before
-that decoding: every implementation masks that bit. `decode_scalar_25519`
-clears the three low bits of byte 0 (`byte & 248`), clears bit 255
-(`byte 31 & 127`), and sets bit 254 (`| 64`). The ladder reads the clamped
-scalar one bit at a time. Bit $t$ is bit $t \bmod 8$ of byte $\lfloor t / 8 \rfloor$.
+`decode_little_endian` is the RFC's `decodeLittleEndian` on 32 bytes.
+The RFC sums $b[i] \cdot 256^{i}$. The listing folds from the high byte,
+
+$$n \leftarrow 256 \cdot n + b[31 - i],$$
+
+for $i = 0, \ldots, 31$, which is the same integer. `decode_u_coordinate` is
+`decodeUCoordinate` for 255 bits: the unused bit is the most significant bit
+of the last byte, cleared by `u[31] & 127`, which is the RFC's mask
+$(1 \ll (255 \bmod 8)) - 1$. `decode_scalar_25519` is `decodeScalar25519`'s
+clamping, kept as bytes rather than returned as an integer: byte 0 becomes
+`k[0] & 248` (clear bits 0, 1, and 2), and byte 31 becomes
+`(k[31] & 127) | 64` (clear bit 255, set bit 254). The ladder reads that
+integer one bit at a time. Bit $t$ is bit $t \bmod 8$ of byte
+$\lfloor t / 8 \rfloor$, tested by `(scalar[t / 8] & bit[t % 8]) != 0` with
+`bit = [1, 2, 4, 8, 16, 32, 64, 128]`. `encode_u_coordinate` is
+`encodeUCoordinate`: the base-256 digits of $u \bmod p$, least significant
+byte first.
 
 #### 2. The Ladder Step (section 5)
 
@@ -2182,19 +2219,53 @@ $$x_3' = (DA + CB)^2,\quad z_3' = x_1 \cdot (DA - CB)^2.$$
 
 Each product is reduced modulo $p$. `ladder_step` returns $(x_2', z_2', x_3', z_3')$.
 
-The RFC swaps with a constant-time mask. A specification has no timing, so
+The RFC's `cswap` uses an arithmetic mask. A specification has no timing, so
 `cswap` is the conditional that exchanges $(x_2, z_2)$ with $(x_3, z_3)$. The
-permutation is the RFC's. The arithmetic mask is not what this listing
-executes. `rung` applies that swap around the step when scalar bit $k_t$ is
-set, which is the RFC's `swap ^= k_t` before the step and `swap = k_t` after
-it, together with the final swap.
+permutation is the RFC's. The mask is not what this listing executes. The
+RFC's loop, for $t = 254, 253, \ldots, 0$, is `for i in 0..255` with bit
+index $254 - i$ (255 iterations; `0..255` is half-open). The initial state is
+$(x_2, z_2, x_3, z_3) = (1, 0, x_1, 1)$, the `with` value of that loop.
+
+| RFC 7748 section 5 | Orange |
+| :--- | :--- |
+| `k_t = (k >> t) & 1` | `(scalar[(254 - i) / 8] & bit[(254 - i) % 8]) != 0` |
+| `swap ^= k_t` before the step, `swap = k_t` after it, and the `cswap` after the loop | `rung`: `cswap(k_t, ladder_step(x_1, cswap(k_t, s)))`. The file states that those three RFC swaps amount to swapping the two pairs around the step whenever $k_t$ is set. The section 5.2 vectors check the output of that form |
+| `A = x_2 + z_2`, `AA = A^2` | `a`, `aa = square(a)` |
+| `B = x_2 - z_2`, `BB = B^2`, `E = AA - BB` | `b`, `bb`, `e` |
+| `C = x_3 + z_3`, `D = x_3 - z_3` | `c`, `d` |
+| `DA = D * A`, `CB = C * B` | `da`, `cb` |
+| `x_2 = AA * BB` | result index 0 |
+| `z_2 = E * (AA + a24 * E)` | result index 1 |
+| `x_3 = (DA + CB)^2` | result index 2 |
+| `z_3 = x_1 * (DA - CB)^2` | result index 3 |
+| `encodeUCoordinate(x_2 * (z_2^(p - 2)), 255)` | `encode_u_coordinate(multiply(s[0], invert(s[1])))` |
 
 #### 3. The Inverse and the Output
 
 The RFC writes the output as $x_2 \cdot z_2^{(p - 2)}$ and leaves the power
 open. `invert` is Bernstein's curve25519 addition chain (2006): 254 squarings
-and 11 multiplications. The names record the power. $z_{2^{10}-1}$ is the
-binding `z_2_10_0`. The chain reaches $p - 2 = 2^{255} - 21$.
+and 11 multiplications. It is not a second algorithm in the RFC; it is one
+way to compute the power the RFC names. The names record the power.
+`square_times(x, n)` is $x^{(2^{n})}$ for $0 \le n \le 100$, by $n$ squarings
+inside a loop of 100 steps (the extra iterations keep the value). The chain's
+exponents, with $z_{2^{k}-1}$ abbreviated $z(2^{k}-1)$, are:
+
+| Binding | Exponent of $z$ |
+| :--- | :--- |
+| `z_2` | $2$ |
+| `z_9` | $9$ |
+| `z_11` | $11$ |
+| `z_2_5_0` | $2^{5} - 1$ |
+| `z_2_10_0` | $2^{10} - 1$ |
+| `z_2_20_0` | $2^{20} - 1$ |
+| `z_2_40_0` | $2^{40} - 1$ |
+| `z_2_50_0` | $2^{50} - 1$ |
+| `z_2_100_0` | $2^{100} - 1$ |
+| `z_2_200_0` | $2^{200} - 1$ |
+| `z_2_250_0` | $2^{250} - 1$ |
+| `multiply(square_times(z_2_250_0, 5), z_11)` | $(2^{250} - 1) \cdot 2^{5} + 11 = 2^{255} - 21$ |
+
+$p - 2 = 2^{255} - 21$, so the last binding is $z^{(p-2)}$.
 
 `x25519` decodes the scalar and the u-coordinate, runs the ladder from bit
 254 down to bit 0 starting at $(x_2 : z_2) = (1 : 0)$ and $(x_3 : z_3) = (x_1 : 1)$,
@@ -2216,6 +2287,33 @@ as the RFC prints the 32 bytes:
 | Scalar | `a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4` |
 | u-coordinate | `e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c` |
 | Output | `c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552` |
+
+Section 5.2's second vector, checked by `orangec eval` of
+`algorithms/x25519/x25519-second-vector.or` and not by this listing's `test`:
+
+| Role | Bytes |
+| :--- | :--- |
+| Scalar | `4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d` |
+| u-coordinate | `e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493` |
+| Output | `95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957` |
+
+Section 6.1's shared secret, checked the same way on
+`algorithms/x25519/x25519-diffie-hellman.or`. The inputs are Alice's secret
+$a$ and Bob's public key $K_B$ as that file records them. The output is $K$.
+
+| Role | Bytes |
+| :--- | :--- |
+| $a$ | `77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a` |
+| $K_B$ | `de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f` |
+| $K$ | `4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742` |
+
+Section 6.1 also prints Alice's public key $\mathrm{X25519}(a, 9)$ as
+`8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a`, Bob's
+secret $b$ as
+`5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb`, and
+states $K_B = \mathrm{X25519}(b, 9)$. Those three calls were not evaluated
+in this run. The clamping of section 5 makes the decoded scalar
+$2^{254} + 8 \cdot n$ for an integer $n$ with $0 \le n \le 2^{251} - 1$.
 
 #### 5. Compiler-Checked Transcription
 
