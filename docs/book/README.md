@@ -96,9 +96,9 @@ understand each operation rather than memorize its notation.
   independence, an elementary birthday bound, expected value, and base-two
   logarithms. Key length, the distribution a key is drawn from, and an
   adversary's uncertainty are separated. Sixteen exercises with worked
-  answers. No Orange listing is included. N10 is a provisional label.
-  Final numbering waits on the integration plan. N10 does not use the
-  formal vocabulary reserved for Say What You Mean.
+  answers. No Orange listing is included. The label is lesson N10. It is
+  not a manuscript chapter numeral. N10 does not use the formal vocabulary
+  reserved for Say What You Mean.
 - **N11.** [Protect More Than Appearance](NOVICE_PROTECT.md#n11-protect-more-than-appearance):
   encoding, encryption, hashing, and authentication as separate claims;
   the shift, affine, substitution, and Vigenère schemes, each proved
@@ -106,7 +106,7 @@ understand each operation rather than memorize its notation.
   nonces, and counters; the one-time pad with an elementary proof of
   perfect secrecy; the two-time pad shown by XOR. Twelve Orange listings,
   three of them intentionally rejected. Sixteen exercises with worked
-  answers. N11 is a provisional label. It is not manuscript Chapter 11,
+  answers. The label is lesson N11. It is not manuscript Chapter 11,
   *Standards as Versioned Inputs*.
 - **N12.** [The First Complete Study](NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md#n12-the-first-complete-study):
   the ChaCha20 block function of RFC 8439 §2.3, including the quarter
@@ -114,7 +114,7 @@ understand each operation rather than memorize its notation.
   §2.3.2 vector. The lesson separates a mathematical property, a test,
   and an implementation behavior, and it stops at the block function.
   Twelve exercises with worked answers. The four outcomes in that section
-  are the finish line. N12 is a provisional label. It is not a manuscript
+  are the finish line. The label is lesson N12. It is not a manuscript
   chapter numeral.
 
 The opening was approved by the owner before this continuation. Later
@@ -153,24 +153,24 @@ Item 6 is drafted as N12. Extend the manuscript in the following dependency orde
    [N10](NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know).
    Fractions, ratios, probability, conditional knowledge, independent
    choices, powers and logarithms; distinguish key length, distribution
-   and adversary uncertainty. The label is provisional. Final numbering
-   waits on the integration plan.
+   and adversary uncertainty. The locked label is N10. It does not use a
+   manuscript chapter numeral.
 5. **Protect More Than Appearance.** Drafted as
    [N11](NOVICE_PROTECT.md#n11-protect-more-than-appearance).
    Explicitly educational shift, affine, substitution, and Vigenère
    constructions, each with a stated break; encoding, encryption,
    hashing, and authentication; keys, distributions, nonces, and
    counters; the one-time pad and its exact conditions. The six outcomes
-   in N11 are the finish line. The label is provisional. Final numbering
-   waits on the integration plan. Do not introduce a practical primitive
+   in N11 are the finish line. The locked label is N11. It does not use a
+   manuscript chapter numeral. Do not introduce a practical primitive
    before its prerequisites.
 6. **The First Complete Study.** Drafted as
    [N12](NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md#n12-the-first-complete-study).
    The ChaCha20 block function of RFC 8439 §2.3, with the quarter round
    of §2.1, a hand-derived expected result, a transcription, a deliberate
    error, a repair, and a precisely scoped explanation of what was
-   established. The four outcomes in N12 are the finish line. The label
-   is provisional. Final numbering waits on the integration plan.
+   established. The four outcomes in N12 are the finish line.
+   The locked label is N12. It does not use a manuscript chapter numeral.
 
 The readiness check for Part 2 is demonstrated reasoning, not a certificate
 or an assertion that reading alone confers competence. The reader should be

@@ -7,10 +7,10 @@ By Chase Bryan
 N11: Protect More Than Appearance. Draft 2026-10-05.
 
 Continue from [Count What You Do Not Know](NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know).
-This lesson is **N11**. The label is provisional in the same sense as N10:
-final numbering waits on the integration plan. The original manuscript keeps
-its own chapter numbers. N11 is not manuscript Chapter 11, *Standards as
-Versioned Inputs*, and it is not N7, N8, N9, or N10.
+This lesson is **N11**. The locked label is N11. It is not a manuscript
+chapter numeral. The original manuscript keeps its own chapter numbers.
+N11 is not manuscript Chapter 11, *Standards as Versioned Inputs*, and it
+is not N7, N8, N9, or N10.
 
 You already have, from
 [Chapter 1, §1.2](NOVICE_OPENING.md#12-changing-the-appearance), a public

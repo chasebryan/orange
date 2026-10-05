@@ -15,10 +15,10 @@ text. It uses the quarter round from
 and the reading habit from
 [Read and Repair a Program](NOVICE_N8_READ_AND_REPAIR.md#n8-read-and-repair-a-program).
 
-This lesson is **N12**. It is not a manuscript chapter numeral. The
-original manuscript keeps its own numbers. When the text says “Chapter 6”
-or “§2.1”, the first is a novice chapter and the second is a section of
-RFC 8439.
+This lesson is **N12**. The locked label is N12. It is not a manuscript
+chapter numeral. The original manuscript keeps its own numbers. When the
+text says “Chapter 6” or “§2.1”, the first is a novice chapter and the
+second is a section of RFC 8439.
 
 ## N12: The First Complete Study
 
@@ -2135,12 +2135,13 @@ form that slice accepts. An index built from the loop index with `+` and
 Listing N12.6 is `ORC0223`, including the computed range 1 through 16.
 Implementation of the slice is not acceptance of the proposal.
 
-**[T1] Orange tests.** `docs/TESTS_2026.md`, proposed under OEP-0020.
+**[T6] Orange tests.** `docs/TESTS_2026.md`, proposed under OEP-0020.
 `orangec check` checks a test and does not run it. `orangec eval` runs
 parameterless specs and does not run tests. `orangec test` runs the root
 module's tests after the checks. A failed check prints the diagnostic and
 no report. The titles in Listings N12.2 through N12.5 name the RFC
 section or the hand proposition that supplied the expected value.
+This record's tag is [T6].
 
 **[H1] Shifts.** Chapter 6 and `docs/EXPRESSIONS_2026.md`. `>> n` for a
 literal `n` is the right shift used in `serialize`. Narrowing with

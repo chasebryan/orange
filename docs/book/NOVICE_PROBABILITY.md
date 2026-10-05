@@ -7,8 +7,8 @@ By Chase Bryan
 N10: Count What You Do Not Know. Draft 2026-10-05.
 
 Continue from [Words Have Edges](NOVICE_PROGRAMMING.md#chapter-6-words-have-edges).
-This lesson is **N10**. The label is provisional. Final numbering waits on
-the integration plan. The original manuscript keeps its own chapter numbers.
+This lesson is **N10**. The locked label is N10. It is not a manuscript
+chapter numeral. The original manuscript keeps its own chapter numbers.
 N10 is not one of those chapters, and it is not N7, N8, or N9.
 
 N7 names intermediate steps in Orange. N9 gives collections and
