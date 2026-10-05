@@ -364,13 +364,13 @@ fn carry_difference(limbs: &[u64; 5]) -> [u64; 5] {
 
 fn schoolbook_square(x: &[u64; 5]) -> [u128; 5] {
     let mut coefficients = [0u128; 5];
-    for k in 0..5 {
-        for i in 0..5 {
+    for (k, coefficient) in coefficients.iter_mut().enumerate() {
+        for (i, xi) in x.iter().enumerate() {
             let partner = (k + 5 - i) % 5;
             let weight = if i > k { 19u128 } else { 1 };
-            let xi = u128::from(x[i]);
+            let xi = u128::from(*xi);
             if i < partner {
-                coefficients[k] = coefficients[k]
+                *coefficient = coefficient
                     .checked_add(
                         weight
                             .checked_mul(2)
@@ -382,7 +382,7 @@ fn schoolbook_square(x: &[u64; 5]) -> [u128; 5] {
                     )
                     .unwrap();
             } else if i == partner {
-                coefficients[k] = coefficients[k]
+                *coefficient = coefficient
                     .checked_add(weight.checked_mul(xi).unwrap().checked_mul(xi).unwrap())
                     .unwrap();
             }
