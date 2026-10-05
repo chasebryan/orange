@@ -1,8 +1,8 @@
 # Standalone C compiler
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
-binding, conversion, array, bounded-loop, conditional, lookup, module, and
-residue fragment. It does
+binding, conversion, array, bounded-loop, conditional, lookup, module,
+residue, and block fragment. It does
 not amend D-008, does not select a D-010 output path, and does not replace
 the Rust frontend.
 
@@ -40,7 +40,10 @@ wrap. An `Int` index is built from integer literals, loop indices, words and
 residues converted with `as Int`, `+`, `-`, `*`, `/`, `%`, and conditionals. `x with
 [i] = v` replaces one element, and `[v; n]` repeats a value. `if c { a } else
 { b }` chooses one value; an `else if` chain is one conditional, and only the
-chosen branch is evaluated. `for`, `in`, `with`,
+chosen branch is evaluated. A loop's step and each branch of a conditional
+may begin with `let` bindings. A step's bindings are evaluated afresh at
+every step, a branch's only when that branch is chosen, and each name is in
+scope only within its step or branch. `for`, `in`, `with`,
 `if`, and `else` are names outside those positions. `true` and `false` are
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.
@@ -88,9 +91,10 @@ compiler/c/out/orangec eval path/to/file.or
 
 `make -C compiler/c test` builds an address-sanitized binary, runs the
 exact-integer self-test, and compares `check`, `eval`, and `lex` with the Rust
-`orangec` on the S3a through S3i fixtures, including ChaCha20, SHA-256,
+`orangec` on the S3a through S3j fixtures, including ChaCha20, SHA-256,
 Poly1305, X25519, ChaCha20-Poly1305, AES-128, the HMAC/HKDF program rooted
-at `valid-vectors.or`, and the modular X25519, Poly1305, and field fixtures.
+at `valid-vectors.or`, the modular X25519, Poly1305, and field fixtures, and
+the block-let X25519, SHA-256, and block fixtures.
 The Rust binary is only a
 test oracle. Running the C compiler does not require it.
 

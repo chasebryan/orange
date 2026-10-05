@@ -217,7 +217,17 @@ typedef struct TypeDecl {
     int installed;
 } TypeDecl;
 
-typedef enum NameRes { NAME_NONE = 0, NAME_PARAM, NAME_LOCAL, NAME_MISSING, NAME_EARLY, NAME_BAD, NAME_BOOL } NameRes;
+typedef enum NameRes {
+    NAME_NONE = 0,
+    NAME_PARAM,
+    NAME_LOCAL,
+    NAME_MISSING,
+    NAME_EARLY,
+    NAME_BAD,
+    NAME_BOOL,
+    NAME_BLOCK,
+    NAME_BLOCK_EARLY
+} NameRes;
 
 typedef struct Token {
     TokenKind kind;
@@ -255,6 +265,11 @@ typedef struct Expr {
     uint16_t name_index;
     TypeKind name_ty;
     uint32_t name_len;
+    /* Absolute local index when the name is a block binding. */
+    uint32_t name_abs;
+    /* Bindings of a conditional's final else branch. */
+    uint32_t else_bind0;
+    uint16_t else_nbinds;
 } Expr;
 
 typedef struct Param {
@@ -292,6 +307,8 @@ typedef struct Local {
     uint32_t site;
     uint16_t mod_index;
     int type_reported;
+    /* 1 when the binding belongs to a loop step or a conditional branch. */
+    int block;
 } Local;
 
 typedef struct Edge {
@@ -325,6 +342,8 @@ typedef struct LoopDesc {
     int bounds_ok;
     uint32_t bound_a;
     uint32_t bound_b;
+    uint32_t bind0;
+    uint16_t nbinds;
 } LoopDesc;
 
 typedef struct OpenLoop {
@@ -338,6 +357,8 @@ typedef struct OpenLoop {
 typedef struct CondArm {
     uint32_t cond;
     uint32_t value;
+    uint32_t bind0;
+    uint16_t nbinds;
 } CondArm;
 
 typedef struct Func {
@@ -365,6 +386,7 @@ typedef struct Func {
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
+    int has_blocks;
 } Func;
 
 typedef struct Diag {
@@ -386,6 +408,19 @@ typedef struct Value {
     Big big;
     uint16_t mod_index;
 } Value;
+
+/* Bindings of the step or branch currently being checked or evaluated. */
+typedef struct BlockFrame {
+    uint32_t bind0;
+    uint16_t nbinds;
+    uint16_t visible;
+    Value *slots;
+} BlockFrame;
+
+typedef struct FinishedBlock {
+    uint32_t bind0;
+    uint16_t nbinds;
+} FinishedBlock;
 
 typedef struct Program Program;
 
@@ -419,6 +454,12 @@ typedef struct Compiler {
     Local *locals;
     uint32_t nlocals;
     size_t local_cap;
+    /* Bindings of loop steps and conditional branches. Separate from body
+       locals so a binding value that itself contains a block cannot reuse
+       the body slot still being parsed. */
+    Local *block_locals;
+    uint32_t nblock_locals;
+    size_t block_local_cap;
     Edge *edges;
     uint32_t nedges;
     size_t edge_cap;
@@ -442,6 +483,12 @@ typedef struct Compiler {
     int nopen;
     uint32_t active_loops[MAX_OPEN_LOOPS];
     int nactive;
+    BlockFrame frames[MAX_OPEN_LOOPS];
+    int nframes;
+    FinishedBlock *finished;
+    uint32_t nfinished;
+    size_t finished_cap;
+    Func *parsing_func;
     uint32_t *loop_k;
     Value *loop_acc;
     CondArm *cond_arms;
@@ -1671,6 +1718,132 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
     return note_height(c, *out);
 }
 
+static const char STEP_BLOCK_NOTE[] =
+    "a loop's step holds `let` bindings, if any, and then the expression that gives the accumulator's next value";
+static const char BRANCH_BLOCK_NOTE[] =
+    "each branch of a conditional holds `let` bindings, if any, and then its value";
+
+/* `let` bindings at the start of a step or a branch. They are not body bindings.
+   Nested blocks append their bindings while a value is parsed, so this block's
+   bindings are held aside and appended together once the block is complete. */
+static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint16_t *nbinds, int *height) {
+    Local *pending = NULL;
+    *bind0 = 0;
+    *nbinds = 0;
+    *height = 0;
+    while (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "let") && c->at + 1 < c->ntokens &&
+           c->tokens[c->at + 1].kind == TK_IDENT) {
+        Token let_token = peek_token(c);
+        Token name;
+        Local *local;
+        uint32_t value = UINT32_MAX;
+        DeclaredType declared;
+        int child;
+        if (*nbinds >= MAX_BINDINGS) {
+            add_diag(c, "ORC0106", let_token.start, let_token.end, "a block declares more than 256 bindings",
+                     "block binding limit", "a step or a branch declares at most 256 bindings", 1);
+            free(pending);
+            return 0;
+        }
+        if (pending == NULL) {
+            pending = calloc(MAX_BINDINGS, sizeof(Local));
+            if (pending == NULL) {
+                resource_diag(c, "ORC0106", let_token.start, let_token.end, "parser could not retain bindings");
+                return 0;
+            }
+        }
+        advance_token(c);
+        name = peek_token(c);
+        if (name.kind != TK_IDENT) {
+            add_diag(c, "ORC0101", name.start, name.end, "expected a binding name", "expected a name after `let`", NULL,
+                     1);
+            free(pending);
+            return 0;
+        }
+        local = &pending[*nbinds];
+        memset(local, 0, sizeof *local);
+        local->site = UINT32_MAX;
+        local->block = 1;
+        local->name_start = name.start;
+        local->name_end = name.end;
+        local->name_at = name.start;
+        local->name_end_at = name.end;
+        advance_token(c);
+        if (peek_kind(c) != TK_COLON) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the binding's type",
+                     "a binding states its type", note, 1);
+            free(pending);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_type(c, &declared, 1)) {
+            free(pending);
+            return 0;
+        }
+        /* A nested block may have moved `pending` only if we realloc it.
+           `pending` itself is a fixed calloc, so `local` stays valid. Nested
+           blocks append to `block_locals`, not to `pending`. */
+        store_declared(&declared, &local->type, &local->length, &local->type_ok, &local->length_bad, &local->type_start,
+                       &local->type_end, &local->length_start, &local->length_end);
+        if (!push_site(c, &declared, "binding type", &local->site)) {
+            free(pending);
+            return 0;
+        }
+        if (peek_kind(c) != TK_EQUAL) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`",
+                     "expected the binding's value", note, 1);
+            free(pending);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_expr(c, &value)) {
+            free(pending);
+            return 0;
+        }
+        if (peek_kind(c) != TK_SEMI) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression",
+                     "each binding ends with `;`", "each binding ends with `;`; the block's last item is its value", 1);
+            free(pending);
+            return 0;
+        }
+        advance_token(c);
+        local->value = value;
+        (*nbinds)++;
+        if (c->parsing_func != NULL) {
+            c->parsing_func->has_blocks = 1;
+        }
+        child = height_of(c, value);
+        if (declared.has_mod) {
+            int mod_height = height_of(c, declared.mod_expr);
+            if (mod_height > child) {
+                child = mod_height;
+            }
+        }
+        if (child > *height) {
+            *height = child;
+        }
+    }
+    if (*nbinds > 0 && peek_kind(c) == TK_RBRACE) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a value after the last binding",
+                 "a block ends with its value", note, 1);
+        free(pending);
+        return 0;
+    }
+    if (*nbinds > 0) {
+        if (!ensure_cap((void **)&c->block_locals, &c->block_local_cap, c->nblock_locals + *nbinds, sizeof(Local),
+                        MAX_EXPRS)) {
+            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end, "parser could not retain bindings");
+            free(pending);
+            return 0;
+        }
+        *bind0 = c->nblock_locals;
+        memcpy(&c->block_locals[c->nblock_locals], pending, (size_t)(*nbinds) * sizeof(Local));
+        c->nblock_locals += *nbinds;
+    }
+    free(pending);
+    return 1;
+}
+
 static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     Token index;
     Token bound_a;
@@ -1682,6 +1855,7 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     Token close;
     uint32_t id;
     int height;
+    int bind_height = 0;
     if (c->nloops >= MAX_EXPRS || c->nopen >= MAX_OPEN_LOOPS) {
         resource_diag(c, "ORC0106", for_token.start, for_token.end, "source exceeds the loop limit");
         return 0;
@@ -1797,6 +1971,18 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     c->open_loops[c->nopen].acc_start = c->loops[id].acc_start;
     c->open_loops[c->nopen].acc_end = c->loops[id].acc_end;
     c->nopen++;
+    {
+        uint32_t bind0 = 0;
+        uint16_t nbinds = 0;
+        if (!parse_block_lets(c, STEP_BLOCK_NOTE, &bind0, &nbinds, &bind_height)) {
+            c->nopen--;
+            skip_open_braces(c, 1);
+            leave_nest(c);
+            return 0;
+        }
+        c->loops[id].bind0 = bind0;
+        c->loops[id].nbinds = nbinds;
+    }
     if (!parse_expr(c, &step)) {
         c->nopen--;
         /* The step's `{` is already open. Consume through its `}` so the
@@ -1809,7 +1995,8 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     c->loops[id].step_expr = step;
     close = peek_token(c);
     if (close.kind != TK_RBRACE) {
-        add_diag(c, "ORC0101", close.start, close.end, "expected `}`", "a loop step ends at `}`", NULL, 1);
+        add_diag(c, "ORC0101", close.start, close.end, "expected `}` after the loop's step", "a loop step ends at `}`",
+                 STEP_BLOCK_NOTE, 1);
         skip_open_braces(c, 1);
         leave_nest(c);
         return 0;
@@ -1826,6 +2013,9 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     height = height_of(c, init);
     if (height_of(c, step) > height) {
         height = height_of(c, step);
+    }
+    if (bind_height > height) {
+        height = bind_height;
     }
     if (c->loops[id].site != UINT32_MAX && c->sites[c->loops[id].site].has_mod) {
         int mod_height = height_of(c, c->sites[c->loops[id].site].mod_expr);
@@ -2002,6 +2192,8 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
     uint32_t count = 0;
     uint32_t cap = 0;
     uint32_t otherwise = UINT32_MAX;
+    uint32_t else_bind0 = 0;
+    uint16_t else_nbinds = 0;
     int height = 0;
     Token close = if_token;
     if (!enter_nest(c, if_token.start, if_token.end)) {
@@ -2025,15 +2217,45 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
             return 0;
         }
         advance_token(c);
-        if (!parse_expr(c, &value)) {
-            skip_open_braces(c, 1);
-            free(local);
-            leave_nest(c);
-            return 0;
+        {
+            uint32_t bind0 = 0;
+            uint16_t nbinds = 0;
+            int bind_height = 0;
+            if (!parse_block_lets(c, BRANCH_BLOCK_NOTE, &bind0, &nbinds, &bind_height)) {
+                skip_open_braces(c, 1);
+                free(local);
+                leave_nest(c);
+                return 0;
+            }
+            if (bind_height > height) {
+                height = bind_height;
+            }
+            if (!parse_expr(c, &value)) {
+                skip_open_braces(c, 1);
+                free(local);
+                leave_nest(c);
+                return 0;
+            }
+            if (count == cap) {
+                uint32_t next = cap == 0 ? 4u : cap * 2u;
+                grown = realloc(local, (size_t)next * sizeof(CondArm));
+                if (grown == NULL) {
+                    resource_diag(c, "ORC0106", if_token.start, if_token.end, "parser could not retain a conditional");
+                    free(local);
+                    leave_nest(c);
+                    return 0;
+                }
+                local = grown;
+                cap = next;
+            }
+            local[count].cond = condition;
+            local[count].value = value;
+            local[count].bind0 = bind0;
+            local[count].nbinds = nbinds;
         }
         if (peek_kind(c) != TK_RBRACE) {
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
-                     "a conditional value is one expression", NULL, 1);
+                     "a conditional value is one expression", BRANCH_BLOCK_NOTE, 1);
             skip_open_braces(c, 1);
             free(local);
             leave_nest(c);
@@ -2082,6 +2304,18 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
             return 0;
         }
         advance_token(c);
+        {
+            int bind_height = 0;
+            if (!parse_block_lets(c, BRANCH_BLOCK_NOTE, &else_bind0, &else_nbinds, &bind_height)) {
+                skip_open_braces(c, 1);
+                free(local);
+                leave_nest(c);
+                return 0;
+            }
+            if (bind_height > height) {
+                height = bind_height;
+            }
+        }
         if (!parse_expr(c, &otherwise)) {
             skip_open_braces(c, 1);
             free(local);
@@ -2090,7 +2324,7 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
         }
         if (peek_kind(c) != TK_RBRACE) {
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
-                     "a conditional value is one expression", NULL, 1);
+                     "a conditional value is one expression", BRANCH_BLOCK_NOTE, 1);
             skip_open_braces(c, 1);
             free(local);
             leave_nest(c);
@@ -2120,6 +2354,8 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
     c->exprs[*out].arg0 = c->ncond_arms;
     c->exprs[*out].argc = (uint16_t)count;
     c->exprs[*out].right = otherwise;
+    c->exprs[*out].else_bind0 = else_bind0;
+    c->exprs[*out].else_nbinds = else_nbinds;
     c->exprs[*out].start = if_token.start;
     c->exprs[*out].end = close.end;
     c->exprs[*out].height = 1 + height;
@@ -2715,12 +2951,14 @@ static int parse_function(Compiler *c) {
     Token name;
     Func *func;
     int is_impl = kind.kind == TK_IMPL;
+    c->parsing_func = NULL;
     if (!ensure_cap((void **)&c->funcs, &c->func_cap, c->nfuncs + 1, sizeof(Func), MAX_EXPRS)) {
         resource_diag(c, "ORC0106", kind.start, kind.end, "parser could not retain functions");
         return 0;
     }
     func = &c->funcs[c->nfuncs];
     memset(func, 0, sizeof *func);
+    c->parsing_func = func;
     func->is_impl = is_impl;
     func->body = UINT32_MAX;
     func->result = TY_NONE;
@@ -3160,14 +3398,19 @@ static void resolve_callee(Compiler *c, const Expr *expr, Callee *out) {
 }
 
 static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end,
-                         NameRes *res, uint16_t *slot, TypeKind *type, uint32_t *length, int *type_ok) {
+                         NameRes *res, uint16_t *slot, TypeKind *type, uint32_t *length, int *type_ok,
+                         uint32_t *abs_index) {
     const Func *func = &c->funcs[func_index];
     uint16_t index;
+    int frame;
     *res = NAME_MISSING;
     *slot = 0;
     *type = TY_NONE;
     *length = 0;
     *type_ok = 0;
+    if (abs_index != NULL) {
+        *abs_index = 0;
+    }
     for (index = 0; index < func->nparams; index++) {
         const Param *param = &c->params[func->param0 + index];
         if (param->duplicate) {
@@ -3201,8 +3444,47 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
                 *type = local->type;
                 *length = local->length;
                 *type_ok = local->type_ok;
+                if (abs_index != NULL) {
+                    *abs_index = func->local0 + local_index;
+                }
                 return;
             }
+        }
+    }
+    for (frame = c->nframes - 1; frame >= 0; frame--) {
+        const BlockFrame *block = &c->frames[frame];
+        uint16_t bind;
+        for (bind = 0; bind < block->visible; bind++) {
+            const Local *local = &c->block_locals[block->bind0 + bind];
+            if (local->duplicate) {
+                continue;
+            }
+            if (!same_span(c, local->name_start, local->name_end, start, end)) {
+                continue;
+            }
+            *res = local->type_ok ? NAME_BLOCK : NAME_BAD;
+            *type = local->type;
+            *length = local->length;
+            *type_ok = local->type_ok;
+            if (abs_index != NULL) {
+                *abs_index = block->bind0 + bind;
+            }
+            return;
+        }
+    }
+    for (frame = c->nframes - 1; frame >= 0; frame--) {
+        const BlockFrame *block = &c->frames[frame];
+        uint16_t bind;
+        for (bind = block->visible; bind < block->nbinds; bind++) {
+            const Local *local = &c->block_locals[block->bind0 + bind];
+            if (!same_span(c, local->name_start, local->name_end, start, end)) {
+                continue;
+            }
+            *res = NAME_BLOCK_EARLY;
+            if (abs_index != NULL) {
+                *abs_index = block->bind0 + bind;
+            }
+            return;
         }
     }
     for (index = 0; index < func->nlocals; index++) {
@@ -3300,16 +3582,18 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         NameRes res;
         uint16_t slot = 0;
         int type_ok = 0;
+        uint32_t abs_index = 0;
         resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
-                     &type_ok);
+                     &type_ok, &abs_index);
         if (res == NAME_BAD) {
             *silent = 1;
             return -1;
         }
-        if (res == NAME_PARAM || res == NAME_LOCAL) {
+        if (res == NAME_PARAM || res == NAME_LOCAL || res == NAME_BLOCK) {
             if (*type == TY_MOD) {
                 c->leaf_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
-                                                : c->locals[c->funcs[func_index].local0 + slot].mod_index;
+                                : res == NAME_BLOCK ? c->block_locals[abs_index].mod_index
+                                                    : c->locals[c->funcs[func_index].local0 + slot].mod_index;
             }
             return 1;
         }
@@ -3375,6 +3659,31 @@ static int index_subject(Compiler *c, uint32_t index, uint32_t func_index, uint3
     return base_type(c, index, func_index, locals_in_scope, type, length, silent);
 }
 
+static int leaf_names_bindings(const Compiler *c, uint32_t leaf, uint32_t bind0, uint16_t nbinds) {
+    const Expr *expr;
+    uint16_t bind;
+    if (nbinds == 0 || leaf == UINT32_MAX || leaf >= c->nexprs) {
+        return 0;
+    }
+    expr = &c->exprs[leaf];
+    while (expr->kind == EX_INDEX || expr->kind == EX_SELECT || expr->kind == EX_GROUP) {
+        if (expr->left == UINT32_MAX) {
+            break;
+        }
+        expr = &c->exprs[expr->left];
+    }
+    if (expr->kind != EX_NAME && expr->kind != EX_LOOP_INDEX && expr->kind != EX_ACCUM) {
+        return 0;
+    }
+    for (bind = 0; bind < nbinds; bind++) {
+        const Local *local = &c->block_locals[bind0 + bind];
+        if (same_span(c, local->name_start, local->name_end, expr->name_start, expr->name_end)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -3408,28 +3717,36 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     case EX_COND: {
         uint16_t arm;
         for (arm = 0; arm < expr->argc; arm++) {
-            int state = find_leaf(c, c->cond_arms[expr->arg0 + arm].value, func_index, locals_in_scope, type, length,
-                                  leaf, silent);
-            if (state != 0) {
+            const CondArm *item = &c->cond_arms[expr->arg0 + arm];
+            int state = find_leaf(c, item->value, func_index, locals_in_scope, type, length, leaf, silent);
+            if (state != 0 && !leaf_names_bindings(c, *leaf, item->bind0, item->nbinds)) {
                 return state;
             }
         }
-        return find_leaf(c, expr->right, func_index, locals_in_scope, type, length, leaf, silent);
+        {
+            int state = find_leaf(c, expr->right, func_index, locals_in_scope, type, length, leaf, silent);
+            if (state != 0 && !leaf_names_bindings(c, *leaf, expr->else_bind0, expr->else_nbinds)) {
+                return state;
+            }
+        }
+        return 0;
     }
     case EX_NAME: {
         NameRes res;
         uint16_t slot;
+        uint32_t abs_index = 0;
         int type_ok = 0;
         resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
-                     &type_ok);
+                     &type_ok, &abs_index);
         if (res == NAME_BAD) {
             *silent = 1;
             return -1;
         }
-        if (res == NAME_PARAM || res == NAME_LOCAL) {
+        if (res == NAME_PARAM || res == NAME_LOCAL || res == NAME_BLOCK) {
             if (*type == TY_MOD) {
                 c->leaf_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
-                                                : c->locals[c->funcs[func_index].local0 + slot].mod_index;
+                                : res == NAME_BLOCK ? c->block_locals[abs_index].mod_index
+                                                    : c->locals[c->funcs[func_index].local0 + slot].mod_index;
             }
             return 1;
         }
@@ -3548,13 +3865,33 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
     func_name[func_len] = '\0';
     memcpy(ident, c->text + expr->name_start, ident_len);
     ident[ident_len] = '\0';
-    if (res == NAME_EARLY) {
+    if (res == NAME_EARLY || res == NAME_BLOCK_EARLY) {
         snprintf(message, sizeof message, "`%s` is used before it is bound", ident);
         add_diag(c, "ORC0211", expr->start, expr->end, message, "binding is not in scope yet",
-                 "a binding is in scope after its `;`", 2);
+                 res == NAME_BLOCK_EARLY
+                     ? "a binding is in scope after its own `;`, for the bindings that follow it and the value of its step or branch"
+                     : "a binding is in scope after its `;`",
+                 2);
         return;
     }
-    if (c->funcs[func_index].nlocals > 0) {
+    if (c->nfinished > 0) {
+        uint32_t block;
+        for (block = c->nfinished; block > 0; block--) {
+            const FinishedBlock *done = &c->finished[block - 1];
+            uint16_t bind;
+            for (bind = 0; bind < done->nbinds; bind++) {
+                const Local *local = &c->block_locals[done->bind0 + bind];
+                if (!same_span(c, local->name_start, local->name_end, expr->name_start, expr->name_end)) {
+                    continue;
+                }
+                snprintf(message, sizeof message, "`%s` is not in scope here", ident);
+                add_diag(c, "ORC0211", expr->start, expr->end, message, "unknown name",
+                         "a binding of a loop's step or a branch is in scope only within that step or branch", 2);
+                return;
+            }
+        }
+    }
+    if (c->funcs[func_index].nlocals > 0 || c->funcs[func_index].has_blocks) {
         snprintf(message, sizeof message, "`%s` is not a parameter or binding of `%s`", ident, func_name);
     } else {
         snprintf(message, sizeof message, "`%s` is not a parameter of `%s`", ident, func_name);
@@ -3610,6 +3947,16 @@ static int report_duplicate_loop_name(Compiler *c, uint32_t func_index, uint32_t
         const Local *local = &c->locals[func->local0 + index];
         if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
             duplicate = 1;
+        }
+    }
+    for (index = 0; index < (uint16_t)c->nframes && !duplicate; index++) {
+        const BlockFrame *block = &c->frames[index];
+        uint16_t bind;
+        for (bind = 0; bind < block->visible && !duplicate; bind++) {
+            const Local *local = &c->block_locals[block->bind0 + bind];
+            if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
+                duplicate = 1;
+            }
         }
     }
     if (!duplicate) {
@@ -4332,6 +4679,101 @@ static int check_index_expr(Compiler *c, uint32_t index_expr, TypeKind element, 
     return 1;
 }
 
+static int block_name_taken(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end) {
+    const Func *func = &c->funcs[func_index];
+    uint16_t index;
+    int frame;
+    for (index = 0; index < func->nparams; index++) {
+        const Param *param = &c->params[func->param0 + index];
+        if (!param->duplicate && same_span(c, param->name_start, param->name_end, start, end)) {
+            return 1;
+        }
+    }
+    if (locals_in_scope > func->nlocals) {
+        locals_in_scope = func->nlocals;
+    }
+    for (index = 0; index < locals_in_scope; index++) {
+        const Local *local = &c->locals[func->local0 + index];
+        if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
+            return 1;
+        }
+    }
+    for (frame = 0; frame < c->nframes; frame++) {
+        uint16_t bind;
+        for (bind = 0; bind < c->frames[frame].visible; bind++) {
+            const Local *local = &c->block_locals[c->frames[frame].bind0 + bind];
+            if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
+                return 1;
+            }
+        }
+    }
+    return name_is_active_loop(c, start, end);
+}
+
+static int remember_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t start, uint32_t end) {
+    if (nbinds == 0) {
+        return 1;
+    }
+    if (!ensure_cap((void **)&c->finished, &c->finished_cap, c->nfinished + 1, sizeof(FinishedBlock), MAX_EXPRS)) {
+        resource_diag(c, "ORC0209", start, end, "semantic analysis could not retain block scopes");
+        return 0;
+    }
+    c->finished[c->nfinished].bind0 = bind0;
+    c->finished[c->nfinished].nbinds = nbinds;
+    c->nfinished++;
+    return 1;
+}
+
+static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, TypeKind expected,
+                       uint32_t expected_len, uint16_t expected_mod, uint32_t func_index, uint32_t locals_in_scope) {
+    BlockFrame *frame;
+    uint16_t bind;
+    int ok;
+    if (nbinds == 0) {
+        if (value == UINT32_MAX) {
+            return 1;
+        }
+        return check_at(c, value, expected, expected_len, expected_mod, func_index, locals_in_scope);
+    }
+    if (c->nframes >= MAX_OPEN_LOOPS) {
+        resource_diag(c, "ORC0209", value == UINT32_MAX ? 0 : c->exprs[value].start, value == UINT32_MAX ? 0 : c->exprs[value].end,
+                      "semantic analysis could not retain block scopes");
+        return 0;
+    }
+    frame = &c->frames[c->nframes++];
+    frame->bind0 = bind0;
+    frame->nbinds = nbinds;
+    frame->visible = 0;
+    frame->slots = NULL;
+    for (bind = 0; bind < nbinds; bind++) {
+        Local *local = &c->block_locals[bind0 + bind];
+        if (block_name_taken(c, func_index, locals_in_scope, local->name_start, local->name_end)) {
+            local->duplicate = 1;
+            add_diag(c, "ORC0219", local->name_start, local->name_end, "duplicate name", "this name is already in scope",
+                     "each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing",
+                     2);
+        }
+        if (!local->type_ok) {
+            if (!local->type_reported) {
+                reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
+                                local->length_start, local->length_end);
+            }
+        } else if (!check_at(c, local->value, local->type, local->length, local->mod_index, func_index,
+                             locals_in_scope)) {
+            c->nframes--;
+            return 0;
+        }
+        frame->visible = (uint16_t)(bind + 1);
+    }
+    ok = value == UINT32_MAX || check_at(c, value, expected, expected_len, expected_mod, func_index, locals_in_scope);
+    c->nframes--;
+    if (!ok) {
+        return 0;
+    }
+    return remember_block(c, bind0, nbinds, value == UINT32_MAX ? 0 : c->exprs[value].start,
+                          value == UINT32_MAX ? 0 : c->exprs[value].end);
+}
+
 static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr = &c->exprs[index];
@@ -4397,7 +4839,8 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 0;
         }
         c->active_loops[c->nactive++] = expr->arg0;
-        if (!check_at(c, loop->step_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index, locals_in_scope)) {
+        if (!check_block(c, loop->bind0, loop->nbinds, loop->step_expr, loop->acc_type, loop->acc_len, loop->acc_mod,
+                         func_index, locals_in_scope)) {
             c->nactive--;
             return 0;
         }
@@ -4648,16 +5091,33 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     case EX_NAME: {
         NameRes res;
         uint16_t slot = 0;
+        uint32_t abs_index = 0;
         TypeKind type = TY_NONE;
         uint32_t length = 0;
         int type_ok = 0;
         resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, &type, &length,
-                     &type_ok);
+                     &type_ok, &abs_index);
         expr->name_res = res;
         expr->name_index = slot;
+        expr->name_abs = abs_index;
         expr->name_ty = type;
         expr->name_len = length;
         if (res == NAME_BAD) {
+            return 1;
+        }
+        if (res == NAME_BLOCK) {
+            uint16_t found_mod = type == TY_MOD ? c->block_locals[abs_index].mod_index : 0;
+            if (type != expected || length != expected_len ||
+                (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, type, length);
+                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
             return 1;
         }
         if (res != NAME_PARAM && res != NAME_LOCAL) {
@@ -5066,16 +5526,23 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t arg0 = expr->arg0;
         uint16_t arms = expr->argc;
         uint32_t otherwise = expr->right;
+        uint32_t else_bind0 = expr->else_bind0;
+        uint16_t else_nbinds = expr->else_nbinds;
         uint16_t arm;
+        uint16_t expect_mod = c->expect_mod;
         for (arm = 0; arm < arms; arm++) {
-            uint32_t condition = c->cond_arms[arg0 + arm].cond;
-            uint32_t value = c->cond_arms[arg0 + arm].value;
+            const CondArm *item = &c->cond_arms[arg0 + arm];
+            uint32_t condition = item->cond;
+            uint32_t value = item->value;
+            uint32_t bind0 = item->bind0;
+            uint16_t nbinds = item->nbinds;
             if (!check_expr(c, condition, TY_BOOL, 0, func_index, locals_in_scope) ||
-                !check_expr(c, value, expected, expected_len, func_index, locals_in_scope)) {
+                !check_block(c, bind0, nbinds, value, expected, expected_len, expect_mod, func_index, locals_in_scope)) {
                 return 0;
             }
         }
-        return check_expr(c, otherwise, expected, expected_len, func_index, locals_in_scope);
+        return check_block(c, else_bind0, else_nbinds, otherwise, expected, expected_len, expect_mod, func_index,
+                           locals_in_scope);
     }
     case EX_LOOP:
         return check_loop(c, index, expected, expected_len, func_index, locals_in_scope);
@@ -5406,12 +5873,42 @@ static void walk_moduli(Compiler *c, uint32_t index) {
             bind_modulus(c, &c->sites[c->loops[expr->arg0].site]);
         }
         walk_moduli(c, c->loops[expr->arg0].init_expr);
+        if (expr->arg0 < c->nloops) {
+            LoopDesc *loop = &c->loops[expr->arg0];
+            uint16_t bind;
+            for (bind = 0; bind < loop->nbinds; bind++) {
+                Local *local = &c->block_locals[loop->bind0 + bind];
+                if (local->site != UINT32_MAX && local->site < c->nsites) {
+                    bind_modulus(c, &c->sites[local->site]);
+                }
+                walk_moduli(c, local->value);
+            }
+        }
         walk_moduli(c, c->loops[expr->arg0].step_expr);
         break;
     case EX_COND:
         for (arg = 0; arg < expr->argc; arg++) {
-            walk_moduli(c, c->cond_arms[expr->arg0 + arg].cond);
-            walk_moduli(c, c->cond_arms[expr->arg0 + arg].value);
+            CondArm *item = &c->cond_arms[expr->arg0 + arg];
+            uint16_t bind;
+            walk_moduli(c, item->cond);
+            for (bind = 0; bind < item->nbinds; bind++) {
+                Local *local = &c->block_locals[item->bind0 + bind];
+                if (local->site != UINT32_MAX && local->site < c->nsites) {
+                    bind_modulus(c, &c->sites[local->site]);
+                }
+                walk_moduli(c, local->value);
+            }
+            walk_moduli(c, item->value);
+        }
+        {
+            uint16_t bind;
+            for (bind = 0; bind < expr->else_nbinds; bind++) {
+                Local *local = &c->block_locals[expr->else_bind0 + bind];
+                if (local->site != UINT32_MAX && local->site < c->nsites) {
+                    bind_modulus(c, &c->sites[local->site]);
+                }
+                walk_moduli(c, local->value);
+            }
         }
         walk_moduli(c, expr->right);
         break;
@@ -5628,6 +6125,10 @@ static void prepare_types(Compiler *c) {
             publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
         }
     }
+    for (index = 0; index < c->nblock_locals; index++) {
+        Local *item = &c->block_locals[index];
+        publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+    }
     for (index = 0; index < c->nloops; index++) {
         LoopDesc *loop = &c->loops[index];
         publish_site(c, loop->site, &loop->acc_type, &loop->acc_len, &loop->acc_ok, &loop->acc_mod, &loop->acc_reported);
@@ -5659,6 +6160,8 @@ static void analyze(Compiler *c) {
         Func *func = &c->funcs[index];
         uint16_t param_index;
         uint16_t local_index;
+        c->nfinished = 0;
+        c->nframes = 0;
         for (uint32_t previous = 0; previous < index; previous++) {
             Func *earlier = &c->funcs[previous];
             if (earlier->is_impl == func->is_impl &&
@@ -5924,6 +6427,48 @@ static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
 }
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
+
+static int eval_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, Value *params, Value *locals,
+                      int depth, Value *out) {
+    BlockFrame *frame;
+    Value *slots;
+    uint16_t bind;
+    int ok = 1;
+    if (nbinds == 0) {
+        return eval_expr(c, value, params, locals, depth, out);
+    }
+    if (c->nframes >= MAX_OPEN_LOOPS) {
+        c->failed = 1;
+        add_diag(c, "ORC0301", c->exprs[value].start, c->exprs[value].end, "evaluation could not retain block bindings",
+                 "resource limit reached", NULL, 2);
+        return 0;
+    }
+    slots = calloc(nbinds, sizeof(Value));
+    if (slots == NULL) {
+        c->failed = 1;
+        add_diag(c, "ORC0301", c->exprs[value].start, c->exprs[value].end, "evaluation could not retain block bindings",
+                 "resource limit reached", NULL, 2);
+        return 0;
+    }
+    frame = &c->frames[c->nframes++];
+    frame->bind0 = bind0;
+    frame->nbinds = nbinds;
+    frame->visible = 0;
+    frame->slots = slots;
+    for (bind = 0; bind < nbinds && ok; bind++) {
+        ok = eval_expr(c, c->block_locals[bind0 + bind].value, params, locals, depth, &slots[bind]);
+        frame->visible = (uint16_t)(bind + 1);
+    }
+    if (ok) {
+        ok = eval_expr(c, value, params, locals, depth, out);
+    }
+    for (bind = 0; bind < nbinds; bind++) {
+        value_clear(&slots[bind]);
+    }
+    free(slots);
+    c->nframes--;
+    return ok;
+}
 
 static int ensure_loops(Compiler *c) {
     if (c->nloops == 0 || c->loop_k != NULL) {
@@ -6232,6 +6777,18 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
     }
     case EX_NAME:
         if (!charge(c, expr->start, expr->end, 1)) {
+            return 0;
+        }
+        if (expr->name_res == NAME_BLOCK) {
+            int frame;
+            for (frame = c->nframes - 1; frame >= 0; frame--) {
+                BlockFrame *block = &c->frames[frame];
+                if (block->slots != NULL && expr->name_abs >= block->bind0 &&
+                    expr->name_abs < block->bind0 + block->visible) {
+                    return value_clone(c, out, &block->slots[expr->name_abs - block->bind0], expr->start, expr->end);
+                }
+            }
+            c->failed = 1;
             return 0;
         }
         if (expr->name_res == NAME_BOOL) {
@@ -6962,7 +7519,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             c->loop_k[expr->arg0] = step_index;
             value_clear(&c->loop_acc[expr->arg0]);
             value_move(&c->loop_acc[expr->arg0], &acc);
-            if (!eval_expr(c, loop->step_expr, params, locals, depth, &acc)) {
+            if (!eval_block(c, loop->bind0, loop->nbinds, loop->step_expr, params, locals, depth, &acc)) {
                 value_clear(&c->loop_acc[expr->arg0]);
                 return 0;
             }
@@ -6992,6 +7549,8 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         uint32_t arg0 = expr->arg0;
         uint16_t arms = expr->argc;
         uint32_t otherwise = expr->right;
+        uint32_t else_bind0 = expr->else_bind0;
+        uint16_t else_nbinds = expr->else_nbinds;
         uint32_t span_start = expr->start;
         uint32_t span_end = expr->end;
         uint16_t arm;
@@ -6999,6 +7558,8 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             Value condition;
             uint32_t condition_expr = c->cond_arms[arg0 + arm].cond;
             uint32_t value_expr = c->cond_arms[arg0 + arm].value;
+            uint32_t bind0 = c->cond_arms[arg0 + arm].bind0;
+            uint16_t nbinds = c->cond_arms[arg0 + arm].nbinds;
             memset(&condition, 0, sizeof condition);
             if (!eval_expr(c, condition_expr, params, locals, depth, &condition)) {
                 return 0;
@@ -7010,11 +7571,11 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (condition.word != 0) {
                 value_clear(&condition);
-                return eval_expr(c, value_expr, params, locals, depth, out);
+                return eval_block(c, bind0, nbinds, value_expr, params, locals, depth, out);
             }
             value_clear(&condition);
         }
-        return eval_expr(c, otherwise, params, locals, depth, out);
+        return eval_block(c, else_bind0, else_nbinds, otherwise, params, locals, depth, out);
     }
     default:
         c->failed = 1;
@@ -7434,6 +7995,7 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->funcs);
     free(compiler->params);
     free(compiler->locals);
+    free(compiler->block_locals);
     free(compiler->edges);
     free(compiler->loops);
     free(compiler->cond_arms);
@@ -7443,6 +8005,7 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->types);
     free(compiler->sites);
     free(compiler->moduli);
+    free(compiler->finished);
     if (compiler->own_text) {
         free(compiler->text);
     }
@@ -8037,7 +8600,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, conditional, lookup, module, and residue fragment.\n"
+        "conversion, array, loop, conditional, lookup, module, residue, and block fragment.\n"
         "It does not use the Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -8064,7 +8627,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3i\n", stdout);
+            fputs("orangec (standalone C) slice S3j\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
