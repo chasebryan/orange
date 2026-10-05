@@ -927,9 +927,9 @@ bytes, and evaluation steps.
 
 1. A tuple type $(T_0, \dots, T_{k-1})$ represents the heterogeneous product:
 
-$$
-\prod_{i=0}^{k-1} T_i = T_0 \times T_1 \times \dots \times T_{k-1}
-$$
+   $$
+   \prod_{i=0}^{k-1} T_i = T_0 \times T_1 \times \dots \times T_{k-1}
+   $$
 
 2. **Arity.** A tuple value and a tuple type have two through 16 elements
    (`MAX_TUPLE_ELEMENTS` in `compiler/crates/orange-compiler/src/parser.rs`).
@@ -955,9 +955,9 @@ $$
 
 4. **Projection.** The position is a decimal integer counted from zero.
 
-$$
-\frac{\Gamma \vdash t : (T_0, \dots, T_{k-1}) \quad 0 \le j < k}{\Gamma \vdash t.j : T_j}
-$$
+   $$
+   \frac{\Gamma \vdash t : (T_0, \dots, T_{k-1}) \quad 0 \le j < k}{\Gamma \vdash t.j : T_j}
+   $$
 
 `orangec check` accepts `spec second(p: (Int, Bool)) -> Bool { p.1 }`.
 `p.2` on that type is `ORC0223`, message `` `(Int, Bool)` has no element 2 ``,
@@ -1755,12 +1755,13 @@ outside this listing, as the status table records.
 
 For each block $i = 1, \ldots, N$, with working variables $(a, b, c, d, e, f, g, h)$:
 
-1. $W_t = M_t^{(i)}$ for $0 \le t \le 15$, and for $16 \le t \le 63$
+**Step 1.** $W_t = M_t^{(i)}$ for $0 \le t \le 15$, and for $16 \le t \le 63$
 
 $$W_t = \sigma_1^{\{256\}}(W_{t-2}) + W_{t-7} + \sigma_0^{\{256\}}(W_{t-15}) + W_{t-16} \pmod{2^{32}}.$$
 
-2. Initialize $(a, \ldots, h)$ from $H^{(i-1)}$.
-3. For $t = 0$ to $63$,
+**Step 2.** Initialize $(a, \ldots, h)$ from $H^{(i-1)}$.
+
+**Step 3.** For $t = 0$ to $63$,
 
 $$T_1 = h + \Sigma_1^{\{256\}}(e) + \mathrm{Ch}(e, f, g) + K_t^{\{256\}} + W_t,$$
 
@@ -1769,7 +1770,7 @@ $$T_2 = \Sigma_0^{\{256\}}(a) + \mathrm{Maj}(a, b, c),$$
 and $(a, b, c, d, e, f, g, h) \leftarrow (T_1 + T_2,\ a,\ b,\ c,\ d + T_1,\ e,\ f,\ g)$,
 each sum modulo $2^{32}$.
 
-4. $H_j^{(i)} = a_j + H_j^{(i-1)}$, where $a_0, \ldots, a_7$ are the final
+**Step 4.** $H_j^{(i)} = a_j + H_j^{(i-1)}$, where $a_0, \ldots, a_7$ are the final
 working variables. The digest is $H_0^{(N)} \mathbin{\Vert} \cdots \mathbin{\Vert} H_7^{(N)}$,
 big-endian.
 
@@ -6035,7 +6036,7 @@ Direct vector primitives correspond exactly to hardware vector registers:
 $$\text{Lanes}(\text{Vec}W[T]) = \frac{W}{\text{Bits}(T)}$$
 
 Lane operations are algebraically verified to execute in parallel without cross-lane interference:
-$$(\vec{a} +_{\text{simd}} \vec{b})[i] = (\vec{a}[i] + \vec{b}[i]) \bmod 2^{\text{Bits}(T)}$$
+$$(\vec{a} +_{\text{simd}} \vec{b})\,[i] = (\vec{a}\,[i] + \vec{b}\,[i]) \bmod 2^{\text{Bits}(T)}$$
 
 ### §64. Hardware Cryptographic Intrinsics (AES-NI, ARMv8 Crypto, PCLMULQDQ, PMULL, SHA-NI, Zkne)
 
@@ -6056,7 +6057,7 @@ $$\text{intrinsic\_aes\_enc}(S, K) = \text{AddRoundKey}(\text{MixColumns}(\text{
 
 #### 2. Carryless Multiplication (`carryless_mul`)
 
-Multiplication of two 64-bit polynomials in Galois field $\text{GF}(2)[x]$:
+Multiplication of two 64-bit polynomials in Galois field $\text{GF}(2)\,[x]$:
 $$C(x) = A(x) \cdot B(x) \pmod 0 \quad (\text{producing 128-bit product})$$
 
 - Lowers to `pclmulqdq` on x86-64.
@@ -7149,7 +7150,6 @@ the run controls (§96, `ORC0202`).
   }
   ```
 
-
 - **Remediation:** Disambiguate by assigning distinct semantic function identifiers:
 
   ```orange
@@ -7213,7 +7213,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Model computations using fixed-width words, modular rings, or exact integers:
 
   ```orange
@@ -7240,7 +7239,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Use standard machine word widths ($8, 16, 32, 64$):
 
   ```orange
@@ -7263,7 +7261,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   `integer magnitude exceeds the 16384-significant-bit limit`.
   `1 << 4096` is not this code: a shift of an `Int` is `ORC0215`.
 
-
 - **Remediation:** Keep the magnitude within 16,384 significant bits.
 
 #### `ORC0206` — `NegativeWordLiteral`
@@ -7282,7 +7279,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec mask() -> Word[8] { -1 }
   }
   ```
-
 
 - **Remediation:** Use canonical unsigned hex literals or ring subtraction:
 
@@ -7309,7 +7305,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec m() -> Mod[17] { 17 }
   }
   ```
-
 
 - **Remediation:** Specify canonical residues in $[0, 2^W - 1]$ or $[0, m - 1]$:
 
@@ -7367,7 +7362,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Bind `y` as a function parameter or in a local `let` binding:
 
   ```orange
@@ -7393,7 +7387,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Define `spec helper(...)` or import its declaring module using `use`.
 
 #### `ORC0213` — `ArgumentCountMismatch`
@@ -7412,7 +7405,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec invoke() -> Int { add(1) }
   }
   ```
-
 
 - **Remediation:** Supply all required arguments: `add(1, 2)`.
 
@@ -7435,7 +7427,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Use explicit conversion to the expected type: `42 as Word[32]`.
 
 #### `ORC0215` — `UnsupportedOperator`
@@ -7453,7 +7444,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec int_xor(a: Int, b: Int) -> Int { a ^ b }
   }
   ```
-
 
 - **Remediation:** Convert integer operands to fixed-width words before bitwise operations:
 
@@ -7481,7 +7471,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Specify a literal shift amount $0 \le k < W$:
 
   ```orange
@@ -7508,7 +7497,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Eliminate recursion; formulate algorithms using bounded `for` loops.
 
 #### `ORC0218` — `DuplicateParameter`
@@ -7526,7 +7514,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec f(x: Word[32], x: Word[32]) -> Word[32] { x }
   }
   ```
-
 
 - **Remediation:** Provide unique identifiers for each parameter: `spec f(a: Word[32], b: Word[32])`.
 
@@ -7549,7 +7536,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Assign a distinct variable name: `let x1: Word[32] = 10;`.
 
 #### `ORC0220` — `UntypedConversionOperand`
@@ -7567,7 +7553,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec bad() -> Word[32] { (42) as Word[32] }
   }
   ```
-
 
 - **Remediation:** Bind to a typed local variable or use typed literal syntax:
 
@@ -7601,7 +7586,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Declare array dimensions within the closed interval $[1, 65536]$:
 
   ```orange
@@ -7628,7 +7612,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Provide exactly $n$ elements, or use the fill expression `[val; n]`:
 
@@ -7658,7 +7641,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Use indices within $[0, n-1]$:
 
@@ -7692,7 +7674,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Convert word to a byte array before indexing:
 
   ```orange
@@ -7723,7 +7704,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Ensure bounds satisfy $0 \le \text{low} \le \text{high} \le 65,536$:
 
   ```orange
@@ -7753,7 +7733,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** In S3g+, use data-dependent lookups with typed word indices narrowed to bounds.
 
 #### `ORC0227` — `UntypedComparison`
@@ -7772,7 +7751,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       spec test_cmp() -> Bool { (10 == 20) } // Both operands untyped literals
   }
   ```
-
 
 - **Remediation:** Bind operands to typed variables before comparing:
 
@@ -7803,7 +7781,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Put `missing_module.or` in the directory of the root file. There is no `Orange.toml` search path (§15).
 
 #### `ORC0229` — `ModuleNotUsed`
@@ -7823,7 +7800,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Add `use sha256;` to the module's import header.
 
@@ -7845,7 +7821,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   edition 2026;
   module b { use a; }
   ```
-
 
 - **Remediation:** Factor shared declarations into a leaf module `c.or` imported by both `a` and `b`.
 
@@ -7874,7 +7849,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Specify an admitted modulus $2 \le m \le 2^{521} - 1$.
 
 #### `ORC0233` — `DuplicateTypeName`
@@ -7891,7 +7865,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       type Int = Word[64]; // Cannot redefine builtin type Int
   }
   ```
-
 
 - **Remediation:** Choose an unreserved, unique type alias name.
 
@@ -7912,7 +7885,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Apply `.j` projections only to tuple values: `(x, y).0`.
 
@@ -7942,7 +7914,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Ensure $0 \le a \le b \le n$: `arr[5..10]`.
 
@@ -7977,7 +7948,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   `1..1` is empty. `n in 1..64` is the lengths 1 through 63, so `pad[64]` is
   not an instance of that function.
 
-
 - **Remediation:** Declare a non-empty range with `a < b <= 65536` and at most 256 instances. For `n in 1..64`, the largest instance is `pad[63]`.
 
 #### `ORC0239` — `SizeCount`
@@ -8006,7 +7976,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Ensure both source and target types have identical total bit widths:
 
@@ -8038,7 +8007,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
       }
   }
   ```
-
 
 - **Remediation:** Pass one of the types listed in the parameter set: `square[Mod[17]](x)`.
 
@@ -8149,7 +8117,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   }
   ```
 
-
 - **Remediation:** Target a boolean predicate function `spec prop(...) -> Bool`.
 
 #### `ORC0274` — `WitnessReplayInconsistency`
@@ -8175,7 +8142,6 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
 
   The message is `reference evaluation step limit exceeded`, with the note
   `at most N evaluation steps are permitted`.
-
 
 - **Remediation:** Increase step budget using `--steps <COUNT>`:
 
@@ -8236,7 +8202,7 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 | **Maximum Source File Size** | 16,777,216 bytes (16 MiB) | `ORC1003` |
 | **Maximum Non-Trivia Tokens** | 262,144, excluding EOF | `ORC0006` |
 | **Maximum Reported Errors** | 100 ordinary errors per phase, then one suppression | `ORC0007`, `ORC0105`, `ORC0208` |
-| **Maximum Integer Magnitude** | 16,384 significant bits ($|x| < 2^{16384}$) | `ORC0205` |
+| **Maximum Integer Magnitude** | 16,384 significant bits ($\lvert x \rvert < 2^{16384}$) | `ORC0205` |
 | **Admitted Word Bit Widths ($W$)** | Exactly $\{8, 16, 32, 64\}$ bits | `ORC0204` |
 | **Admitted Modular Moduli ($m$)** | $2 \le m \le 2^{521} - 1$ | `ORC0232` |
 | **Maximum Array Length ($n$)** | 65,536 elements ($2^{16}$) | `ORC0221` |
