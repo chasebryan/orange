@@ -302,7 +302,7 @@ class ContinuationExamples(unittest.TestCase):
             encoding='utf-8')
         exercises = re.findall(r'^\*\*Exercise (N7\.\d+) —', text, re.M)
         answers = re.findall(r'^\*\*(N7\.\d+)\.\*\*', text, re.M)
-        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 10)])
+        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 11)])
         self.assertEqual(sorted(exercises), sorted(answers))
         self.assertNotIn('Chapter 7', text)
         index = INDEX.read_text(encoding='utf-8')

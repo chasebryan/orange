@@ -162,8 +162,8 @@ fn n7_positive_listings_check_and_evaluate_repeatably() {
         assert_eq!(first.stderr, second.stderr);
         checked += 1;
     }
-    assert_eq!(checked, 6, "named_round, widenings, quarter, lanes, quarter_lane, choice");
-    assert_eq!(sources.len(), 8);
+    assert_eq!(checked, 7, "named_round through paired");
+    assert_eq!(sources.len(), 9);
 }
 
 #[test]

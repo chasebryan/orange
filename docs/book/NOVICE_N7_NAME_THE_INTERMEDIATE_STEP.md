@@ -556,7 +556,79 @@ different kind of intermediate step from a binding: the binding names a
 value that is always computed, and the condition names which expression
 is allowed to run.
 
-### N7.8 The finish line
+### N7.8 The four results are one value
+
+An array of `Word[32]` is the right container when every element has that
+one type and the position is the name you mean. The standard's result is
+not “element 0.” It is the four words `a`, `b`, `c`, and `d`. A **tuple**
+is one value with a fixed sequence of elements, each with its own type,
+selected by a position written `.0`, `.1`, `.2`, and so on, counting from
+zero. `(a2, b2, c2, d2)` is that sequence. It is not a group: a group has
+no comma. Two through sixteen elements are a tuple.
+
+**Assumption A5.** A tuple's elements are evaluated from left to right.
+`.k` selects the element at position `k`. The position is a decimal
+integer with no sign. In this quarter round every element is `Word[32]`,
+so a tuple and an array can both hold the result. The tuple still records
+four positions with four types, which is what you will need when a later
+result mixes a word with a `Bool` or an `Int`.
+
+**Listing N7.9 — `paired.or`**
+
+```orange
+edition 2026;
+module paired {
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> (Word[32], Word[32], Word[32], Word[32]) {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  spec vector() -> (Word[32], Word[32], Word[32], Word[32]) {
+    quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+  }
+
+  spec final_b() -> Word[32] {
+    let quad: (Word[32], Word[32], Word[32], Word[32]) = quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567);
+    quad.1
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+paired::vector: (Word[32], Word[32], Word[32], Word[32]) = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+paired::final_b: Word[32] = 0xcb1cf8ce
+```
+
+**Proposition N7.6.** Under the operator assumption of Proposition N7.2,
+`quarter_round(a, b, c, d).0`, `.1`, `.2`, and `.3` are the standard's
+final `a`, `b`, `c`, and `d`.
+
+*Proof.* The eight bindings are the eight updates, as in Proposition N7.4.
+The result is the tuple whose positions, from zero, are `a2`, `b2`, `c2`,
+and `d2`. By assumption A5, `.k` is the element written in position `k`.
+Those four names are the standard's final words. □
+
+`final_b` selects position 1, which is `b2`, which the RFC's test vector
+states as `0xcb1cf8ce`. The selection is not a second calculation of the
+round. It reads one element of the value the round already returned.
+Calling `quarter_round` again in `final_b` does recompute it, because each
+call evaluates its body. The recomputation is the call, not the `.1`.
+
+This is the quarter round as the standard writes it: four inputs, eight
+named updates, four outputs. The standard updates a letter in place.
+Orange names the new value. The tuple is what makes those four new values
+one result.
+
+### N7.9 The finish line
 
 The reading index stated this lesson before it was written. Finishing N7
 means four outcomes, in dependency order. This section is the finish line,
@@ -576,13 +648,13 @@ not a claim that every outcome is already demonstrated above.
    can use that index only where it has already been shown to lie inside
    the array.
 
-Outcomes 1 and 2 are Listings N7.1 through N7.4. Outcome 3 now includes
-arrays, literal indices, and `Bool`: Listing N7.7 returns the quarter
-round as one `Word[32]^4`, and Listing N7.8 chooses a branch with `if`.
-Tuples and outcome 4 are the rest of this same lesson. They are not yet
-claimed. A feature is added here only when this branch's compiler accepts
-it. If one of them is unsupported, the lesson stops at the last supported
-step and says so.
+Outcomes 1 and 2 are Listings N7.1 through N7.4. Outcome 3 is Listing N7.7
+through Listing N7.9: one array, a `Bool` choice, and one tuple whose
+positions are the quarter round's four words. Outcome 4, a bounded loop
+whose index is proved in range before it runs, is the rest of this same
+lesson. It is not yet claimed. A feature is added here only when this
+branch's compiler accepts it. If it is unsupported, the lesson stops here
+and says so.
 
 What finishing does not mean: that you have proved ChaCha20 secure, that
 the compiler is correct, or that the original manuscript has been
@@ -629,6 +701,11 @@ and say which branch runs in each case.
 `true` AND `false` is false. Listing N7.8 writes that as `true && false`.
 Why is that result a `Bool`, not the byte 0? What would go wrong if a
 later reader treated the condition of `if` as a number that can be added?
+
+**Exercise N7.10 — Point at `b`.** In Listing N7.9, which projection
+selects final `b`? Why is that `.1` rather than `.2`? Which element of
+the RFC test vector must it equal, and which part of that equality is the
+tuple's order rather than a new arithmetic step?
 
 ## Worked answers
 
@@ -690,6 +767,13 @@ Adding it to a byte would mix a truth value with a residue. Orange does
 not give that mixture a meaning: the condition stays a `Bool`, and the
 branches stay values of the result type.
 
+**N7.10.** Final `b` is position 1, written `.1`, because the tuple is
+`(a2, b2, c2, d2)` and counting starts at zero. Position 2 is final `c`.
+The RFC states final `b` as `0xcb1cf8ce`. That equality uses the order of
+the tuple and the identification of `b2` with the standard's final `b`.
+The `.1` does not add, XOR, or rotate. A second call of `quarter_round`
+does recompute the body; the projection only reads the element.
+
 ## Sources
 
 **[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
@@ -722,3 +806,9 @@ of memory that later text may overwrite.
 in this repository. `Bool`, comparisons, `&&`, and `if` / `else` are that
 slice. Word comparison is unsigned. Only the selected branch is evaluated.
 Implementation of the slice is not acceptance of the proposal.
+
+**[K1] Orange tuples.** `docs/TUPLES_2026.md` and the S3k fixtures in this
+repository. A tuple lists two through sixteen elements, and `.k` selects
+element `k` counting from zero. The quarter round in Listing N7.9 is the
+shape of the S3k quarter round reduced to the RFC §2.1.1 vector. The tuple
+slice is implemented here; that is not acceptance of the proposal.
