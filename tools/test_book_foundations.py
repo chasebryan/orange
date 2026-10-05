@@ -302,7 +302,7 @@ class ContinuationExamples(unittest.TestCase):
             encoding='utf-8')
         exercises = re.findall(r'^\*\*Exercise (N7\.\d+) —', text, re.M)
         answers = re.findall(r'^\*\*(N7\.\d+)\.\*\*', text, re.M)
-        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 8)])
+        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 10)])
         self.assertEqual(sorted(exercises), sorted(answers))
         self.assertNotIn('Chapter 7', text)
         index = INDEX.read_text(encoding='utf-8')
@@ -340,6 +340,12 @@ class ContinuationExamples(unittest.TestCase):
         self.assertFalse(4 < 4)
         self.assertEqual((0xff + 0x01) & 0xff, 0)
         self.assertEqual(0xff + 0x01, 0x100)
+        self.assertTrue(0x81 > 0x7f)
+        self.assertFalse(0x7f > 0x7f)
+        for value in range(256):
+            self.assertEqual(value > 0x7f, (value & 0x80) != 0)
+        self.assertEqual(abs(-12), 12)
+        self.assertFalse(True and False)
 
     def test_opening_retained_byte_for_byte(self):
         import hashlib

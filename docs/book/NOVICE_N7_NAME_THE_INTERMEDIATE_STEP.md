@@ -477,7 +477,86 @@ The printed vector is again one input. It matches §2.1.1. It does not
 discharge the operator assumption, and the array type does not by itself
 make the construction a cipher.
 
-### N7.7 The finish line
+### N7.7 A condition chooses one value
+
+An array holds several values at once. A condition chooses one of them.
+`Bool` is the type of the two truth values `true` and `false`. A
+comparison such as `x > 0x7f` or `x < 0` denotes a `Bool`. The form
+
+```text
+if condition { chosen } else { other }
+```
+
+denotes `chosen` when the condition is `true` and `other` when it is
+`false`. Both branches are written with the same result type. The
+condition is not a number, and a number is not a condition.
+
+**Assumption A4.** Words compare as unsigned integers in the range
+0 through 2ⁿ − 1. `Int` values compare as ordinary integers, so a
+negative integer is less than zero. `&&` combines two `Bool` values by
+the AND table of Chapter 3: the result is `true` only when both are
+`true`. Only the branch that the condition selects is evaluated.
+
+**Listing N7.8 — `choice.or`**
+
+```orange
+edition 2026;
+module choice {
+  spec both() -> Bool { true && false }
+
+  spec high(x: Word[8]) -> Bool { x > 0x7f }
+
+  spec sample_high() -> Bool { high(0x81) }
+
+  spec sample_low() -> Bool { high(0x7f) }
+
+  spec magnitude(x: Int) -> Int { if x < 0 { 0 - x } else { x } }
+
+  spec sample_negative() -> Int { magnitude(0 - 12) }
+
+  spec sample_positive() -> Int { magnitude(12) }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+choice::both: Bool = false
+choice::sample_high: Bool = true
+choice::sample_low: Bool = false
+choice::sample_negative: Int = 12
+choice::sample_positive: Int = 12
+```
+
+**Proposition N7.5.** For every byte `x`, `x > 0x7f` is `true` exactly
+when the most significant bit of `x` is 1.
+
+*Proof.* A byte is an integer from 0 through 255. `0x7f` is 127, so
+`x > 0x7f` means `x ≥ 128`. Every such integer is `128 + r` with
+`0 ≤ r ≤ 127`, and 128 is the place value of the leftmost bit. The seven
+bits of `r` occupy the remaining positions, so the leftmost bit is 1.
+Every integer from 0 through 127 is less than 128, so that bit is 0.
+Assumption A4 says the comparison uses this unsigned reading. □
+
+Thus `0x81`, which is 129, is above the threshold, and `0x7f` is not.
+The two sample specs are those two cases. They do not replace the
+proposition: the proposition is all 256 bytes, and the samples are two
+of them.
+
+`magnitude` is the ordinary absolute value on the integers used here.
+If `x` is negative, the chosen branch is `0 - x`, which is the positive
+integer of the same distance from zero. If `x` is not negative, the
+chosen branch is `x` itself. For the input `0 - 12`, which is −12, the
+condition `x < 0` is true, the other branch is not evaluated, and the
+result is 12. For 12 the condition is false and the result is 12.
+
+The quarter round in §2.1 does not branch. The condition is here because
+later rounds and later algorithms do choose, and because a choice is a
+different kind of intermediate step from a binding: the binding names a
+value that is always computed, and the condition names which expression
+is allowed to run.
+
+### N7.8 The finish line
 
 The reading index stated this lesson before it was written. Finishing N7
 means four outcomes, in dependency order. This section is the finish line,
@@ -498,11 +577,12 @@ not a claim that every outcome is already demonstrated above.
    the array.
 
 Outcomes 1 and 2 are Listings N7.1 through N7.4. Outcome 3 now includes
-arrays and literal indices: Listing N7.7 returns the quarter round as one
-`Word[32]^4`. Conditions, tuples, and outcome 4 are the rest of this same
-lesson. They are not yet claimed. A feature is added here only when this
-branch's compiler accepts it. If one of them is unsupported, the lesson
-stops at the last supported step and says so.
+arrays, literal indices, and `Bool`: Listing N7.7 returns the quarter
+round as one `Word[32]^4`, and Listing N7.8 chooses a branch with `if`.
+Tuples and outcome 4 are the rest of this same lesson. They are not yet
+claimed. A feature is added here only when this branch's compiler accepts
+it. If one of them is unsupported, the lesson stops at the last supported
+step and says so.
 
 What finishing does not mean: that you have proved ChaCha20 secure, that
 the compiler is correct, or that the original manuscript has been
@@ -539,6 +619,16 @@ reader who counts the elements as 1, 2, 3, 4 has named the wrong integer.
 in more than one function. Listing N7.7 binds `a1` once. Under Proposition
 N7.4, which array position is final `a`, and which is final `d`? Why does
 agreement of `vector` with the RFC line not by itself prove the proposition?
+
+**Exercise N7.8 — Read the high bit.** For the bytes `0x81` and `0x7f`,
+say whether `high` in Listing N7.8 returns `true`, and connect each answer
+to the most significant bit. Then compute `magnitude` at −12 and at 12,
+and say which branch runs in each case.
+
+**Exercise N7.9 — AND is not addition.** Chapter 3's AND table says
+`true` AND `false` is false. Listing N7.8 writes that as `true && false`.
+Why is that result a `Bool`, not the byte 0? What would go wrong if a
+later reader treated the condition of `if` as a number that can be added?
 
 ## Worked answers
 
@@ -587,6 +677,19 @@ Proposition N7.4 claims every input, and its proof uses the operator
 assumption together with the order of the bindings. One matching line does
 not discharge that assumption.
 
+**N7.8.** `0x81` is 129, which is at least 128, so the most significant
+bit is 1 and `high` is `true`. `0x7f` is 127, so that bit is 0 and `high`
+is `false`. At −12 the condition `x < 0` is true, the branch `0 - x`
+runs, and the result is 12. At 12 the condition is false, the branch `x`
+runs, and the result is 12. The other branch is not evaluated.
+
+**N7.9.** `true && false` has type `Bool` and value `false`. It is the
+AND of two truth values, not an arithmetic sum, so it is not the byte 0
+and not the integer 0 sitting in a word. An `if` condition is that `Bool`.
+Adding it to a byte would mix a truth value with a residue. Orange does
+not give that mixture a meaning: the condition stays a `Bool`, and the
+branches stay values of the result type.
+
 ## Sources
 
 **[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
@@ -614,3 +717,8 @@ repository. A length is a decimal integer on the element type, and a
 literal index is an integer token in brackets. The diagnostic quoted for
 Listing N7.6 is `ORC0223`. An array in this lesson is a value, not a region
 of memory that later text may overwrite.
+
+**[F1] Orange conditions.** `docs/CONDITIONS_2026.md` and the S3f fixtures
+in this repository. `Bool`, comparisons, `&&`, and `if` / `else` are that
+slice. Word comparison is unsigned. Only the selected branch is evaluated.
+Implementation of the slice is not acceptance of the proposal.

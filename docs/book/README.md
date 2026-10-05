@@ -70,8 +70,9 @@ understand each operation rather than memorize its notation.
   bindings, explicit conversions, arrays with literal indices, and the
   ChaCha20 quarter round written with the intermediate names of RFC 8439
   §2.1. Rejected forms include `x + y as Word[32]` and a literal index
-  past the array. Seven exercises with worked answers. The lesson's
-  finish line is the four outcomes in that section. N7 is not the
+  past the array. The lesson also chooses with `Bool` and `if`. Nine
+  exercises with worked answers. The lesson's finish line is the four
+  outcomes in that section. N7 is not the
   manuscript chapter titled No Disposable Prototype.
 
 The opening was approved by the owner before this continuation. Later
@@ -79,7 +80,7 @@ corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
 corrected source. Chapters 4–6 and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
-worked answers. N7 adds seven further exercises in its own file.
+worked answers. N7 adds nine further exercises in its own file.
 
 ### Remaining teaching sequence
 
