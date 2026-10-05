@@ -45,7 +45,11 @@ may begin with `let` bindings. A step's bindings are evaluated afresh at
 every step, a branch's only when that branch is chosen, and each name is in
 scope only within its step or branch. A tuple type `(T, U)` holds two through
 16 scalars or arrays. `(a, b)` builds one, `.k` selects an element, and a
-`let` or `with` pattern names each element. `for`, `in`, `with`,
+`let` or `with` pattern names each element. A byte string `"..."` or `hex"..."` is
+the array `Word[8]^n` of its bytes, `++` joins two arrays, and a slice
+`x[a..b]` or slice update `x with [a..b] = v` reads or replaces a run whose
+bounds are integer literals and loop indices proved in range before the
+program runs. `for`, `in`, `with`,
 `if`, and `else` are names outside those positions. `true` and `false` are
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.
@@ -71,9 +75,9 @@ An index follows a name, a call, or an accumulator. Operators and conversions
 apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
-Later slices are outside this frontend. Tuples, byte
-strings, size parameters, byte order, type parameters, tests, lengths above
-256, and computed shift amounts are rejected rather than given a new meaning.
+Later slices are outside this frontend. Size parameters, byte order, type
+parameters, tests, lengths above 256, and computed shift amounts are rejected
+rather than given a new meaning.
 The Rust `orangec` remains the frontend for those slices.
 
 ## What it does not claim
