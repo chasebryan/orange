@@ -1580,65 +1580,346 @@ constructs:
 
 ### §49. Complete Reference Specification: FIPS 180-4 SHA-256
 
+SHA-256 as FIPS 180-4 (NIST, August 2015, DOI 10.6028/NIST.FIPS.180-4) writes
+it: the functions of section 4.1.2, the constants of section 4.2.2, the padding
+of section 5.1.1, the parsing of section 5.2.1, the initial hash value of
+section 5.3.3, and the hash computation of section 6.2.2. SHA-224, SHA-384,
+SHA-512, and SHA-512/t are that computation on other widths and initial values;
+this section does not restate them. The listing below is accepted by `orangec
+test` on this edition: six tests, covering the two NIST examples, the empty
+message, round 0 of "abc", schedule word $W_{17}$ of "abc", and $H^{(1)}$ of
+the two-block example.
+
+#### 1. Parameters (FIPS 180-4, sections 1 and 6.2)
+
+| Quantity | SHA-256 |
+| :--- | :--- |
+| Word size | 32 bits, `Word[32]` |
+| Block | 512 bits, sixteen words, `Word[8]^64` |
+| Digest | 256 bits, eight words, `Word[8]^32` |
+| Schedule length | 64 words |
+| Length field | 64 bits, big-endian, and $l < 2^{64}$ |
+| Round count | 64 |
+
+#### 2. Logical Functions (section 4.1.2)
+
+For $x, y, z \in \mathbb{Z}/2^{32}\mathbb{Z}$:
+
+$$\mathrm{Ch}(x, y, z) = (x \land y) \oplus (\lnot x \land z)$$
+
+$$\mathrm{Maj}(x, y, z) = (x \land y) \oplus (x \land z) \oplus (y \land z)$$
+
+$$\Sigma_0^{\{256\}}(x) = \mathrm{ROTR}^{2}(x) \oplus \mathrm{ROTR}^{13}(x) \oplus \mathrm{ROTR}^{22}(x)$$
+
+$$\Sigma_1^{\{256\}}(x) = \mathrm{ROTR}^{6}(x) \oplus \mathrm{ROTR}^{11}(x) \oplus \mathrm{ROTR}^{25}(x)$$
+
+$$\sigma_0^{\{256\}}(x) = \mathrm{ROTR}^{7}(x) \oplus \mathrm{ROTR}^{18}(x) \oplus \mathrm{SHR}^{3}(x)$$
+
+$$\sigma_1^{\{256\}}(x) = \mathrm{ROTR}^{17}(x) \oplus \mathrm{ROTR}^{19}(x) \oplus \mathrm{SHR}^{10}(x)$$
+
+`>>>` is $\mathrm{ROTR}$ and `>>` is $\mathrm{SHR}$ (§48). Addition in the
+schedule and in the round is addition in `Word[32]`, the standard's
+$\bmod 2^{32}$.
+
+#### 3. Constants and the Initial Hash Value (sections 4.2.2 and 5.3.3)
+
+$K_0^{\{256\}}$ through $K_{63}^{\{256\}}$ are the first 32 bits of the
+fractional parts of the cube roots of the first sixty-four primes, in the
+order section 4.2.2 prints them. `round_constants` is that sequence.
+$H^{(0)}$ is the first 32 bits of the fractional parts of the square roots of
+the first eight primes. `initial_hash` is that sequence:
+
+| $i$ | $H_i^{(0)}$ |
+| :--- | :--- |
+| 0 | `0x6a09e667` |
+| 1 | `0xbb67ae85` |
+| 2 | `0x3c6ef372` |
+| 3 | `0xa54ff53a` |
+| 4 | `0x510e527f` |
+| 5 | `0x9b05688c` |
+| 6 | `0x1f83d9ab` |
+| 7 | `0x5be0cd19` |
+
+#### 4. Padding and Parsing (sections 5.1.1 and 5.2.1)
+
+For a message of $l$ bits, $l < 2^{64}$, append a single 1 bit, then the least
+$k \ge 0$ zero bits such that
+
+$$l + 1 + k \equiv 448 \pmod{512},$$
+
+then the 64-bit big-endian encoding of $l$. The padded length is a multiple of
+512. Parsing reads each block as sixteen big-endian 32-bit words, $M_0^{(i)}$
+the leftmost.
+
+The listing takes whole bytes, $l = 8 \cdot \mathrm{len}$. The bit 1 is then
+the byte `0x80`. For every $\mathrm{len}$ from 0 through 119, the FIPS block
+count equals $((\mathrm{len} + 8) / 64) + 1$ under truncating integer division,
+and `pad` returns that many blocks. `len in 1..120` is the half-open range of
+§30, so the instances are lengths 1 through 119. Length 0 is `sha256_empty`:
+an array type `Word[8]^n` requires $n \ge 1$, so there is no `Word[8]^0` to
+pass to `pad`. The empty block is the byte `0x80`, 55 zero bytes, and a 64-bit
+length of zero.
+
+A message whose length is not a multiple of 8 bits has no listing here.
+Messages of 120 bytes and longer are the same `pad` and `absorb` on a larger
+finite range. One `spec` does not cover every $l < 2^{64}$: a size parameter
+has at most 256 instances (§30).
+
+#### 5. The Hash Computation (section 6.2.2)
+
+For each block $i = 1, \ldots, N$, with working variables $(a, b, c, d, e, f, g, h)$:
+
+1. $W_t = M_t^{(i)}$ for $0 \le t \le 15$, and for $16 \le t \le 63$
+
+$$W_t = \sigma_1^{\{256\}}(W_{t-2}) + W_{t-7} + \sigma_0^{\{256\}}(W_{t-15}) + W_{t-16} \pmod{2^{32}}.$$
+
+2. Initialize $(a, \ldots, h)$ from $H^{(i-1)}$.
+3. For $t = 0$ to $63$,
+
+$$T_1 = h + \Sigma_1^{\{256\}}(e) + \mathrm{Ch}(e, f, g) + K_t^{\{256\}} + W_t,$$
+
+$$T_2 = \Sigma_0^{\{256\}}(a) + \mathrm{Maj}(a, b, c),$$
+
+and $(a, b, c, d, e, f, g, h) \leftarrow (T_1 + T_2,\ a,\ b,\ c,\ d + T_1,\ e,\ f,\ g)$,
+each sum modulo $2^{32}$.
+
+4. $H_j^{(i)} = a_j + H_j^{(i-1)}$, where $a_0, \ldots, a_7$ are the final
+working variables. The digest is $H_0^{(N)} \mathbin{\Vert} \cdots \mathbin{\Vert} H_7^{(N)}$,
+big-endian.
+
+`schedule` is step 1, in that addend order. `round` is step 3. `compress` is
+steps 2 through 4. `absorb` is the loop "for $i = 1$ to $N$" and the final
+big-endian bytes.
+
+#### 6. Worked Values for the NIST Examples
+
+The one-block example is the message `abc` ($l = 24$). Its padded block begins
+`61 62 63 80` and ends with the length word `0x00000018`. So $W_0 = \mathtt{0x61626380}$
+and $W_{15} = \mathtt{0x00000018}$. Round $t = 0$ starts from $H^{(0)}$ with
+$K_0 = \mathtt{0x428a2f98}$.
+
+| Name | Value |
+| :--- | :--- |
+| $\Sigma_1(e)$ | `0x3587272b` |
+| $\mathrm{Ch}(e, f, g)$ | `0x1f85c98c` |
+| $T_1$ | `0x54da50e8` |
+| $\Sigma_0(a)$ | `0xce20b47e` |
+| $\mathrm{Maj}(a, b, c)$ | `0x3a6fe667` |
+| $T_2$ | `0x08909ae5` |
+| $a$ after the round | `0x5d6aebcd` |
+| $e$ after the round | `0xfa2a4622` |
+
+$b, c, d$ after the round are the old $a, b, c$, and $f, g, h$ are the old
+$e, f, g$. The test `abc round 0` checks $T_1$, $T_2$, and that 8-tuple.
+
+$W_{16} = W_0$ on this message, because $W_1$ through $W_{14}$ are zero.
+$W_{17} = \sigma_1(W_{15}) = \sigma_1(\mathtt{0x00000018})$. The three rotations
+and the shift are $\mathrm{ROTR}^{17} = \mathtt{0x000c0000}$,
+$\mathrm{ROTR}^{19} = \mathtt{0x00030000}$, $\mathrm{SHR}^{10} = 0$, and their
+exclusive-or is $\mathtt{0x000f0000}$. The test `abc schedule` checks that word.
+
+The 56-byte example is
+
+`abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq`
+
+($l = 448$). The bit 1 falls in the first block and the length falls in the
+second, whose last word is `0x000001c0`. After the first block,
+
+$$H^{(1)} = \mathtt{85e655d6\ 417a1795\ 3363376a\ 624cde5c\ 76e09589\ cac5f811\ cc4b32c1\ f20e533a}.$$
+
+Its schedule word $W_{16}$ is $\mathtt{0xeb8012ad}$, the sum modulo $2^{32}$ of
+$\sigma_1(W_{14}) = \mathtt{0x00205000}$, $W_9 = \mathtt{0x6a6b6c6d}$,
+$\sigma_0(W_1) = \mathtt{0x1f91f2dc}$, and $W_0 = \mathtt{0x61626364}$.
+
+#### 7. Known Answers
+
+| Message | Digest |
+| :--- | :--- |
+| empty, $l = 0$ | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `abc` | `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad` |
+| the 56-byte message | `248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1` |
+
+These are the digests of the NIST examples that accompany FIPS 180-4 (the
+one-block and two-block messages) and of the $l = 0$ padding of section 5.1.1.
+The listing checks them as `Word[8]^32`.
+
+#### 8. Compiler-Checked Transcription
+
 ```orange
+// FIPS 180-4 SHA-256, sections 4.1.2, 4.2.2, 5.1.1, 5.2.1, 5.3.3, and 6.2.2,
+// as the standard writes them. Messages of 1 through 119 bytes are one size
+// parameter. The empty message is a separate block: a Word[8] array cannot
+// have length 0. A message whose bit length is not a multiple of 8 is not
+// represented.
 edition 2026;
-
 module sha256_spec {
-    // 1. Bitwise Logical Functions (FIPS 180-4 Section 4.1.2)
-    spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
-        (x & y) ^ (~x & z)
-    }
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
 
-    spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
-        (x & y) ^ (x & z) ^ (y & z)
-    }
+  // Section 4.2.2: the first 32 bits of the fractional parts of the cube
+  // roots of the first 64 primes, in the order the standard prints them.
+  spec round_constants() -> Word[32]^64 {
+    [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+  }
 
-    spec big_sigma0(x: Word[32]) -> Word[32] {
-        (x >>> 2) ^ (x >>> 13) ^ (x >>> 22)
-    }
+  // Section 5.3.3.
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
 
-    spec big_sigma1(x: Word[32]) -> Word[32] {
-        (x >>> 6) ^ (x >>> 11) ^ (x >>> 25)
+  // Section 6.2.2, step 1. The sum is the standard's order:
+  // sigma1(W[t-2]) + W[t-7] + sigma0(W[t-15]) + W[t-16].
+  spec schedule(block: Word[8]^64) -> Word[32]^64 {
+    let head: Word[32]^16 = block as big Word[32]^16;
+    for t in 16..64 with w: Word[32]^64 = head ++ [0; 48] {
+      w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
     }
+  }
 
-    spec small_sigma0(x: Word[32]) -> Word[32] {
-        (x >>> 7) ^ (x >>> 18) ^ (x >> 3)
-    }
+  // Section 6.2.2, step 3, with the standard's names a through h, T1, and T2.
+  spec round(
+    a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+    e: Word[32], f: Word[32], g: Word[32], h: Word[32],
+    k: Word[32], w: Word[32],
+  ) -> (Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32]) {
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k + w;
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    (t1 + t2, a, b, c, d + t1, e, f, g)
+  }
 
-    spec small_sigma1(x: Word[32]) -> Word[32] {
-        (x >>> 17) ^ (x >>> 19) ^ (x >> 10)
-    }
+  // Section 6.2.2, steps 2 through 4.
+  spec compress(hash: Word[32]^8, block: Word[8]^64) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(block);
+    let k: Word[32]^64 = round_constants();
+    let (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+         e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+      for t in 0..64 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+                           e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+        (hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]) {
+        round(a, b, c, d, e, f, g, h, k[t], w[t])
+      };
+    [
+      a + hash[0], b + hash[1], c + hash[2], d + hash[3],
+      e + hash[4], f + hash[5], g + hash[6], h + hash[7],
+    ]
+  }
 
-    // 2. Initial Hash Values H(0) (FIPS 180-4 Section 5.3.3)
-    spec initial_state() -> Word[32]^8 {
-        [
-            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-        ]
-    }
+  spec absorb[blocks in 1..4](p: Word[8]^(64 * blocks)) -> Word[8]^32 {
+    let hash: Word[32]^8 = for b in 0..blocks with h: Word[32]^8 = initial_hash() {
+      compress(h, p[64 * b..64 * b + 64])
+    };
+    hash as big Word[8]^32
+  }
 
-    // 3. Message Schedule Expansion (FIPS 180-4 Section 6.2.2)
-    spec expand_message(block: Word[8]^64) -> Word[32]^64 {
-        let words: Word[32]^16 = block as big Word[32]^16;
-        for i in 16..64 with w = words ++ [0; 48] {
-            let s0 = small_sigma0(w[i - 15]);
-            let s1 = small_sigma1(w[i - 2]);
-            let next_w = w[i - 16] + s0 + w[i - 7] + s1;
-            w with [i] = next_w
-        }
-    }
+  // Section 5.1.1 for a whole-byte message of `len` bytes, 1 through 119.
+  // The block count ((len + 8) / 64) + 1 is the smallest number of 512-bit
+  // blocks whose last 64 bits can hold the length after the bit 1.
+  spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+    m ++ ([0; ((64 * (((len + 8) / 64) + 1)) - len - 8)] with [0] = 0x80)
+      ++ ((8 * len) as big Word[8]^8)
+  }
 
-    // 4. SHA-256 Block Compression Round Step
-    spec compress_step(
-        state: Word[32]^8,
-        w_i: Word[32],
-        k_i: Word[32]
-    ) -> Word[32]^8 {
-        let (a, b, c, d, e, f, g, h) = state;
-        let t1 = h + big_sigma1(e) + ch(e, f, g) + k_i + w_i;
-        let t2 = big_sigma0(a) + maj(a, b, c);
-        [t1 + t2, a, b, c, d + t1, e, f, g]
-    }
+  spec sha256[len in 1..120](m: Word[8]^len) -> Word[8]^32 { absorb(pad(m)) }
+
+  // Section 5.1.1 for l = 0. The block is the byte 0x80, 55 zero bytes, and
+  // a 64-bit length of zero. There is no Word[8]^0 to pass to `pad`.
+  spec length_bytes(bits: Word[64]) -> Word[8]^8 {
+    [
+      (bits >> 56) as Word[8], (bits >> 48) as Word[8], (bits >> 40) as Word[8], (bits >> 32) as Word[8],
+      (bits >> 24) as Word[8], (bits >> 16) as Word[8], (bits >> 8) as Word[8], bits as Word[8],
+    ]
+  }
+
+  spec sha256_empty() -> Word[8]^32 {
+    let head: Word[8]^56 = [0; 56];
+    let block: Word[8]^64 = (head with [0] = 0x80) ++ length_bytes(0);
+    compress(initial_hash(), block) as big Word[8]^32
+  }
+
+  spec two_block_message() -> Word[8]^56 {
+    "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+  }
+
+  // Round t = 0 of the one-block example "abc": H(0), K0, and W0 = 0x61626380.
+  spec abc_round0() -> (Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32]) {
+    let h: Word[32]^8 = initial_hash();
+    let w0: Word[32] = schedule(pad("abc"))[0];
+    round(h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], round_constants()[0], w0)
+  }
+
+  spec abc_t1() -> Word[32] {
+    let h: Word[32]^8 = initial_hash();
+    h[7] + big_sigma1(h[4]) + ch(h[4], h[5], h[6]) + round_constants()[0] + schedule(pad("abc"))[0]
+  }
+
+  spec abc_t2() -> Word[32] {
+    let h: Word[32]^8 = initial_hash();
+    big_sigma0(h[0]) + maj(h[0], h[1], h[2])
+  }
+
+  // W17 of "abc" is sigma1 of the length word 0x00000018. The other three
+  // summands are zero.
+  spec abc_w17() -> Word[32] { schedule(pad("abc"))[17] }
+
+  // The first block of the 56-byte example, after its 64 rounds, before the
+  // second block is absorbed. Section 6.2.2's H(1).
+  spec two_block_h1() -> Word[32]^8 {
+    let padded: Word[8]^128 = pad(two_block_message());
+    compress(initial_hash(), padded[0..64])
+  }
+
+  spec two_block_w16() -> Word[32] {
+    let padded: Word[8]^128 = pad(two_block_message());
+    schedule(padded[0..64])[16]
+  }
+
+  test "NIST example: SHA-256 of abc" {
+    sha256("abc") == hex"ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad"
+  }
+
+  test "NIST example: SHA-256 of the 56-byte message" {
+    sha256(two_block_message())
+      == hex"248d6a61 d20638b8 e5c02693 0c3e6039 a33ce459 64ff2167 f6ecedd4 19db06c1"
+  }
+
+  test "section 5.1.1: SHA-256 of the empty message" {
+    sha256_empty() == hex"e3b0c442 98fc1c14 9afbf4c8 996fb924 27ae41e4 649b934c a495991b 7852b855"
+  }
+
+  test "abc round 0: T1, T2, and the working variables" {
+    let h: Word[32]^8 = initial_hash();
+    (abc_t1() == 0x54da50e8) && (abc_t2() == 0x08909ae5)
+      && (abc_round0() == (
+        0x5d6aebcd, h[0], h[1], h[2], 0xfa2a4622, h[4], h[5], h[6]
+      ))
+  }
+
+  test "abc schedule: W17 is sigma1 of the length word" {
+    (abc_w17() == 0x000f0000) && (abc_w17() == small_sigma1(0x00000018))
+  }
+
+  test "56-byte example: H1 and W16 of the first block" {
+    (two_block_h1() == [
+      0x85e655d6, 0x417a1795, 0x3363376a, 0x624cde5c,
+      0x76e09589, 0xcac5f811, 0xcc4b32c1, 0xf20e533a,
+    ]) && (two_block_w16() == 0xeb8012ad)
+  }
 }
 ```
 
