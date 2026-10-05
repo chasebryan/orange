@@ -305,7 +305,17 @@ class ContinuationExamples(unittest.TestCase):
         answers = re.findall(r'^\*\*(N7\.\d+)\.\*\*', text, re.M)
         self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 13)])
         self.assertEqual(sorted(exercises), sorted(answers))
-        self.assertNotIn('Chapter 7', text)
+        for number in range(7, 18):
+            self.assertNotIn(f'Chapter {number}', text)
+        self.assertNotIn('not an exponent', text)
+        self.assertIn('not the XOR operator from Chapter 5', text)
+        self.assertIn('111 + 19 = 130', text)
+        self.assertIn('5461067566 = 0x14581472e', text)
+        self.assertIn('3928658676 = 0xea2a92f4', text)
+        self.assertIn(
+            'an `Int` index may use only integer literals, loop indices, '
+            'and words converted with `as Int`',
+            text)
         index = INDEX.read_text(encoding='utf-8')
         self.assertIn('**N7.**', index)
         self.assertIn(
@@ -332,6 +342,18 @@ class ContinuationExamples(unittest.TestCase):
         b2 = rotl(b1 ^ c2, 7)
         self.assertEqual((a2, b2, c2, d2),
                          (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb))
+        self.assertEqual(c1, 0xecff8273)
+        self.assertEqual(b1, 0xd8177edf)
+        self.assertEqual(0x6f + 0x13, 0x82)
+        self.assertEqual(a1, 303240213)
+        self.assertEqual(b1, 3625418463)
+        self.assertEqual(a1 + b1, 3928658676)
+        self.assertEqual(a2, 0xea2a92f4)
+        self.assertEqual(d2, 0x5881c4bb)
+        self.assertEqual(c1 + d2, 0x14581472e)
+        self.assertEqual(3976168051 + 1484899515, c1 + d2)
+        self.assertEqual(c2, (c1 + d2) % (2 ** 32))
+        self.assertLess(a1 + b1, 2 ** 32)
         self.assertEqual(a1, 0x12131415)
         self.assertLess(a + b, 2 ** 32)
         words = [a, b, c, d]

@@ -69,11 +69,13 @@ understand each operation rather than memorize its notation.
 - **N7.** [Name the Intermediate Step](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step):
   bindings, explicit conversions, arrays with literal indices, and the
   ChaCha20 quarter round written with the intermediate names of RFC 8439
-  §2.1. Rejected forms include `x + y as Word[32]` and a literal index
-  past the array. The lesson also chooses with `Bool` and `if`, returns
-  the quarter round as one tuple, and repeats with a bounded `for` whose
-  index is proved in range before it runs. Twelve exercises with worked
-  answers. The lesson's finish line is the four outcomes in that section.
+  §2.1. Rejected forms include `x + y as Word[32]`, a literal index past
+  the array, a loop index whose proved range leaves the array, and an
+  `Int` parameter used as an index. The lesson also chooses with `Bool`
+  and `if`, returns the quarter round as one tuple, and repeats with a
+  bounded `for` whose index is proved in range before it runs. Twelve
+  exercises with worked answers. The lesson's finish line is the four
+  outcomes in that section.
   N7 is not the manuscript chapter titled No Disposable Prototype.
 - **N9.** [Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean):
   sets, membership, subsets, relations, functions and inverses, quantifiers,
