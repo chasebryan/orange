@@ -1,6 +1,7 @@
-//! Executable evidence for OEP-0022 P2 representations and partial P4 products.
+//! Executable evidence for OEP-0022 P2 representations and partial P4 field
+//! operations: products, biased subtraction, dedicated squaring, and a24.
 //!
-//! Independent binary multiplication and long division check reconstruction,
+//! Independent binary arithmetic and long division check reconstruction,
 //! residues, and canonical digits through the real CLI. These examples do not
 //! establish universally checked representation contracts or native properties.
 
@@ -324,6 +325,72 @@ fn parse_product_trace(value: &str) -> ProductTrace {
 // This direct nine-coefficient schoolbook sum independently checks the cyclic
 // indexing in product_accumulators. The binary oracle separately checks the
 // complete product, reduction and output representation.
+fn two_p() -> [u64; 5] {
+    [
+        2 * (RADIX - 19),
+        2 * (RADIX - 1),
+        2 * (RADIX - 1),
+        2 * (RADIX - 1),
+        2 * (RADIX - 1),
+    ]
+}
+
+fn biased_difference(x: &[u64; 5], y: &[u64; 5]) -> [u64; 5] {
+    let bias = two_p();
+    std::array::from_fn(|axis| {
+        x[axis]
+            .checked_add(bias[axis])
+            .unwrap()
+            .checked_sub(y[axis])
+            .unwrap()
+    })
+}
+
+fn carry_difference(limbs: &[u64; 5]) -> [u64; 5] {
+    // Independent of the Orange sequential carry_pass: reconstruct storage
+    // bits, extract base-B windows, and fold each top carry by 19.
+    let (first, first_carry) = split_binary(&reconstruct(limbs));
+    let mut next = reconstruct(&first);
+    add_low(&mut next, first_carry.checked_mul(19).unwrap());
+    let (second, second_carry) = split_binary(&next);
+    let mut result = second;
+    let low = u128::from(result[0])
+        .checked_add(second_carry.checked_mul(19).unwrap())
+        .unwrap();
+    assert!(low < u128::from(RADIX));
+    result[0] = low as u64;
+    result
+}
+
+fn schoolbook_square(x: &[u64; 5]) -> [u128; 5] {
+    let mut coefficients = [0u128; 5];
+    for k in 0..5 {
+        for i in 0..5 {
+            let partner = (k + 5 - i) % 5;
+            let weight = if i > k { 19u128 } else { 1 };
+            let xi = u128::from(x[i]);
+            if i < partner {
+                coefficients[k] = coefficients[k]
+                    .checked_add(
+                        weight
+                            .checked_mul(2)
+                            .unwrap()
+                            .checked_mul(xi)
+                            .unwrap()
+                            .checked_mul(u128::from(x[partner]))
+                            .unwrap(),
+                    )
+                    .unwrap();
+            } else if i == partner {
+                coefficients[k] = coefficients[k]
+                    .checked_add(weight.checked_mul(xi).unwrap().checked_mul(xi).unwrap())
+                    .unwrap();
+            }
+        }
+    }
+    coefficients
+}
+
 fn schoolbook_coefficients(x: &[u64; 5], y: &[u64; 5]) -> [u128; 5] {
     assert!(x.iter().chain(y).all(|value| *value < RADIX));
     let mut convolution = [0u128; 9];
@@ -416,22 +483,22 @@ fn field25519_named_boundaries_and_examples_are_repeatable() {
             pairs += 1;
         }
     }
-    assert_eq!(pairs, 12);
+    assert_eq!(pairs, 21);
     assert!(
         String::from_utf8(evaluated.stderr)
             .unwrap()
-            .ends_with("total: 19999 of 1048576 steps\n")
+            .ends_with("total: 40197 of 1048576 steps\n")
     );
     let tested = successful(&source, &["test", "--stats"]);
     assert!(
         String::from_utf8(tested.stdout)
             .unwrap()
-            .ends_with("10 tests: 10 passed, 0 failed\n")
+            .ends_with("15 tests: 15 passed, 0 failed\n")
     );
     assert!(
         String::from_utf8(tested.stderr)
             .unwrap()
-            .ends_with("total: 15751 of 1048576 steps\n")
+            .ends_with("total: 28745 of 1048576 steps\n")
     );
 }
 
@@ -686,6 +753,199 @@ fn field25519_accumulator_and_input_contract_boundaries_are_explicit() {
     for (name, expected) in expected {
         assert_eq!(values[&name], expected, "{name}");
     }
+}
+
+fn tight_cases() -> Vec<[u64; 5]> {
+    cases()
+        .into_iter()
+        .filter(|limbs| limbs.iter().all(|limb| *limb < RADIX))
+        .collect()
+}
+
+#[test]
+fn field25519_biased_subtraction_matches_independent_difference_and_residue() {
+    let tight = tight_cases();
+    let pairs: Vec<_> = tight
+        .iter()
+        .copied()
+        .zip(tight.iter().rev().copied())
+        .collect();
+    let mut extra = String::new();
+    for (index, (x, y)) in pairs.iter().enumerate() {
+        extra.push_str(&format!(
+            "spec biased_{index}() -> Limbs {{ sub_biased({}, {}) }}\n\
+             spec tight_difference_{index}() -> Limbs {{ subtract_tight({}, {}) }}\n\
+             spec canonical_difference_{index}() -> Limbs {{ subtract_canonical({}, {}) }}\n",
+            literal(x),
+            literal(y),
+            literal(x),
+            literal(y),
+            literal(x),
+            literal(y),
+        ));
+    }
+    extra.push_str(&format!(
+        "spec wide_bound() -> (Bool, Bool) {{\n\
+         let wide: Limbs = sub_biased({}, {});\n\
+         (bounded_difference(wide), loose(wide))\n}}\n",
+        literal(&[RADIX - 1; 5]),
+        literal(&[0; 5]),
+    ));
+    let program = Program::new(&extra);
+    let values = values(&successful(&program.0, &["eval", "--stats"]));
+    let mut wide_limb = false;
+    for (index, (x, y)) in pairs.iter().enumerate() {
+        let biased = biased_difference(x, y);
+        assert!(biased.iter().all(|limb| *limb < 4 * RADIX));
+        wide_limb |= biased.iter().any(|limb| *limb >= 2 * RADIX);
+        assert_eq!(
+            values[&format!("biased_{index}")],
+            word_value(&biased),
+            "pair {index}"
+        );
+        let tight_diff = carry_difference(&biased);
+        assert!(tight_diff.iter().all(|limb| *limb < RADIX));
+        assert_eq!(
+            values[&format!("tight_difference_{index}")],
+            word_value(&tight_diff),
+            "pair {index}"
+        );
+        // Exact integer difference via binary residue of x + 2p - y.
+        let reduced = residue(&reconstruct(&biased));
+        assert_eq!(residue(&reconstruct(&tight_diff)), reduced, "pair {index}");
+        assert_eq!(
+            values[&format!("canonical_difference_{index}")],
+            word_value(&canonical_digits(&reduced)),
+            "pair {index}"
+        );
+    }
+    assert!(wide_limb, "examples must exceed the loose limb bound");
+    assert_eq!(
+        values["wide_bound"], "(Bool, Bool) = (true, false)",
+        "2p bias of maximum tight storage is bounded but not loose"
+    );
+}
+
+#[test]
+fn field25519_dedicated_squares_match_products_and_binary_reference() {
+    let tight = tight_cases();
+    let mut extra = String::new();
+    for (index, x) in tight.iter().enumerate() {
+        extra.push_str(&format!(
+            "spec coeff_{index}() -> ProductAccumulators {{ square_accumulators({}) }}\n\
+             spec product_coeff_{index}() -> ProductAccumulators {{ product_accumulators({}, {}) }}\n\
+             spec tight_square_{index}() -> Limbs {{ square_tight({}) }}\n\
+             spec canonical_square_{index}() -> Limbs {{ square_canonical({}) }}\n",
+            literal(x),
+            literal(x),
+            literal(x),
+            literal(x),
+            literal(x),
+        ));
+    }
+    let program = Program::new(&extra);
+    let values = values(&successful(&program.0, &["eval", "--stats"]));
+    for (index, x) in tight.iter().enumerate() {
+        let h = schoolbook_square(x);
+        assert_eq!(
+            parse_accumulators(&values[&format!("coeff_{index}")]),
+            h,
+            "square {index}"
+        );
+        assert_eq!(
+            values[&format!("coeff_{index}")],
+            values[&format!("product_coeff_{index}")],
+            "square {index}"
+        );
+        let reduced = residue(&binary_product(x, x));
+        let tight_square = parse_word_value(&values[&format!("tight_square_{index}")]);
+        assert!(tight_square.iter().all(|limb| *limb < RADIX));
+        assert_eq!(
+            residue(&reconstruct(&tight_square)),
+            reduced,
+            "square {index}"
+        );
+        assert_eq!(
+            values[&format!("canonical_square_{index}")],
+            word_value(&canonical_digits(&reduced)),
+            "square {index}"
+        );
+    }
+}
+
+#[test]
+fn field25519_a24_products_match_independent_binary_arithmetic() {
+    const A24: u128 = 121_665;
+    let tight = tight_cases();
+    let mut extra = String::new();
+    for (index, x) in tight.iter().enumerate() {
+        extra.push_str(&format!(
+            "spec coeff_{index}() -> ProductAccumulators {{ mul_a24_accumulators({}) }}\n\
+             spec tight_a24_{index}() -> Limbs {{ mul_a24_tight({}) }}\n\
+             spec canonical_a24_{index}() -> Limbs {{ mul_a24_canonical({}) }}\n",
+            literal(x),
+            literal(x),
+            literal(x),
+        ));
+    }
+    extra.push_str(
+        "spec maxima_bound() -> (Bool, Bool) {\n\
+         let h: ProductAccumulators = mul_a24_accumulators([2251799813685247; 5]);\n\
+         (bounded_a24(h), h[0] > 18446744073709551615)\n}\n",
+    );
+    let program = Program::new(&extra);
+    let values = values(&successful(&program.0, &["eval", "--stats"]));
+    let mut wide_word = false;
+    for (index, x) in tight.iter().enumerate() {
+        let h: [u128; 5] =
+            std::array::from_fn(|axis| u128::from(x[axis]).checked_mul(A24).unwrap());
+        assert_eq!(
+            parse_accumulators(&values[&format!("coeff_{index}")]),
+            h,
+            "a24 {index}"
+        );
+        wide_word |= h.iter().any(|value| *value > u128::from(u64::MAX));
+        let reduced = residue(&binary_product(x, &[A24 as u64, 0, 0, 0, 0]));
+        // a24 fits in one limb; binary_product with [a24,0,...] works.
+        let tight_a24 = parse_word_value(&values[&format!("tight_a24_{index}")]);
+        assert!(tight_a24.iter().all(|limb| *limb < RADIX));
+        assert_eq!(residue(&reconstruct(&tight_a24)), reduced, "a24 {index}");
+        assert_eq!(
+            values[&format!("canonical_a24_{index}")],
+            word_value(&canonical_digits(&reduced)),
+            "a24 {index}"
+        );
+        let trace = binary_trace(&h);
+        assert_eq!(tight_a24, trace.digits[2], "a24 {index}");
+        assert_eq!(trace.carries[2], 0, "a24 {index}");
+    }
+    assert!(wide_word, "maximum a24 limb product must exceed Word[64]");
+    assert_eq!(values["maxima_bound"], "(Bool, Bool) = (true, true)");
+}
+
+#[test]
+fn field25519_a24_maximum_has_exact_fail_closed_step_boundary() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../algorithms/x25519/field25519-limbs.or");
+    let output = successful(
+        &source,
+        &["eval", "--spec", "a24_maximum", "--steps", "793", "--stats"],
+    );
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "field25519::a24_maximum: 793 steps\ntotal: 793 of 793 steps\n"
+    );
+    let short = run(
+        &source,
+        &["eval", "--spec", "a24_maximum", "--steps", "792"],
+    );
+    assert!(!short.status.success());
+    assert!(short.stdout.is_empty());
+    assert!(
+        String::from_utf8(short.stderr)
+            .unwrap()
+            .contains("error[ORC0301]")
+    );
 }
 
 #[test]
