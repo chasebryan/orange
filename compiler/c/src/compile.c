@@ -3270,6 +3270,25 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint
     }
 }
 
+static const Big *modulus_at(const Compiler *c, uint16_t index);
+static int intern_modulus(Compiler *c, const Big *value, uint16_t *out);
+
+/* A modulus index belongs to one module's table. Copy a foreign modulus into
+   this module so later comparisons use one table. */
+static int adopt_modulus(Compiler *c, const Compiler *owner, uint16_t foreign, uint16_t *local) {
+    const Big *value;
+    if (owner == NULL || owner == c) {
+        *local = foreign;
+        return 1;
+    }
+    value = modulus_at(owner, foreign);
+    if (value == NULL) {
+        *local = 0;
+        return 1;
+    }
+    return intern_modulus(c, value, local);
+}
+
 static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -3309,7 +3328,12 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
         if (*type == TY_MOD) {
-            c->leaf_mod = callee.mod->funcs[callee.func].result_mod;
+            uint16_t local = 0;
+            if (!adopt_modulus(c, callee.mod, callee.mod->funcs[callee.func].result_mod, &local)) {
+                *silent = 1;
+                return -1;
+            }
+            c->leaf_mod = local;
         }
         return 1;
     }
@@ -3430,7 +3454,12 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
         if (*type == TY_MOD) {
-            c->leaf_mod = callee.mod->funcs[callee.func].result_mod;
+            uint16_t local = 0;
+            if (!adopt_modulus(c, callee.mod, callee.mod->funcs[callee.func].result_mod, &local)) {
+                *silent = 1;
+                return -1;
+            }
+            c->leaf_mod = local;
         }
         return 1;
     }
@@ -4775,25 +4804,40 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "every parameter receives exactly one argument", 2);
             return 1;
         }
-        if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len ||
-            (target->funcs[callee.func].result == TY_MOD && expected == TY_MOD &&
-             target->funcs[callee.func].result_mod != c->expect_mod)) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, target->funcs[callee.func].result,
-                       target->funcs[callee.func].result_len);
-            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "Orange does not convert between types implicitly", 2);
+        {
+            int mod_differs = 0;
+            if (target->funcs[callee.func].result == TY_MOD && expected == TY_MOD) {
+                uint16_t local = 0;
+                /* result_mod is an index in the callee. expect_mod is an index
+                   in the caller. Compare the modulus values. */
+                if (!adopt_modulus(c, target, target->funcs[callee.func].result_mod, &local)) {
+                    return 0;
+                }
+                mod_differs = local != c->expect_mod;
+            }
+            if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len ||
+                mod_differs) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, target->funcs[callee.func].result,
+                           target->funcs[callee.func].result_len);
+                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
         }
         for (uint16_t arg = 0; arg < expr->argc; arg++) {
             Param *param = &target->params[target->funcs[callee.func].param0 + arg];
+            uint16_t arg_mod = param->mod_index;
             if (!param->type_ok) {
                 continue;
             }
-            if (!check_at(c, c->args[expr->arg0 + arg], param->type, param->length, param->mod_index, func_index,
+            if (param->type == TY_MOD && !adopt_modulus(c, target, param->mod_index, &arg_mod)) {
+                return 0;
+            }
+            if (!check_at(c, c->args[expr->arg0 + arg], param->type, param->length, arg_mod, func_index,
                           locals_in_scope)) {
                 return 0;
             }
@@ -5666,9 +5710,14 @@ static void analyze(Compiler *c) {
                 func->signature_ok = 0;
             }
         }
-        if (!func->result_ok && !func->result_reported) {
-            reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
-                            func->result_length_start, func->result_length_end);
+        if (!func->result_ok) {
+            /* A rejected result is already diagnosed at its type. Do not also
+               check the bindings or the body (Float and Mod[1] must not add
+               ORC0207 or ORC0211). */
+            if (!func->result_reported) {
+                reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
+                                func->result_length_start, func->result_length_end);
+            }
             func->signature_ok = 0;
             continue;
         }
@@ -6105,6 +6154,26 @@ static int index_position(Compiler *c, const Value *index_value, uint32_t index_
     return 1;
 }
 
+/* Modulus indices are per module. A value crossing a call wears the index of
+   the module that is about to use it. */
+static void retag_modulus(Value *value, uint16_t mod_index) {
+    uint32_t index;
+    if (value->length == 0) {
+        if (value->type == TY_MOD) {
+            value->mod_index = mod_index;
+        }
+        return;
+    }
+    if (value->elems == NULL) {
+        return;
+    }
+    for (index = 0; index < value->length; index++) {
+        if (value->elems[index].type == TY_MOD) {
+            value->elems[index].mod_index = mod_index;
+        }
+    }
+}
+
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
     int ok;
     memset(out, 0, sizeof *out);
@@ -6201,6 +6270,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         }
         if (expr->left != UINT32_MAX) {
             Compiler *target;
+            Func *callee;
             if (c->program == NULL || expr->name_index >= c->program->nmods) {
                 c->failed = 1;
                 value_list_clear(arguments, count);
@@ -6211,6 +6281,13 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 c->failed = 1;
                 value_list_clear(arguments, count);
                 return 0;
+            }
+            callee = &target->funcs[expr->callee];
+            for (arg = 0; arg < expr->argc; arg++) {
+                Param *param = &target->params[callee->param0 + arg];
+                if (param->type == TY_MOD) {
+                    retag_modulus(&arguments[arg], param->mod_index);
+                }
             }
             /* One step budget and one failure flag for the whole program.
                Copy them across the call so a nested module spends the same
@@ -6229,6 +6306,9 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 return 0;
             }
             ok = eval_function(c, expr->callee, arguments, depth + 1, out);
+        }
+        if (ok && expr->ty == TY_MOD) {
+            retag_modulus(out, expr->ty_mod);
         }
         value_list_clear(arguments, count);
         return ok;
