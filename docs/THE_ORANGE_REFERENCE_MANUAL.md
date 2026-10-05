@@ -8210,6 +8210,9 @@ Parts I–V differ, Parts I–V control.
 (* Proposed surface. Not the Current grammar. *)
 
 source_file         = byte* ; (* UTF-8, at most 16 MiB; U+FEFF is ORC0001 *)
+byte                = "\x00".."\xFF" ;
+any_char            = ? one Unicode scalar value, the UTF-8 decoding of §5 ? ;
+any_ascii_printable = " ".."~" ;
 
 whitespace          = " " | "\t" | "\n" | "\r" | "\r\n" ;
 line_comment        = "//" (any_char - "\n")* ;
@@ -8249,10 +8252,13 @@ type_decl           = "type" identifier "=" parsed_type ";" ;
 
 member_decl         = spec_decl
                     | impl_decl
-                    | game_decl
-                    | proof_decl
-                    | claim_decl
                     | test_decl ;
+
+(* `game`, `proof`, and `claim` are not productions. A token in their
+   place is ORC0103: expected a `spec` or `impl` function declaration.
+   There is no game_decl, proof_decl, or claim_decl. *)
+
+impl_decl           = "impl" identifier "(" ")" "{" "}" ;
 
 (* Types *)
 parsed_type         = scalar_type
@@ -8268,7 +8274,7 @@ scalar_type         = "Int"
 array_type          = parsed_type "^" size_expr ;
 tuple_type          = "(" parsed_type ("," parsed_type)+ ")" ;
 
-modulus_expr        = shift_expr ;
+modulus_expr        = expression ; (* the parser parses an expression inside `Mod[...]` *)
 size_expr           = integer_literal | identifier ;
 
 (* Specification Stratum *)
@@ -8299,7 +8305,21 @@ loop_expr           = "for" identifier "in" size_expr ".." size_expr
 block_body          = (let_binding ";")* expression ;
 
 binary_expr         = unary_expr (binary_op unary_expr)* ;
+(* The repetition is not the Current parser. ORC0108 rejects an operator
+   from another group, a second shift or rotation, a second `/` or `%`,
+   and a second comparison, unless parentheses group one of them.
+   `binary_op` is the infix set of `BinaryOperator` in parser.rs. *)
+binary_op           = "+" | "-" | "*" | "/" | "%"
+                    | "&" | "|" | "^"
+                    | "<<" | ">>" | "<<<" | ">>>"
+                    | "==" | "!=" | "<" | "<=" | ">" | ">="
+                    | "&&" | "||"
+                    | "++" ;
 unary_expr          = ("-" | "~" | "!")? primary_expr ;
+
+literal_expr        = integer_literal | string_literal | hex_string_literal ;
+(* `true` and `false` are identifiers. Section 32 resolves them as
+   `Bool` literals when no earlier binding uses the spelling. *)
 
 primary_expr        = literal_expr
                     | qualified_ident
