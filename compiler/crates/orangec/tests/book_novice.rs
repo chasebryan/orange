@@ -1194,3 +1194,128 @@ fn n13_seam_failures_match_the_printed_diagnostics() {
         let _ = fs::remove_dir_all(dir);
     }
 }
+
+const N14: &str = include_str!("../../../../docs/book/NOVICE_N14_READY_FOR_STANDARDS.md");
+
+fn n14_sources() -> Vec<&'static str> {
+    fences(N14, "orange")
+}
+
+fn n14_text() -> Vec<&'static str> {
+    fences(N14, "text")
+}
+
+fn n14_source(name: &str) -> &'static str {
+    n14_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N14 listing {name}"))
+}
+
+fn n14_one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n14_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+#[test]
+fn n14_gate_listings_check_evaluate_and_pass() {
+    let sources = n14_sources();
+    assert_eq!(sources.len(), 3, "update coverage when adding N14 listings");
+    assert!(!N14.contains("\n## Chapter "));
+    assert!(!N14.contains("Chapter 14"));
+    assert!(!N14.contains("spec compress("));
+    assert!(!N14.contains("spec schedule("));
+    assert!(!N14.contains("small_sigma0"));
+    assert!(!N14.contains("0x428a2f98"));
+    let pad = n14_source("pad");
+    let seam = n14_source("pad_seam");
+    let sample = n14_source("sample_line");
+    assert!(!pad.contains("\n  use "));
+    assert!(seam.contains("\n  use pad;\n"));
+    assert!(seam.contains("pad::xor_byte("));
+    assert!(seam.contains("test \"RFC 2104 pads differ by 0x6a"));
+    assert!(!seam.contains("sha256::"));
+    assert!(!pad.contains("sha256"));
+    assert_ne!(pad, seam);
+
+    let pad_dir = n13_dir("n14-pad");
+    write_or(&pad_dir, "pad", pad);
+    assert_silent_file("pad", &pad_dir, "pad.or");
+    let case1 = format!(
+        "{}\n",
+        n14_one_text(
+            |text| text.starts_with("pad::case1_key:") && text.contains(" = "),
+            "pad case1_key"
+        )
+    );
+    assert_eval_file(
+        "pad case1_key",
+        &pad_dir,
+        &["eval", "--spec", "case1_key", "pad.or"],
+        &case1,
+    );
+
+    let seam_dir = n13_dir("n14-seam");
+    write_or(&seam_dir, "pad", pad);
+    write_or(&seam_dir, "pad_seam", seam);
+    assert_silent_file("pad_seam", &seam_dir, "pad_seam.or");
+    let inner0 = format!(
+        "{}\n",
+        n14_one_text(
+            |text| text.starts_with("pad_seam::inner0:") && text.contains(" = "),
+            "pad_seam inner0"
+        )
+    );
+    assert_eval_file(
+        "pad_seam inner0",
+        &seam_dir,
+        &["eval", "--spec", "inner0", "pad_seam.or"],
+        &inner0,
+    );
+    let seam_test = format!(
+        "{}\n",
+        n14_one_text(
+            |text| {
+                text.starts_with("test \"RFC 2104 pads differ by 0x6a")
+                    && text.contains("1 test: 1 passed, 0 failed")
+            },
+            "pad_seam test"
+        )
+    );
+    assert_test_file("pad_seam", &seam_dir, "pad_seam.or", &seam_test);
+
+    assert_silent_check("sample_line", sample);
+    let rolled = format!(
+        "{}\n",
+        n14_one_text(
+            |text| text.starts_with("sample_line::rolled:") && text.contains(" = "),
+            "sample_line rolled"
+        )
+    );
+    let first = run("eval", sample);
+    assert!(
+        first.status.success(),
+        "sample_line: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, rolled.as_bytes());
+    assert!(first.stderr.is_empty(), "sample_line eval diagnostics");
+    let empty = format!(
+        "{}\n",
+        n14_one_text(
+            |text| text.starts_with("0 tests: 0 passed, 0 failed"),
+            "sample_line empty test report"
+        )
+    );
+    let test_result = run("test", sample);
+    assert_eq!(test_result.status.code(), Some(0));
+    assert!(test_result.stderr.is_empty());
+    assert_eq!(test_result.stdout, empty.as_bytes());
+
+    let _ = fs::remove_dir_all(pad_dir);
+    let _ = fs::remove_dir_all(seam_dir);
+}

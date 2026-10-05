@@ -1223,6 +1223,144 @@ class N13ModulesProvenance(unittest.TestCase):
             self.assertNotEqual(byte ^ 0x36, byte ^ 0x5c)
 
 
+class N14ReadyForStandards(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_N14_READY_FOR_STANDARDS.md').read_text(
+            encoding='utf-8'
+        )
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_n14_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (N14\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(N14\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'N14.{n}' for n in range(1, 9)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter 14\b')
+        self.assertNotIn('Chapter 14', self.text)
+        self.assertRegex(self.text, r'(?m)^## N14: Ready for Standards$')
+        for number in range(1, 7):
+            self.assertRegex(self.text, rf'(?m)^### N14\.{number} ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'Perhaps the largest group of readers will consist of people who want to read a full '
+            'and unambiguous description of Rijndael.'
+        ])
+        self.assertIn('https://cs.ru.nl/~joan/papers/JDA_VRI_Rijndael_2002.pdf', self.text)
+        self.assertIn('**N14.**', self.index)
+        self.assertIn(
+            'NOVICE_N14_READY_FOR_STANDARDS.md#n14-ready-for-standards',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n14-ready-for-standards', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(r'NOVICE_N14_READY_FOR_STANDARDS\.md#([^)\s]+)', self.index):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is N14.', self.text)
+        self.assertIn('The locked label is N14.', self.index)
+        self.assertIn('**[S12] Joan Daemen and Vincent Rijmen.**', self.text)
+        self.assertIn('**[T8] Orange edition.**', self.text)
+        self.assertIn('**[C2] Gate surface.**', self.text)
+        self.assertNotIn('provisional', self.text.lower())
+        self.assertNotIn('integration plan', self.text.lower())
+        self.assertNotIn('complete induction', self.text.lower())
+
+    def test_n14_is_a_gate_with_interpret_domain_and_assumptions(self):
+        """Interpret walk, finite Match, assumption list, no compress transcription."""
+        self.assertIn('Read the constructs in source order.', self.text)
+        self.assertIn('**Listing N14.1 — `pad.or`**', self.text)
+        self.assertIn('**Listing N14.2 — `pad_seam.or`**', self.text)
+        self.assertIn('`use pad;`', self.text)
+        self.assertIn('spec inner0()', self.text)
+        self.assertIn('**Proposition N14.1.**', self.text)
+        self.assertIn('inner0', self.text)
+        self.assertIn('0x3d', self.text)
+        self.assertIn('Do not call that Match verified.', self.text)
+        self.assertIn('The test does not cover SHA-256.', self.text)
+        self.assertIn('The test does not cover HMAC.', self.text)
+        self.assertIn('The test does not cover `inner0`.', self.text)
+        for heading in ('Edition.', 'Endianness.', 'Padding.', 'Module seam.', 'Non-claims.'):
+            self.assertIn(heading, self.text)
+        self.assertIn('you are not ready for J2–J4', self.text)
+        self.assertIn('I am not ready for J2–J4.', self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        for forbidden in (
+            'small_sigma0',
+            'small_sigma1',
+            'big_sigma0',
+            'big_sigma1',
+            '0x428a2f98',
+            'spec schedule(',
+            'spec compress(',
+            'spec round(',
+            'round_constants',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 3)
+        self.assertTrue(any('\nmodule pad {' in source for source in sources))
+        self.assertTrue(any('\nmodule pad_seam {' in source for source in sources))
+        self.assertTrue(any('\nmodule sample_line {' in source for source in sources))
+        self.assertFalse(any('compress' in source for source in sources))
+
+    def test_n14_ledger_matches_the_byte_arithmetic(self):
+        block = re.search(r'^```text\nn14-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        expected = {
+            'byte0': 0x0b,
+            'inner-pad': 0x36,
+            'inner0': 0x0b ^ 0x36,
+            'outer-pad': 0x5c,
+            'pad-xor': 0x36 ^ 0x5c,
+            'zero-inner': 0x00 ^ 0x36,
+            'zero-outer': 0x00 ^ 0x5c,
+            'key-ones': 20,
+            'key-zeros': 64 - 20,
+            'sample-sum': 0x77777777 + 0x01234567,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['inner0'], 0x3d)
+        self.assertEqual(expected['pad-xor'], 0x6a)
+        self.assertEqual(expected['sample-sum'], 0x789abcde)
+        self.assertLess(expected['sample-sum'], 2 ** 32)
+
+    def test_n14_tags_are_the_next_free_numbers(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        for path in sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md')):
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S12'], (
+            'NOVICE_N14_READY_FOR_STANDARDS.md',
+            'Joan Daemen and Vincent Rijmen.',
+        ))
+        self.assertEqual(records['T8'], (
+            'NOVICE_N14_READY_FOR_STANDARDS.md',
+            'Orange edition.',
+        ))
+        self.assertEqual(records['C2'], (
+            'NOVICE_N14_READY_FOR_STANDARDS.md',
+            'Gate surface.',
+        ))
+        self.assertEqual(records['C1'][0], 'NOVICE_PROBABILITY.md')
+        self.assertNotIn('S13', records)
+        self.assertNotIn('T9', records)
+        self.assertNotIn('C3', records)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
