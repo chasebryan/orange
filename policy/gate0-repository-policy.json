@@ -278,6 +278,7 @@
     "compiler/crates/orangec/src/crypt.rs",
     "compiler/crates/orangec/src/main.rs",
     "compiler/crates/orangec/tests/algorithms.rs",
+    "compiler/crates/orangec/tests/book_j2.rs",
     "compiler/crates/orangec/tests/book_novice.rs",
     "compiler/crates/orangec/tests/cli.rs",
     "compiler/crates/orangec/tests/crypt.rs",

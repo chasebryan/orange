@@ -1361,6 +1361,156 @@ class N14ReadyForStandards(unittest.TestCase):
         self.assertNotIn('C3', records)
 
 
+class J2StandardsAsVersionedInputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j2_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J2\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J2\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J2.{n}' for n in range(1, 20)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('Chapter 11', self.text)
+        self.assertRegex(self.text, r'(?m)^## J2: Standards as Versioned Inputs$')
+        for number in range(1, 15):
+            self.assertRegex(self.text, rf'(?m)^### J2\.{number} ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'RFC 7539, the predecessor of this document, was meant to serve as a '
+            'stable reference and an implementation guide.'
+        ])
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('**J2.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md#j2-standards-as-versioned-inputs',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j2-standards-as-versioned-inputs', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J2.', self.text)
+        self.assertIn('The locked label is J2.', self.index)
+        self.assertIn('**[S13] Yoav Nir and Adam Langley.**', self.text)
+        self.assertIn('**[T9] Retrieved files.**', self.text)
+        self.assertIn('**[C3] Pin surface.**', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+
+    def test_j2_listings_do_not_transcribe_sha256_compression(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            [
+                'byte_limit',
+                'constants',
+                'wrong_edition',
+                'iv',
+                'wrong_section',
+                'width',
+                'role_mismatch',
+            ],
+        )
+        for forbidden in (
+            'small_sigma0',
+            'small_sigma1',
+            'big_sigma0',
+            'big_sigma1',
+            '0x428a2f98',
+            'spec schedule(',
+            'spec compress(',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+
+    def test_j2_ledger_matches_the_printed_arithmetic(self):
+        block = re.search(r'^```text\nj2-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        blocks = 2 ** 32 - 1
+        p_max = blocks * 64
+        p_max_old = 247877906880
+        two_33 = 2 ** 33
+        n = 2 ** 65
+        step1 = (two_33 + n // two_33) // 2
+        root = 6074000999
+        expected = {
+            'blocks': blocks,
+            'block-bytes': 64,
+            'p-max': p_max,
+            'p-max-old': p_max_old,
+            'p-gap': p_max - p_max_old,
+            'tag-octets': 16,
+            'c-max': p_max + 16,
+            'c-max-old': p_max_old + 16,
+            'length-7539': 4,
+            'length-8439': 8,
+            'two-33': two_33,
+            'step1': step1,
+            'root': root,
+            'stable-quot': n // root,
+            'iv-word': root - 2 ** 32,
+            'sha1-word': 0x67452301,
+            'step1-quot': n // step1,
+            'step1-rem': n % step1,
+            'prose-bytes': 64 // 8,
+            'code-bits': 4 * 8,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['step1'], 6442450944)
+        self.assertEqual(expected['iv-word'], 0x6A09E667)
+        self.assertEqual(expected['stable-quot'], root + 1)
+        self.assertEqual(expected['p-gap'], 27 * 10 ** 9)
+        self.assertLess(expected['iv-word'], 2 ** 32)
+
+    def test_j2_tags_are_unique_across_book_lessons(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S13'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Yoav Nir and Adam Langley.',
+        ))
+        self.assertEqual(records['T9'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C3'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Pin surface.',
+        ))
+        self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertNotIn('S14', records)
+        self.assertNotIn('T10', records)
+        self.assertNotIn('C4', records)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right

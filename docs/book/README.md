@@ -237,10 +237,11 @@ Orange is the working language, not decoration around prose.
   update. An Orange `test` carries one expected value back to one section
   of one edition. A constant two editions print alike does not, by matching,
   choose the edition. One deliberate mismatch fails under `orangec test`.
-  The six outcomes in that section are the finish line. The locked label is
-  J2. It is not manuscript Chapter 11, *Standards as Versioned Inputs*. The
-  manuscript chapter keeps that number. This lesson does not transcribe the
-  SHA-256 compression function or its message schedule.
+  The six outcomes in that section are the finish line.
+  The locked label is J2. It is not manuscript Chapter 11,
+  *Standards as Versioned Inputs*. The manuscript chapter keeps that
+  number. This lesson does not transcribe the SHA-256 compression
+  function or its message schedule.
 
 ### Existing manuscript integrated here
 
@@ -389,7 +390,8 @@ These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
 answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
-integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, and document structure. Python test
+integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 19
+lesson-J2 answers and the J2 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -430,6 +432,19 @@ build-capable checkout:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --locked --offline
+```
+
+The Rust integration test `compiler/crates/orangec/tests/book_j2.rs`
+reads the seven Orange listings in J2. It checks silent `check`, the
+printed `eval` lines, the passing tests, and the three failing tests
+whose reports print `left` and `right` with status 1 and empty
+standard error. A passing test in that file is a Match of the `Bool`
+the listing writes. It does not establish a cryptographic security
+claim, and it does not transcribe FIPS 180-4 §6.2.2. Run it in a
+build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j2 --locked --offline
 ```
 
 The existence of this test is not a claim that a run passed. The PR and

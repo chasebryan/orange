@@ -91,8 +91,8 @@ required to finish it.
 
 RFC 7539, *ChaCha20 and Poly1305 for IETF Protocols*, Y. Nir and
 A. Langley, May 2015. RFC 8439, the same title, Y. Nir and
-A. Langley, June 2018, which obsoletes RFC 7539. The verified errata
-filed against RFC 7539, as the RFC Editor records them. FIPS PUB
+A. Langley, June 2018, which obsoletes RFC 7539. The errata filed
+against RFC 7539 that the RFC Editor has marked Verified. FIPS PUB
 180-4, *Secure Hash Standard (SHS)*, August 2015, which states that
 it supersedes FIPS 180-3. FIPS 197, *Advanced Encryption Standard
 (AES)*, published November 26, 2001, and updated May 9, 2023 as
