@@ -911,6 +911,1079 @@ array update `with`, and `Mod[m]`, each on an input the binary
 accepts.
 
 
+### J4.10 How a standard states the convention
+
+A convention is a sentence that picks L_k or B_k, or that picks the
+generalization of one of them to words of width n, for a field the
+same sentence identifies. The sentence has a section number in a
+named edition. A diagram, a hex dump, and a test vector are evidence
+about that sentence. They are not a substitute for it. If the
+sentence and the vector disagree, the edition's own rule about
+which one wins applies, and this lesson quotes that rule where the
+edition states one. RFC 8439 §2.3.1 says that if the pseudocode
+conflicts with the textual explanation and the test vectors, the
+textual explanation and the test vectors are normative. This lesson
+therefore checks a vector only after the sentence that says how to
+read it.
+
+The four documents below are pinned as follows. FIPS PUB 180-4 is
+the August 2015 publication, DOI `10.6028/NIST.FIPS.180-4`. [J4S2]
+The SHA-256 one-block sample is the NIST examples file, which is
+not a section of that publication. [J4S3] RFC 8439 is the June 2018
+Informational RFC. [J4S4] RFC 7748 is the January 2016 Informational
+RFC. [J4S5] FIPS 197 is the publication updated May 9, 2023, DOI
+`10.6028/NIST.FIPS.197-upd1`, which states on its cover that it was
+published November 26, 2001, and updated May 9, 2023. [J4S6] A
+quotation is from the copy consulted on 2026-10-05. Ligatures that
+the text extractor split, such as the letters of “first”, are
+restored in the sentences quoted below. No sentence is otherwise
+rewritten.
+
+### J4.11 FIPS 180-4: the big-endian word and the length
+
+Section 3.1 of FIPS 180-4, item 2, says:
+
+> Throughout this specification, the “big-endian” convention is used when expressing both 32- and 64-bit words, so that within each word, the most significant bit is stored in the left-most bit position.
+
+The sentence is about bits inside one word. The left-most bit is
+the most significant bit. It does not, by itself, contain the word
+“byte”. The byte order follows once a byte is eight consecutive
+bits in that same left-to-right order, which is the grouping the
+rest of the section uses when it turns a word into hex digits.
+
+Item 3 of the same section gives the integer reading. An integer
+between 0 and 2^32 − 1 inclusive may be represented as a 32-bit
+word. The least significant four bits of the integer are
+represented by the right-most hex digit of the word representation.
+The example in the publication is the integer 291, written as the
+sum 2^8 + 2^5 + 2^1 + 2^0, represented by the hex word `00000123`.
+The same paragraph says an integer between 0 and 2^64 − 1 inclusive
+may be represented as a 64-bit word. For SHA-256 it also records
+the split: if 0 ≤ Z < 2^64, then Z = 2^32·X + Y with X and Y each
+below 2^32, and Z is the pair of words (x, y). The high half is
+the first word of the pair.
+
+**Proposition J4.7.** Let a 32-bit word have its most significant
+bit in the left-most position, and group the bits into four bytes
+from the left, eight bits each. The integer value of the word is
+B_4 of those four bytes.
+
+*Proof.* Number the bit positions from the left as coefficients of
+2^31, 2^30, …, 2^0. The first eight coefficients are those of
+2^31 down through 2^24. Their contribution is a byte value, call
+it b_0, multiplied by 2^24. The next eight contribute b_1·2^16,
+then b_2·2^8, then b_3·2^0. Since 2^24 = 256^3, 2^16 = 256^2, and
+2^8 = 256, the sum is B_4(b_0, b_1, b_2, b_3). □
+
+The same grouping on a 64-bit word yields B_8. The pair-of-words
+rule is the same function one level up: the first 32-bit word is
+the coefficient of 2^32, which is big-endian order on two words of
+32 bits. Listing J4.2 already computed that shape as `pair_big`.
+
+Section 5.1.1 pads a SHA-256 message. Suppose the length of the
+message M is ℓ bits. Append the bit `1`, then the smallest
+non-negative number k of zero bits such that ℓ + 1 + k ≡ 448
+(mod 512), then the 64-bit block that is equal to ℓ expressed using
+a binary representation. The publication's example is the 8-bit
+ASCII message “abc”, of length 8 × 3 = 24, padded with a one bit,
+then 448 − (24 + 1) = 423 zero bits, then the length. The bit
+diagram begins `01100001 01100010 01100011 1`. Those are the bytes
+of `a`, `b`, and `c`, then a byte whose high bit is 1 and whose
+other bits are the first of the zero pad. That byte is `0x80`.
+
+The NIST one-block sample prints the sixteen words of that padded
+block. The lines this lesson uses are only these two. [J4S3]
+
+```text
+W[0] = 61626380
+W[15] = 00000018
+```
+
+W[0] is the first four bytes `61 62 63 80` read by Proposition
+J4.7. W[15] is the low half of the length. The length is 24, which
+is `0x18`, and the high half is zero, so the 64-bit big-endian
+field is the eight bytes `00 00 00 00 00 00 00 18`. The sample does
+not print those eight bytes as a hex dump. It prints the two words.
+The conversion is what connects them.
+
+This lesson does not compute W[16], and it does not apply the
+compression function. Those steps are J5. The sample's later lines,
+the round trace, are not copied here.
+
+**Listing J4.7 — `sha_words.or`**
+
+```orange
+edition 2026;
+module sha_words {
+  spec w0() -> Word[32] { hex"61626380" as big Word[32] }
+  spec w0_little() -> Word[32] { hex"61626380" as little Word[32] }
+  spec length() -> Word[64] { hex"0000000000000018" as big Word[64] }
+  spec length_words() -> Word[32]^2 { hex"0000000000000018" as big Word[32]^2 }
+  spec length_little() -> Word[64] { hex"0000000000000018" as little Word[64] }
+  test "FIPS 180-4 abc first word is big-endian" {
+    w0() == 0x61626380
+  }
+  test "the length field is 24" {
+    length() == 24
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+sha_words::w0: Word[32] = 0x61626380
+sha_words::w0_little: Word[32] = 0x80636261
+sha_words::length: Word[64] = 0x0000000000000018
+sha_words::length_words: Word[32]^2 = [0x00000000, 0x00000018]
+sha_words::length_little: Word[64] = 0x1800000000000000
+```
+
+**Test report:**
+
+```text
+test "FIPS 180-4 abc first word is big-endian" ... ok
+test "the length field is 24" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+`w0` is B_4 of `(0x61, 0x62, 0x63, 0x80)`, and it equals the word
+the sample prints. `w0_little` is L_4 of the same bytes, which is
+`0x80636261`. That integer does not appear in the sample. A
+comparison that uses it is not a comparison with W[0].
+
+`length` is B_8 of the eight length bytes, and the value is 24,
+which is ℓ. `length_words` is the pair (x, y) from §3.1: the first
+word is 0 and the second is `0x18`, matching W[14] = 0 (not printed
+above, and following from the seven high bytes being zero) and
+W[15] = `00000018`. `length_little` is L_8 of those bytes. Its hex
+numeral is `0x1800000000000000`. As an integer that is 24 · 2^56,
+not 24. The length field is a big-endian integer. Reading it
+little-endian does not produce ℓ.
+
+**Proposition J4.8.** Under the big-endian convention of FIPS
+180-4 §3.1, the 64-bit length block of the padded message “abc” is
+the integer 24, and the little-endian reading of the same eight
+bytes is not 24.
+
+*Proof.* Section 5.1.1 sets ℓ = 24 for this message and appends ℓ
+as a 64-bit binary block. Section 3.1 stores the most significant
+bit of a 64-bit word in the left-most position, so the block is
+B_8 of its eight bytes. The unique base-256 writing of 24 is seven
+zero bytes followed by the byte 24, because 24 < 256. Those are
+the bytes `00 00 00 00 00 00 00 18`. B_8 of them is 24. L_8 of them
+is 24 · 256^7 = 24 · 2^56, which is greater than 24. □
+
+The failing test is the claim a reader makes by reversing the
+order out of habit from N12.
+
+**Listing J4.8 — `length_wrong.or`, intentionally failing**
+
+```orange
+edition 2026;
+module length_wrong {
+  test "the abc length matches when the field is little-endian" {
+    (hex"0000000000000018" as little Word[64]) == 24
+  }
+}
+```
+
+The module has no parameterless spec. `eval` prints nothing.
+Check is silent.
+
+**Test report:**
+
+```text
+test "the abc length matches when the field is little-endian" ... FAILED
+    left:  0x1800000000000000
+    right: 0x0000000000000018
+1 test: 0 passed, 1 failed
+```
+
+Left is L_8 of the length bytes. Right is the word 24, which the
+comparison prints at the width of the left operand. The two words
+differ. The minimal repair is the order in the conversion: `little`
+becomes `big`, which is the test already passed in Listing J4.7.
+Changing 24 to `0x1800000000000000` would make the `Bool` true and
+would make the claim false as a reading of §5.1.1. The report's
+right-hand side is the standard's integer. The left-hand side is
+the wrong function.
+
+The same shape, on the first word, is the SHA-256 half of outcome
+5. It is not a transcription of the schedule.
+
+**Listing J4.9 — `sha_wrong.or`, intentionally failing**
+
+```orange
+edition 2026;
+module sha_wrong {
+  test "the abc word matches when read little-endian" {
+    (hex"61626380" as little Word[32]) == 0x61626380
+  }
+}
+```
+
+**Test report:**
+
+```text
+test "the abc word matches when read little-endian" ... FAILED
+    left:  0x80636261
+    right: 0x61626380
+1 test: 0 passed, 1 failed
+```
+
+Left is L_4. Right is the printed word, which Proposition J4.7
+identifies with B_4. The minimal repair is again the order:
+`as little` becomes `as big`. The expected word stays
+`0x61626380`. J5 may compare message words with `as big`. It may
+not compare them with `as little` and still be comparing the words
+§3.1 defined.
+
+### J4.12 RFC 8439: ChaCha20's little-endian words
+
+Section 2.3 states the inputs:
+
+> A 256-bit key, treated as a concatenation of eight 32-bit little-endian integers.
+>
+> A 96-bit nonce, treated as a concatenation of three 32-bit little-endian integers.
+>
+> A 32-bit block count parameter, treated as a 32-bit little-endian integer.
+
+The bullets are split across lines in the plain text after
+“little-”. The words above join those line breaks with a space.
+“Little-endian integer”, for a 32-bit unit, is L_4 on each
+four-byte group, taken in the order the bytes are written.
+
+The same section then says the next eight words of the state are
+taken from the key by reading the bytes in little-endian order, in
+4-byte chunks. Word 12 is the block counter. The 13th word is the
+first 32 bits of the nonce taken as a little-endian integer, and
+the 15th word is the last 32 bits. After 20 rounds the result is
+serialized by sequencing the words one-by-one in little-endian
+order. That last sentence is the store direction: each word's
+inverse of L_4, concatenated. N12 derived the block function and
+the serialization of one vector. This section does not repeat the
+rounds. It fixes the function the rounds' inputs and outputs use.
+
+The four constant words are printed as `0x61707865`, `0x3320646e`,
+`0x79622d32`, `0x6b206574`. N12, Proposition N12.4, already showed
+they are L_4 applied to the sixteen ASCII bytes of
+`expand 32-byte k`. The listing below asks the compiler for that
+reading in one conversion, which N12 did by hand.
+
+Section 2.3.2 prints the test key beginning
+`00:01:02:03:04:05:06:07`, the block count 1, and the nonce
+beginning `00:00:00:09`. N12 computed the first key word as
+`0x03020100`, the counter word as `0x00000001`, and the first nonce
+word as `0x09000000`. Those three integers are L_4 of
+`(0x00, 0x01, 0x02, 0x03)`, L_4 of the four little-endian bytes of
+the integer 1, and L_4 of `(0x00, 0x00, 0x00, 0x09)`.
+
+**Listing J4.10 — `chacha_load.or`**
+
+```orange
+edition 2026;
+module chacha_load {
+  spec constants() -> Word[32]^4 { "expand 32-byte k" as little Word[32]^4 }
+  spec key0() -> Word[32] { hex"00010203" as little Word[32] }
+  spec counter() -> Word[32] {
+    let n: Int = 1;
+    n as little Word[32]
+  }
+  spec nonce0() -> Word[32] { hex"00000009" as little Word[32] }
+  test "RFC 8439 constants are the little-endian words" {
+    constants() == [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]
+  }
+  test "section 2.3.2 first key word" {
+    key0() == 0x03020100
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+chacha_load::constants: Word[32]^4 = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]
+chacha_load::key0: Word[32] = 0x03020100
+chacha_load::counter: Word[32] = 0x00000001
+chacha_load::nonce0: Word[32] = 0x09000000
+```
+
+**Test report:**
+
+```text
+test "RFC 8439 constants are the little-endian words" ... ok
+test "section 2.3.2 first key word" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+The string conversion is sixteen bytes, read as four little-endian
+words: L_4 on each group of four, which is the n = 8, target
+`Word[32]^4` case of the proposed slice. The four results are the
+constants the RFC prints. `counter` stores the integer 1 through
+the inverse of L_4 and reads it back as a word; the only nonzero
+byte is the first, so the word's low byte is 1 and the hex numeral
+is `0x00000001`. `nonce0` is L_4 of `(0x00, 0x00, 0x00, 0x09)`,
+which is `0x09000000`. A reader who copies the nonce digits into a
+hex literal `0x00000009` has written B_4, not L_4. The state word
+is `0x09000000`.
+
+**Proposition J4.9.** The first key word of RFC 8439 §2.3.2 is
+L_4(0x00, 0x01, 0x02, 0x03) = 0x03020100. B_4 of the same four
+bytes is 0x00010203, which is not that word.
+
+*Proof.* The key bytes are printed in order beginning `00:01:02:03`.
+Section 2.3 reads each four-byte chunk as a little-endian integer,
+which is L_4. Proposition J4.1 gives the unique coefficients, and
+the sum is 0·1 + 1·256 + 2·65536 + 3·16777216 = 50462976 =
+0x03020100. B_4 is the hex numeral of the same bytes, 0x00010203.
+The two integers differ, so a test that equates them fails. □
+
+**Listing J4.11 — `chacha_wrong.or`, intentionally failing**
+
+```orange
+edition 2026;
+module chacha_wrong {
+  test "the section 2.3.2 key word loaded big-endian" {
+    (hex"00010203" as big Word[32]) == 0x03020100
+  }
+}
+```
+
+**Test report:**
+
+```text
+test "the section 2.3.2 key word loaded big-endian" ... FAILED
+    left:  0x00010203
+    right: 0x03020100
+1 test: 0 passed, 1 failed
+```
+
+Left is what a big-endian load produced. Right is the word §2.3
+requires. The minimal repair replaces `big` with `little`. The
+expected word is left alone. Replacing the expected word with
+`0x00010203` would silence the test and load a key the section
+did not specify.
+
+**Listing J4.12 — `chacha_repair.or`**
+
+```orange
+edition 2026;
+module chacha_repair {
+  test "the section 2.3.2 key word loaded little-endian" {
+    (hex"00010203" as little Word[32]) == 0x03020100
+  }
+}
+```
+
+**Test report:**
+
+```text
+test "the section 2.3.2 key word loaded little-endian" ... ok
+1 test: 1 passed, 0 failed
+```
+
+That passing line is a Match on four bytes. It is not the ChaCha20
+block function, and it is not encryption. J9 may take L_4 on each
+32-bit input word, and the inverse of L_4 on each output word, as
+the convention §2.3 stated. J9 does not get to choose the other
+order for those fields.
+
+### J4.13 RFC 8439: Poly1305's little-endian number
+
+Section 2.5 partitions the 32-byte key into r and s. It says r is
+treated as a 16-octet little-endian number, and then it clears
+bits: r[3], r[7], r[11], and r[15] have their top four bits clear,
+and r[4], r[8], and r[12] have their bottom two bits clear. The
+sample C in that section is `r[3] &= 15`, and the same for indices
+7, 11, and 15, then `r[4] &= 252`, and the same for 8 and 12. The
+pseudocode in §2.5.1 writes one mask,
+`r &= 0x0ffffffc0ffffffc0ffffffc0fffffff`, after
+`r = le_bytes_to_num(key[0..15])`. Clamping the bytes and clamping
+the integer are the same operation when the integer is the
+little-endian reading, because each masked bit sits in a known
+byte. This lesson clamps the bytes, which is the sample's order,
+and then applies L_16.
+
+The number itself, for a message block, is the next sentence of
+§2.5. Divide the message into 16-byte blocks. Read the block as a
+little-endian number. Add one bit beyond the number of octets. For
+a 16-byte block this is equivalent to adding 2^128. The pseudocode
+writes that bit as a following byte `0x01`:
+
+```text
+n = le_bytes_to_num(msg[((i-1)*16)..(i*16)] | [0x01])
+```
+
+Appending the byte `0x01` at index 16 adds 1 · 256^16 = 2^128,
+because L_17 puts index 16 at the coefficient of 256^16. That is
+why the byte `0x01`, and not a bit stuffed into the high end of
+the last message byte, is the marker. The marker is a format
+boundary: it says where the block's octets ended. A short final
+block uses a smaller power, 2^120 or below, as the section says.
+This lesson checks a full 16-byte block and does not run the
+accumulator. The multiply-and-reduce loop is J10.
+
+Section 2.5.2 prints the example. The lines used here:
+
+```text
+s as an octet string:
+   01:03:80:8a:fb:0d:b2:fd:4a:bf:f6:af:41:49:f5:1b
+s as a 128-bit number: 1bf54941aff6bf4afdb20dfb8a800301
+r before clamping: 85:d6:be:78:57:55:6d:33:7f:44:52:fe:42:d5:06:a8
+Clamped r as a number: 806d5400e52447c036d555408bed685
+```
+
+And the first message line of the dump, together with the
+calculation's first block:
+
+```text
+000  43 72 79 70 74 6f 67 72 61 70 68 69 63 20 46 6f  Cryptographic Fo
+Block = 6f4620636968706172676f7470797243
+Block with 0x01 byte = 016f4620636968706172676f7470797243
+```
+
+The block numeral is the hex spelling of L_16 of those sixteen
+bytes: high byte on the left of the numeral, which is the last
+byte of the string, `0x6f`. The dump's first byte is `0x43`, the
+ASCII code of `C`, and it is the least significant byte of the
+number. The numeral therefore ends in `43`.
+
+**Listing J4.13 — `poly_read.or`**
+
+```orange
+edition 2026;
+module poly_read {
+  spec block() -> Int { hex"43727970746f6772617068696320466f" as little Int }
+  spec shown() -> Word[8]^16 {
+    let n: Int = hex"43727970746f6772617068696320466f" as little Int;
+    n as big Word[8]^16
+  }
+  spec with_bit() -> Word[8]^17 {
+    let n: Int = (hex"43727970746f6772617068696320466f" ++ hex"01") as little Int;
+    n as big Word[8]^17
+  }
+  spec s() -> Int { hex"0103808afb0db2fd4abff6af4149f51b" as little Int }
+  spec clamped() -> Int {
+    let r: Word[8]^16 = hex"85d6be7857556d337f4452fe42d506a8";
+    let a: Word[8]^16 = r with [3] = r[3] & 15;
+    let b: Word[8]^16 = a with [7] = a[7] & 15;
+    let c: Word[8]^16 = b with [11] = b[11] & 15;
+    let d: Word[8]^16 = c with [15] = c[15] & 15;
+    let e: Word[8]^16 = d with [4] = d[4] & 252;
+    let f: Word[8]^16 = e with [8] = e[8] & 252;
+    let g: Word[8]^16 = f with [12] = f[12] & 252;
+    g as little Int
+  }
+  test "the first block displays as the RFC hex numeral" {
+    shown() == hex"6f4620636968706172676f7470797243"
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+poly_read::block: Int = 147908425225540690611047796896236663363
+poly_read::shown: Word[8]^16 = [0x6f, 0x46, 0x20, 0x63, 0x69, 0x68, 0x70, 0x61, 0x72, 0x67, 0x6f, 0x74, 0x70, 0x79, 0x72, 0x43]
+poly_read::with_bit: Word[8]^17 = [0x01, 0x6f, 0x46, 0x20, 0x63, 0x69, 0x68, 0x70, 0x61, 0x72, 0x67, 0x6f, 0x74, 0x70, 0x79, 0x72, 0x43]
+poly_read::s: Int = 37162754436723567162214218529947779841
+poly_read::clamped: Int = 10669302975710760130990824415874176645
+```
+
+**Test report:**
+
+```text
+test "the first block displays as the RFC hex numeral" ... ok
+1 test: 1 passed, 0 failed
+```
+
+`shown` writes L_16 of the message bytes back out with B_16, which
+is the hex numeral of that integer, high byte first. The bytes are
+`6f 46 20 63 69 68 70 61 72 67 6f 74 70 79 72 43`, the block the
+RFC prints, including the final `43` that is the first byte of the
+dump. `with_bit` is the same integer plus 2^128, displayed in 17
+bytes. The leading byte is `0x01`, and the rest are the block
+numeral. That is the line “Block with 0x01 byte”.
+
+`s` is L_16 of the octet string. Its hex numeral is
+`1bf54941aff6bf4afdb20dfb8a800301`, the number the RFC prints. The
+low two bytes of that numeral are `03 01`, which are the first two
+octets `01:03` in reverse, as Proposition J4.4 requires.
+
+`clamped` is L_16 after the seven byte masks. The integer is
+10669302975710760130990824415874176645. In hex it is
+`806d5400e52447c036d555408bed685`, which is the clamped number the
+section prints, a 31-digit numeral because the high nibble is
+`8` and no leading zero was written. The test of `shown` does not
+cover `clamped`. A reader who skips the masks and compares L_16 of
+the raw r bytes with that numeral will not get a match. The masks
+are part of the format of r. They are not an endianness. J10
+inherits both: little-endian number, then this clamp, then the
+field prime 2^130 − 5, which §2.5 prints as
+`3fffffffffffffffffffffffffffffffb`. Reducing the 17-byte block
+modulo that prime does not change it, because the block with the
+`0x01` byte is less than 2^129 and the prime is greater. That
+comparison is one integer. It is not the MAC.
+
+### J4.14 RFC 7748: the u-coordinate and the masked top bit
+
+Section 5 encodes a u-coordinate as a byte array in little-endian
+order such that
+
+u[0] + 256·u[1] + 256^2·u[2] + … + 256^{n−1}·u[n−1]
+
+is congruent to the value modulo p, and u[n−1] is minimal. The sum
+is L_n. The sentence then says: when receiving such an array,
+implementations of X25519, but not X448, MUST mask the most
+significant bit in the final byte. The Python in the same section
+is the definition of that mask for a width that is not a multiple
+of 8. For 255 bits, `bits % 8` is 7, and the last byte is combined
+with `(1 << 7) − 1`, which is 127. Bit 7 of the last byte is
+cleared. The other bits of that byte stay. The decoding used here
+is L_32 of the 32 bytes after that mask.
+
+The same section decodes a scalar by a different mask, and the
+difference matters. For X25519, set the three least significant
+bits of the first byte and the most significant bit of the last to
+zero, set the second most significant bit of the last byte to 1,
+and decode as little-endian. The resulting integer has the form
+2^254 plus eight times a value between 0 and 2^251 − 1 inclusive.
+The Python is `k_list[0] &= 248`, `k_list[31] &= 127`,
+`k_list[31] |= 64`, then the little-endian sum. This lesson does
+not perform the scalar multiplication. The ladder is J20. The
+masks are format boundaries on the way into that function, and
+they are not the same mask.
+
+Section 5.2 prints an X25519 vector. The u-coordinate and the
+number, with the line break of the plain text removed and no digit
+added or deleted, are:
+
+```text
+e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c
+34426434033919594451155107781188821651316167215306631574996226621102155684838
+```
+
+The last byte of the coordinate is `0x4c`. Its most significant
+bit is 0, because `0x4c` = 76 < 128. The mask that clears that bit
+does not change this array. The printed number is therefore L_32
+of the printed bytes. A coordinate whose last byte had that bit
+set would be a different integer, larger by 2^255, and the mask
+would remove exactly that power. Section 6.1 encodes the base
+point as a byte with value 9 followed by 31 zero bytes. L_32 of
+that string is the integer 9.
+
+The first scalar of §5.2 is printed as
+
+```text
+a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4
+```
+
+and its number, again joining the broken line, is
+
+```text
+31029842492115040904895560451863089656472772604678260265531221036453811406496
+```
+
+The last byte of the scalar is `0xc4`, whose most significant bit
+is 1. L_32 of the raw bytes is not the printed number. The printed
+number is L_32 after the scalar mask. Comparing the raw
+little-endian integer with the printed number fails. The failure
+is not an endianness bug. The endianness is already little-endian
+on both sides. The missing operation is the mask.
+
+**Listing J4.14 — `x_coord.or`**
+
+```orange
+edition 2026;
+module x_coord {
+  spec u() -> Int {
+    hex"e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c" as little Int
+  }
+  spec masked() -> Int {
+    let u: Word[8]^32 = hex"e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c";
+    (u with [31] = u[31] & 127) as little Int
+  }
+  spec raised() -> Int {
+    let u: Word[8]^32 = hex"e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c";
+    (u with [31] = u[31] | 128) as little Int
+  }
+  spec base() -> Int { (hex"09" ++ [0x00; 31]) as little Int }
+  test "masking this vector does not change the integer" {
+    masked() == u()
+  }
+  test "the base point byte string is the integer 9" {
+    base() == 9
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+x_coord::u: Int = 34426434033919594451155107781188821651316167215306631574996226621102155684838
+x_coord::masked: Int = 34426434033919594451155107781188821651316167215306631574996226621102155684838
+x_coord::raised: Int = 92322478652577692162940600285532775577951159548126913594725018625058720504806
+x_coord::base: Int = 9
+```
+
+**Test report:**
+
+```text
+test "masking this vector does not change the integer" ... ok
+test "the base point byte string is the integer 9" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+`u` equals the printed number. `masked` equals `u` on this vector
+only because bit 7 of `0x4c` is already clear. `raised` sets that
+bit. The difference `raised − u` is 2^255. The mask `u[31] & 127`
+applied to the raised array clears the bit again and returns `u`.
+J20, receiving a 32-byte coordinate, masks before the little-endian
+sum. Skipping the mask accepts an integer the section told the
+receiver to reduce by clearing one bit.
+
+**Listing J4.15 — `x_scalar_wrong.or`, intentionally failing**
+
+```orange
+edition 2026;
+module x_scalar_wrong {
+  spec raw() -> Int {
+    hex"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4" as little Int
+  }
+  test "the raw little-endian reading is the printed scalar" {
+    raw() == 31029842492115040904895560451863089656472772604678260265531221036453811406496
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+x_scalar_wrong::raw: Int = 88925887110773138616681052956207043583107764937498542285260013040410376226469
+```
+
+**Test report:**
+
+```text
+test "the raw little-endian reading is the printed scalar" ... FAILED
+    left:  88925887110773138616681052956207043583107764937498542285260013040410376226469
+    right: 31029842492115040904895560451863089656472772604678260265531221036453811406496
+1 test: 0 passed, 1 failed
+```
+
+Left is L_32 of the printed scalar bytes. Right is the number §5.2
+prints beside them. They differ. The order is not the defect.
+
+**Listing J4.16 — `x_scalar.or`**
+
+```orange
+edition 2026;
+module x_scalar {
+  spec clamped() -> Int {
+    let k: Word[8]^32 = hex"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4";
+    let a: Word[8]^32 = k with [0] = k[0] & 248;
+    let b: Word[8]^32 = a with [31] = a[31] & 127;
+    (b with [31] = b[31] | 64) as little Int
+  }
+  test "RFC 7748 5.2 scalar number is the clamped decoding" {
+    clamped() == 31029842492115040904895560451863089656472772604678260265531221036453811406496
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+x_scalar::clamped: Int = 31029842492115040904895560451863089656472772604678260265531221036453811406496
+```
+
+**Test report:**
+
+```text
+test "RFC 7748 5.2 scalar number is the clamped decoding" ... ok
+1 test: 1 passed, 0 failed
+```
+
+The repair is the three assignments the section lists, then the
+same `as little` the failing test already used. 248 is 256 − 8, so
+`& 248` clears the three low bits of the first byte. 127 clears
+bit 7 of the last byte. 64 sets bit 6. The passing test is a Match
+on this one scalar. It is not X25519. Section 5 also says the
+`cswap` used by the ladder should be independent of the swap
+argument in its timing. This lesson does not implement `cswap` and
+makes no timing claim.
+
+### J4.15 FIPS 197: bytes, the State, and the column
+
+Section 3.1 says a bit is 0 or 1, and a block is a sequence of 128
+bits. Section 3.2 says the basic processing unit is the byte, a
+sequence of eight bits. When the bits of a byte are denoted by an
+indexed variable, the indices decrease from left to right:
+`{b7 b6 b5 b4 b3 b2 b1 b0}`. The left hex digit of a byte is
+b7 through b4. The example `{10100011}` is the hex byte `{a3}`.
+That is the inside-the-byte convention of Chapter 2, stated again
+for this standard. Bit 0 of a byte is the least significant bit.
+It is not byte 0 of a block.
+
+Section 3.3 numbers a sequence of 8k bits as r0 through r_{8k−1}
+from the left, and sets byte a_j to the eight bits r_{8j} through
+r_{8j+7}. For a block, a0 is the first byte and a15 is the last.
+Table 2 of that section puts the two numberings on one line. The
+bit index in the sequence increases to the right. The bit index
+inside the byte decreases to the right. Both statements are in the
+table. Neither one is byte order inside a 32-bit integer. The
+table does not say “little-endian” or “big-endian”.
+
+Section 3.4 copies the input into the State. The State is a
+four-by-four array of bytes. The copy is
+
+s[r, c] = in[r + 4c] for 0 ≤ r < 4 and 0 ≤ c < 4.
+
+The output copy is the same formula reversed,
+out[r + 4c] = s[r, c]. Index c is the column. The formula takes
+four consecutive input bytes, starting at a multiple of 4, and
+places them down a column. That is column-major order of the input
+bytes. It is not row-major, which would have been s[r, c] = in[4r + c].
+
+Figure 1 prints the input bytes across the top of each column and
+the State with s0,0 at the upper left. Appendix B gives the bytes.
+The input line is
+
+```text
+Input = 32 43 f6 a8 88 5a 30 8d 31 31 98 a2 e0 37 07 34
+```
+
+and the State at the start of the round diagram is the columns
+
+```text
+32 88 31 e0
+43 5a 31 37
+f6 30 98 07
+a8 8d a2 34
+```
+
+Read down the first column: 32, 43, f6, a8, which are in0 through
+in3. Read across the first row: 32, 88, 31, e0, which are in0,
+in4, in8, in12. Equation (3.6) produces both readings.
+
+Section 3.5 says a word is a sequence of four bytes, and a block
+is four words. The four columns are four words. Appendix A prints
+the key
+
+```text
+Key = 2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c
+```
+
+and the words `w0 = 2b7e1516`, `w1 = 28aed2a6`, `w2 = abf71588`,
+`w3 = 09cf4f3c`. The first word's hex numeral is the first four
+key bytes in the order printed. That is B_4 of those bytes. The
+section does not use the phrase “big-endian” for this numeral.
+The numeral is the evidence. A little-endian reading of
+`2b 7e 15 16` is `0x16157e2b`, which Appendix A does not print.
+J12 may treat a column as a sequence of four bytes in row order,
+index 0 at the top, and if it packs those bytes into a `Word[32]`
+for the notation of Appendix A it uses `as big`. Packing them with
+`as little` produces a word the appendix does not display. This
+lesson does not expand the key and does not run a round.
+
+**Listing J4.17 — `aes_state.or`**
+
+```orange
+edition 2026;
+module aes_state {
+  spec columns_match() -> Bool {
+    let inn: Word[8]^16 = hex"3243f6a8885a308d313198a2e0370734";
+    let picture: Word[8]^16 = hex"328831e0435a3137f6309807a88da234";
+    for c in 0..4 with ok: Bool = true {
+      (for r in 0..4 with row: Bool = true {
+        row && (inn[r + (4 * c)] == picture[(4 * r) + c])
+      }) && ok
+    }
+  }
+  spec w0() -> Word[32] { hex"2b7e1516" as big Word[32] }
+  spec w0_little() -> Word[32] { hex"2b7e1516" as little Word[32] }
+  test "Appendix B input occupies the state by equation 3.6" {
+    columns_match() == true
+  }
+  test "Appendix A prints the first key word big-endian" {
+    w0() == 0x2b7e1516
+  }
+}
+```
+
+`picture` is the State written row by row, left to right, from the
+diagram above: row 0 is `32 88 31 e0`, row 1 is `43 5a 31 37`, and
+so on. The inner comparison says the input byte at index r + 4c
+equals the picture byte at index 4r + c. That is equation (3.6)
+together with row-major storage of the figure. The loops run r
+through 0, 1, 2, 3 and c through the same range. Every index
+r + 4c and 4r + c falls between 0 and 15. The `Bool` is the
+conjunction of the sixteen equalities.
+
+**Expected evaluation output:**
+
+```text
+aes_state::columns_match: Bool = true
+aes_state::w0: Word[32] = 0x2b7e1516
+aes_state::w0_little: Word[32] = 0x16157e2b
+```
+
+**Test report:**
+
+```text
+test "Appendix B input occupies the state by equation 3.6" ... ok
+test "Appendix A prints the first key word big-endian" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+**Proposition J4.10.** For the Appendix B input, equation (3.6)
+places `0x32` at s[0, 0], `0x43` at s[1, 0], and `0x88` at
+s[0, 1]. The word Appendix A prints as `w0` is B_4 of the first
+four key bytes, not L_4 of those bytes.
+
+*Proof.* in[0] = `0x32`, in[1] = `0x43`, in[4] = `0x88`, from the
+input line read left to right. Equation (3.6) at (r, c) = (0, 0)
+selects in[0]. At (1, 0) it selects in[1]. At (0, 1) it selects
+in[0 + 4·1] = in[4]. The first four key bytes are `2b 7e 15 16`.
+B_4 of them is the integer whose hex numeral is `2b7e1516`, which
+is the printed w0. L_4 of them is `0x16157e2b`, by the same sum as
+Proposition J4.9. The printed word is the first integer. □
+
+**Listing J4.18 — `aes_wrong.or`, intentionally failing**
+
+```orange
+edition 2026;
+module aes_wrong {
+  test "Appendix A first key word loaded little-endian" {
+    (hex"2b7e1516" as little Word[32]) == 0x2b7e1516
+  }
+}
+```
+
+**Test report:**
+
+```text
+test "Appendix A first key word loaded little-endian" ... FAILED
+    left:  0x16157e2b
+    right: 0x2b7e1516
+1 test: 0 passed, 1 failed
+```
+
+The minimal repair is `as big`, the conversion Listing J4.17
+already tested. The right-hand side stays the word the appendix
+prints.
+
+### J4.16 Bit order inside a byte, byte order inside a word
+
+The two orders are now both on the page, and they answer different
+questions.
+
+Take the byte `{10100011}`, which §3.2 of FIPS 197 writes as
+`{a3}`. Number the bits b7 down to b0 from the left, as that
+section does. Then b0 = 1, b1 = 1, b5 = 1, and the other bits are
+0. The integer is 1·2^0 + 1·2^1 + 1·2^5 = 163 = 0xa3. Bit 0 is the
+coefficient of 2^0. Changing bit 0 changes the integer by 1.
+Changing bit 7 changes it by 128.
+
+Take the four bytes of the ChaCha key prefix `(0x00, 0x01, 0x02, 0x03)`.
+Byte 0 of that string is `0x00`. It is the first byte. Under L_4
+it is also the least significant byte, and the integer changes by
+1 if that byte changes by 1. Under B_4 the same byte is the most
+significant, and changing it by 1 changes the integer by 2^24.
+“The low end” is not the name of an index until the function is
+chosen.
+
+FIPS 197 Table 2 makes the inside-the-byte direction explicit.
+Along the sequence, bit indices increase to the right, and byte
+indices increase to the right. Inside a byte, bit indices decrease
+to the right. A reader who exports those bytes onto a little-endian
+wire, as ChaCha does, has used decreasing bit numbers inside the
+byte and increasing significance across bytes. Cohen's note calls
+a mix of those directions an inconsistent order, and says the
+chunk size then has to be agreed, because the parties can no
+longer regroup bits without knowing where the bytes were. [J4S1]
+AES stays consistent with its own hex numerals: the first byte of
+a word is the high byte of the printed word. ChaCha stays
+consistent with its sentence: the first byte of a word is the low
+byte. Each document picked one chunk size, 8 bits for the byte and
+32 bits for the word, and stated the order at the word. A program
+that uses AES key bytes as a ChaCha key, or the reverse, without
+restating the order, has changed the integer.
+
+Silence is the remaining case. A sentence that numbers bytes and
+never says which end is significant has not chosen L_k or B_k.
+Assumption J4.7. FIPS 197 §3.4 is nearly that sentence: it places
+bytes into the State and does not, in that section, pack a column
+into an integer. Appendix A is the later place where the integer
+appears, and it appears as a hex numeral with the first byte on
+the left. A J12 listing that packs the column must cite that
+numeral, or cite §3.2's left-to-right bits, and not cite §3.4
+alone.
+
+### J4.17 Length fields and padding are format boundaries
+
+A format boundary is a rule that says where one field ends. The
+rule is not “where the example happens to be short”.
+
+FIPS 180-4 §5.1.1 has three boundaries in one block. The message
+bits end at bit ℓ. The next bit is 1, which for “abc” falls at the
+start of the fourth byte and makes that byte `0x80`. Then zero bits
+fill through bit 447 of the 512-bit block. Bits 448 through 511
+are the length, and they are the integer ℓ in the big-endian
+64-bit convention of §3.1, not the number of padding bytes and not
+the number of blocks. Listing J4.7 put that integer at 24.
+Listing J4.8 showed the other order produces a different integer.
+Moving the length to the front of the block, or writing it in the
+low eight bytes of a longer padding, is a different format. SHA-512
+uses a 128-bit length and a different congruence, 896 mod 1024, in
+§5.1.2. This lesson does not pad a SHA-512 message. The existence
+of the second rule is why “the length goes at the end” is not yet
+a specification.
+
+Poly1305's boundary is the extra `0x01` byte at the first index
+past the octets of the block, which adds 2^128 for a full block.
+Without that byte, L_16 of the sixteen message bytes is a different
+integer, smaller by 2^128. The RFC prints both. The clamp on r is
+another boundary: bits that are required to be clear are not part
+of the accepted key element, even though they occupy places in the
+16-byte string. Clearing them changes the integer whenever one of
+those bits arrived set.
+
+RFC 7748's boundary on a received X25519 coordinate is one bit, the
+most significant bit of the last byte. On the §5.2 vector that bit
+is already 0, so a test of that vector alone cannot show that the
+mask does anything. Listing J4.14 set the bit and the integer grew
+by 2^255. A test suite that only round-trips vectors whose top bit
+is clear does not exercise the boundary. The scalar mask is three
+operations, not one, and Listing J4.15 showed that omitting them
+fails against the printed number even though the endianness is
+right.
+
+The Orange rejection in Listing J4.5 is the same idea inside the
+language. Three bytes are not a 32-bit word. The compiler will not
+choose a pad byte in order to make the widths match. The program
+names the pad, or it converts a type whose width is the width it
+has.
+
+### J4.18 How a test vector is printed
+
+A printed vector has a layout, and the layout is not the integer.
+
+RFC 8439 §2.5.2 prints the message as a dump of three columns. The
+first column is an offset: `000`, then `016`, then `032`. Those
+are decimal counts of bytes from the start of the message. Sixteen
+bytes occupy the first line, so the next line begins at byte 16,
+written `016`. The second column is the bytes in index order, hex
+digits, high nibble on the left inside each byte. The third column
+is those same bytes as ASCII, cut to the width of the line:
+`Cryptographic Fo`, then `rum Research Gro`, then `up`. The cut is
+the line width. It is not a field boundary of the message. The
+message is the 34 bytes `Cryptographic Forum Research Group`.
+
+The offset column is not a length field and not an endianness. A
+reader who adds the offset bytes into the message, or who reads
+`016` as the hex integer 0x16 = 22 and skips 22 bytes, has invented
+a format the dump does not have. The ChaCha key in §2.3.2 is
+printed with colons, `00:01:02:03`, and no offsets. The colons
+separate bytes. They are not a 16-bit word `0x0001`.
+
+FIPS 180-4 prints words as eight hex digits, high digit on the
+left, which Proposition J4.7 already tied to B_4. The NIST sample
+prints `W[0] = 61626380` in that style. It does not print a dump
+of the padded block. Reconstructing the bytes is the conversion,
+not a second copy of the line.
+
+FIPS 197 Appendix B prints the input as sixteen hex bytes separated
+by spaces, in index order, and prints the State as a grid whose
+columns are the words. The grid is equation (3.6) drawn. Reading
+the grid left to right along a row does not recover the input
+order. Reading it down a column does.
+
+RFC 7748 prints coordinates as unbroken hex, 64 digits for 32
+bytes, in index order, so the left-most pair is u[0], the least
+significant byte. The decimal on the next line is L_32 after the
+mask the section requires, not B_32 of the hex digits. For the
+u-coordinate in §5.2 the mask was idle and the decimal matched
+L_32. For the scalar it was not idle. A reader who feeds the hex
+digits to `as big Int` gets the integer whose first byte is the
+high byte. That integer is B_32, and §5 did not print it.
+
+The rule for every one of these layouts is the same. Find the
+sentence that says what the marks mean. Apply L_k or B_k, or the
+column formula, as that sentence says. Compare the result with the
+number or the word the document prints. Do this before a later
+chapter compares a full construction. A construction that is right
+on the wrong integers will match nothing, and the failure will
+look like a round error.
+
+### J4.19 The wrong order, the failure, and the repair
+
+Outcome 5 is one habit, applied twice.
+
+For the ChaCha key, Listing J4.11 loaded `00 01 02 03` with
+`as big` and compared it with `0x03020100`. The test failed. Left
+was `0x00010203`. Right was the word §2.3 names. Listing J4.12
+changed `big` to `little` and passed. No other token changed.
+
+For the SHA-256 word, Listing J4.9 loaded `61 62 63 80` with
+`as little` and compared it with `0x61626380`. The test failed.
+Left was `0x80636261`. Right was the word the sample prints.
+Listing J4.7 changed the order to `big` and passed.
+
+The two repairs move in opposite directions because the two
+standards chose opposite functions. A single project-wide
+“endianness setting” cannot satisfy both. The setting belongs to
+the field. ChaCha's key, counter, nonce, and serialized block are
+little-endian 32-bit words. SHA-256's message words and length are
+big-endian. Poly1305's blocks and its s are little-endian numbers,
+with a clamp on r before the number is used. X25519's coordinates
+are little-endian, with one bit cleared on receipt. AES's printed
+words put the first byte on the left, and its State is filled down
+the columns.
+
+In each failing report the right-hand side was the document's
+value and the left-hand side was the wrong function. The minimal
+repair edited the function. Editing the right-hand side to equal
+the left-hand side produces a passing test of a value the document
+does not contain. That edit is available, and it is the wrong
+repair. N8 already separated a false expected word from a false
+function. The same separation applies here, with the order as the
+function.
+
+### J4.20 What later chapters may assume
+
+J5 may take B_4 on each 32-bit message word of a SHA-256 block, and
+B_8 on the 64-bit length, as FIPS 180-4 §3.1 and §5.1.1. It may
+take the padded “abc” block's first word to be `0x61626380` and its
+length word-pair to end in `0x00000018`. It derives the schedule
+and the compression function. This lesson did not.
+
+J9 may take L_4 on each ChaCha20 key word, nonce word, and counter
+word, and the inverse of L_4 when it serializes a word, as RFC
+8439 §2.3. The constants are the four words Listing J4.10
+computed. J9 does not inherit a big-endian load of the §2.3.2 key.
+
+J10 may take L_16 on a Poly1305 block, then add 2^128 for a full
+block by the extra byte `0x01`, and it may clamp r by the masks in
+§2.5 before that integer is used. It derives the accumulator. This
+lesson stopped at the integer.
+
+J12 may copy an AES input into the State by s[r, c] = in[r + 4c],
+and if it packs four column bytes into the hex numeral of Appendix
+A it uses B_4. It derives the rounds. This lesson did not.
+
+J20 may decode an X25519 u-coordinate by clearing bit 7 of the last
+byte and then applying L_32, and it may decode a scalar by the
+three masks of §5 and then L_32. It derives the ladder. This
+lesson did not, and it made no timing claim about `cswap`.
+
+None of these permissions is a proof of the construction, a
+security claim, or a statement that the Match on one vector extends
+to every input. A passing test remains a Match on the inputs it
+writes. [J4C1] OEP-0017 remains in Review. The listings report the
+binary. They do not accept the proposal. [J4T2]
+
 ## Sources and epigraph record
 
 The quotation is the borrowed sentence. The definitions in the
@@ -942,6 +2015,68 @@ Source: <https://www.ietf.org/rfc/ien/ien137.html>
 
 Plain-text copy consulted the same day:
 <https://ftp3.gwdg.de/pub/rfc/ien/ien137.txt>
+
+
+**[J4S2] FIPS PUB 180-4.** National Institute of Standards and
+Technology, *Secure Hash Standard (SHS)*, August 2015, DOI
+`10.6028/NIST.FIPS.180-4`. Wording of §3.1 and §5.1.1 was checked
+on 2026-10-05 against the PDF retrieved from that DOI. The
+big-endian sentence is item 2 of §3.1. The padding rule and the
+“abc” bit length are §5.1.1. This lesson does not quote §6.2.2
+and does not transcribe the compression function. The publication
+is the one N13 recorded as its hash standard. This record is the
+pin for the sentences quoted here.
+This record's tag is [J4S2].
+
+Source: <https://doi.org/10.6028/NIST.FIPS.180-4>
+
+**[J4S3] NIST SHA-256 examples.** The one-block message sample,
+input message “abc”, in the file the NIST examples page serves as
+the SHA-256 illustration. Consulted on 2026-10-05. The lines used
+here are `W[0] = 61626380` and `W[15] = 00000018` under “Block
+Contents”. The round trace in that file is not copied. The file
+is not a section of [J4S2].
+This record's tag is [J4S3].
+
+Source: <https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/SHA256.pdf>
+
+**[J4S4] Y. Nir and A. Langley.** “ChaCha20 and Poly1305 for IETF
+Protocols,” RFC 8439, June 2018, Informational. The plain text was
+checked on 2026-10-05 against the RFC Editor copy. The ChaCha20
+input bullets and the little-endian serialization sentence are
+§2.3. The Poly1305 block rule, the clamp, and the example numbers
+are §2.5 and §2.5.2. Section 2.3.1 says that if pseudocode conflicts
+with the textual explanation and the test vectors, the textual
+explanation and the test vectors are normative. No erratum was
+applied. The document is not an endorsement of Orange.
+This record's tag is [J4S4].
+
+Source: <https://www.rfc-editor.org/rfc/rfc8439.txt>
+
+**[J4S5] A. Langley, M. Hamburg, and S. Turner.** “Elliptic Curves
+for Security,” RFC 7748, January 2016, Informational. The plain
+text was checked on 2026-10-05 against the RFC Editor copy. The
+u-coordinate sum and the X25519 top-bit mask are §5. The scalar
+masks are the following paragraph of §5. The vectors are §5.2.
+The base-point encoding is §6.1. This lesson does not transcribe
+the ladder. No erratum was applied.
+This record's tag is [J4S5].
+
+Source: <https://www.rfc-editor.org/rfc/rfc7748.txt>
+
+**[J4S6] FIPS 197.** National Institute of Standards and
+Technology, *Advanced Encryption Standard (AES)*, published
+November 26, 2001, updated May 9, 2023, DOI
+`10.6028/NIST.FIPS.197-upd1`. Wording of §§3.1–3.5 and the
+Appendix A and Appendix B values quoted here was checked on
+2026-10-05 against the PDF retrieved from that DOI. Equation (3.6)
+is the input copy. This lesson does not transcribe the cipher
+rounds or the key expansion. The update's change log is not a
+byte-order change used here.
+This record's tag is [J4S6].
+
+Source: <https://doi.org/10.6028/NIST.FIPS.197-upd1>
+
 
 **[J4T1] Orange edition.** The declaration `edition 2026;` is the
 edition token required at the start of a source.
@@ -977,10 +2112,10 @@ publication-rights clearance.
 
 Sections J4.1 through J4.3 state the only-this-stack test, the
 five outcomes, and the seven assumptions. Sections J4.4 through
-J4.9 define the two functions, prove the bijections and the
-reversal relation, and discharge the test on one byte string.
-The standard listings are added with the sections that quote the
-standards.
+J4.9 define the two functions and prove the bijections and the
+reversal relation. Sections J4.10 through J4.20 quote the four
+standards, check one conversion of each, and show the failing
+order and the minimal repair. Exercises follow.
 `orangec --version` was run on 2026-10-05 and printed the line
 in §J4.1. That run does not establish a cryptographic security
 claim, and it does not accept OEP-0017.
