@@ -921,7 +921,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9fc64160ddb15f86a0750950b4d3d6e428330f444af1e02daa0fd944f1ed7dd2"
+_PHD = "9a1d29ee2a9fe43d2a0c1e5b3981342ef7b68f2b29bc76b2f0cbb491caa15d4e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1268,7 +1268,7 @@ _DBM = {
 def _markdownlint_md033_clause(elements: Sequence[str]) -> str:
     """Name the enforced MD033 allowlist so the prose cannot stay narrower than the config."""
     quoted = [f"`{element}`" for element in elements]
-    if len(quoted) != len(set(quoted)) or any(not element for element in elements):
+    if not quoted or len(quoted) != len(set(quoted)) or any(not element for element in elements):
         return "permits no reviewed MD033 HTML elements."
     if len(quoted) == 1:
         return f"permits only the {quoted[0]} HTML element under MD033."

@@ -928,7 +928,7 @@
     "tools/tests/test_d010_draft_packet.py": "4ff976f04e9778ae5fc9478449df1611f7dbcfb55b69492804e86753ac90cda9",
     "tools/tests/test_d011_suite.py": "39a21c61f940904092b1765fbf7152307950ab3eab7e948912b2f31c9e051c08",
     "tools/tests/test_validate_foundation.py": "b5c5abc3a47b5be64c77ac8cc5d82e500b4c004b4e2851c8cb21aae6312f14f0",
-    "tools/tests/test_validate_foundation_hardening.py": "33b974d31ea5c24bbcfff408a739831ec271140643b5a70148b1ba5aa12201c8"
+    "tools/tests/test_validate_foundation_hardening.py": "32f0f76512aa4cf30a8f2d316705c874f30bd76d68fb027e4e5a73c8db595593"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
