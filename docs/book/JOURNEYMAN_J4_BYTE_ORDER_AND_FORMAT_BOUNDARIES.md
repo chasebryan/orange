@@ -1984,6 +1984,271 @@ to every input. A passing test remains a Match on the inputs it
 writes. [J4C1] OEP-0017 remains in Review. The listings report the
 binary. They do not accept the proposal. [J4T2]
 
+## Exercises
+
+Twelve exercises. The answers follow, each one worked. Predicting
+the integer before you read the answer is the point of the first
+six. A prediction you do not write down is not a prediction.
+
+**Exercise J4.1 — Two bytes, both functions.** Take the byte string
+`(0xab, 0xcd)`. Compute L_2 and B_2 by the sums in Definitions J4.3
+and J4.4. Give each integer in decimal and in hex. Say which one
+equals the hex numeral `0xabcd`, and why that equality is not a
+reason to prefer that function.
+
+**Exercise J4.2 — The inverse, one division at a time.** Start from
+the integer 52651. Recover its little-endian bytes by Euclidean
+division by 256, twice. Then reverse those bytes and read them
+big-endian. Which proposition says the result equals 52651, and
+which proposition says the same steps with the other order would
+not return 52651?
+
+**Exercise J4.3 — The sentence, then the bytes.** Quote the
+sentence of FIPS 180-4 §3.1 that names the big-endian convention.
+The sentence mentions bits. Explain, in the steps of Proposition
+J4.7, why the first byte of a 32-bit word is nevertheless the
+coefficient of 2^24. Apply that to the four bytes `61 62 63 80`
+and name the sample line you have matched.
+
+**Exercise J4.4 — A nonce word N12 already used.** The third nonce
+group in RFC 8439 §2.3.2 is the bytes `00 00 00 4a`, in the order
+printed. Compute L_4 and B_4. Which integer is word 14 of the
+ChaCha state, and which listing in this lesson is the same
+function on a different group?
+
+**Exercise J4.5 — The second Poly1305 block.** The dump's second
+line is the sixteen bytes
+`72 75 6d 20 52 65 73 65 61 72 63 68 20 47 72 6f`.
+Section 2.5.2 prints `Block = 6f7247206863726165736552206d7572`
+for block 2. Show that this numeral is B_16 of the reversal of
+those bytes, by identifying the first byte of the numeral and the
+last byte of the numeral. Do not multiply the block by r. That
+product is J10.
+
+**Exercise J4.6 — Where the two orders agree.** Let s be
+`(0x01, 0x02, 0x02, 0x01)`. Compute L_4(s) and B_4(s). Explain,
+from Proposition J4.4 and from the terms of the two sums, why they
+are equal. Explain why this equality does not retract Proposition
+J4.6.
+
+**Exercise J4.7 — One cell of the State.** For the Appendix B
+input, which index of `in` is s[2, 3] under equation (3.6), and
+which byte sits there? Which index is s[3, 2]? Why are those two
+cells not the same byte?
+
+**Exercise J4.8 — Bit 0 is not byte 0.** In the byte `0xa3`, under
+the numbering FIPS 197 §3.2 gives, what is bit 0, and by how much
+does the integer change if that bit flips? In the ChaCha key
+prefix `(0x00, 0x01, 0x02, 0x03)`, what is byte 0, and by how much
+does L_4 change if that byte becomes `0x01`? Why is a sentence
+that says only “the low end” not enough to pick one of these two
+answers?
+
+**Exercise J4.9 — The repair that keeps the standard.** Listing
+J4.8 failed. State the minimal repair. Then state an edit that
+makes the `Bool` true and abandons §5.1.1. Which of the two is the
+repair outcome 5 asks for, and why is the other one available?
+
+**Exercise J4.10 — Read the dump, not the offset.** In the RFC
+8439 §2.5.2 message dump, what integer does the offset `016`
+denote, and is that integer a byte of the message? What is the
+first byte of the message, as an integer, and which character is
+it? Why is `016` not the hex integer 22?
+
+**Exercise J4.11 — Right order, wrong integer.** Listing J4.15
+failed with both sides little-endian. Name the three masks that
+Listing J4.16 applies, and say which bits of which bytes they
+change. Why would replacing `little` with `big` not be the repair?
+
+**Exercise J4.12 — A string this lesson did not walk.** Take
+`(0xff, 0x00)`. Compute L_2 and B_2. State the reversal relation
+on this string in one equation. A document prints the two bytes
+and never says which end is significant. Which of the five
+outcomes have you not yet met for this string, and what sentence
+is still missing? A passing comparison of L_2 with 255 is a Match
+on this string. What does that Match not establish?
+
+## Worked answers
+
+**J4.1.** L_2 = 0xab + 0xcd · 256 = 171 + 205 · 256 = 171 + 52480
+= 52651. In hex that is `0xcdab`, because the first byte is the
+low byte and the hex numeral writes the high byte on the left.
+B_2 = 0xab · 256 + 0xcd = 43776 + 205 = 43981, which is `0xabcd`.
+The hex numeral `0xabcd` equals B_2 because a hex numeral is
+itself a big-endian spelling of its digits, the convention of
+§2.5 lifted from base 16 to base 256. That is a fact about how we
+write integers. It is not a reason for a protocol to choose B_k.
+ChaCha chooses L_4 for its words and still prints those words in
+hex. The printing convention and the wire convention are two
+functions. They coincide only when the field is big-endian or the
+string is a palindrome.
+
+**J4.2.** Divide 52651 by 256. 256 · 205 = 52480, and
+52651 − 52480 = 171, so the remainder is 171 = 0xab and the
+quotient is 205 = 0xcd. The next division of 205 by 256 has
+remainder 205 and quotient 0. The little-endian bytes are
+`(0xab, 0xcd)`. That is the inverse of L_2 given by Proposition
+J4.2. Reversing them yields `(0xcd, 0xab)`. B_2 of that string is
+0xcd · 256 + 0xab = 52480 + 171 = 52651. Proposition J4.4 says
+L_2(s) = B_2(rev_2(s)), so the result had to be 52651. The other
+order does not return the same integer on the way back: B_2 of
+`(0xab, 0xcd)` is 43981, and L_2 of those same bytes is 52651.
+Proposition J4.6 is the general fact that the two functions differ
+whenever the length is greater than 1 and the string is the one
+named there; this pair is a second witness, since 52651 ≠ 43981.
+Storing with one order and loading with the other reverses bytes.
+It is not the inverse.
+
+**J4.3.** The sentence is: “Throughout this specification, the
+“big-endian” convention is used when expressing both 32- and
+64-bit words, so that within each word, the most significant bit
+is stored in the left-most bit position.” The left-most bit is
+the coefficient of 2^31 in a 32-bit word. The next seven bits are
+the coefficients of 2^30 down through 2^24. Together they form a
+byte multiplied by 2^24. That byte is the first byte of the word
+in left-to-right order, so the word's integer is B_4 of its four
+bytes. This is Proposition J4.7. The bytes `61 62 63 80` therefore
+denote the integer whose hex numeral is `61626380`. The NIST
+one-block sample prints that integer as `W[0] = 61626380`. Listing
+J4.7 evaluated `as big` to the same word. The little-endian
+reading `0x80636261` is not W[0].
+
+**J4.4.** L_4(0x00, 0x00, 0x00, 0x4a) = 0x4a · 256^3 = 0x4a ·
+16777216 = 1241513984, written `0x4a000000`. B_4 of the same bytes
+is `0x0000004a` = 74. Section 2.3 takes the nonce's 32-bit groups
+as little-endian integers, so word 14 of the state, the middle
+nonce word in the §2.3.2 layout N12 printed, is `0x4a000000`.
+Listing J4.10 applied the same function to the first nonce group
+`00 00 00 09` and obtained `0x09000000`. Copying the printed
+digits into the literal `0x0000004a` stores B_4. The state does
+not contain that word.
+
+**J4.5.** The last byte of the string is `0x6f`, and the first
+byte is `0x72`. Proposition J4.4 says the hex numeral of L_16, high
+byte on the left, is the bytes of the string reversed. The numeral
+therefore begins with `6f` and ends with `72`. The RFC's block
+line is `6f7247206863726165736552206d7572`. It begins with `6f`
+and ends with `72`. The bytes between are the interior of the
+string read from the right: `6f` then `72` then `47` then `20`,
+which are the last four bytes of the dump line in reverse, and so
+on back to `72`. The integer is 148137671992688356791019219269509281138.
+This answer does not multiply by r, and it does not claim the tag.
+
+**J4.6.** Both sums contain the terms 1, 2 · 256, 2 · 65536, and
+1 · 16777216. L_4 assigns them to bytes from the left in that
+order. B_4 assigns 1 · 16777216 to the first byte, 2 · 65536 to
+the second, 2 · 256 to the third, and 1 to the last. The string
+reads the same from either end, so the two assignments are the
+same four terms. The common value is 16908801, which is
+`0x01020201`. Proposition J4.4 says B_4(s) = L_4(rev_4(s)). Here
+rev_4(s) = s, so the two functions agree on s. Proposition J4.6
+says they are not the same function for k = 4, because they differ
+on `(1, 0, 0, 0)`. Agreement on a palindrome is the case the
+proposition did not claim. Listing J4.6's four `0xff` bytes are
+the same case. A test that uses only palindromes cannot see the
+order.
+
+**J4.7.** Equation (3.6) is s[r, c] = in[r + 4c]. For r = 2 and
+c = 3, the index is 2 + 12 = 14. The Appendix B input, in order,
+is `32 43 f6 a8 88 5a 30 8d 31 31 98 a2 e0 37 07 34`. Index 14 is
+`0x07`. For r = 3 and c = 2, the index is 3 + 8 = 11, and the byte
+is `0xa2`. The two cells differ because column-major order and
+row-major order select different input bytes at those coordinates.
+The picture in Listing J4.17 stores the State row by row, so
+s[2, 3] is the last byte of the third row of that picture, which
+is the byte at picture index 4 · 2 + 3 = 11 of the picture string
+`328831e0435a3137f6309807a88da234`, namely `0x07`. Same byte, other
+array. The input index and the picture index are not the same
+number.
+
+**J4.8.** Section 3.2 writes the byte `{b7 b6 b5 b4 b3 b2 b1 b0}`
+with the indices decreasing to the right. The hex byte `0xa3` is
+`10100011`, so b0 = 1, b1 = 1, and b5 = 1. Bit 0 is the coefficient
+of 2^0. Flipping it changes the integer by 1, from 163 to 162.
+Byte 0 of the ChaCha prefix is the first byte, `0x00`. Under L_4
+that byte is the coefficient of 256^0, so replacing it with `0x01`
+changes L_4 by 1, from `0x03020100` to `0x03020101`. Under B_4 the
+same replacement changes the integer by 2^24. “The low end” names
+bit 0 if the speaker means inside a byte, and names byte 0 only if
+the speaker has already chosen L_k. Assumption J4.7: the two
+conventions are not interchangeable, and a sentence that is silent
+has chosen neither.
+
+**J4.9.** The minimal repair replaces `as little` with `as big` in
+Listing J4.8. The right-hand side stays 24, which is ℓ for “abc”.
+Listing J4.7 is that repaired comparison, and it passed. The edit
+that abandons the standard replaces 24 with the left-hand value
+`0x1800000000000000`. The `Bool` becomes true. The claim becomes
+“the little-endian reading equals the little-endian reading”,
+which is not §5.1.1. Outcome 5 asks for the repair that keeps the
+document's value and changes the function. The other edit is
+available because a test only checks the `Bool` you wrote. It does
+not check that the right-hand side is the integer the section
+defined. That check is yours, before you change the expected word.
+
+**J4.10.** The offsets `000`, `016`, and `032` increase by 16,
+which is the number of bytes on a full line of that dump. `016` is
+the decimal integer 16, the index of the first byte on the second
+line. It is not a byte of the message, and it is not a length
+field. The first byte of the message is `0x43`, which is 67, the
+ASCII code of `C`. The line's ASCII column begins `Cryptographic`.
+Reading `016` as hexadecimal would give 0x16 = 22, and skipping 22
+bytes would land inside the second line rather than at its start.
+The dump's own successor, `032`, confirms the base: 16 + 16 = 32,
+written with a leading zero as `032`. Hexadecimal 0x16 + 0x16 is
+not 0x32. The column is decimal.
+
+**J4.11.** Listing J4.16 clears the three least significant bits of
+byte 0 by `& 248`, clears the most significant bit of byte 31 by
+`& 127`, and sets the second most significant bit of byte 31 by
+`| 64`. Those are the three operations §5 states for an X25519
+scalar, in the order the paragraph states them, and then L_32.
+The failing test already used L_32. Its left value was the raw
+integer 88925887110773138616681052956207043583107764937498542285260013040410376226469.
+The printed number is the clamped integer. Replacing `little` with
+`big` would apply B_32 to the raw bytes, which §5 does not print
+and which is not the clamped value either. The order was the part
+that was already right. The boundary that was missing is the mask.
+
+**J4.12.** L_2(0xff, 0x00) = 255 + 0 · 256 = 255. B_2(0xff, 0x00)
+= 255 · 256 + 0 = 65280. The reversal of the string is
+`(0x00, 0xff)`, and B_2 of that reversal is 0 · 256 + 255 = 255,
+so L_2(s) = B_2(rev_2(s)). Proposition J4.4 is that equation for
+every string; this is one string. A document that prints `ff 00`
+and does not say which end is significant has not chosen a
+function. Outcomes 1 and 2 are met: the bits inside `0xff` are the
+Chapter 2 reading, the bytes are indexed from the left, and both
+functions and the reversal relation are on the page. Outcome 3 is
+not met, because there is no sentence to quote. Outcome 4 is only
+partly met: bit order and byte order are distinct here, and there
+is no length field in a two-byte string until a format says there
+is one. Outcome 5 is not met, because there is no document value
+to fail against and therefore no repair. The missing sentence is
+the convention. A Match of L_2 with 255 shows that this evaluator
+agreed with the sum on this string. It does not show that every
+string decodes uniquely — that is Proposition J4.1 — and it does
+not show that a standard chose L_2. It is not called verified.
+
+```text
+j4-exercise-ledger
+ab-cd-little = 52651
+ab-cd-big = 43981
+palindrome = 16908801
+nonce-4a = 1241513984
+block2 = 148137671992688356791019219269509281138
+state-cell-14 = 14
+ff00-little = 255
+ff00-big = 65280
+top-bit = 57896044618658097711785492504343953926634992332820282019728792003956564819968
+```
+
+`ab-cd-little` is 171 + 205 · 256. `ab-cd-big` is 171 · 256 + 205.
+`palindrome` is 1 + 2 · 256 + 2 · 65536 + 1 · 16777216.
+`nonce-4a` is 74 · 16777216. `block2` is the little-endian integer
+of the sixteen bytes in Exercise J4.5. `top-bit` is 2^255, the
+difference Listing J4.14 produced by setting bit 7 of the last
+coordinate byte.
+
 ## Sources and epigraph record
 
 The quotation is the borrowed sentence. The definitions in the
@@ -2115,7 +2380,13 @@ five outcomes, and the seven assumptions. Sections J4.4 through
 J4.9 define the two functions and prove the bijections and the
 reversal relation. Sections J4.10 through J4.20 quote the four
 standards, check one conversion of each, and show the failing
-order and the minimal repair. Exercises follow.
+order and the minimal repair. Twelve exercises have worked
+answers. The integer ledgers are recomputed by
+`tools/test_book_foundations.py`. The Orange listings are the
+fenced programs in this file. They do not establish a
+cryptographic security claim, they do not derive SHA-256, ChaCha20
+past the word, Poly1305 past the integer, AES past the State copy,
+or X25519 past the decoding, and they do not accept OEP-0017.
 `orangec --version` was run on 2026-10-05 and printed the line
 in §J4.1. That run does not establish a cryptographic security
 claim, and it does not accept OEP-0017.
