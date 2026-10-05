@@ -4,7 +4,7 @@
 
 By Chase Bryan
 
-Status: Current reference for the Orange 2026 `spec` stratum through implemented slice S3u (Parts I–VII). Parts VIII–XVI are Proposed.
+Status: Current reference for the Orange 2026 `spec` stratum through implemented slice S3t (Parts I–VII). Parts VIII–XVI are Proposed.
 
 Snapshot: 2026-10-05
 
@@ -13,12 +13,14 @@ Edition: `2026`
 ---
 
 > Parts I–VII are the reference for Orange Edition `2026` as implemented by
-> `orangec` 0.0.1 through slice S3u (OEP-0025): the `spec` stratum, its types,
+> `orangec` 0.0.1 through slice S3t: the `spec` stratum, its types,
 > its operational semantics, and the cryptographic transcriptions in Part VII.
 > Parts VIII–XVI record the Proposed 1.0 architecture (`impl`, `machine impl`,
 > `game`, `proof`, `claim`, the foreign interface, and the toolchain narrative).
 > They are not the behavior of the Current compiler. A diagnostic code that
-> slice S3u already emits stays Current wherever a Proposed section names it.
+> slice S3t already emits stays Current wherever a Proposed section names it.
+> Rank 3, rank 4, and an update with more than one index are OEP-0025 (§25).
+> OEP-0025 is not a file in this checkout.
 
 ---
 
@@ -172,7 +174,7 @@ Edition: `2026`
 
 ### §1. Scope of This Manual
 
-The Current language, through implemented slice S3u, is the `spec` stratum:
+The Current language, through implemented slice S3t, is the `spec` stratum:
 pure functions over `Int`, `Bool`, `Word[n]`, `Mod[m]`, arrays, and tuples, plus
 `test`. An empty `impl` may be declared and is not evaluated. A typed `impl`
 on the surface is `ORC0101` (§55, §96). `ORC0202` is the semantic gate for a
@@ -266,18 +268,18 @@ below records the formal status of every feature slice and architectural stratum
 | **S3r**: Variable Shift & Rotation Amounts | In review | In review | Ring Turn Reduction | Implemented | OEP-0021 |
 | **S3s**: Bounded Rectangular Nested Arrays | In review | In review | Chained Indexing | Implemented | OEP-0023 |
 | **S3t**: Static Moduli with Own Size Names | In review | In review | Size-Dependent Moduli | Implemented | OEP-0024 |
-| **S3u**: Rank 3 and 4 Arrays, Update Paths | In review | In review | Nested Path Update | Implemented | OEP-0025 |
+| **S3u**: Rank 3 and 4 Arrays, Update Paths | In review | In review | Nested Path Update | Not implemented | OEP-0025 |
 | **Implementation Stratum (`impl`)** | Proposed | Proposed | Imperative Place Semantics | Not implemented | D-004, ST-REL |
 | **Machine Stratum (`machine impl`)** | Proposed | Proposed | Target ISA Simulation | Not implemented | D-004, D-011 |
 | **Game Stratum (`game`)** | Proposed | Proposed | Probabilistic Sampling | Not implemented | D-004, ST-REL |
 | **Proof Stratum (`proof`)** | Proposed | Proposed | Proof IR Deduction | Not implemented | D-006, D-007 |
 | **Assurance & Claims (`claim`)** | Proposed | Proposed | Content-Addressed Graph | Not implemented | D-005, AM-01 |
 
-`Implemented` in the table is the status recorded for that row. The binary
-built from this tree prints `implemented slice S3t`:
+The binary built from this tree prints `implemented slice S3t`:
 `orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`.
-The S3u row names OEP-0025. OEP-0025 is not a file in this checkout, and this
-binary's version string does not name S3u. The rows below S3u are Proposed.
+`Implemented` on rows S3b through S3t is that binary. The S3u row is not:
+OEP-0025 is not a file in this checkout, and a third array dimension is
+`ORC0203` (§25). The rows below S3u are Proposed.
 
 ---
 
@@ -626,8 +628,9 @@ hex_string_literal = "hex\"" (hex_digit hex_digit | " ")* "\"" ;
 1. **Current declarations.** `spec` and `impl` are separate declaration
    namespaces (`ORC0201`). The same module may declare `spec sha256` and
    `impl sha256`. A call names a typed `spec` function. There is no stratum
-   selector at the call. A typed `impl` on the surface is two `ORC0101`
-   diagnostics (§55) and does not emit `ORC0202`. An empty `impl` declares a
+   selector at the call. A typed `impl` with parameters is two `ORC0101`
+   diagnostics (§55). A typed `impl` with an empty parameter list is one
+   `ORC0101`, the typed-body rejection. Neither emits `ORC0202`. An empty `impl` declares a
    name and does not evaluate. `game`, `proof`, and `claim` are not
    declaration forms (§14, §103).
 2. **Proposed strata.** Affine ownership, machine intrinsics, games, proof
@@ -805,20 +808,35 @@ context is `Bool`, because `&&` requires `Bool`, so `x < 0 : Bool` and
 
 ### §25. Multi-Dimensional Rectangular Matrices and Nested Arrays
 
-Current through slice S3u (OEP-0025), over the nested-array rules of S3s. An array
-of rank $r + 1$ holds arrays of rank $r$, all of one type. The scalar leaves are
-the S3s leaves, including S3t residue domains.
+Ranks 1 and 2 are Current (S3s), including S3t residue domains. An array of
+rank $r + 1$ holds arrays of rank $r$, all of one type. The scalar leaves are
+the S3s leaves.
+
+**Not this compiler.** Rank 3, rank 4, and an update with more than one index
+are OEP-0025. OEP-0025 is not a file in this checkout, and the S3t binary does
+not implement them (§4). A sentence below that admits a third or fourth
+dimension, or `with [i][j]`, is that proposal. It is not Current.
+`orangec check` of the alias tower in this section rejects
+`type Matrix = Vector^2`. `a with [i][j] = v` is `ORC0101` (§25.5).
 
 #### 1. Rank
 
-The admitted ranks are 1, 2, 3, and 4. A fifth dimension is rejected before
-evaluation with `ORC0203`. For an alias `Hyper` of rank 4 the message is
-`` `Hyper` already has 4 array dimensions ``, labeled "arrays have at most 4
-dimensions", with the secondary label "this length would add a fifth dimension"
-at the outer length. The same rejection applies in aliases, parameter and result
-types, tuple fields, and every instance of a size or type parameter.
+This compiler admits ranks 1 and 2. A third dimension is `ORC0203` before
+evaluation. For the alias `Vector` of rank 2 the message is
+`` `Vector` already has two array dimensions ``, label
+`` arrays have at most two dimensions ``, secondary label
+`` this length would add a third dimension ``, note
+`` a row holds scalars; a matrix holds rows of the same type ``.
+The same rejection applies in aliases, parameter and result types, tuple
+fields, and every instance of a size or type parameter.
 
-S3u adds no type syntax. Each dimension is a `type` alias over the one before it:
+OEP-0025, which this binary does not implement, admits ranks 1 through 4 and
+rejects a fifth dimension with `ORC0203`. For an alias `Hyper` of rank 4 that
+proposal's message is `` `Hyper` already has 4 array dimensions ``, labeled
+"arrays have at most 4 dimensions", with the secondary label "this length would
+add a fifth dimension" at the outer length.
+
+OEP-0025 adds no type syntax. Each dimension is a `type` alias over the one before it:
 
 ```orange
 type Zq = Mod[3329];
@@ -873,25 +891,23 @@ follow a slice, and no operation selects a rectangular window across several axe
 
 #### 5. Update Paths
 
-An update may name one index per dimension it reaches:
+This compiler updates one index or one slice: `a with [i] = v`, or
+`a with [x..y] = b`. A second bracket, `a with [i][j] = v`, is `ORC0101`
+before a type is checked. The message is `` expected `=` after the updated index ``,
+and the note is `` an update is written `x with [i] = value` ``.
+The value of `a with [i] = v` must have the element type. A value of the wrong
+type is `ORC0214`. A value of the wrong length is `ORC0222`.
 
-```orange
-c with [i][j][k] = v
-```
+A further index on a value that is not an array is `ORC0224`. After two
+indices have reached an `Int`, `a[i][j][k]` reports
+`` only an array can be indexed, but this has type `Int` ``, label
+`` `Int` has no elements ``, note
+`` an index selects one element of a value of type `T^n` ``.
 
-The grammar of an update target is a single index, two to four successive
-single indices, or one range. A slice inside a path, an empty index, or a fifth
-index is `ORC0101`. The parser note says that an element of a row is updated
-with `x with [i][j] = v`, and a run of a row as `x with [i] = (x[i] with [a..b] = v)`.
-Paths apply at rank 2 as well.
-
-The first index selects within the base, and each further index within the
-element the one before it reached. The value must have the exact type at the
-end of the path, a scalar or a shorter array, and the update has the base's
-type. A path whose indices reach past the scalars is `ORC0224`, message "only
-an array can be indexed, but this selects within `T`", with the note that the
-indices reach past the array's scalars. A value of the wrong type or length is
-`ORC0214` or `ORC0222`.
+OEP-0025 admits one index per dimension, written `c with [i][j][k] = v`,
+through four indices. In that proposal a slice inside a path, an empty index,
+or a fifth index is `ORC0101`, and a path that indexes past the scalars is
+`ORC0224`.
 
 #### 6. Path Meaning and Cost
 
@@ -913,7 +929,7 @@ steps beyond its base, three indices, and value. The nested spelling also
 selects `c[i]` and `c[i][j]`, so it costs more. The budget is an evaluation
 budget, not a timing or constant-time guarantee.
 
-#### 7. What S3u Does Not Add
+#### 7. What OEP-0025 Does Not Add
 
 Arrays of rank 3 and 4 may be parameters, results, `let` bindings, loop
 accumulators, and tuple fields. A finite type parameter may list them, and a
@@ -1092,7 +1108,11 @@ first hit. Later tables are not consulted.
 | 6 | the spellings `true` and `false`, and only when no earlier table bound them | `BoolLiteral` | `Bool` |
 
 A binding that exists later in the same body, but whose `;` has not been
-passed, is `LaterBinding`. The diagnostic is `ORC0211`, message
+passed, is `LaterBinding`, unless row 6 already resolved the name. The
+spellings `true` and `false` are row 6, and row 6 is tried before
+`LaterBinding`. `let true: Int = true` is `ORC0214`: the right-hand `true`
+is the `Bool` literal. It is not `ORC0211`. After that binding's `;`, the
+binding hides the literal. The diagnostic for `LaterBinding` is `ORC0211`, message
 `` `{name}` is used before it is bound ``, with the note that a binding is
 in scope after its own `;`. A name that matches nothing is also `ORC0211`.
 If the name is a finished block's binding, the message is
@@ -1108,8 +1128,11 @@ write the call.
 
 A parameter that repeats a name is `ORC0218`. A binding that repeats a size
 parameter, a parameter, an earlier binding, or an earlier name of the same
-pattern is `ORC0219`. The note on `ORC0219` is: each parameter and binding
-of a function has its own name; Orange has no shadowing. A type parameter
+pattern is `ORC0219`. The note for a repeated binding is: each parameter
+and binding of a function has its own name; Orange has no shadowing. A
+repeated loop index, accumulator, or block name uses: each parameter,
+binding, loop index, and accumulator in scope has its own name; Orange has
+no shadowing. A type parameter
 names a type, not a value, so a parameter or a binding may use that
 spelling. That exception is the comment on the binding check, not a second
 value binding.
@@ -1265,11 +1288,14 @@ $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n)}
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n) \quad \mathcal{C} \vdash v : T}{\mathcal{C} \vdash (A \text{ with } [i] = v) : T^n} \quad (\text{T-Update})$$
 
+The rule T-Update-Path is OEP-0025 (§25.5). This compiler's update is T-Update,
+one index. `a with [i][j] = v` is `ORC0101`.
+
 $$\frac{\operatorname{rank}(\tau) = r \in \{2, 3, 4\} \quad \mathcal{C} \vdash A : \tau \quad \forall j \in [1, r].\ \mathcal{C} \vdash i_j : \operatorname{Index}(\operatorname{axis}_j(\tau)) \quad \mathcal{C} \vdash v : \operatorname{leaf}(\tau)}{\mathcal{C} \vdash (A \text{ with } [i_1][i_2] \dots [i_r] = v) : \tau} \quad (\text{T-Update-Path})$$
 
-A path with more indices than $\operatorname{rank}(\tau)$ is `ORC0224` (§25.5).
-The value's type is the type at the end of the path, which is the leaf when
-the path names every axis.
+In that proposal, a path with more indices than $\operatorname{rank}(\tau)$ is `ORC0224`,
+and the value's type is the type at the end of the path, the leaf when the
+path names every axis.
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad 0 \le l \le u \le n}{\mathcal{C} \vdash A[l..u] : T^{u - l}} \quad (\text{T-Slice})$$
 
@@ -1606,10 +1632,8 @@ S3t` (`IMPLEMENTED_SLICE` in `compiler/crates/orangec/src/main.rs`).
 `orangec test` on the listing accepts it: six tests, zero failures. The
 listing uses `Word[32]`, fixed arrays, typed `let`, `for`/`with`, tuples,
 byte strings, `hex"..."`, size parameters, and `as big`. Those are slices
-S3b through S3n and S3q. It does not use rank-3 or rank-4 arrays. The
-manual banner's "slice S3u" names OEP-0025, which is not a file in this
-checkout and is not the slice this binary reports. Acceptance below is the
-S3t compiler that was run.
+S3b through S3n and S3q. It does not use rank-3 or rank-4 arrays.
+Acceptance below is this tree's S3t compiler.
 
 | Text | Status | What is missing |
 | :--- | :--- | :--- |
@@ -2517,8 +2541,8 @@ Section 6.1 also prints Alice's public key $\mathrm{X25519}(a, 9)$ as
 `8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a`, Bob's
 secret $b$ as
 `5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb`, and
-states $K_B = \mathrm{X25519}(b, 9)$. Those three calls were not evaluated
-in this run. The clamping of section 5 makes the decoded scalar
+states $K_B = \mathrm{X25519}(b, 9)$. Those three calls are not evaluated
+by the files in this tree. The clamping of section 5 makes the decoded scalar
 $2^{254} + 8 \cdot n$ for an integer $n$ with $0 \le n \le 2^{251} - 1$.
 
 #### 5. Compiler-Checked Transcription
@@ -2737,10 +2761,10 @@ mismatches. The AEAD and XChaCha20 specs in that file are not this section.
 
 | Text | Status | What is missing |
 | :--- | :--- | :--- |
-| The listing: 1 through 5 blocks, at most 80 message bytes | Current | The three tests above |
+| The listing: `blocks` 1 through 4, at most 64 message bytes | Current | The three tests above. `blocks in 1..5` is half-open (§30), so 5 is not an instance |
 | Appendix A.3 items 2 through 11, including the 375-byte text | Checked by `orangec eval` of `algorithms/chacha20-poly1305/chacha20-poly1305.or` | Not a `test` in this listing. The tags are that file's `rfc8439_a3_*_expected` specs |
 | An empty message | Not in this listing | `blocks in 1..5` has no zero-block instance. The RFC's loop does not run, and the tag is the 16 little-endian bytes of $s$ |
-| A message longer than 80 bytes in this listing | Same algorithm, a larger `blocks` range | At most 256 instances (§30). The file's `poly1305_mac` takes a 256-byte buffer and a length, and `poly1305_mac_long` takes a second buffer |
+| A message of 5 blocks (65 through 80 bytes) or longer | Same algorithm, a larger `blocks` range | `mac([0; 32], [0; 80], 16)` is `ORC0238`: no instance of `mac` takes an array of 80 bytes. At most 256 instances (§30). The file's `poly1305_mac` takes a 256-byte buffer and a length, and `poly1305_mac_long` takes a second buffer |
 
 #### 1. The Field and the Key (section 2.5)
 
@@ -2777,8 +2801,9 @@ After the last block the tag is the 16 little-endian bytes of
 
 $$(a + s) \bmod 2^{128}.$$
 
-`mac` is that function for 1 through 5 blocks (a message of at most 80
-bytes). The caller pads the array with zeros out to a whole number of blocks
+`mac` is that function for the instances of `blocks in 1..5`, which are
+1, 2, 3, and 4 (§30): a message of at most 64 bytes. Five blocks, an array
+of 80 bytes, are `ORC0238`. The caller pads the array with zeros out to a whole number of blocks
 and passes `held`, the number of message bytes in the last block. A longer
 message is the same function with a larger finite `blocks` range. One `spec`
 does not cover every length: a size parameter has at most 256 instances
@@ -2887,7 +2912,7 @@ for $N_k \in \{4, 6, 8\}$, and Cipher and InvCipher. The listing is accepted
 by `orangec test` on Appendix B and on Appendix C.1, C.2, and C.3, each
 cipher and its inverse. The state in this listing is `Word[8]^16` in column
 order, index $4c + r$ for row $r$ and column $c$. A rank-2 spelling of the
-same state is what slice S3u also admits; this transcription is the
+same state is what this compiler admits; this transcription is the
 column-major vector `algorithms/aes/aes.or` checks. The modes of SP 800-38A
 are `algorithms/aes/aes-modes.or` and are not restated here.
 
@@ -5266,10 +5291,9 @@ part of its type. `orangec test` accepts the eight tests below.
 
 The state in this listing is `Word[64]^25`, with lane $(x, y)$ at index
 $x + 5y$, little-endian, which is the byte placement of section 3.1.2. A
-rank-2 spelling, five sheets of five lanes indexed $A[x][y]$, is what slice
-S3u also admits. This transcription is the lane vector
-`algorithms/sha3/sha3.or` checks. This documentation branch does not contain
-the S3u compiler commit.
+rank-2 spelling, five sheets of five lanes indexed $A[x][y]$, is what this
+compiler admits. This transcription is the lane vector
+`algorithms/sha3/sha3.or` checks.
 
 #### 1. The Permutation (section 3)
 
@@ -5706,8 +5730,8 @@ module sha3_spec {
 ## Part VIII: Implementation Stratum (`impl`) & Memory Model
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement `impl`. A diagnostic code named below is
-Current only when Part XV records that slice S3u emits it.
+through slice S3t does not implement `impl`. A diagnostic code named below is
+Current only when Part XV records that slice S3t emits it.
 
 ### §53. Imperative Execution Semantics and Place Logic
 
@@ -5997,7 +6021,7 @@ variant   64 - i
 ## Part IX: Machine Implementation Stratum (`machine impl`)
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement `machine impl`.
+through slice S3t does not implement `machine impl`.
 
 ### §62. Target Machine Modeling and Register Capabilities
 
@@ -6099,7 +6123,7 @@ Computes two rounds of SHA-256 compression over vector registers in hardware:
 ## Part X: Information Flow, Secrecy & Microarchitectural Leakage
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement information-flow labels or the policies named
+through slice S3t does not implement information-flow labels or the policies named
 below.
 
 ### §67. The Information Flow Lattice ($\text{public} \sqsubseteq \text{secret}$)
@@ -6239,7 +6263,7 @@ Extends noninterference to transient and speculative execution (Spectre-v1, Spec
 ## Part XI: Cryptographic Game Stratum (`game`)
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement `game`.
+through slice S3t does not implement `game`.
 
 ### §73. Monadic Probabilistic Semantics and Distribution Ensembles
 
@@ -6430,7 +6454,7 @@ correctness upon bounded termination. $\blacksquare$
 ## Part XIII: Assurance Claims & Evidence Architecture (`claim`)
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement `claim`.
+through slice S3t does not implement `claim`.
 
 ### §82. The Philosophy of Atomic Claims ("Claims, Not Labels")
 
@@ -6640,7 +6664,7 @@ Components excluded from the TCB:
 ## Part XIV: Foreign Function Interface & ABI
 
 **Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not generate C or Rust bindings.
+through slice S3t does not generate C or Rust bindings.
 
 ### §88. Sound Foreign Interface Principles and Import Contracts
 
@@ -6823,17 +6847,17 @@ pub mod chacha20 {
 
 ## Part XV: Complete Diagnostic Reference Catalog
 
-**Status: Current codes, through slice S3u.** The identifiers `ORC0001`
+**Status: Current codes, through slice S3t.** The identifiers `ORC0001`
 through `ORC0301` are codes the implemented compiler emits. Each entry below
 is a lookup for that code. It is not a second checker, and it is not a
 transcript of `orangec` output: invented rendering blocks have been removed.
 Where an entry and `compiler/crates/orange-compiler/src/diagnostic.rs` differ,
 the compiler source controls.
 
-S3u's rank limit is `ORC0203`. A shape whose scalar product exceeds 65,536 is
-`ORC0221`. A path that indexes past the scalars is `ORC0224`. A path with a
-slice, an empty index, or a fifth index is `ORC0101`. Driver limits such as
-the 16 MiB source ceiling are `ORC1003`, outside this range.
+This compiler's rank limit is 2 (`ORC0203`, §25). A shape whose scalar product
+exceeds 65,536 is `ORC0221`. Indexing a non-array is `ORC0224`. An update with
+a second index is `ORC0101` (§25.5). Driver limits such as the 16 MiB source
+ceiling are `ORC1003`, outside this range.
 
 ### §93. Diagnostic Philosophy, Severity Structure, and Error Budgets
 
@@ -7197,13 +7221,18 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
 
 - **Subsystem:** Semantic Analyzer (Type Elaborator)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(\tau) \iff \tau \notin \text{Universe}(\text{Orange 2026}) \lor \operatorname{rank}(\tau) > 4$$
-  where the universe is $\{\text{Int}, \text{Bool}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n \mid \operatorname{rank}(T^n) \le 4\} \cup \{(T_0, \dots, T_{k-1})\}$. `Byte` is not in it (§27).
+  $$\text{Trigger}(\tau) \iff \tau \notin \text{Universe}(\text{Orange 2026}) \lor \operatorname{rank}(\tau) > 2$$
+  where the universe is $\{\text{Int}, \text{Bool}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n \mid \operatorname{rank}(T^n) \le 2\} \cup \{(T_0, \dots, T_{k-1})\}$. `Byte` is not in it (§27).
 - **Theoretical Rationale:** IEEE-754 floating-point numbers, unbounded dynamic pointers,
   and recursive algebraic data types introduce nondeterministic rounding, platform divergence,
   and side-channel leakages. They are strictly excluded from Orange's type universe.
-  Slice S3u also uses this code for a fifth array dimension (§25.1). The message is
-  `` `Hyper` already has 4 array dimensions ``, labeled "arrays have at most 4 dimensions".
+  This compiler uses this code for a third array dimension (§25.1). For an alias
+  `Vector` of rank 2 the message is `` `Vector` already has two array dimensions ``,
+  label `` arrays have at most two dimensions ``, secondary label
+  `` this length would add a third dimension ``, note
+  `` a row holds scalars; a matrix holds rows of the same type ``.
+  OEP-0025, which this binary does not implement, uses the same code for a fifth
+  dimension.
 - **Erroneous Example:**
 
   ```orange
@@ -7660,9 +7689,12 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   $$\text{Trigger}(X) \iff \text{Type}(X) \not\equiv T^n$$
 - **Theoretical Rationale:** Bracket indexing `X[i]` is defined exclusively over fixed-length
   Cartesian power array types. Applying brackets to scalar words or tuples is prohibited.
-  Slice S3u uses the same code when an update path names more indices than the rank.
-  The message is "only an array can be indexed, but this selects within `T`", with the
-  secondary label "this array has fewer dimensions" (§25.5).
+  A further index after a scalar is the same code (§25.5). The message is
+  `` only an array can be indexed, but this has type `T` ``, the label is
+  `` `T` has no elements ``, and the note is
+  `` an index selects one element of a value of type `T^n` ``.
+  An update of a non-array uses `updated` in place of `indexed`. Its note is
+  `` `x with [i] = v` is the array `x` with one element replaced ``.
 - **Erroneous Example:**
 
   ```orange
@@ -8153,9 +8185,9 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
 
 ## Part XVI: Toolchain, Evaluator & Formal EBNF Grammar
 
-**Status: Proposed.** The `orangec` commands and numeric limits that slice S3u
+**Status: Proposed.** The `orangec` commands and numeric limits that slice S3t
 implements are Current and are the ones named in §101 and §102. The EBNF in §103,
-and any behavior this part states that the S3u compiler does not exercise, are
+and any behavior this part states that the S3t compiler does not exercise, are
 Proposed.
 
 ### §101. The Driver CLI: `orangec` Commands, Options, and Determinism
@@ -8206,9 +8238,9 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 | **Admitted Word Bit Widths ($W$)** | Exactly $\{8, 16, 32, 64\}$ bits | `ORC0204` |
 | **Admitted Modular Moduli ($m$)** | $2 \le m \le 2^{521} - 1$ | `ORC0232` |
 | **Maximum Array Length ($n$)** | 65,536 elements ($2^{16}$) | `ORC0221` |
-| **Maximum Array Rank** | 4 | `ORC0203` |
+| **Maximum Array Rank** | 2 | `ORC0203` |
 | **Maximum Nested Array Elements** | 65,536 scalar elements ($2^{16}$), product of every axis | `ORC0221` |
-| **Tuple Arity Range ($k$)** | $2 \le k \le 16$ | `ORC0234` |
+| **Tuple Arity Range ($k$)** | $2 \le k \le 16$ | `ORC0101` below 2; `ORC0106` above 16 |
 | **Default Evaluator Step Budget** | 1,048,576 steps ($2^{20}$) | `ORC0301` |
 | **Documentation Work Items** | 1,048,576 items ($2^{20}$) | `ORC0260` |
 | **Documentation Output Size** | 16,777,216 HTML bytes (16 MiB) | `ORC0260` |
