@@ -920,11 +920,46 @@ bytes, and evaluation steps.
 ### §26. Heterogeneous Product Types: Tuples ($(T_0, \dots, T_{k-1})$ for $2 \le k \le 16$)
 
 1. A tuple type $(T_0, \dots, T_{k-1})$ represents the heterogeneous product:
-   $$\prod_{i=0}^{k-1} T_i = T_0 \times T_1 \times \dots \times T_{k-1}$$
-2. **Arity Ceiling:** $2 \le k \le 16$. Tuples with arity $< 2$ or $> 16$ are rejected.
-3. **Projection Typing:**
-   $$\frac{\Gamma \vdash t : (T_0, \dots, T_{k-1}) \quad 0 \le j < k}{\Gamma \vdash t.j : T_j}$$
-   Attempting field projection on a non-tuple emits `ORC0234`.
+
+$$
+\prod_{i=0}^{k-1} T_i = T_0 \times T_1 \times \dots \times T_{k-1}
+$$
+
+2. **Arity.** A tuple value and a tuple type have two through 16 elements
+   (`MAX_TUPLE_ELEMENTS` in `compiler/crates/orange-compiler/src/parser.rs`).
+   The 17th element is a parser resource limit, `ORC0106`, message
+   `` a tuple has more than 16 elements `` or
+   `` a tuple type has more than 16 elements ``, label
+   `` deterministic parser resource limit reached ``. It is not a semantic code.
+   One parenthesized expression without a comma is a group.
+   `spec bad() -> Int { (1) }` checks. `(1,)` is `ORC0101`, message
+   `` expected another element after `,` ``, note
+   `` a tuple is written `(a, b)` with two through 16 elements; `(a)` without a comma is a group ``.
+   A one-element type `(Int)` is `ORC0101`, message
+   `` expected `,` and another element type ``.
+
+3. **Elements are not tuples.** An element type written as a tuple is
+   `ORC0101`, message `` expected an element type ``, with the note that a
+   tuple holds no tuple. A `type` alias that denotes a tuple passes that
+   parse and fails in semantics. `type Pair = (Int, Int);` and a parameter
+   of type `(Pair, Bool)` are `ORC0203`, message
+   `` `Pair` is a tuple type, so this is a tuple of tuples ``, label
+   `` a tuple holds no tuple `` (`tuple_of` in
+   `compiler/crates/orange-compiler/src/semantics/tuples.rs`).
+
+4. **Projection.** The position is a decimal integer counted from zero.
+
+$$
+\frac{\Gamma \vdash t : (T_0, \dots, T_{k-1}) \quad 0 \le j < k}{\Gamma \vdash t.j : T_j}
+$$
+
+`orangec check` accepts `spec second(p: (Int, Bool)) -> Bool { p.1 }`.
+`p.2` on that type is `ORC0223`, message `` `(Int, Bool)` has no element 2 ``,
+label `` its elements are numbered 0 through 1 ``. A non-tuple is `ORC0234`.
+On `Int` the note is
+`` `.k` selects element k of a value of a tuple type `(T, U, ...)` ``.
+On `Int^2` the note is
+`` an array's element is selected by an index, such as `x[0]` ``.
 
 ### §27. Byte Arrays (`Word[8]^n`)
 
