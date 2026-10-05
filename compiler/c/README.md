@@ -84,5 +84,8 @@ A function has at most 64 parameters, 256 bindings, and a call has at most 256
 arguments. An array literal or fill has at most 256 elements. A loop takes at
 most 65,536 steps. An `Int` magnitude has at most 16,384 significant bits.
 Reference evaluation shares 1,048,576 steps and 256 call frames. An update or
-fill of n elements costs one step per 64 elements. Exhausting a limit produces
-one resource diagnostic and no value lines.
+fill of n elements costs one step per 64 elements. Arrays are released once no
+live value holds them. Printing uses as much text as the value's spelling
+needs, including an array of 256 full-width integers. Exhausting a limit, or
+failing to retain an array or its spelling, produces one resource diagnostic
+and no value lines.
