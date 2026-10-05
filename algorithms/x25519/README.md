@@ -130,10 +130,12 @@ arithmetic: the `Int` type replaces the radix-2^51 or radix-2^25.5 limb
 representations of the fast implementations with exact integers and a `%`
 after every product, which is exactly what the RFC's own pseudocode does.
 The scalar's bits are read with the static index `(254 - i) / 8` and the
-mask `bit[(254 - i) % 8]`, because a data-dependent index does not exist in
-the language. The inversion is an addition chain, made of `square_times`
-calls whose loop bound is a literal, 100, with the idle iterations skipped by
-a comparison.
+mask `bit[(254 - i) % 8]`. A data-dependent index is admitted when every
+value the index expression can take selects an element, so a `Word[8]`
+indexes `Word[8]^256`, a `Word[8]` into `Word[8]^8` is rejected, and
+`x & 15` may index a table of 16. This source still uses the static form. The inversion is an addition chain, made of
+`square_times` calls whose loop bound is a literal, 100, with the idle
+iterations skipped by a comparison.
 
 The evaluation cost was measured with a filler spec sharing the file's
 budget (`probe.py` in the scratch directory): one X25519 evaluation, from

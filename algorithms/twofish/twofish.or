@@ -62,8 +62,9 @@ module twofish {
     [0x28bdf76e31940ac5, 0x1e2b4c376da5f908, 0x4c75169a0ed82b3f, 0xb951c3de647f208a]
   }
 
-  // Entry k of a 4-bit table packed sixteen nibbles to a word. Indices
-  // must be static, so the entry is selected with a conditional on k.
+  // Entry k of a 4-bit table packed sixteen nibbles to a word. A 4-bit index
+  // may select a table of 16 entries; this rendering selects the entry with
+  // a conditional on k.
   spec nibble_at(t: Word[64], k: Word[8]) -> Word[8] {
     if k == 0 { ((t >> 60) as Word[8]) & 15 }
     else if k == 1 { ((t >> 56) as Word[8]) & 15 }

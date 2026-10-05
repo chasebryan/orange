@@ -42,10 +42,11 @@ module rc6 {
 
   // "Details of RC6": a <<< b rotates the word a to the left by the amount
   // given by the least significant lg w = 5 bits of b, and a >>> b to the
-  // right. Orange rotates by a literal only, so a rotation by a data word is
-  // a selection among the 32 literal rotations on those five bits: the
-  // data-dependent rotation is where RC6 (as RC5) makes its key and data
-  // decide the shape of the computation, and this is its honest form.
+  // right. A computed amount also checks, and turns by the word modulo 32.
+  // This file writes a rotation by a data word as a selection among the 32
+  // literal rotations on those five bits: the data-dependent rotation is
+  // where RC6 (as RC5) makes its key and data decide the shape of the
+  // computation, and this selection is the form this file uses.
   spec rotate_left_by(x: Word[32], amount: Word[32]) -> Word[32] {
     let r: Word[32] = amount & 31;
     if r == 0 { x }
@@ -173,11 +174,12 @@ module rc6 {
   }
 
   // "Key schedule", step 3: v = 3 max(c, 2r + 4) = 132 iterations with
-  // i = (i + 1) mod 44 and j = (j + 1) mod c. A loop step is one
-  // expression, so each iteration of the paper's loop is two steps here:
-  // the first computes A and B (mix), the second stores them into S[i] and
-  // L[j]. The modulus c of j is a literal, so each key length has its own
-  // loop: c = 4 for 128-bit keys.
+  // i = (i + 1) mod 44 and j = (j + 1) mod c. A step may begin with let,
+  // and a loop may carry several accumulators. This file still writes each
+  // iteration of the paper's loop as two steps: the first computes A and B
+  // (mix), the second stores them into S[i] and L[j]. The modulus c of j
+  // is a literal, so each key length has its own loop: c = 4 for 128-bit
+  // keys.
   spec key_schedule_128(k: Word[8]^16) -> Word[32]^44 {
     let initial: Word[32]^54 = schedule_state(key_words_128(k));
     let mixed: Word[32]^54 = for h in 0..132 with st: Word[32]^54 = initial {

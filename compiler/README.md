@@ -274,7 +274,7 @@ host failure returns 1 even if the stream accepted a prefix.
 
 This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
-proof/evidence identity or release authority. The S3t language marker remains.
+proof/evidence identity or release authority. The S3u language marker remains.
 
 ## Sealing files
 
