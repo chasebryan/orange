@@ -96,11 +96,12 @@ depends on the mode and on nonce or IV discipline, not on the cipher.
 
 ### What the Orange rendering shows
 
-The only data-dependent operation in Camellia is the s1 lookup. Orange has no
-data-dependent index, so `lookup` scans the 32 packed words with a static
-index, keeps the one whose position matches the top five bits of the byte,
-and selects one of its eight bytes with a conditional: about 290 steps per
-lookup, where a table-driven implementation spends one memory access. The
+The only data-dependent operation in Camellia is the s1 lookup. A byte may
+index a table of 256 entries; this rendering's `lookup` still scans the 32
+packed words with a static index, keeps the one whose position matches the
+top five bits of the byte, and selects one of its eight bytes with a
+conditional: about 290 steps per lookup, where a table-driven implementation
+spends one memory access. The
 other three S-boxes cost nothing beyond s1, since the RFC defines them as
 rotations of it. Everything else in the cipher is 64-bit xor, and, or, shift
 and rotate on `Word[64]` and `Word[32]`, one to one with the RFC's text; the
@@ -108,11 +109,12 @@ FL and FLINV layers, in particular, read exactly as section 2.4.2 and 2.4.3
 write them.
 
 The key schedule's rotations of a 128-bit value are seven specs,
-`rotl128_15` through `rotl128_111`, because a shift amount is a literal; for
-the amounts above 64 the two words change places and the rotation by the
-remainder is written out. Decryption reuses the encryption path on a
-reversed subkey array rather than repeating the rounds with the indices
-reversed, which is what RFC 3713 says decryption is.
+`rotl128_15` through `rotl128_111`. A shift amount may be computed; this
+rendering keeps one spec per amount. For the amounts above 64 the two words
+change places and the rotation by the remainder is written out. Decryption
+reuses the encryption path on a reversed subkey array rather than repeating
+the rounds with the indices reversed, which is what RFC 3713 says
+decryption is.
 
 Measured under `orangec eval`, one 128-bit-key block costs between 55,000 and
 58,000 steps to encrypt (176 lookups: 18 rounds of 8 and 4 F applications of
@@ -194,10 +196,9 @@ and it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Three features of the language shaped the
-file: a shift amount must be a literal, so the 128-bit rotations of the key
-schedule are seven specs rather than one; indices must be static, so each
-s1 lookup is a 32-word selection costing about 290 steps, which makes a block
-cost about 55,000 to 87,000 steps and bounds one file to roughly twelve
-blocks; and a spec returns one value, so the 26 or 34 subkeys travel in one
-flat array whose layout the comments state.
+None that prevented anything. This rendering keeps seven rotation specs and a
+32-word selection for each s1 lookup (about 290 steps, so a block costs about
+55,000 to 87,000 steps and one file holds roughly twelve blocks). A shift
+amount may be computed, and a byte may index a table of 256 entries; neither
+shape is a limit of the current language. A spec returns one value, so the
+26 or 34 subkeys travel in one flat array whose layout the comments state.
