@@ -40,8 +40,9 @@ first eight bytes in the first word, most significant byte first, so that
 the standard's bit 0, the leftmost bit of the block, is the top bit of the
 first word; `block_words` and `block_bytes` convert. Messages travel as a
 64-byte buffer with the message length as an `Int` beside it, and the
-additional data as a 32-byte buffer with its length, because an Orange array
-has one fixed length and there is no length polymorphism.
+additional data as a 32-byte buffer with its length. An array's length is
+part of its type. A size parameter covers a finite family of lengths; these
+files fix each buffer.
 
 | Standard section | Orange spec |
 | --- | --- |
@@ -63,7 +64,7 @@ has one fixed length and there is no length polymorphism.
 
 GCM never inverts the block cipher, so the files carry the forward cipher
 only. `gcm_ae` returns the 64-byte ciphertext buffer followed by the 16-byte
-tag, `Word[8]^80`. A spec returns one value, so GCM-AD is two specs over
+tag, `Word[8]^80`. A spec may return a tuple. GCM-AD is still two specs over
 the same steps 2 and 3 of Algorithm 5: `gcm_ad_verify` computes `T'` (steps
 5 to 7) and returns the verdict `T = T'` of step 8 as a `Bool`, and
 `gcm_ad_plaintext` returns the `P` of step 4; a caller returns `P` when the
@@ -161,7 +162,7 @@ and the data limits, is known as of 2026.
 
 Two things in GCM depend on data. In AES it is the S-box: 160 lookups per
 AES-128 block and 40 more in its key schedule (224 and 52 for AES-256).
-Indices must be static, so `s_box` is the standard's table packed eight
+A byte may index a table of 256 entries. This rendering packs `s_box` eight
 entries to a `Word[64]`, each literal a row of Table 4, and `lookup` walks
 the 32 words comparing `x >> 3` with each position before `byte_at` picks
 byte `x & 7`: 291 steps per lookup (measured). In GHASH it is the block
@@ -311,18 +312,19 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- Static indices only: the S-box is a 32-way selection at 291 steps per
-  lookup, which is most of the 70,000 to 95,000 steps of a block; the
-  number of GHASH blocks, the position of `C` in the formatted input and
-  the counter block's index are values, so they are handled by guards and
-  by `word_at` and `counter_block` selections rather than by indexing.
-- No length polymorphism: plaintexts are a 64-byte buffer with a length,
-  additional data a 32-byte buffer with a length, IVs a 64-byte buffer with
-  a length; other sizes would be further specs.
+- A byte may index a table of 256 entries. The S-box is still a 32-way
+  selection at 291 steps per lookup, which is most of the 70,000 to 95,000
+  steps of a block. An `Int` is not an index, so the number of GHASH blocks,
+  the position of `C` in the formatted input and the counter block's index
+  are handled by guards and by `word_at` and `counter_block` selections
+  rather than by indexing.
+- A size parameter covers a finite family of lengths. Plaintexts are still a
+  64-byte buffer with a length, additional data a 32-byte buffer with a
+  length, and IVs a 64-byte buffer with a length.
 - The step budget per file (1,048,576): the ten vectors needed four files,
   Test Case 14 was left out of `aes-gcm-256.or`, and a file holds about a
   dozen AES-128 block encryptions in all, or eight AES-256.
-- One result per spec: GCM-AD is a `Bool` spec and a plaintext spec, each
-  recomputing the schedule, `H` and `J0`.
-- No imports: each file repeats about 230 lines of AES and the GCM
-  primitives.
+- A spec may return a tuple. GCM-AD is still a `Bool` spec and a plaintext
+  spec, each recomputing the schedule, `H` and `J0`.
+- A module may `use` another. Each file still repeats about 230 lines of AES
+  and the GCM primitives.

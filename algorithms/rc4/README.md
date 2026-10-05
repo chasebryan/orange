@@ -135,14 +135,13 @@ every key length; one PRGA byte adds the output lookup, `get_byte` twice
 about 900.
 
 Two things are written otherwise than the standard's text, and both are
-explained where they happen. The swap is two steps of an inner loop, since
-a loop step is one expression with no bindings: `swap_at_j` reads S[j],
-writes S[j] := S[i] and holds j and the old S[j] in words 32 and 33; the
-next step writes S[i] from word 33 at the static index. And the key index
-K[i mod L] has a literal modulus, so the KSA loop appears once per key
-length. The keystream bytes are packed into the same array as S because a
-loop has one accumulator; `keystream` unpacks them into a `Word[8]^32` at
-the end.
+explained where they happen. The swap is two steps of an inner loop:
+`swap_at_j` reads S[j], writes S[j] := S[i] and holds j and the old S[j] in
+words 32 and 33; the next step writes S[i] from word 33 at the static index.
+A loop step may begin with `let` bindings; this source keeps the two-step
+form. And the key index K[i mod L] has a literal modulus, so the KSA loop
+appears once per key length. The keystream bytes are packed into the same
+array as S, and `keystream` unpacks them into a `Word[8]^32` at the end.
 
 The budget sized the vectors. One vector, a key schedule and 32 keystream
 bytes, costs about 280,000 steps; three of them, the three key lengths of
@@ -235,10 +234,11 @@ they cost:
   form in which Orange expresses the cipher's defining operation, and it
   puts the cost of a key schedule at about 225,000 steps and of a keystream
   byte at about 1,700, which is what forced the vectors into two files.
-- A loop step is one expression with no bindings and one accumulator, so
-  the swap is two steps of an inner loop with j and the byte in flight
-  carried in spare words of the state array, and the keystream bytes are
-  packed into that array and unpacked afterwards.
+- A loop step may begin with `let` bindings, and a loop may carry more than
+  one accumulator as a tuple. This source still splits the swap across two
+  steps of an inner loop, with j and the byte in flight carried in spare
+  words of the state array, and packs the keystream bytes into that array
+  to unpack afterwards.
 - Loop bounds and index moduli are literals, so the KSA is written once per
   key length and the PRGA once per range of output positions
   (`keystream` for bytes 0 through 31, `discard_240` and `keystream_240`
