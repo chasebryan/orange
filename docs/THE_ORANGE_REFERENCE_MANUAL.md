@@ -1,5 +1,7 @@
 # The Orange Reference Manual
 
+<img src="images/orange-reference-manual-cover.png" width="400" alt="The Orange Reference Manual cover: orange emblem and oversized ORANGE lettering on black.">
+
 By Chase Bryan
 
 Status: normative Orange 2026 reference manual and 1.0 language architecture specification
