@@ -9,10 +9,11 @@ boundary, diagnostic codes, and deterministic token stream are permanent
 interfaces to extend rather than a disposable prototype.
 
 A standalone C frontend in [`c/`](c/README.md) checks and reference-evaluates
-the expression, binding, conversion, fixed-length array, bounded-loop, and
-conditional fragment (`Bool`, comparisons, Euclidean division, and `if` /
-`else`) without the Rust toolchain. The Rust frontend in this workspace
-remains the implementation through the later slices.
+the expression, binding, conversion, fixed-length array, bounded-loop,
+conditional, and lookup fragment (`Bool`, comparisons, Euclidean division,
+`if` / `else`, and data-dependent indices proved in range) without the Rust
+toolchain. The Rust frontend in this workspace remains the implementation
+through the later slices.
 
 Nothing here makes a verification, correctness, constant-time, or production
 readiness claim. `orangec check` performs lexical, syntactic, and bounded

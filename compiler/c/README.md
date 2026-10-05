@@ -1,7 +1,7 @@
 # Standalone C compiler
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
-binding, conversion, array, bounded-loop, and conditional fragment. It does
+binding, conversion, array, bounded-loop, conditional, and lookup fragment. It does
 not amend D-008, does not select a D-010 output path, and does not replace
 the Rust frontend.
 
@@ -23,11 +23,14 @@ literals, names, calls, parentheses, array literals, indices, exact integer
 arithmetic, Euclidean `/` and `%`, word ring arithmetic, bitwise operators,
 shifts, rotations, comparisons, `!`, `&&`, `||`, and `as` conversions. A loop
 `for i in a..b with s: T = start { step }` folds `step` from the literal bound
-`a` up to `b`. An index may be an integer literal or an expression of literals
-and enclosing loop indices using `+`, `-`, `*`, `/`, and `%`, proved in range
-before evaluation. `x with [i] = v` replaces one element, and `[v; n]` repeats
-a value. `if c { a } else { b }` chooses one value; an `else if` chain is one
-conditional, and only the chosen branch is evaluated. `for`, `in`, `with`,
+`a` up to `b`. An index is proved in range before evaluation. A word index
+ranges over its type, narrowed by `&`, `|`, `^`, `~`, shifts by a literal,
+`+`, `-`, `*`, `/`, `%`, conversions, and conditionals where the result cannot
+wrap. An `Int` index is built from integer literals, loop indices, words
+converted with `as Int`, `+`, `-`, `*`, `/`, `%`, and conditionals. `x with
+[i] = v` replaces one element, and `[v; n]` repeats a value. `if c { a } else
+{ b }` chooses one value; an `else if` chain is one conditional, and only the
+chosen branch is evaluated. `for`, `in`, `with`,
 `if`, and `else` are names outside those positions. `true` and `false` are
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.
@@ -46,14 +49,12 @@ parameters are checked and run only when called.
 An array literal lists every element. A fill states the length in decimal.
 An index follows a name, a call, or an accumulator. Operators and conversions
 apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
-Arrays of arrays, empty arrays, data-dependent indices, and computed loop
-bounds are rejected.
+Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
 Later slices are outside this frontend. Multiple modules, `Mod`, tuples, byte
 strings, size parameters, byte order, type parameters, tests, lengths above
-256, data-dependent indices, and computed shift amounts are rejected rather
-than given a new meaning. The Rust `orangec` remains the frontend for those
-slices.
+256, and computed shift amounts are rejected rather than given a new meaning.
+The Rust `orangec` remains the frontend for those slices.
 
 ## What it does not claim
 
@@ -72,8 +73,8 @@ compiler/c/out/orangec eval path/to/file.or
 
 `make -C compiler/c test` builds an address-sanitized binary, runs the
 exact-integer self-test, and compares `check`, `eval`, and `lex` with the Rust
-`orangec` on the S3a through S3f fixtures, including ChaCha20, SHA-256,
-Poly1305, X25519, and ChaCha20-Poly1305. The Rust binary is only a
+`orangec` on the S3a through S3g fixtures, including ChaCha20, SHA-256,
+Poly1305, X25519, ChaCha20-Poly1305, and AES-128. The Rust binary is only a
 test oracle. Running the C compiler does not require it.
 
 ## Limits
