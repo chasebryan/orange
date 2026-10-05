@@ -42,7 +42,7 @@ Empty `spec` and `impl` declarations parse and have no value.
 
 `eval` prints one line for each parameterless typed `spec` of the root, in
 source order. Functions of a used module run only when the root calls them.
-The whole program shares one step budget:
+The whole program shares one step budget.
 
 ```text
 module::name: Type = value
