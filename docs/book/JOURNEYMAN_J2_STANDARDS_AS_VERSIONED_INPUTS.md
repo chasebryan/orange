@@ -595,6 +595,545 @@ repaired test exactly as it applied to the constant words. A pass
 after a repair establishes the repaired `Bool`. It does not reach
 back and establish the sentences the test never mentioned.
 
+### J2.7 FIPS 180-4 is a date, and §6.2.2 is not this page
+
+FIPS PUB 180-4, *Secure Hash Standard (SHS)*, prints `August 2015`
+on its cover. The DOI on that cover is `10.6028/NIST.FIPS.180-4`.
+The announcement in the same publication says the standard
+supersedes FIPS 180-3. Appendix B of FIPS 180-4 dates that
+predecessor as October 2008. The file of FIPS 180-3 retrieved for
+this lesson carries an archive wrapper that prints a third date,
+“superseded on March 6, 2012,” and points at the publications page
+for FIPS 180-4. Three dates are now in play. The pin this lesson
+uses for the standard itself is the date the standard prints on
+its own cover, August 2015. The wrapper's date is a date on a
+wrapper. It is not a sentence of the October 2008 text, and it is
+not the cover date of the August 2015 text.
+
+The contents of the two publications agree on two addresses this
+book has already used. In the October 2008 contents, §5.3.3 is
+SHA-256 and §6.2.2 is SHA-256 hash computation. In the August 2015
+contents, those same digits name those same clauses. A reader who
+expects every revision to renumber every section will “correct”
+a citation that did not move. Assumption J2.4 still requires the
+edition, because agreement of two addresses is not agreement of
+the documents. The August 2015 contents add §5.3.6, §6.6, and
+§6.7 for SHA-512/t, SHA-512/224, and SHA-512/256, which the
+October 2008 contents do not list. Section 5.2 is titled “Parsing
+the Padded Message” in October 2008 and “Parsing the Message” in
+August 2015. The digits `5.2` survived. The title did not. A
+citation that gives the digits and omits the edition has not said
+which title it means.
+
+Appendix C of the August 2015 publication is “Technical Changes
+from FIPS 180-3.” Item 2 says FIPS 180-4 adds SHA-512/224 and
+SHA-512/256, which matches the new sections. Item 1, on the same
+page, reads:
+
+> In FIPS 180-3, padding was inserted before hash computation begins. FIPS 140-4 removed this restriction.
+
+The digits `140` are in the content stream of that page of the
+DOI PDF, in the sentence whose neighbors are FIPS 180-3 and, in
+the next item, FIPS 180-4. The sentence is about when padding may
+be inserted. The identifier it prints is `140-4`. This lesson does
+not replace those digits with `180`. A silent repair would be a
+new pin, and the page would no longer be the page that was read.
+A reader who goes and fetches FIPS 140-4 because this sentence
+names it has followed the printed identifier. That is a different
+document from the one the paragraph is discussing. The
+disagreement is inside one edition, between the identifier and
+the work the sentence is doing. Outcome 6 includes that kind of
+disagreement. No Orange test in this lesson executes padding, so
+no test here can catch the identifier. The catch is the reading.
+
+The publication also carries an erratum page. The table has one
+row. The date is `5/9/2014`. The type is Editorial. The change is
+from `t < 79` to `t ≤ 79`, at page 10, §4.1.1, line 1. The row
+says the change has been incorporated. Section 4.1.1 of the August
+2015 text is the SHA-1 functions, and the bound it prints on `t`
+is `0 ≤ t ≤ 79`. This lesson does not transcribe those functions.
+The fact it needs is the status of the row: the erratum is already
+in the August 2015 text. Applying it a second time, as if the
+cover still printed `t < 79`, would edit a text that has already
+been edited. The date on the erratum, May 9, 2014, is not the
+cover date, August 2015, and it is not the Orange edition token.
+
+Section 5.3.3 is the clause this lesson does open. It says that
+for SHA-256, the initial hash value `H(0)` shall consist of eight
+32-bit words, in hex. The first of them is printed `6a09e667`. The
+sentence under the eight words says they were obtained by taking
+the first thirty-two bits of the fractional parts of the square
+roots of the first eight prime numbers. The first prime is 2. The
+first word is therefore the first thirty-two bits of the
+fractional part of `sqrt(2)`.
+
+Section 6.2.2 is the SHA-256 hash computation. Its first
+preprocessing sentence points back: set `H(0)` as specified in
+§5.3.3. The computation itself is the message schedule and the
+compression function. Those are J5. Assumption J2.7 stands. The
+address §6.2.2 may be written down. The functions may not.
+
+The same eight hex digits begin a different word in a different
+subsection. Section 5.3.5 prints the SHA-512 initial hash value in
+64-bit words. Its first word is printed `6a09e667f3bcc908`. The
+first thirty-two bits match §5.3.3. The word is twice as wide.
+A pin that copies `6a09e667` and does not say “32-bit” and does
+not say “§5.3.3” has not said whether it stopped on purpose.
+
+`algorithms/sha2/sha2.or` names `initial_hash_256` as §5.3.3 and
+places `0x6a09e667` first in that array. The header of the file
+dates the standard to August 2015 and gives the DOI. That header
+is a pin of the edition. The single word `0x6a09e667`, in
+isolation, is also the leading half of the §5.3.5 word. The file
+distinguishes them by the section comment and by the width of the
+array element, `Word[32]` against `Word[64]`. A test of the 32-bit
+word does not test the 64-bit word. This lesson derives the
+32-bit word and does not open the file's compression function.
+
+The derivation uses integer arithmetic only. Let `n = 2^65`. The
+integer square root of `n` is the unique non-negative integer `r`
+such that `r^2 ≤ n < (r + 1)^2`. Then `floor(sqrt(2) * 2^32) = r`,
+because `sqrt(2) * 2^32 = sqrt(2 * 2^64) = sqrt(2^65)`. The
+fractional part's first thirty-two bits are `r - 2^32`, provided
+`r` lies in the next binade, which the value below does.
+
+One recurrence produces a candidate. Start at `x0 = 2^33 =
+8589934592`. The step is
+
+`x → (x + floor(n / x)) / 2`,
+
+with division the Euclidean division of non-negative integers,
+which on this compiler is `/` for positive `Int` values.
+
+**Proposition J2.4.** The first step is exactly `6442450944`.
+
+*Proof.* `floor(2^65 / 2^33) = 2^32 = 4294967296`, with no
+remainder, because `2^65 = 2^33 * 2^32`. The sum is
+`2^33 + 2^32 = 3 * 2^32 = 12884901888`. Half of that is
+`3 * 2^31 = 6442450944`. □
+
+The listing applies the step six times. The value before any
+step, and the value after each step, are
+
+```text
+0  8589934592
+1  6442450944
+2  6084537002
+3  6074010122
+4  6074000999
+5  6074000999
+6  6074000999
+```
+
+Row 0 is the start. Row 1 is Proposition J2.4. Rows 4, 5, and 6
+agree, so the step has stopped changing the value. The `for`
+runs six steps and therefore denotes row 6. Call that value
+`r = 6074000999`.
+
+**Proposition J2.5.** If `r` is a positive integer and
+`floor(n / r) = r + 1`, then `r^2 ≤ n < (r + 1)^2`.
+
+*Proof.* `floor(n / r) = r + 1` means `r * (r + 1) ≤ n` and
+`n < r * (r + 2)`. The first inequality is `r^2 + r ≤ n`, so
+`r^2 ≤ n`. The second is `n ≤ r^2 + 2r - 1`, because the largest
+integer strictly below `r * (r + 2) = r^2 + 2r` is
+`r^2 + 2r - 1`. Then `n ≤ r^2 + 2r - 1 < r^2 + 2r + 1 = (r + 1)^2`.
+So `n < (r + 1)^2`. □
+
+The hypothesis of Proposition J2.5, for this `n` and this `r`, is
+`floor(2^65 / 6074000999) = 6074001000`. Listing J2.4 computes
+that quotient and computes `r - 2^32`.
+
+**Proposition J2.6.** `6074000999 - 2^32 = 1779033703`, and
+`1779033703` is the hex word `6a09e667`.
+
+*Proof.* `2^32 = 4294967296`, and
+`6074000999 - 4294967296 = 1779033703`. The hex digits of that
+integer are computed by remainders on division by 16, from the
+low digit: the remainders are `7, 6, 6, e, 9, 0, a, 6`, so the
+word printed high digit first is `6a09e667`. □
+
+The eight remainders are an exercise. The listing checks the
+integer, not each remainder. A reader who wants the hex from the
+decimal does the remainders. A reader who wants the decimal from
+the standard's hex expands `6 * 16^7 + 10 * 16^6 + 0 * 16^5 +
+9 * 16^4 + 14 * 16^3 + 6 * 16^2 + 6 * 16 + 7`.
+
+**Listing J2.4 — `iv.or`**
+
+```orange
+edition 2026;
+module iv {
+  spec root() -> Int {
+    for i in 0..6 with x: Int = 8589934592 {
+      (x + (36893488147419103232 / x)) / 2
+    }
+  }
+  spec word() -> Int { root() - 4294967296 }
+  spec stable_quot() -> Int { 36893488147419103232 / 6074000999 }
+  test "FIPS 180-4 5.3.3 first word" { word() == 0x6a09e667 }
+  test "fixed point quotient is one more than the root" {
+    stable_quot() == 6074001000
+  }
+}
+```
+
+`36893488147419103232` is `2^65`. The parentheses around the
+division are required. `+` and `/` are in different operator
+groups, and this compiler rejects the ungrouped spelling with
+`ORC0108`. The `for` runs the integer literals `0` through `5`,
+six steps, which is the list above. The index `i` is not read.
+The bound is what the standard's “first thirty-two bits” becomes
+once the square root has been replaced by this recurrence. The
+recurrence is not in FIPS 180-4. The publication states the
+mathematical description. The recurrence is a way to compute the
+integer that description names. A different recurrence that
+reached a different `r` would be a different computation, and
+Proposition J2.5 would not apply to it unless its quotient
+hypothesis held.
+
+```sh
+./compiler/target/debug/orangec check iv.or
+./compiler/target/debug/orangec eval --spec word iv.or
+./compiler/target/debug/orangec eval --spec stable_quot iv.or
+./compiler/target/debug/orangec test iv.or
+```
+
+Check is silent. The status is 0.
+
+**Expected evaluation output:**
+
+```text
+iv::word: Int = 1779033703
+```
+
+```text
+iv::stable_quot: Int = 6074001000
+```
+
+**Test report:**
+
+```text
+test "FIPS 180-4 5.3.3 first word" ... ok
+test "fixed point quotient is one more than the root" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+The first test uses the hex literal `0x6a09e667`, which is how
+§5.3.3 prints the word. The report of a failure would print the
+decimal, as the next listing shows. The pass means `word()`
+denotes `1779033703` and that this equals the hex literal. Together
+with Proposition J2.5 and the quotient test, it means that integer
+is `r - 2^32` for an integer square root of `2^65`. It does not
+mean the other seven words of §5.3.3 were computed. It does not
+mean a message was hashed. It does not mean §6.2.2 was read. It
+does not choose August 2015 over October 2008 by itself, because
+this lesson did not show that the October 2008 printing of §5.3.3
+differs in this word. The edition is pinned by the citation around
+the test, not by a digit the two editions might share. That is the
+constant-word lesson of §J2.5, applied to a FIPS word.
+
+### J2.8 The neighboring section is the wrong pin
+
+Section 5.3 of FIPS 180-4 is “Setting the Initial Hash Value.”
+Section 5.3.1, the first algorithm in that section, is SHA-1. Its
+first word is printed `67452301`. Section 5.3.3 is SHA-256. A
+reader who takes “the first initial-hash word in §5.3” has cited
+a section that contains several words, and the first one in the
+section is the SHA-1 word. The role is the same kind of role, an
+initial hash word. The section is not the same section.
+Assumption J2.5 says a right role in the wrong section is a
+different pin.
+
+`0x67452301` is the decimal `1732584193`. Listing J2.5 computes
+the SHA-256 word and demands the SHA-1 word.
+
+**Listing J2.5 — `wrong_section.or`**
+
+```orange
+edition 2026;
+module wrong_section {
+  spec root() -> Int {
+    for i in 0..6 with x: Int = 8589934592 {
+      (x + (36893488147419103232 / x)) / 2
+    }
+  }
+  spec word() -> Int { root() - 4294967296 }
+  test "FIPS 180-4 5.3.3 copied from 5.3.1" { word() == 0x67452301 }
+}
+```
+
+```sh
+./compiler/target/debug/orangec check wrong_section.or
+./compiler/target/debug/orangec eval --spec word wrong_section.or
+./compiler/target/debug/orangec test wrong_section.or
+```
+
+Check is silent. Evaluation prints the SHA-256 word, because
+`eval` does not run the test:
+
+```text
+wrong_section::word: Int = 1779033703
+```
+
+**Test report:**
+
+```text
+test "FIPS 180-4 5.3.3 copied from 5.3.1" ... FAILED
+    left:  1779033703
+    right: 1732584193
+1 test: 0 passed, 1 failed
+```
+
+The status is 1. Standard error is empty. Left is `0x6a09e667`,
+the word §5.3.3 prints and Listing J2.4 derives. Right is
+`0x67452301`, the word §5.3.1 prints. The title already confesses
+the copy. A title that said only `FIPS 180-4 5.3.3 first word`
+would fail with the same left and right. The diagnosis would be
+the same arithmetic, and the reader would still have to notice
+that the right-hand hex is the other subsection. The compiler
+prints integers. It does not print “you opened §5.3.1.”
+
+**Proposition J2.7.** The `Bool` in Listing J2.5 is false, and the
+repair is the expected hex `0x6a09e667`. The recurrence stays.
+
+*Proof.* Listing J2.4 already shows that this recurrence and this
+subtraction denote `1779033703`, equal to `0x6a09e667`. The test
+demands `0x67452301`, which is `1732584193`. The report's two
+integers differ, so the `Bool` is false. Substituting the §5.3.3
+hex makes the sides equal. The body of `root` is not the site of
+the disagreement. □
+
+The repaired test is the first test of Listing J2.4. It still
+does not hash a message, and it still does not transcribe §6.2.2.
+
+### J2.9 FIPS 197, and a figure number that moved
+
+FIPS 197, *Advanced Encryption Standard (AES)*, was published
+November 26, 2001. The May 9, 2023 update is NIST FIPS 197-upd1.
+Its cover prints both dates: “Published November 26, 2001; Updated
+May 9, 2023.” The DOI of the update is
+`10.6028/NIST.FIPS.197-upd1`. The archived PDF of the 2001 text
+carries a withdrawal notice. The notice prints the withdrawal date
+May 9, 2023, names NIST FIPS 197-upd1 as the superseding
+publication, and says: “This update makes no technical changes to
+the algorithm specified in the original (2001) release of this
+standard. This update includes extensive editorial improvements
+to the original version.”
+
+“No technical changes to the algorithm” is a claim about the
+algorithm. It is not a claim that every section number, figure
+number, and sentence survived. Appendix D of the update is the
+change log. Item 5 says the material in the previous §2.2,
+“Algorithm Parameters, Symbols and Functions,” was split into two
+new sections: §2.2, “List of Functions,” and §2.3, “Algorithm
+Parameters and Symbols.” The 2001 contents have one section 2.2
+with that older title, and they do not have a §2.3 under
+“Definitions.” A citation of “FIPS 197 §2.2” that omits the date
+names a different clause in the two editions. That is Assumption
+J2.4 on a split rather than on a reuse of the same title.
+
+The figure numbers move further. The 2001 list of figures says
+Figure 7 is “S-box: substitution values for the byte xy (in
+hexadecimal format).” The 2023 list of figures says Figure 7 is
+the illustration of `KEYEXPANSION()` for AES-192. The S-box in the
+2023 text is Table 4, “SBOX(): substitution values for the byte
+xy (in hexadecimal format).” The first entry of that table, at
+row `0` and column `0`, is `63`. The 2001 Figure 7 begins with the
+same bytes `63 7c 77 7b`. The withdrawal notice and the matching
+first bytes are consistent with each other. They do not make
+Figure 7 a stable name. In 2001, Figure 7 is the S-box. In 2023,
+Figure 7 is a picture of the AES-192 key expansion, and the S-box
+is Table 4.
+
+`algorithms/aes/aes.or` records both locators in one comment: the
+S-box is “Section 5.1.1, Table 4 (Figure 7 of the 2001 text).”
+That parenthetical is a pin of the old figure to the new table.
+It is the right shape. A comment that said only “Figure 7” would
+be the wrong shape, and a test that checked the byte `0x63` would
+still pass, because the byte did not move when the figure number
+did. This lesson does not add a listing whose body is the literal
+`0x63` compared with the literal `0x63`. That comparison would
+establish that a literal equals itself. It would not establish
+which figure you meant. The constant-word test of §J2.5 already
+taught the general fact. The S-box byte is the same fact with a
+locator that did move.
+
+Appendix D item 17 of the update says the description of
+`INVSHIFTROWS()` “in Section 5.3.2” was improved, and that a
+mistake in it was corrected. The contents of the same PDF list
+`INVSHIFTROWS()` at §5.3.1 and `INVSUBBYTES()` at §5.3.2. The 2001
+contents use those same two numbers for those same two names.
+The changelog's digits `5.3.2`, attached to `INVSHIFTROWS()`, do
+not match the contents of either edition. This lesson does not
+re-derive the inverse shift, and it does not guess which formula
+was the mistake. It records that a change log can cite a section
+number the contents do not assign to the name in the same
+sentence. A reader who opens §5.3.2 of the 2023 text because item
+17 said to will open `INVSUBBYTES()`. The repair is to follow the
+contents' number for the name, and to treat item 17's digits as a
+locator that failed Assumption J2.4 inside a single PDF.
+
+Item 23 of the same appendix says the examples in Appendix C were
+removed in favor of a reference to example vectors maintained
+elsewhere. A vector copied from Appendix C of the 2001 text into
+a test titled as Appendix C of the 2023 update is a copy from an
+appendix the update says it removed. `aes.or` says it reproduces
+the cipher examples of Appendix C.1, C.2, and C.3 and the
+round-by-round example of Appendix B, and its header cites the
+2001 text and the 2023 DOI together. Whether those examples still
+sit in the 2023 Appendix C is a question the header's pair of
+dates forces you to ask. This lesson does not answer it by
+transcribing a round. J5 is not AES either. The question is the
+pin: which edition's appendix, and is the appendix still in that
+edition.
+
+### J2.10 What the repository records, and what it does not
+
+Three files are enough to see the habit on the code that is
+already in the tree.
+
+`algorithms/chacha20/chacha20.or` opens by naming RFC 8439, the
+year 2018, and the URL of that RFC. It says which sections it
+follows: 2.1, 2.3, 2.4, and the sections of the separate
+XChaCha20 draft it also implements. The draft is a fourth
+document. A test that passes against an RFC 8439 vector does not
+pass the draft, and a test that passes against the draft does not
+become an RFC 8439 test by sharing the quarter round. The file's
+`initial_state` uses the four constant words of Listing J2.2 and
+a 32-bit counter. The comment above that spec says the counter is
+the 32-bit word of RFC 8439, and that Bernstein's ChaCha of 2008
+kept a 64-bit counter in words 12 and 13. That sentence is a pin
+of layout. Listing J2.2 does not check it. N12 checked the RFC
+8439 layout against §2.3.2. Neither check is a check of the 2008
+widths.
+
+The README table in `algorithms/chacha20/README.md` names each
+Orange spec by an RFC 8439 section: `rfc8439_2_1_1` for §2.1.1,
+`rfc8439_2_3_2` for the serialized block of §2.3.2, and the
+appendix A rows for those vectors. The name is a locator only if
+it matches the section the expected bytes were copied from. A
+name `rfc8439_2_1_1` on a vector copied from §2.3.2 would be
+Listing J2.5's mistake in miniature: right document, wrong
+section, and a title that can lie. The compiler sees bytes. The
+table is the human record.
+
+`algorithms/aes/aes.or` opens on FIPS 197, “2001; update 1, 2023,”
+with the 2023 DOI. The S-box comment is the dual locator of
+§J2.9. The file is a reference evaluation of the examples it
+names. It is not a certification, and the entry's own README says
+the tables are the standard's tables read by a selection over all
+of them, with no constant-time claim. This lesson adds none.
+
+`algorithms/sha2/sha2.or` opens on FIPS 180-4, August 2015, with
+the DOI, and it lists §5.3 among the sections it follows. It also
+lists §6.2 and §6.4, which are the hash computations. Those
+functions are in that file. They are not in this lesson. Pointing
+at `initial_hash_256` is a pin of one array to §5.3.3. Opening
+`schedule` or `compress` would be J5. The header also says some
+digests were cross-checked with Python's `hashlib` and with other
+libraries' vector files. A cross-check against another
+implementation is not the standard. It is a second artifact. If
+the other artifact was itself transcribed from a different
+edition, the cross-check repeats the wrong pin twice. Listing
+J2.4 does not call another library. Its expected hex is the hex
+§5.3.3 prints, and its left value is the recurrence.
+
+The Gate 0 fixture
+`conformance/foundation/valid/standards-provenance.json` is a
+different kind of record, and it says so. Its `record_status` is
+`provisional_gate0`. Its `non_product` field is true. The one
+standard inside it is RFC 8785, dated `2020-06-01`, and the digest
+value is sixty-four repetitions of the character `a`. The
+`archive_state` is `acquisition_required`. The limitations array
+says the fixture demonstrates provenance shape, that its digest
+and retrieval time are synthetic, and that they are not a verified
+standards acquisition. A reader who copies `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+into a test titled as the digest of RFC 8785 has pinned the
+fixture's placeholder. The placeholder is not a document.
+
+The fields the fixture is exercising are the fields a real pin
+needs: an issuer, a document identifier, an edition, a publication
+date, a source URI, a retrieval time, a digest, an errata list, a
+clause locator, and a statement of what the record does not claim.
+For the integer in Listing J2.1, filled from the files this lesson
+retrieved on 2026-10-05, the record is the following. It is a
+record in this chapter. It is not a row of the Gate 0 fixture,
+and it does not make that fixture's digest real.
+
+The issuer is the Internet Research Task Force, and the plain
+text is published by the RFC Editor. The document identifier is
+RFC 8439. The edition is the June 2018 plain-text file, whose
+header prints `Obsoletes: 7539`. The URI is
+`https://www.rfc-editor.org/rfc/rfc8439.txt`. The SHA-256 digest
+of the file retrieved that day is
+`25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c`.
+The clause is §2.8, both the sentence that gives the total of
+`(2^32 - 1)` blocks of 64 bytes and the `P_MAX` bullet that prints
+the same integer. The role is the output of that multiplication.
+The errata consulted are 4858 and 4861, both marked Verified on
+the errata page, and the predecessor file of RFC 7539, whose
+digest that day was
+`546e12200dbbc7b08cf85c8f07ea8681be89954b7c7e0c56f0c51f775a0ba704`.
+The August 2015 PDF of FIPS 180-4, DOI `10.6028/NIST.FIPS.180-4`,
+had digest
+`0455b406d89648d20cbde375561e19c245b9815e894164c2670772e3d54deb82`.
+The May 9, 2023 PDF of NIST FIPS 197-upd1 had digest
+`62c86eb567f13edb8f71826e985da870b04ef6381634f303cdb16e84d47becd1`.
+The archived November 26, 2001 PDF, carrying the withdrawal
+notice, had digest
+`251dfe0b5dc283abaf364adf586f7ec6dc4e495335d48dd5ee0fee6c5961da8a`.
+
+A digest is of a file, not of a sentence. The HTML and PDF
+renderings of RFC 8439 are different byte strings. They can carry
+the same §2.8 sentence and hash differently. The pin of the
+sentence is the quotation and the section. The pin of the file is
+the digest. Listing J2.1 tests the integer. It does not recompute
+the file digest. A reader who changes one comma in a local copy
+changes the digest and may leave the integer alone. Both facts
+are then true, and they answer different questions.
+
+### J2.11 What a passing test does not establish
+
+Collect the refusals in one place. Each of them is an instance of
+Assumption J2.6, named so it can be demanded again.
+
+The test does not establish a document. The title string is not
+looked up.
+
+The test does not choose an edition when the expected integer is
+one that two editions print. Listing J2.2 is that case. The S-box
+byte `63` is that case across the 2001 text and the 2023 update.
+
+The test does not see a sentence that changed while the integer
+stood still. `should not` against `MUST not` in §2.3 is that
+case. `MUST not` is not the all-capitals `MUST NOT` of §1.1.
+
+The test does not apply an erratum the source never mentions.
+Erratum 4371 changes a width from 4 to 8. Listings J2.1 and J2.3
+never mention that width.
+
+The test does not read a Held erratum or a Rejected one. Erratum
+8274 is Rejected. It is not part of RFC 8439 merely because RFC
+8439 says it merges errata.
+
+The test does not transcribe FIPS 180-4 §6.2.2, and it does not
+transcribe the AES round. The addresses are pins. The functions
+are not on this page.
+
+The test does not make `algorithms/sha2/sha2.or` or
+`algorithms/aes/aes.or` a certification, a constant-time
+implementation, or a corpus entry. Those files say so themselves.
+This lesson does not withdraw what they say.
+
+The test does not turn the Gate 0 fixture's synthetic digest into
+an acquisition of RFC 8785.
+
+The test does not verify the program. A passing report is a Match
+on the inputs the test wrote. The word Verified, when it appears
+in this lesson, is the RFC Editor's status on an erratum record.
+It is not a name for the Match.
+
 ## Sources and epigraph record
 
 The quotation is the borrowed sentence. The dates and identifiers
@@ -628,9 +1167,9 @@ and `A. Langley`.
 
 J2 is a Journeyman lesson. The six outcomes in §J2.1 are the finish
 line. The assumptions in §J2.2 bound them. Listings J2.1 through
-J2.3 are the RFC pin, the unchanged constant, and the edition
-mismatch. Later sections pin FIPS 180-4 and FIPS 197, and the
-worked answers close the lesson. Those checks do not establish a
+J2.3 pin RFC 8439 against RFC 7539. Listings J2.4 and J2.5 pin
+FIPS 180-4 §5.3.3 and show the neighboring section failing.
+Worked answers close the lesson. Those checks do not establish a
 cryptographic security claim, they do not derive FIPS 180-4
 §6.2.2, and they do not accept a proposal.
 
