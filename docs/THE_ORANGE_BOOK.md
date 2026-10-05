@@ -2158,10 +2158,12 @@ error[ORC0223]: index `16` is out of range for `Word[32]^16`
 ```
 
 And operators act on elements: `x ^ y` on two arrays is `ORC0215`, so an
-operator always means one ring operation on one pair of values. There are no
-arrays of arrays and no empty arrays. With arrays alone, the fixture's ten
-double rounds are ten bindings, one after another. The next section removes
-that repetition.
+operator always means one ring operation on one pair of values. Empty arrays
+are rejected. Arrays of ranks two through four, and an update that names one
+index per dimension, are in [Arrays of rows](#arrays-of-rows) and
+[Four dimensions, one index each](#four-dimensions-one-index-each). With
+arrays alone, the fixture's ten double rounds are ten bindings, one after
+another. The next section removes that repetition.
 
 ### Rounds as one expression
 
