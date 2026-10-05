@@ -110,55 +110,30 @@ int big_from_u64(Arena *arena, uint64_t value, Big *out) {
     return 1;
 }
 
-static int mul_small(Arena *arena, const Big *value, uint32_t factor, Big *out) {
-    uint32_t *limbs;
+/* 16,384 bits is 512 limbs. A digit is folded in place, and only the
+   finished magnitude is copied into the arena. */
+enum { ORANGE_MAX_LIMBS = ORANGE_MAX_BITS / 32u };
+
+_Static_assert(ORANGE_MAX_BITS % 32u == 0, "the bit limit is a whole number of limbs");
+
+static int accumulate_digit(uint32_t *limbs, uint32_t *nlimbs, uint32_t base, uint32_t digit) {
+    uint64_t carry = digit;
     uint32_t index;
-    uint64_t carry;
-    if (value->nlimbs == 0 || factor == 0) {
-        *out = big_zero();
-        return 1;
-    }
-    limbs = alloc_limbs(arena, value->nlimbs + 1);
-    if (limbs == NULL) {
-        return 0;
-    }
-    carry = 0;
-    for (index = 0; index < value->nlimbs; index++) {
-        uint64_t product = (uint64_t)value->limbs[index] * factor + carry;
+    for (index = 0; index < *nlimbs; index++) {
+        uint64_t product = (uint64_t)limbs[index] * (uint64_t)base + carry;
         limbs[index] = (uint32_t)product;
         carry = product >> 32;
     }
-    limbs[value->nlimbs] = (uint32_t)carry;
-    *out = big_publish(limbs, value->nlimbs + 1, value->negative);
-    return fits_bits(out);
-}
-
-static int add_small(Arena *arena, const Big *value, uint32_t addend, Big *out) {
-    uint32_t *limbs;
-    uint32_t count;
-    uint32_t index;
-    uint64_t carry;
-    if (addend == 0) {
-        *out = *value;
+    if (carry == 0) {
         return 1;
     }
-    if (value->nlimbs == 0) {
-        return big_from_u64(arena, addend, out);
-    }
-    count = value->nlimbs + 1;
-    limbs = alloc_limbs(arena, count);
-    if (limbs == NULL) {
+    /* One more limb would be bit 16,384 or higher. */
+    if (*nlimbs >= ORANGE_MAX_LIMBS) {
         return 0;
     }
-    carry = addend;
-    for (index = 0; index < value->nlimbs; index++) {
-        uint64_t sum = (uint64_t)value->limbs[index] + carry;
-        limbs[index] = (uint32_t)sum;
-        carry = sum >> 32;
-    }
-    limbs[value->nlimbs] = (uint32_t)carry;
-    *out = big_publish(limbs, count, value->negative);
-    return fits_bits(out);
+    limbs[*nlimbs] = (uint32_t)carry;
+    (*nlimbs)++;
+    return 1;
 }
 
 static int digit_value(char character, int base) {
@@ -179,9 +154,11 @@ static int digit_value(char character, int base) {
 }
 
 int big_from_digits(Arena *arena, const char *text, size_t length, int negative, Big *out) {
+    uint32_t scratch[ORANGE_MAX_LIMBS];
+    uint32_t nlimbs = 0;
+    uint32_t *limbs;
     size_t index = 0;
     int base = 10;
-    Big value = big_zero();
     int saw_digit = 0;
     if (length >= 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
         base = 16;
@@ -192,7 +169,6 @@ int big_from_digits(Arena *arena, const char *text, size_t length, int negative,
     }
     for (; index < length; index++) {
         int digit;
-        Big scaled;
         if (text[index] == '_') {
             continue;
         }
@@ -200,22 +176,25 @@ int big_from_digits(Arena *arena, const char *text, size_t length, int negative,
         if (digit < 0) {
             return 0;
         }
-        if (!mul_small(arena, &value, (uint32_t)base, &scaled)) {
-            return 0;
-        }
-        if (!add_small(arena, &scaled, (uint32_t)digit, &value)) {
+        if (!accumulate_digit(scratch, &nlimbs, (uint32_t)base, (uint32_t)digit)) {
             return 0;
         }
         saw_digit = 1;
     }
-    if (!saw_digit || !fits_bits(&value)) {
+    if (!saw_digit) {
         return 0;
     }
-    if (negative && value.nlimbs != 0) {
-        value.negative = 1;
+    if (nlimbs == 0) {
+        *out = big_zero();
+        return 1;
     }
-    *out = value;
-    return 1;
+    limbs = alloc_limbs(arena, nlimbs);
+    if (limbs == NULL) {
+        return 0;
+    }
+    memcpy(limbs, scratch, (size_t)nlimbs * sizeof(uint32_t));
+    *out = big_publish(limbs, nlimbs, negative);
+    return fits_bits(out);
 }
 
 static int cmp_mag(const Big *left, const Big *right) {
@@ -466,6 +445,8 @@ int big_format(const Big *value, char *buffer, size_t capacity) {
     return 1;
 }
 
+static int limit_literal_self_test(Arena *arena);
+
 int bigint_self_test(void) {
     Arena arena;
     Big two;
@@ -531,6 +512,98 @@ int bigint_self_test(void) {
         arena_dispose(&arena);
         return 0;
     }
+    if (!limit_literal_self_test(&arena)) {
+        arena_dispose(&arena);
+        return 0;
+    }
     arena_dispose(&arena);
     return 1;
+}
+
+/* 2^16384 - 1 is admitted. Its hex spelling is 4,096 `f` digits and its
+   binary spelling is 16,384 `1` digits. Parsing must keep both, and one
+   extra hex digit must be rejected. */
+static int limit_literal_self_test(Arena *arena) {
+    char *hex;
+    char *binary;
+    char *over;
+    char hex_text[8192];
+    char built_text[8192];
+    Big hex_value;
+    Big binary_value;
+    Big again;
+    Big two;
+    Big value;
+    Big one;
+    Big below;
+    Big above;
+    Big product;
+    Big too_wide;
+    size_t before;
+    int step;
+    int ok = 0;
+    hex = malloc(2u + 4096u + 1u);
+    binary = malloc(2u + 16384u + 1u);
+    over = malloc(2u + 4097u + 1u);
+    if (hex == NULL || binary == NULL || over == NULL) {
+        free(hex);
+        free(binary);
+        free(over);
+        return 0;
+    }
+    hex[0] = '0';
+    hex[1] = 'x';
+    memset(hex + 2, 'f', 4096u);
+    hex[4098] = '\0';
+    binary[0] = '0';
+    binary[1] = 'b';
+    memset(binary + 2, '1', 16384u);
+    binary[16386] = '\0';
+    over[0] = '0';
+    over[1] = 'x';
+    memset(over + 2, 'f', 4097u);
+    over[4099] = '\0';
+    before = arena->used;
+    if (!big_from_digits(arena, hex, 4098u, 0, &hex_value) || big_bits(&hex_value) != 16384u ||
+        !big_from_digits(arena, binary, 16386u, 0, &binary_value) || big_bits(&binary_value) != 16384u ||
+        !big_from_digits(arena, hex, 4098u, 0, &again) || big_bits(&again) != 16384u) {
+        goto done;
+    }
+    /* Three finished magnitudes, not a copy per digit. */
+    if (arena->used - before > 8192u) {
+        goto done;
+    }
+    if (big_from_digits(arena, over, 4099u, 0, &too_wide)) {
+        goto done;
+    }
+    if (!big_format(&hex_value, hex_text, sizeof hex_text) || strlen(hex_text) != 4933u ||
+        strncmp(hex_text, "118973149535723176508575932662800713076344468709", 48) != 0 ||
+        strcmp(hex_text + 4933 - 48, "934288295679717369943152460447027290669964066815") != 0 ||
+        !big_format(&binary_value, built_text, sizeof built_text) || strcmp(hex_text, built_text) != 0) {
+        goto done;
+    }
+    if (!big_from_u64(arena, 2, &two)) {
+        goto done;
+    }
+    value = two;
+    for (step = 0; step < 13; step++) {
+        Big squared;
+        if (!big_mul(arena, &value, &value, &squared)) {
+            goto done;
+        }
+        value = squared;
+    }
+    if (big_bits(&value) != 8193u || !big_from_u64(arena, 1, &one) || !big_sub(arena, &value, &one, &below) ||
+        !big_add(arena, &value, &one, &above) || !big_mul(arena, &below, &above, &product) ||
+        big_bits(&product) != 16384u || !big_format(&product, built_text, sizeof built_text) ||
+        strcmp(hex_text, built_text) != 0 || big_mul(arena, &value, &value, &too_wide) ||
+        big_add(arena, &product, &one, &too_wide)) {
+        goto done;
+    }
+    ok = 1;
+done:
+    free(hex);
+    free(binary);
+    free(over);
+    return ok;
 }
