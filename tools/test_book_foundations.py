@@ -930,23 +930,24 @@ class N11Protect(unittest.TestCase):
             self.assertEqual(posterior, expected_posterior)
 
     def test_n11_bezout_is_the_successor_step(self):
+        folded = re.sub(r'\s+', ' ', self.text)
         self.assertEqual(self.text.count('Assumption N9.4'), 5)
-        self.assertIn('the base `P(0)`, and the step', self.text)
-        self.assertIn('`P(n) ⇒ P(n + 1)` with hypothesis `P(n)` alone', self.text)
-        self.assertIn('The step is `Q(n) ⇒ Q(n + 1)`.', self.text)
-        self.assertIn('The hypothesis was `Q(n)` only.', self.text)
+        self.assertIn('the base `P(0)`, and the step', folded)
+        self.assertIn('`P(n) ⇒ P(n + 1)` with hypothesis `P(n)` alone', folded)
+        self.assertIn('The step is `Q(n) ⇒ Q(n + 1)`.', folded)
+        self.assertIn('The hypothesis was `Q(n)` only.', folded)
         self.assertIn(
             'The second paragraph of Assumption N9.4 therefore',
-            self.text,
+            folded,
         )
         self.assertIn(
             'Assumption N9.4 only as the successor step `Q(n) ⇒ Q(n + 1)`',
-            self.text,
+            folded,
         )
-        self.assertNotIn('complete induction', self.text.lower())
-        self.assertNotIn('modulus strictly less than', self.text)
-        self.assertNotIn('descent cannot', self.text)
-        self.assertNotIn('Induct on the positive integer', self.text)
+        self.assertNotIn('complete induction', folded.lower())
+        self.assertNotIn('modulus strictly less than', folded)
+        self.assertNotIn('descent cannot', folded)
+        self.assertNotIn('Induct on the positive integer', folded)
         for modulus in range(1, 41):
             for integer in range(-40, 41):
                 coefficient_x, coefficient_y = successor_bezout(integer, modulus)
