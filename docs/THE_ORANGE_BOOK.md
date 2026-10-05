@@ -1031,16 +1031,20 @@ like any other call, and because uses have no cycle, the call graph of the
 whole program is acyclic when each module's own is.
 
 Within a module, types come before functions. The analyzer first evaluates
-every modulus a module-level `type` declaration writes, once each: that
+every modulus that uses no size name, once each and in source order: those
+in `type` declarations, then those in each typed spec's finite
+type-parameter lists, parameters, result, bindings, and body. Such a
 modulus is built from integer literals with `+`, `-`, `*`, `<<`, and
-parentheses, and must lie from 2 through 2^521 − 1. A sized function may
-use that same vocabulary and its own size names; each of its instances is
-checked with the exact modulus those sizes give, still from 2 through
-2^521 − 1. It then resolves the `type` declarations in source order,
-each against the names declared before it, and only then the signatures. A
-declared name is another spelling of its type, so a module that writes `F`
-and one that writes `Mod[(1 << 255) - 19]` mean the same thing, and the name
-stays in its module.
+parentheses, and must lie from 2 through 2^521 − 1. A test's moduli are
+resolved only where its body is checked. A sized function may use that
+same vocabulary and its own size names. A modulus that uses a function's
+finite size names is evaluated again in each concrete instance, and that
+instance is checked with the exact modulus those sizes give, still from 2
+through 2^521 − 1. It then resolves the `type` declarations in source
+order, each against the names declared before it, and only then the
+signatures. A declared name is another spelling of its type, so a module
+that writes `F` and one that writes `Mod[(1 << 255) - 19]` mean the same
+thing, and the name stays in its module.
 
 The types are where the language's character first shows. `Int` is the
 type of mathematical integers. It has no maximum and does not overflow. The
