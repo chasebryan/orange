@@ -314,6 +314,100 @@ def index_chain_and_loop_recovery(rust_compiler: Path, c_compiler: Path) -> int:
             failures += 1
     return failures
 
+def module(body: str) -> str:
+    return "edition 2026;\nmodule conv {\n" + body + "\n}\n"
+
+
+def conversion_targets(rust_compiler: Path, c_compiler: Path) -> int:
+    """An invalid `as` target does not hide the operand, or the outer conversion."""
+    cases = [
+        ("conv-lit-bad-width", module("  spec f() -> Word[8] { 1 as Word[7] }"), ["ORC0220", "ORC0204"]),
+        ("conv-lit-missing-width", module("  spec f() -> Word[8] { 1 as Word }"), ["ORC0220", "ORC0204"]),
+        ("conv-lit-float", module("  spec f() -> Word[8] { 1 as Float }"), ["ORC0220", "ORC0203"]),
+        ("conv-bool-bad-width", module("  spec f(b: Bool) -> Word[8] { b as Word[7] }"), ["ORC0215", "ORC0204"]),
+        ("conv-missing-name", module("  spec f() -> Word[8] { missing as Word[7] }"), ["ORC0211", "ORC0204"]),
+        ("conv-missing-call", module("  spec f() -> Word[8] { missing() as Word[7] }"), ["ORC0212", "ORC0204"]),
+        (
+            "conv-array-bad-width",
+            module("  spec f(t: Word[8]^4) -> Word[8] { t as Word[7] }"),
+            ["ORC0215", "ORC0204"],
+        ),
+        (
+            "conv-compare-bad-width",
+            module("  spec f(x: Word[8]) -> Word[8] { (x == 1) as Word[7] }"),
+            ["ORC0215", "ORC0204"],
+        ),
+        (
+            "conv-conditional-untyped",
+            module("  spec f(c: Bool) -> Word[8] { (if c { 1 } else { 2 }) as Word[7] }"),
+            ["ORC0220", "ORC0204"],
+        ),
+        (
+            "conv-nested-untyped",
+            module("  spec f() -> Word[8] { (1 as Word[7]) as Word[8] }"),
+            ["ORC0220", "ORC0204"],
+        ),
+        (
+            "conv-nested-word",
+            module("  spec f(x: Word[8]) -> Word[16] { (x as Word[7]) as Word[16] }"),
+            ["ORC0204"],
+        ),
+        (
+            "conv-nested-bool",
+            module("  spec f(b: Bool) -> Int { (b as Word[99]) as Int }"),
+            ["ORC0215", "ORC0204"],
+        ),
+        (
+            "conv-typed-only-width",
+            module("  spec f(x: Word[8]) -> Word[8] { x as Word[7] }"),
+            ["ORC0204"],
+        ),
+        (
+            "conv-compare-operand",
+            module("  spec f(x: Word[8]) -> Bool { (x as Word[7]) == 1 }"),
+            ["ORC0204"],
+        ),
+        (
+            "conv-index-operand",
+            module("  spec f(t: Word[8]^4, x: Word[8]) -> Word[8] { t[x as Word[7]] }"),
+            ["ORC0204"],
+        ),
+        (
+            "conv-leading-zero-width",
+            module("  spec f() -> Word[8] { 1 as Word[08] }"),
+            ["ORC0220", "ORC0204"],
+        ),
+    ]
+    failures = 0
+    for name, source, expected in cases:
+        if not compare_codes(rust_compiler, c_compiler, name, source):
+            failures += 1
+            continue
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / f"{name}.or")
+            Path(path).write_text(source)
+            observed = codes(run(c_compiler, ["check", path]).stderr)
+        if observed != expected:
+            failures += 1
+            print(f"FAIL check {name} expected {expected} got {observed}")
+    admitted = module(
+        "  spec f(x: Word[8]) -> Word[8] { (x as Word[16]) as Word[8] }\n"
+        "  spec g() -> Word[8] { f(0x2c) }\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory) / "conv-nested-admitted.or")
+        Path(path).write_text(admitted)
+        rust = run(rust_compiler, ["eval", path])
+        c_result = run(c_compiler, ["eval", path])
+    if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout:
+        failures += 1
+        print("FAIL eval conv-nested-admitted")
+        print(f"  rust {rust.returncode} {rust.stdout!r} {codes(rust.stderr)}")
+        print(f"  c    {c_result.returncode} {c_result.stdout!r} {codes(c_result.stderr)}")
+    else:
+        print("ok   eval conv-nested-admitted")
+    return failures
+
 
 def main() -> int:
     c_compiler = C_COMPILER
@@ -397,6 +491,7 @@ def main() -> int:
 
     failures += loop_bound_magnitude(rust_compiler, c_compiler)
     failures += index_chain_and_loop_recovery(rust_compiler, c_compiler)
+    failures += conversion_targets(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
