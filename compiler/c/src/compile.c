@@ -28,6 +28,10 @@
 #define MAX_MODULES 64
 #define MAX_PROGRAM_SLOTS 65
 #define MAX_USES 64
+#define MAX_TYPE_DECLS 64
+#define MAX_TYPE_SITES 4096
+#define MAX_MODULI 256
+#define MAX_MODULUS_BITS 521
 
 typedef enum TokenKind {
     TK_EOF,
@@ -137,7 +141,7 @@ static const char *TOKEN_NAMES[] = {
     "QUESTION",
 };
 
-typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64 } TypeKind;
+typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64, TY_MOD } TypeKind;
 
 typedef enum ExprKind {
     EX_NONE = 0,
@@ -169,7 +173,49 @@ typedef struct DeclaredType {
     uint32_t end;
     uint32_t length_start;
     uint32_t length_end;
+    /* Identifier that names this type, before a width or a modulus. */
+    uint32_t ident_start;
+    uint32_t ident_end;
+    uint32_t mod_expr;
+    int has_mod;
+    int bare_mod;
+    int named;
 } DeclaredType;
+
+/* One written type. Moduli are filled before names are resolved. */
+typedef struct TypeSite {
+    TypeKind kind;
+    uint32_t length;
+    int ok;
+    int length_bad;
+    uint32_t start;
+    uint32_t end;
+    uint32_t length_start;
+    uint32_t length_end;
+    uint32_t ident_start;
+    uint32_t ident_end;
+    uint32_t mod_expr;
+    int has_mod;
+    int bare_mod;
+    int named;
+    int modulus_done;
+    uint16_t mod_index;
+    int reported;
+    int resolved;
+    /* The spelling itself carries `^n`. Resolution turns that into rank. */
+    int wrote_axis;
+    /* 0 scalar, 1 one array axis, 2 a matrix. Rank 2 is a name, not a value. */
+    int rank;
+    uint32_t inner_len;
+    const char *role;
+} TypeSite;
+
+typedef struct TypeDecl {
+    uint32_t name_start;
+    uint32_t name_end;
+    uint32_t site;
+    int installed;
+} TypeDecl;
 
 typedef enum NameRes { NAME_NONE = 0, NAME_PARAM, NAME_LOCAL, NAME_MISSING, NAME_EARLY, NAME_BAD, NAME_BOOL } NameRes;
 
@@ -199,8 +245,12 @@ typedef struct Expr {
     uint32_t op_end;
     TypeKind ty;
     uint32_t ty_len;
+    uint16_t ty_mod;
     TypeKind conv_ty;
     int conv_ok;
+    uint32_t conv_site;
+    uint32_t conv_len;
+    uint16_t conv_mod;
     NameRes name_res;
     uint16_t name_index;
     TypeKind name_ty;
@@ -219,6 +269,9 @@ typedef struct Param {
     uint32_t length_start;
     uint32_t length_end;
     int duplicate;
+    uint32_t site;
+    uint16_t mod_index;
+    int type_reported;
 } Param;
 
 typedef struct Local {
@@ -236,6 +289,9 @@ typedef struct Local {
     uint32_t length_end;
     int duplicate;
     uint32_t value;
+    uint32_t site;
+    uint16_t mod_index;
+    int type_reported;
 } Local;
 
 typedef struct Edge {
@@ -263,6 +319,9 @@ typedef struct LoopDesc {
     uint32_t length_end;
     uint32_t init_expr;
     uint32_t step_expr;
+    uint32_t site;
+    uint16_t acc_mod;
+    int acc_reported;
     int bounds_ok;
     uint32_t bound_a;
     uint32_t bound_b;
@@ -300,6 +359,9 @@ typedef struct Func {
     uint32_t result_end;
     uint32_t result_length_start;
     uint32_t result_length_end;
+    uint32_t result_site;
+    uint16_t result_mod;
+    int result_reported;
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
@@ -322,6 +384,7 @@ typedef struct Value {
     struct Value *elems;
     uint64_t word;
     Big big;
+    uint16_t mod_index;
 } Value;
 
 typedef struct Program Program;
@@ -394,6 +457,17 @@ typedef struct Compiler {
     char *requested;
     int own_text;
     int own_filename;
+    TypeDecl *types;
+    uint32_t ntypes;
+    size_t type_cap;
+    TypeSite *sites;
+    uint32_t nsites;
+    size_t site_cap;
+    Big *moduli;
+    uint16_t nmoduli;
+    uint16_t leaf_mod;
+    /* Modulus required by the expression currently being checked. */
+    uint16_t expect_mod;
 } Compiler;
 
 struct Program {
@@ -538,6 +612,7 @@ static int new_expr(Compiler *c, uint32_t *out) {
     expr->callee = UINT32_MAX;
     expr->left = UINT32_MAX;
     expr->right = UINT32_MAX;
+    expr->conv_site = UINT32_MAX;
     *out = c->nexprs++;
     return 1;
 }
@@ -987,7 +1062,7 @@ static void lex_source(Compiler *c) {
 static int enter_nest(Compiler *c, uint32_t start, uint32_t end) {
     if (c->nesting >= MAX_NESTING) {
         resource_diag(c, "ORC0106", start, end,
-                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, indices, loops, conditionals, updates, and prefix operators");
+                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, indices, loops, conditionals, updates, moduli, and prefix operators");
         return 0;
     }
     c->nesting++;
@@ -1183,6 +1258,7 @@ static int canonical_array_length(const char *text, uint32_t start, uint32_t end
 
 static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
     Token name = peek_token(c);
+    int admit_length = 0;
     memset(type, 0, sizeof *type);
     if (name.kind != TK_IDENT) {
         add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected a type", NULL, 1);
@@ -1191,9 +1267,38 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
         return 0;
     }
     type->start = name.start;
+    type->ident_start = name.start;
+    type->ident_end = name.end;
     advance_token(c);
     type->end = name.end;
-    if (peek_kind(c) == TK_LBRACKET) {
+    if (span_is(c, name.start, name.end, "Mod") && peek_kind(c) == TK_LBRACKET) {
+        Token open = peek_token(c);
+        Token close;
+        uint32_t modulus = UINT32_MAX;
+        advance_token(c);
+        if (!enter_nest(c, open.start, open.end)) {
+            return 0;
+        }
+        if (!parse_expr(c, &modulus)) {
+            leave_nest(c);
+            return 0;
+        }
+        leave_nest(c);
+        close = peek_token(c);
+        if (close.kind != TK_RBRACKET) {
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the modulus", "found a different token",
+                     "a modulus type is written `Mod[MODULUS]`, as in `Mod[(1 << 255) - 19]`", 1);
+            type->end = close.end;
+            return 0;
+        }
+        type->end = close.end;
+        advance_token(c);
+        type->kind = TY_MOD;
+        type->has_mod = 1;
+        type->mod_expr = modulus;
+        type->ok = 1;
+        admit_length = 1;
+    } else if (peek_kind(c) == TK_LBRACKET) {
         Token width;
         advance_token(c);
         width = peek_token(c);
@@ -1225,12 +1330,21 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
                 type->ok = 1;
             }
         }
+        admit_length = type->ok;
     } else if (span_is(c, name.start, name.end, "Int")) {
         type->kind = TY_INT;
         type->ok = 1;
+        admit_length = 1;
     } else if (span_is(c, name.start, name.end, "Bool")) {
         type->kind = TY_BOOL;
         type->ok = 1;
+        admit_length = 1;
+    } else if (span_is(c, name.start, name.end, "Mod")) {
+        type->kind = TY_MOD;
+        type->bare_mod = 1;
+    } else if (!span_is(c, name.start, name.end, "Word")) {
+        type->named = 1;
+        admit_length = 1;
     }
     if (allow_array && peek_kind(c) == TK_CARET) {
         Token length;
@@ -1250,7 +1364,8 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
         }
         type->length_start = length.start;
         type->length_end = length.end;
-        if (type->ok) {
+        type->end = length.end;
+        if (admit_length || type->ok) {
             uint32_t value = 0;
             if (!canonical_array_length(c->text, length.start, length.end, &value)) {
                 type->ok = 0;
@@ -1273,6 +1388,41 @@ static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length,
     *end = type->end;
     *length_start = type->length_start;
     *length_end = type->length_end;
+}
+
+static int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out) {
+    TypeSite *site;
+    if (c->nsites >= MAX_TYPE_SITES) {
+        resource_diag(c, "ORC0106", type->start, type->end, "source exceeds the type-site limit");
+        return 0;
+    }
+    if (!ensure_cap((void **)&c->sites, &c->site_cap, c->nsites + 1, sizeof(TypeSite), MAX_TYPE_SITES)) {
+        resource_diag(c, "ORC0106", type->start, type->end, "parser could not retain a type");
+        return 0;
+    }
+    site = &c->sites[c->nsites];
+    memset(site, 0, sizeof *site);
+    site->kind = type->kind;
+    site->length = type->length;
+    site->ok = type->ok;
+    site->length_bad = type->length_bad;
+    site->start = type->start;
+    site->end = type->end;
+    site->length_start = type->length_start;
+    site->length_end = type->length_end;
+    site->ident_start = type->ident_start;
+    site->ident_end = type->ident_end;
+    site->mod_expr = type->mod_expr;
+    site->has_mod = type->has_mod;
+    site->bare_mod = type->bare_mod;
+    site->named = type->named;
+    site->role = role;
+    site->wrote_axis = type->length > 0 && !type->length_bad;
+    if (!type->named && !type->bare_mod) {
+        site->rank = site->wrote_axis ? 1 : 0;
+    }
+    *site_out = c->nsites++;
+    return 1;
 }
 
 static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
@@ -1544,6 +1694,7 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     memset(&c->loops[id], 0, sizeof c->loops[id]);
     c->loops[id].init_expr = UINT32_MAX;
     c->loops[id].step_expr = UINT32_MAX;
+    c->loops[id].site = UINT32_MAX;
     advance_token(c);
     index = peek_token(c);
     if (index.kind != TK_IDENT) {
@@ -1610,6 +1761,9 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     store_declared(&declared, &c->loops[id].acc_type, &c->loops[id].acc_len, &c->loops[id].acc_ok,
                    &c->loops[id].acc_length_bad, &c->loops[id].type_start, &c->loops[id].type_end,
                    &c->loops[id].length_start, &c->loops[id].length_end);
+    if (!push_site(c, &declared, "accumulator type", &c->loops[id].site)) {
+        return 0;
+    }
     if (peek_kind(c) != TK_EQUAL) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the accumulator's start",
                  NULL, 1);
@@ -1672,6 +1826,12 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     height = height_of(c, init);
     if (height_of(c, step) > height) {
         height = height_of(c, step);
+    }
+    if (c->loops[id].site != UINT32_MAX && c->sites[c->loops[id].site].has_mod) {
+        int mod_height = height_of(c, c->sites[c->loops[id].site].mod_expr);
+        if (mod_height > height) {
+            height = mod_height;
+        }
     }
     c->exprs[*out].height = 1 + height;
     return note_height(c, *out);
@@ -2267,7 +2427,20 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         c->exprs[*out].conv_ok = type.ok;
         c->exprs[*out].name_start = type.start;
         c->exprs[*out].name_end = type.end;
-        c->exprs[*out].height = 1 + height_of(c, left);
+        c->exprs[*out].ty_len = type.length;
+        if (!push_site(c, &type, "conversion", &c->exprs[*out].conv_site)) {
+            return 0;
+        }
+        {
+            int base = height_of(c, left);
+            if (type.has_mod) {
+                int mod_height = height_of(c, type.mod_expr);
+                if (mod_height > base) {
+                    base = mod_height;
+                }
+            }
+            c->exprs[*out].height = 1 + base;
+        }
         return note_height(c, *out);
     }
     if (is_with_update(c)) {
@@ -2375,6 +2548,7 @@ static int parse_params(Compiler *c, Func *func) {
         }
         param = &c->params[c->nparams];
         memset(param, 0, sizeof *param);
+        param->site = UINT32_MAX;
         param->name_start = name.start;
         param->name_end = name.end;
         advance_token(c);
@@ -2391,6 +2565,9 @@ static int parse_params(Compiler *c, Func *func) {
             }
             store_declared(&declared, &param->type, &param->length, &param->type_ok, &param->length_bad,
                            &param->type_start, &param->type_end, &param->length_start, &param->length_end);
+            if (!push_site(c, &declared, "parameter type", &param->site)) {
+                return 0;
+            }
         }
         c->nparams++;
         func->nparams++;
@@ -2427,6 +2604,7 @@ static int parse_binding(Compiler *c, Func *func) {
     }
     local = &c->locals[c->nlocals];
     memset(local, 0, sizeof *local);
+    local->site = UINT32_MAX;
     local->name_start = name.start;
     local->name_end = name.end;
     local->name_at = name.start;
@@ -2445,6 +2623,9 @@ static int parse_binding(Compiler *c, Func *func) {
         }
         store_declared(&declared, &local->type, &local->length, &local->type_ok, &local->length_bad, &local->type_start,
                        &local->type_end, &local->length_start, &local->length_end);
+        if (!push_site(c, &declared, "binding type", &local->site)) {
+            return 0;
+        }
     }
     if (peek_kind(c) != TK_EQUAL) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the binding's value",
@@ -2486,6 +2667,10 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
         }
         store_declared(&declared, &func->result, &func->result_len, &func->result_ok, &func->result_length_bad,
                        &result_start, &result_end, &func->result_length_start, &func->result_length_end);
+        if (!push_site(c, &declared, "result type", &func->result_site)) {
+            skip_function_body(c, 0);
+            return 1;
+        }
     }
     func->typed = 1;
     func->result_start = result_start;
@@ -2539,6 +2724,7 @@ static int parse_function(Compiler *c) {
     func->is_impl = is_impl;
     func->body = UINT32_MAX;
     func->result = TY_NONE;
+    func->result_site = UINT32_MAX;
     advance_token(c);
     name = peek_token(c);
     if (name.kind != TK_IDENT) {
@@ -2656,6 +2842,53 @@ static int parse_use(Compiler *c) {
     return 1;
 }
 
+static int parse_type_decl(Compiler *c) {
+    Token name;
+    DeclaredType declared;
+    Token semi;
+    TypeDecl *decl;
+    uint32_t site = UINT32_MAX;
+    advance_token(c);
+    name = peek_token(c);
+    if (name.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected an identifier", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (peek_kind(c) != TK_EQUAL) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "a `type` declaration names a type",
+                 NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!parse_type(c, &declared, 1)) {
+        return 0;
+    }
+    semi = peek_token(c);
+    if (semi.kind != TK_SEMI) {
+        add_diag(c, "ORC0101", semi.start, semi.end, "expected `;`", "a `type` declaration ends with `;`", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (c->ntypes >= MAX_TYPE_DECLS) {
+        resource_diag(c, "ORC0106", name.start, semi.end, "module has more than 64 `type` declarations");
+        return 1;
+    }
+    if (!push_site(c, &declared, "declared type", &site)) {
+        return 0;
+    }
+    if (!ensure_cap((void **)&c->types, &c->type_cap, c->ntypes + 1, sizeof(TypeDecl), MAX_TYPE_DECLS)) {
+        resource_diag(c, "ORC0106", name.start, semi.end, "parser could not retain type declarations");
+        return 0;
+    }
+    decl = &c->types[c->ntypes++];
+    memset(decl, 0, sizeof *decl);
+    decl->name_start = name.start;
+    decl->name_end = name.end;
+    decl->site = site;
+    return 1;
+}
+
 static int parse_source(Compiler *c) {
     Token token = peek_token(c);
     Token year;
@@ -2700,6 +2933,7 @@ static int parse_source(Compiler *c) {
     advance_token(c);
     {
         int saw_function = 0;
+        int saw_type = 0;
         while (peek_kind(c) != TK_RBRACE && peek_kind(c) != TK_EOF) {
             if (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "use")) {
                 if (saw_function) {
@@ -2709,7 +2943,35 @@ static int parse_source(Compiler *c) {
                              "`use` declarations come first in a module, before its functions", 1);
                     return 1;
                 }
+                if (saw_type) {
+                    add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end,
+                             "expected a `type` declaration or a function",
+                             "a `use` declaration cannot follow a `type` declaration",
+                             "a module's `use` declarations come first, then its `type` declarations, then its functions",
+                             1);
+                    if (!parse_use(c) || c->resource) {
+                        return 1;
+                    }
+                    continue;
+                }
                 if (!parse_use(c) || c->resource) {
+                    return 1;
+                }
+                continue;
+            }
+            if (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "type")) {
+                if (saw_function) {
+                    add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end,
+                             "expected a `spec` or `impl` function declaration",
+                             "a `type` declaration cannot follow a function",
+                             "`type` declarations come before a module's functions", 1);
+                    if (!parse_type_decl(c) || c->resource) {
+                        return 1;
+                    }
+                    continue;
+                }
+                saw_type = 1;
+                if (!parse_type_decl(c) || c->resource) {
                     return 1;
                 }
                 continue;
@@ -2721,8 +2983,11 @@ static int parse_source(Compiler *c) {
                 }
                 continue;
             }
-            add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end, "expected a function declaration",
-                     "a module member must be `spec` or `impl`", NULL, 1);
+            add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end,
+                     saw_type ? "expected a `type` declaration or a function" : "expected a function declaration",
+                     saw_type ? "a module member must be a `type` declaration or a function"
+                              : "a module member must be `spec` or `impl`",
+                     NULL, 1);
             return 1;
         }
     }
@@ -2952,6 +3217,8 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
 
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope);
+static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
+                    uint32_t func_index, uint32_t locals_in_scope);
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent);
 
@@ -2960,7 +3227,7 @@ static int decode_literal(Compiler *c, const Expr *expr, Big *out) {
                            expr->negative, out);
 }
 
-static void check_literal(Compiler *c, const Expr *expr, TypeKind expected) {
+static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint16_t expected_mod) {
     Big value = big_zero();
     if (!decode_literal(c, expr, &value)) {
         add_diag(c, "ORC0205", expr->start, expr->end, "integer magnitude exceeds 16384 significant bits",
@@ -2968,6 +3235,23 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected) {
         return;
     }
     if (expected == TY_INT) {
+        return;
+    }
+    if (expected == TY_MOD) {
+        Big magnitude = value;
+        const Big *modulus;
+        magnitude.negative = 0;
+        if (expected_mod == 0 || expected_mod >= c->nmoduli) {
+            return;
+        }
+        modulus = &c->moduli[expected_mod];
+        if (big_cmp(&magnitude, modulus) >= 0) {
+            add_diag(c, "ORC0207", expr->lit_start, expr->lit_end, "literal is outside the range of its modulus",
+                     "the literal's magnitude is not less than the modulus",
+                     "a literal of `Mod[m]` has a magnitude n less than m, and `-n` stands for m - n; residues do not "
+                     "reduce out-of-range literals",
+                     2);
+        }
         return;
     }
     if (expected == TY_BOOL) {
@@ -2992,6 +3276,7 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     *silent = 0;
     *type = TY_NONE;
     *length = 0;
+    c->leaf_mod = 0;
     if (expr->kind == EX_NAME) {
         NameRes res;
         uint16_t slot = 0;
@@ -3003,6 +3288,10 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         if (res == NAME_PARAM || res == NAME_LOCAL) {
+            if (*type == TY_MOD) {
+                c->leaf_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
+                                                : c->locals[c->funcs[func_index].local0 + slot].mod_index;
+            }
             return 1;
         }
         return 0;
@@ -3019,6 +3308,9 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         }
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
+        if (*type == TY_MOD) {
+            c->leaf_mod = callee.mod->funcs[callee.func].result_mod;
+        }
         return 1;
     }
     if (expr->kind == EX_ACCUM || expr->kind == EX_LOOP) {
@@ -3029,6 +3321,9 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         }
         *type = loop->acc_type;
         *length = loop->acc_len;
+        if (*type == TY_MOD) {
+            c->leaf_mod = loop->acc_mod;
+        }
         return 1;
     }
     return 0;
@@ -3064,6 +3359,7 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     *leaf = index;
     *type = TY_NONE;
     *length = 0;
+    c->leaf_mod = 0;
     switch (expr->kind) {
     case EX_LIT:
         return 0;
@@ -3107,6 +3403,10 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         if (res == NAME_PARAM || res == NAME_LOCAL) {
+            if (*type == TY_MOD) {
+                c->leaf_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
+                                                : c->locals[c->funcs[func_index].local0 + slot].mod_index;
+            }
             return 1;
         }
         if (span_is(c, expr->name_start, expr->name_end, "true") ||
@@ -3129,6 +3429,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         }
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
+        if (*type == TY_MOD) {
+            c->leaf_mod = callee.mod->funcs[callee.func].result_mod;
+        }
         return 1;
     }
     case EX_LOOP_INDEX:
@@ -3143,6 +3446,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         }
         *type = loop->acc_type;
         *length = loop->acc_len;
+        if (*type == TY_MOD) {
+            c->leaf_mod = loop->acc_mod;
+        }
         return 1;
     }
     case EX_LOOP: {
@@ -3153,6 +3459,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         }
         *type = loop->acc_type;
         *length = loop->acc_len;
+        if (*type == TY_MOD) {
+            c->leaf_mod = loop->acc_mod;
+        }
         return 1;
     }
     case EX_FILL:
@@ -3184,6 +3493,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         *type = expr->conv_ty;
+        if (*type == TY_MOD) {
+            c->leaf_mod = expr->conv_mod;
+        }
         return 1;
     default:
         return 0;
@@ -3597,6 +3909,9 @@ static int static_index(Compiler *c, uint32_t index, uint32_t func_index, uint32
         if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
             return 1;
         }
+        if (state == 1 && leaf_len == 0 && leaf_type == TY_MOD) {
+            return 1;
+        }
         if (state == 1 && leaf_type == TY_INT && leaf_len == 0) {
             return static_index(c, expr->left, func_index, locals_in_scope, bad);
         }
@@ -3872,6 +4187,13 @@ static int range_of(Compiler *c, uint32_t index, uint32_t func_index, uint32_t l
             word_range(c, expr->left, func_index, locals_in_scope, word_maximum(leaf_type), &wlo, &whi);
             return big_from_u64(&c->arena, wlo, lo) && big_from_u64(&c->arena, whi, hi);
         }
+        if (state == 1 && leaf_len == 0 && leaf_type == TY_MOD && c->leaf_mod != 0 && c->leaf_mod < c->nmoduli) {
+            Big one = big_zero();
+            if (!big_from_u64(&c->arena, 0, lo) || !big_from_u64(&c->arena, 1, &one)) {
+                return 0;
+            }
+            return big_sub(&c->arena, &c->moduli[c->leaf_mod], &one, hi);
+        }
         return range_of(c, expr->left, func_index, locals_in_scope, lo, hi);
     }
     return 0;
@@ -4019,11 +4341,14 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     (void)index_dup;
     (void)acc_dup;
     if (!loop->acc_ok) {
-        reject_declared(c, loop->acc_type, loop->acc_length_bad, loop->type_start, loop->type_end, loop->length_start,
-                        loop->length_end);
+        if (!loop->acc_reported) {
+            reject_declared(c, loop->acc_type, loop->acc_length_bad, loop->type_start, loop->type_end,
+                            loop->length_start, loop->length_end);
+        }
         return 1;
     }
-    if (loop->acc_type != expected || loop->acc_len != expected_len) {
+    if (loop->acc_type != expected || loop->acc_len != expected_len ||
+        (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
         char message[192];
         char expected_text[64];
         char found_text[64];
@@ -4034,7 +4359,7 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                  "a loop has its accumulator's type", 2);
     }
     if (loop->init_expr != UINT32_MAX &&
-        !check_expr(c, loop->init_expr, loop->acc_type, loop->acc_len, func_index, locals_in_scope)) {
+        !check_at(c, loop->init_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index, locals_in_scope)) {
         return 0;
     }
     if (loop->bounds_ok && loop->step_expr != UINT32_MAX) {
@@ -4043,7 +4368,7 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 0;
         }
         c->active_loops[c->nactive++] = expr->arg0;
-        if (!check_expr(c, loop->step_expr, loop->acc_type, loop->acc_len, func_index, locals_in_scope)) {
+        if (!check_at(c, loop->step_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index, locals_in_scope)) {
             c->nactive--;
             return 0;
         }
@@ -4057,7 +4382,17 @@ static int is_number_type(TypeKind type) {
 }
 
 static int is_scalar_type(TypeKind type) {
-    return is_number_type(type) || type == TY_BOOL;
+    return is_number_type(type) || type == TY_BOOL || type == TY_MOD;
+}
+
+static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
+                    uint32_t func_index, uint32_t locals_in_scope) {
+    uint16_t saved = c->expect_mod;
+    int ok;
+    c->expect_mod = expected == TY_MOD ? expected_mod : 0;
+    ok = check_expr(c, index, expected, expected_len, func_index, locals_in_scope);
+    c->expect_mod = saved;
+    return ok;
 }
 
 static const char *op_spelling(TokenKind op) {
@@ -4127,6 +4462,15 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
         }
         return 1;
     }
+    if (order && operand == TY_MOD && operand_len == 0) {
+        char message[160];
+        snprintf(message, sizeof message, "`%s` is not defined for a residue", op_spelling(expr->op));
+        add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "the operands have a residue type",
+                 "residues are compared with `==` and `!=`; they have no order, so compare least residues, such as "
+                 "`(x as Int) < (y as Int)`",
+                 2);
+        return 1;
+    }
     if (operand_len != 0 || !is_scalar_type(operand) || (order && operand == TY_BOOL)) {
         char message[160];
         char found[64];
@@ -4139,6 +4483,13 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
                      "compare elements, such as `x[0] == y[0]`", 2);
         }
+    }
+    if (operand == TY_MOD) {
+        uint16_t mod = c->leaf_mod;
+        if (!check_at(c, expr->left, operand, operand_len, mod, func_index, locals_in_scope)) {
+            return 0;
+        }
+        return check_at(c, expr->right, operand, operand_len, mod, func_index, locals_in_scope);
     }
     if (!check_expr(c, expr->left, operand, operand_len, func_index, locals_in_scope)) {
         return 0;
@@ -4182,6 +4533,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     expr = &c->exprs[index];
     expr->ty = expected;
     expr->ty_len = expected_len;
+    if (expected == TY_MOD) {
+        expr->ty_mod = c->expect_mod;
+    }
     switch (expr->kind) {
     case EX_GROUP:
         return check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope);
@@ -4195,7 +4549,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "an array value is written as an array literal", 2);
             return 1;
         }
-        check_literal(c, expr, expected);
+        check_literal(c, expr, expected, c->expect_mod);
         return 1;
     case EX_ARRAY:
         if (expected_len == 0) {
@@ -4245,18 +4599,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                          "index out of range", "a literal index must be less than the array's length", 2);
             }
         }
-        if (base_kind != expected || expected_len != 0) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, base_kind, 0);
-            snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
-                     expected_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "Orange does not convert between types implicitly", 2);
+        {
+            uint16_t element_mod = c->leaf_mod;
+            if (base_kind != expected || expected_len != 0 ||
+                (base_kind == TY_MOD && expected == TY_MOD && element_mod != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, base_kind, 0);
+                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                         expected_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
+            return check_at(c, expr->left, base_kind, base_len, element_mod, func_index, locals_in_scope);
         }
-        return check_expr(c, expr->left, base_kind, base_len, func_index, locals_in_scope);
     }
     case EX_NAME: {
         NameRes res;
@@ -4293,15 +4651,23 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             report_unknown_name(c, expr, func_index, res);
             return 1;
         }
-        if (type != expected || length != expected_len) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, type, length);
-            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "Orange does not convert between types implicitly", 2);
+        {
+            uint16_t found_mod = 0;
+            if (type == TY_MOD) {
+                found_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
+                                              : c->locals[c->funcs[func_index].local0 + slot].mod_index;
+            }
+            if (type != expected || length != expected_len ||
+                (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, type, length);
+                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
         }
         return 1;
     }
@@ -4409,7 +4775,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "every parameter receives exactly one argument", 2);
             return 1;
         }
-        if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len) {
+        if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len ||
+            (target->funcs[callee.func].result == TY_MOD && expected == TY_MOD &&
+             target->funcs[callee.func].result_mod != c->expect_mod)) {
             char message[192];
             char expected_text[64];
             char found_text[64];
@@ -4425,7 +4793,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             if (!param->type_ok) {
                 continue;
             }
-            if (!check_expr(c, c->args[expr->arg0 + arg], param->type, param->length, func_index, locals_in_scope)) {
+            if (!check_at(c, c->args[expr->arg0 + arg], param->type, param->length, param->mod_index, func_index,
+                          locals_in_scope)) {
                 return 0;
             }
         }
@@ -4445,6 +4814,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                          "`!` negates a `Bool`; `~` is the bitwise complement of a word", 2);
             }
             return check_expr(c, expr->left, expected == TY_BOOL ? TY_BOOL : expected, 0, func_index, locals_in_scope);
+        }
+        if (expr->op == TK_MINUS && expected == TY_MOD) {
+            return check_expr(c, expr->left, TY_MOD, 0, func_index, locals_in_scope);
+        }
+        if (expr->op == TK_TILDE && expected == TY_MOD) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "prefix `~` is not defined for a residue",
+                     "bitwise complement needs a word", "bitwise operators apply only to `Word[n]` values", 2);
+            return 1;
         }
         if (expr->op == TK_MINUS && expected != TY_INT) {
             if (expected == TY_BOOL) {
@@ -4500,6 +4877,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "this operator needs a word", NULL, 2);
             return 1;
         }
+        if (expected == TY_MOD) {
+            if (expr->op != TK_PLUS && expr->op != TK_MINUS && expr->op != TK_STAR && expr->op != TK_SLASH) {
+                const char *note = expr->op == TK_PERCENT
+                                       ? "a residue is already reduced; `%` applies to `Int` and word values, such as "
+                                         "`(x as Int) % 16`"
+                                       : "bitwise operators apply only to `Word[n]` values";
+                char message[128];
+                snprintf(message, sizeof message, "`%s` is not defined for a residue", op_spelling(expr->op));
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined", note, 2);
+                return 1;
+            }
+            if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
+                return 0;
+            }
+            return check_expr(c, expr->right, expected, 0, func_index, locals_in_scope);
+        }
         if (!is_number_type(expected) && expected != TY_NONE) {
             char message[128];
             snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op),
@@ -4525,6 +4918,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (expected == TY_INT) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for `Int`",
                      "this operator needs a word", NULL, 2);
+            return 1;
+        }
+        if (expected == TY_MOD) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for a residue",
+                     "this operator needs a word", "shifts and rotations apply only to `Word[n]` values", 2);
             return 1;
         }
         if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
@@ -4563,8 +4961,17 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
            `expected`. The operand is still checked: Rust reports both the
            target and whatever the operand itself has wrong. */
         if (!expr->conv_ok) {
-            reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
-        } else if (expr->conv_ty != expected || expected_len != 0) {
+            int already = expr->conv_site < c->nsites && c->sites[expr->conv_site].reported;
+            if (!already) {
+                reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
+            }
+        } else if (expr->conv_len != 0) {
+            add_diag(c, "ORC0215", expr->name_start, expr->name_end, "`as` does not convert to an array type",
+                     "`as` gives one `Int`, word, or residue value",
+                     "convert each element, such as `x[0] as Int`", 2);
+            return 1;
+        } else if (expr->conv_ty != expected || expected_len != 0 ||
+                   (expr->conv_ty == TY_MOD && expected == TY_MOD && expr->conv_mod != c->expect_mod)) {
             char message[192];
             char expected_text[64];
             char found_text[64];
@@ -4594,10 +5001,13 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         if (leaf_type == TY_BOOL || expr->conv_ty == TY_BOOL) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "`as` does not convert to or from `Bool`",
-                     "`as` converts one `Int` or word value",
+                     "`as` converts one `Int`, word, or residue value",
                      "choose a number with a conditional, such as `if b { 1 } else { 0 }`, or compare a number, such as `x != 0`",
                      2);
             return 1;
+        }
+        if (leaf_type == TY_MOD) {
+            return check_at(c, expr->left, leaf_type, 0, c->leaf_mod, func_index, locals_in_scope);
         }
         return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
     }
@@ -4633,7 +5043,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (!loop->acc_ok) {
             return 1;
         }
-        if (loop->acc_type != expected || loop->acc_len != expected_len) {
+        if (loop->acc_type != expected || loop->acc_len != expected_len ||
+        (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
             char message[192];
             char expected_text[64];
             char found_text[64];
@@ -4659,19 +5070,23 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (base_len == 0) {
             return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
         }
-        if (base_kind != expected || expected_len != 0) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, base_kind, 0);
-            snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
-                     expected_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "Orange does not convert between types implicitly", 2);
-        }
-        if (!check_expr(c, expr->left, base_kind, base_len, func_index, locals_in_scope)) {
-            return 0;
+        {
+            uint16_t element_mod = c->leaf_mod;
+            if (base_kind != expected || expected_len != 0 ||
+                (base_kind == TY_MOD && expected == TY_MOD && element_mod != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, base_kind, 0);
+                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                         expected_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
+            if (!check_at(c, expr->left, base_kind, base_len, element_mod, func_index, locals_in_scope)) {
+                return 0;
+            }
         }
         return check_index_expr(c, expr->right, base_kind, base_len, func_index, locals_in_scope);
     }
@@ -4738,8 +5153,457 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     }
 }
 
+static const char MODULUS_NOTE[] =
+    "a modulus is a constant built from integer literals with `+`, `-`, `*`, `<<`, and parentheses, as in "
+    "`Mod[(1 << 255) - 19]`";
+static const char ADMITTED_TYPE_LABEL[] =
+    "the admitted types are `Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, `Word[64]`, `Mod[m]`, and the names of "
+    "earlier `type` declarations";
+
+static void report_bad_modulus(Compiler *c, uint32_t start, uint32_t end, const char *label) {
+    add_diag(c, "ORC0232", start, end, "a modulus must be a constant from 2 through 2^521 - 1", label, MODULUS_NOTE, 2);
+}
+
+static void report_modulus_large(Compiler *c, uint32_t start, uint32_t end) {
+    add_diag(c, "ORC0205", start, end, "integer magnitude exceeds the 16384-significant-bit limit",
+             "this value of the modulus is too large", "the value is rejected rather than truncated or approximated", 2);
+}
+
+static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok);
+
+static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok) {
+    const Expr *expr = &c->exprs[index];
+    *ok = 0;
+    *out = big_zero();
+    if (c->resource) {
+        return 0;
+    }
+    if (expr->kind == EX_GROUP) {
+        return modulus_const(c, expr->left, out, ok);
+    }
+    if (expr->kind == EX_LIT) {
+        if (!decode_literal(c, expr, out)) {
+            report_modulus_large(c, expr->lit_start, expr->lit_end);
+            return 1;
+        }
+        *ok = 1;
+        return 1;
+    }
+    if (expr->kind == EX_SHIFT && expr->op == TK_LSHIFT) {
+        Big left = big_zero();
+        Big right = big_zero();
+        int left_ok = 0;
+        int right_ok = 0;
+        uint32_t amount;
+        if (!modulus_const(c, expr->left, &left, &left_ok) || !left_ok) {
+            return left_ok || c->resource ? 1 : 0;
+        }
+        if (!modulus_const(c, expr->right, &right, &right_ok) || !right_ok) {
+            return right_ok || c->resource ? 1 : 0;
+        }
+        if (right.negative || right.nlimbs > 1 || (right.nlimbs > 0 && right.limbs[0] > 16384u)) {
+            report_bad_modulus(c, c->exprs[expr->right].start, c->exprs[expr->right].end,
+                               "a shift amount in a modulus is from 0 through 16384");
+            return 1;
+        }
+        amount = right.nlimbs == 0 ? 0u : right.limbs[0];
+        if (!big_shl(&c->arena, &left, amount, out)) {
+            report_modulus_large(c, expr->start, expr->end);
+            return 1;
+        }
+        *ok = 1;
+        return 1;
+    }
+    if (expr->kind == EX_BINARY && (expr->op == TK_PLUS || expr->op == TK_MINUS || expr->op == TK_STAR)) {
+        Big left = big_zero();
+        Big right = big_zero();
+        int left_ok = 0;
+        int right_ok = 0;
+        int computed = 0;
+        if (!modulus_const(c, expr->left, &left, &left_ok) || !left_ok) {
+            return left_ok || c->resource ? 1 : 0;
+        }
+        if (!modulus_const(c, expr->right, &right, &right_ok) || !right_ok) {
+            return right_ok || c->resource ? 1 : 0;
+        }
+        if (expr->op == TK_PLUS) {
+            computed = big_add(&c->arena, &left, &right, out);
+        } else if (expr->op == TK_MINUS) {
+            computed = big_sub(&c->arena, &left, &right, out);
+        } else {
+            computed = big_mul(&c->arena, &left, &right, out);
+        }
+        if (!computed) {
+            report_modulus_large(c, expr->start, expr->end);
+            return 1;
+        }
+        *ok = 1;
+        return 1;
+    }
+    report_bad_modulus(c, expr->start, expr->end, "not a constant integer expression");
+    return 1;
+}
+
+static int intern_modulus(Compiler *c, const Big *value, uint16_t *out) {
+    uint16_t index;
+    if (c->moduli == NULL) {
+        c->moduli = calloc(MAX_MODULI, sizeof(Big));
+        if (c->moduli == NULL) {
+            resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain moduli");
+            return 0;
+        }
+        c->nmoduli = 1;
+    }
+    for (index = 1; index < c->nmoduli; index++) {
+        if (big_cmp(&c->moduli[index], value) == 0) {
+            *out = index;
+            return 1;
+        }
+    }
+    if (c->nmoduli >= MAX_MODULI) {
+        resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain moduli");
+        return 0;
+    }
+    c->moduli[c->nmoduli] = *value;
+    *out = c->nmoduli++;
+    return 1;
+}
+
+static int admit_modulus(Compiler *c, uint32_t start, uint32_t end, const Big *value, uint16_t *mod_index) {
+    char label[128];
+    char digits[96];
+    uint32_t bits = big_bits(value);
+    if (value->negative || bits < 2) {
+        if (value->negative && bits > 64) {
+            copy_text(label, sizeof label, "this modulus is negative");
+        } else if (big_format(value, digits, sizeof digits)) {
+            snprintf(label, sizeof label, "this modulus is %s", digits);
+        } else {
+            copy_text(label, sizeof label, "this modulus is outside 2 through 2^521 - 1");
+        }
+        report_bad_modulus(c, start, end, label);
+        return 0;
+    }
+    if (bits > MAX_MODULUS_BITS) {
+        snprintf(label, sizeof label, "this modulus has %u bits", bits);
+        report_bad_modulus(c, start, end, label);
+        return 0;
+    }
+    return intern_modulus(c, value, mod_index);
+}
+
+static void walk_moduli(Compiler *c, uint32_t index);
+
+static void bind_modulus(Compiler *c, TypeSite *site) {
+    Big value = big_zero();
+    int ok = 0;
+    if (site == NULL || !site->has_mod || site->modulus_done || c->resource) {
+        return;
+    }
+    site->modulus_done = 1;
+    if (!modulus_const(c, site->mod_expr, &value, &ok)) {
+        return;
+    }
+    if (!ok || !admit_modulus(c, c->exprs[site->mod_expr].start, c->exprs[site->mod_expr].end, &value, &site->mod_index)) {
+        site->ok = 0;
+        site->reported = 1;
+        site->mod_index = 0;
+    }
+    walk_moduli(c, site->mod_expr);
+}
+
+static void walk_moduli(Compiler *c, uint32_t index) {
+    const Expr *expr;
+    uint16_t arg;
+    if (index == UINT32_MAX || c->resource) {
+        return;
+    }
+    expr = &c->exprs[index];
+    switch (expr->kind) {
+    case EX_GROUP:
+    case EX_UNARY:
+    case EX_FILL:
+        walk_moduli(c, expr->left);
+        break;
+    case EX_BINARY:
+    case EX_SHIFT:
+    case EX_INDEX:
+    case EX_SELECT:
+        walk_moduli(c, expr->left);
+        walk_moduli(c, expr->right);
+        break;
+    case EX_UPDATE:
+        walk_moduli(c, expr->left);
+        walk_moduli(c, expr->right);
+        walk_moduli(c, expr->callee);
+        break;
+    case EX_CALL:
+    case EX_ARRAY:
+        for (arg = 0; arg < expr->argc; arg++) {
+            walk_moduli(c, c->args[expr->arg0 + arg]);
+        }
+        break;
+    case EX_CONV:
+        walk_moduli(c, expr->left);
+        if (expr->conv_site != UINT32_MAX && expr->conv_site < c->nsites) {
+            bind_modulus(c, &c->sites[expr->conv_site]);
+        }
+        break;
+    case EX_LOOP:
+        if (expr->arg0 < c->nloops && c->loops[expr->arg0].site != UINT32_MAX &&
+            c->loops[expr->arg0].site < c->nsites) {
+            bind_modulus(c, &c->sites[c->loops[expr->arg0].site]);
+        }
+        walk_moduli(c, c->loops[expr->arg0].init_expr);
+        walk_moduli(c, c->loops[expr->arg0].step_expr);
+        break;
+    case EX_COND:
+        for (arg = 0; arg < expr->argc; arg++) {
+            walk_moduli(c, c->cond_arms[expr->arg0 + arg].cond);
+            walk_moduli(c, c->cond_arms[expr->arg0 + arg].value);
+        }
+        walk_moduli(c, expr->right);
+        break;
+    default:
+        break;
+    }
+}
+
+static int builtin_type_name(const Compiler *c, uint32_t start, uint32_t end) {
+    return span_is(c, start, end, "Int") || span_is(c, start, end, "Bool") || span_is(c, start, end, "Word") ||
+           span_is(c, start, end, "Mod");
+}
+
+static int decl_spells(const Compiler *c, const TypeDecl *decl, uint32_t start, uint32_t end) {
+    return same_span(c, decl->name_start, decl->name_end, start, end);
+}
+
+static int find_installed_type(const Compiler *c, uint32_t start, uint32_t end, uint32_t limit, uint32_t *index) {
+    uint32_t cursor;
+    if (limit > c->ntypes) {
+        limit = c->ntypes;
+    }
+    for (cursor = 0; cursor < limit; cursor++) {
+        if (!c->types[cursor].installed || !decl_spells(c, &c->types[cursor], start, end)) {
+            continue;
+        }
+        *index = cursor;
+        return 1;
+    }
+    return 0;
+}
+
+static void copy_ident(char *dest, size_t cap, const Compiler *c, uint32_t start, uint32_t end) {
+    span_copy(dest, cap, c->text, start, end);
+}
+
+static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
+    uint32_t found = 0;
+    TypeSite *target;
+    char name[64];
+    if (site->resolved || c->resource) {
+        return;
+    }
+    site->resolved = 1;
+    if (site->length_bad) {
+        site->ok = 0;
+        return;
+    }
+    if (site->has_mod) {
+        if (site->mod_index == 0) {
+            site->ok = 0;
+            site->reported = 1;
+            return;
+        }
+        site->kind = TY_MOD;
+        site->ok = 1;
+        site->rank = site->wrote_axis ? 1 : 0;
+        return;
+    }
+    if (site->bare_mod) {
+        add_diag(c, "ORC0232", site->ident_start, site->ident_end, "`Mod` requires a modulus", "missing modulus",
+                 MODULUS_NOTE, 2);
+        site->ok = 0;
+        site->reported = 1;
+        site->kind = TY_MOD;
+        return;
+    }
+    if (!site->named) {
+        if (site->ok) {
+            site->rank = site->wrote_axis ? 1 : 0;
+        }
+        return;
+    }
+    if (!find_installed_type(c, site->ident_start, site->ident_end, from_decl ? earlier_limit : c->ntypes, &found)) {
+        int later = 0;
+        uint32_t cursor;
+        char message[160];
+        char note[256];
+        copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
+        snprintf(message, sizeof message, "unsupported %s `%s`", site->role != NULL ? site->role : "type", name);
+        if (from_decl) {
+            for (cursor = earlier_limit; cursor < c->ntypes; cursor++) {
+                if (decl_spells(c, &c->types[cursor], site->ident_start, site->ident_end)) {
+                    later = 1;
+                    break;
+                }
+            }
+        }
+        if (later) {
+            snprintf(note, sizeof note,
+                     "`%s` is declared by a later `type` declaration; a `type` declaration uses only the names "
+                     "declared before it",
+                     name);
+        } else {
+            copy_text(note, sizeof note, "types are resolved contextually and never inferred by spelling similarity");
+        }
+        add_diag(c, "ORC0203", site->start, site->end, message, ADMITTED_TYPE_LABEL, note, 2);
+        site->ok = 0;
+        site->reported = 1;
+        return;
+    }
+    target = &c->sites[c->types[found].site];
+    if (!target->ok) {
+        site->ok = 0;
+        site->reported = 1;
+        return;
+    }
+    if (target->rank >= 2 && site->wrote_axis) {
+        char message[160];
+        copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
+        snprintf(message, sizeof message, "`%s` already has two array dimensions", name);
+        add_diag(c, "ORC0203", site->start, site->end, message, "arrays have at most two dimensions",
+                 "a row holds scalars; a matrix holds rows of the same type", 2);
+        site->ok = 0;
+        site->reported = 1;
+        return;
+    }
+    site->kind = target->kind;
+    site->mod_index = target->mod_index;
+    if (site->wrote_axis) {
+        site->rank = target->rank + 1;
+        if (target->rank >= 1) {
+            site->inner_len = target->length;
+        }
+    } else {
+        site->rank = target->rank;
+        site->length = target->length;
+        site->inner_len = target->inner_len;
+    }
+    site->ok = 1;
+}
+
+static void publish_site(const Compiler *c, uint32_t site_index, TypeKind *kind, uint32_t *length, int *ok,
+                         uint16_t *mod_index, int *reported) {
+    const TypeSite *site;
+    if (site_index == UINT32_MAX || site_index >= c->nsites) {
+        return;
+    }
+    site = &c->sites[site_index];
+    *kind = site->kind;
+    *ok = site->ok;
+    *mod_index = site->mod_index;
+    *reported = site->reported;
+    *length = site->rank <= 0 ? 0u : site->length;
+}
+
+static void prepare_types(Compiler *c) {
+    uint32_t index;
+    uint16_t param;
+    uint16_t local;
+    if (c->resource || c->parse_diags > 0) {
+        return;
+    }
+    for (index = 0; index < c->ntypes; index++) {
+        TypeSite *site = &c->sites[c->types[index].site];
+        bind_modulus(c, site);
+    }
+    for (index = 0; index < c->nfuncs; index++) {
+        Func *func = &c->funcs[index];
+        if (!func->typed) {
+            continue;
+        }
+        for (param = 0; param < func->nparams; param++) {
+            Param *item = &c->params[func->param0 + param];
+            if (item->site != UINT32_MAX && item->site < c->nsites) {
+                bind_modulus(c, &c->sites[item->site]);
+            }
+        }
+        if (func->result_site != UINT32_MAX && func->result_site < c->nsites) {
+            bind_modulus(c, &c->sites[func->result_site]);
+        }
+        for (local = 0; local < func->nlocals; local++) {
+            Local *item = &c->locals[func->local0 + local];
+            if (item->site != UINT32_MAX && item->site < c->nsites) {
+                bind_modulus(c, &c->sites[item->site]);
+            }
+            walk_moduli(c, item->value);
+        }
+        walk_moduli(c, func->body);
+    }
+    for (index = 0; index < c->ntypes; index++) {
+        TypeDecl *decl = &c->types[index];
+        char message[128];
+        char name[64];
+        uint32_t earlier = 0;
+        copy_ident(name, sizeof name, c, decl->name_start, decl->name_end);
+        if (builtin_type_name(c, decl->name_start, decl->name_end)) {
+            snprintf(message, sizeof message, "`%s` is a built-in type", name);
+            add_diag(c, "ORC0233", decl->name_start, decl->name_end, message,
+                     "a `type` declaration cannot name a built-in type",
+                     "the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`", 2);
+        } else if (find_installed_type(c, decl->name_start, decl->name_end, index, &earlier)) {
+            snprintf(message, sizeof message, "duplicate type name `%s`", name);
+            add_diag(c, "ORC0233", decl->name_start, decl->name_end, message, "this declaration repeats a type name",
+                     "each `type` declaration of a module names a different type", 2);
+        } else {
+            decl->installed = 1;
+        }
+        resolve_site(c, &c->sites[decl->site], 1, index);
+    }
+    for (index = 0; index < c->nsites; index++) {
+        resolve_site(c, &c->sites[index], 0, c->ntypes);
+    }
+    for (index = 0; index < c->nfuncs; index++) {
+        Func *func = &c->funcs[index];
+        for (param = 0; param < func->nparams; param++) {
+            Param *item = &c->params[func->param0 + param];
+            publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+        }
+        publish_site(c, func->result_site, &func->result, &func->result_len, &func->result_ok, &func->result_mod,
+                     &func->result_reported);
+        for (local = 0; local < func->nlocals; local++) {
+            Local *item = &c->locals[func->local0 + local];
+            publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+        }
+    }
+    for (index = 0; index < c->nloops; index++) {
+        LoopDesc *loop = &c->loops[index];
+        publish_site(c, loop->site, &loop->acc_type, &loop->acc_len, &loop->acc_ok, &loop->acc_mod, &loop->acc_reported);
+    }
+    for (index = 0; index < c->nexprs; index++) {
+        Expr *expr = &c->exprs[index];
+        TypeKind kind = TY_NONE;
+        uint32_t length = 0;
+        int ok = 0;
+        uint16_t mod_index = 0;
+        int reported = 0;
+        if (expr->kind != EX_CONV || expr->conv_site == UINT32_MAX) {
+            continue;
+        }
+        publish_site(c, expr->conv_site, &kind, &length, &ok, &mod_index, &reported);
+        expr->conv_ty = kind;
+        expr->conv_ok = ok;
+        expr->conv_len = length;
+        expr->conv_mod = mod_index;
+        expr->ty_len = length;
+        expr->ty_mod = mod_index;
+    }
+}
+
 static void analyze(Compiler *c) {
     uint32_t index;
+    prepare_types(c);
     for (index = 0; index < c->nfuncs; index++) {
         Func *func = &c->funcs[index];
         uint16_t param_index;
@@ -4789,13 +5653,13 @@ static void analyze(Compiler *c) {
                     break;
                 }
             }
-            if (!param->type_ok) {
+            if (!param->type_ok && !param->type_reported) {
                 reject_declared(c, param->type, param->length_bad, param->type_start, param->type_end,
                                 param->length_start, param->length_end);
                 func->signature_ok = 0;
             }
         }
-        if (!func->result_ok) {
+        if (!func->result_ok && !func->result_reported) {
             reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
                             func->result_length_start, func->result_length_end);
             func->signature_ok = 0;
@@ -4833,15 +5697,15 @@ static void analyze(Compiler *c) {
                          "parameters and bindings share one set of names", 2);
                 local->duplicate = 1;
             }
-            if (!local->type_ok) {
+            if (!local->type_ok && !local->type_reported) {
                 reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
                                 local->length_start, local->length_end);
                 continue;
             }
-            check_expr(c, local->value, local->type, local->length, index, local_index);
+            check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
         }
         if (func->body != UINT32_MAX) {
-            check_expr(c, func->body, func->result, func->result_len, index, func->nlocals);
+            check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
         }
     }
     {
@@ -5122,6 +5986,88 @@ static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, 
 
 static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
 
+static uint32_t modulus_digits(const Big *modulus) {
+    uint32_t bits = big_bits(modulus);
+    return bits == 0 ? 1u : (bits + 31u) / 32u;
+}
+
+static const Big *modulus_at(const Compiler *c, uint16_t index) {
+    if (c->moduli == NULL || index == 0 || index >= c->nmoduli) {
+        return NULL;
+    }
+    return &c->moduli[index];
+}
+
+static int residue_reduce(Compiler *c, const Big *value, const Big *modulus, Big *out) {
+    Big quot = big_zero();
+    Big rem = big_zero();
+    if (!value->negative && big_cmp(value, modulus) < 0) {
+        *out = *value;
+        return 1;
+    }
+    if (!big_div_euclid(&c->arena, value, modulus, &quot, &rem)) {
+        return 0;
+    }
+    *out = rem;
+    return 1;
+}
+
+/* Least residue r with value * r = 1 (mod m) when gcd is 1, else 0. */
+static int residue_inverse(Compiler *c, const Big *value, const Big *modulus, Big *out) {
+    Big prev_r = *value;
+    Big prev_s = big_zero();
+    Big cur_r = *modulus;
+    Big cur_s = big_zero();
+    Big one = big_zero();
+    uint32_t guard = 0;
+    if (!big_from_u64(&c->arena, 1, &prev_s) || !big_from_u64(&c->arena, 0, &cur_s) ||
+        !big_from_u64(&c->arena, 1, &one)) {
+        return 0;
+    }
+    while (cur_r.nlimbs != 0) {
+        Big quot = big_zero();
+        Big rem = big_zero();
+        Big prod = big_zero();
+        Big coeff = big_zero();
+        if (++guard > 4096u || !big_div_euclid(&c->arena, &prev_r, &cur_r, &quot, &rem) ||
+            !big_mul(&c->arena, &quot, &cur_s, &prod) || !big_sub(&c->arena, &prev_s, &prod, &coeff)) {
+            return 0;
+        }
+        prev_r = cur_r;
+        prev_s = cur_s;
+        cur_r = rem;
+        cur_s = coeff;
+    }
+    if (big_cmp(&prev_r, &one) != 0) {
+        return big_from_u64(&c->arena, 0, out);
+    }
+    {
+        Big quot = big_zero();
+        Big rem = big_zero();
+        if (!big_div_euclid(&c->arena, &prev_s, modulus, &quot, &rem)) {
+            return 0;
+        }
+        *out = rem;
+        return 1;
+    }
+}
+
+static int residue_literal(Compiler *c, const Expr *expr, Big *out) {
+    Big value = big_zero();
+    const Big *modulus = modulus_at(c, expr->ty_mod);
+    if (modulus == NULL || !decode_literal(c, expr, &value)) {
+        return 0;
+    }
+    /* `decode_literal` already applied the sign. A negative literal denotes
+       m - n, so subtract the magnitude, not the signed value. */
+    value.negative = 0;
+    if (expr->negative && value.nlimbs != 0) {
+        return big_sub(&c->arena, modulus, &value, out);
+    }
+    *out = value;
+    return 1;
+}
+
 /* A word index is the word's unsigned value, after one implicit conversion to Int. */
 static int index_position(Compiler *c, const Value *index_value, uint32_t index_start, uint32_t index_end,
                           uint32_t *position) {
@@ -5171,6 +6117,17 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return eval_expr(c, expr->left, params, locals, depth, out);
     case EX_LIT: {
         Big value = big_zero();
+        if (expr->ty == TY_MOD) {
+            if (!charge(c, expr->start, expr->end, 1) || !residue_literal(c, expr, &value)) {
+                c->failed = 1;
+                return 0;
+            }
+            out->type = TY_MOD;
+            out->mod_index = expr->ty_mod;
+            out->big = value;
+            out->word = 0;
+            return 1;
+        }
         if (!charge(c, expr->start, expr->end, 1) || !decode_literal(c, expr, &value)) {
             c->failed = 1;
             return 0;
@@ -5283,6 +6240,34 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&operand);
             return 1;
         }
+        if (expr->op == TK_MINUS && operand.type == TY_MOD) {
+            const Big *modulus = modulus_at(c, operand.mod_index);
+            Big negated = big_zero();
+            uint64_t cost;
+            if (modulus == NULL) {
+                value_clear(&operand);
+                c->failed = 1;
+                return 0;
+            }
+            cost = 1 + modulus_digits(modulus);
+            if (!charge(c, expr->start, expr->end, cost)) {
+                value_clear(&operand);
+                return 0;
+            }
+            if (operand.big.nlimbs == 0) {
+                negated = operand.big;
+            } else if (!big_sub(&c->arena, modulus, &operand.big, &negated)) {
+                value_clear(&operand);
+                c->failed = 1;
+                return 0;
+            }
+            out->type = TY_MOD;
+            out->mod_index = operand.mod_index;
+            out->big = negated;
+            out->word = 0;
+            value_clear(&operand);
+            return 1;
+        }
         if (expr->op == TK_MINUS) {
             uint64_t cost = 1 + big_limbs(&operand.big);
             Big negated;
@@ -5331,6 +6316,16 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 uint32_t right_limbs = big_limbs(&right.big);
                 cost = 1 + (left_limbs > right_limbs ? left_limbs : right_limbs);
                 ordering = big_cmp(&left.big, &right.big);
+            } else if (left.type == TY_MOD) {
+                const Big *modulus = modulus_at(c, left.mod_index);
+                if (modulus == NULL || left.mod_index != right.mod_index) {
+                    c->failed = 1;
+                    value_clear(&left);
+                    value_clear(&right);
+                    return 0;
+                }
+                cost = 1 + modulus_digits(modulus);
+                ordering = big_cmp(&left.big, &right.big);
             } else if (left.type == TY_BOOL || type_width(left.type) != 0) {
                 ordering = word_ordering(left.word, right.word);
             } else {
@@ -5376,7 +6371,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&right);
             return 1;
         }
-        if (expr->op == TK_SLASH || expr->op == TK_PERCENT) {
+        if ((expr->op == TK_SLASH || expr->op == TK_PERCENT) && left.type != TY_MOD) {
             if (left.type == TY_INT) {
                 uint32_t dividend_limbs = big_limbs(&left.big);
                 uint32_t divisor_limbs = big_limbs(&right.big);
@@ -5431,6 +6426,61 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 value_clear(&right);
                 return 1;
             }
+        }
+        if (left.type == TY_MOD) {
+            const Big *modulus = modulus_at(c, left.mod_index);
+            Big exact = big_zero();
+            Big reduced = big_zero();
+            uint32_t digits;
+            uint64_t square;
+            uint64_t cost = 1;
+            int ok = 0;
+            if (modulus == NULL || left.mod_index != right.mod_index) {
+                c->failed = 1;
+                value_clear(&left);
+                value_clear(&right);
+                return 0;
+            }
+            digits = modulus_digits(modulus);
+            square = (uint64_t)digits * (uint64_t)digits;
+            if (expr->op == TK_STAR) {
+                cost = 1 + 2 * square;
+            } else if (expr->op == TK_SLASH) {
+                cost = 1 + 64 * square;
+            } else {
+                cost = 1 + digits;
+            }
+            if (!charge(c, expr->op_start, expr->op_end, cost)) {
+                value_clear(&left);
+                value_clear(&right);
+                return 0;
+            }
+            if (expr->op == TK_PLUS) {
+                ok = big_add(&c->arena, &left.big, &right.big, &exact);
+            } else if (expr->op == TK_MINUS) {
+                ok = big_sub(&c->arena, &left.big, &right.big, &exact);
+            } else if (expr->op == TK_STAR) {
+                ok = big_mul(&c->arena, &left.big, &right.big, &exact);
+            } else if (expr->op == TK_SLASH) {
+                Big inverse = big_zero();
+                ok = residue_inverse(c, &right.big, modulus, &inverse) &&
+                     big_mul(&c->arena, &left.big, &inverse, &exact);
+            }
+            if (!ok || !residue_reduce(c, &exact, modulus, &reduced)) {
+                c->failed = 1;
+                add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
+                         "magnitude limit reached", NULL, 2);
+                value_clear(&left);
+                value_clear(&right);
+                return 0;
+            }
+            out->type = TY_MOD;
+            out->mod_index = left.mod_index;
+            out->big = reduced;
+            out->word = 0;
+            value_clear(&left);
+            value_clear(&right);
+            return 1;
         }
         if (left.type == TY_INT) {
             Big result = big_zero();
@@ -5526,14 +6576,60 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
     case EX_CONV: {
         Value operand;
         uint64_t word = 0;
+        uint64_t extra = 0;
         memset(&operand, 0, sizeof operand);
-        if (!eval_expr(c, expr->left, params, locals, depth, &operand) || !charge(c, expr->op_start, expr->op_end, 1)) {
+        if (!eval_expr(c, expr->left, params, locals, depth, &operand)) {
+            return 0;
+        }
+        if (expr->conv_ty == TY_MOD) {
+            const Big *modulus = modulus_at(c, expr->conv_mod);
+            uint32_t limbs = 0;
+            if (modulus == NULL) {
+                value_clear(&operand);
+                c->failed = 1;
+                return 0;
+            }
+            if (operand.type == TY_INT || operand.type == TY_MOD) {
+                limbs = big_limbs(&operand.big);
+            } else if (operand.word != 0) {
+                limbs = operand.word > 0xffffffffu ? 2u : 1u;
+            }
+            extra = (uint64_t)limbs * modulus_digits(modulus);
+        }
+        if (!charge(c, expr->op_start, expr->op_end, 1 + extra)) {
             value_clear(&operand);
             return 0;
         }
-        if (operand.type == TY_INT) {
+        if (expr->conv_ty == TY_MOD) {
+            const Big *modulus = modulus_at(c, expr->conv_mod);
+            Big source = big_zero();
+            Big reduced = big_zero();
+            if (operand.type == TY_INT || operand.type == TY_MOD) {
+                source = operand.big;
+            } else if (!big_from_u64(&c->arena, operand.word, &source)) {
+                value_clear(&operand);
+                c->failed = 1;
+                return 0;
+            }
+            if (modulus == NULL || !residue_reduce(c, &source, modulus, &reduced)) {
+                value_clear(&operand);
+                c->failed = 1;
+                return 0;
+            }
+            out->type = TY_MOD;
+            out->mod_index = expr->conv_mod;
+            out->big = reduced;
+            out->word = 0;
+            value_clear(&operand);
+            return 1;
+        }
+        if (operand.type == TY_INT || operand.type == TY_MOD) {
             if (expr->conv_ty == TY_INT) {
-                value_move(out, &operand);
+                out->type = TY_INT;
+                out->big = operand.big;
+                out->word = 0;
+                operand.big = big_zero();
+                value_clear(&operand);
                 return 1;
             }
             if (!big_mod_pow2(&operand.big, (uint32_t)type_width(expr->conv_ty), &word)) {
@@ -5897,7 +6993,7 @@ static int format_value(const Value *value, TextBuf *buf) {
         const char *spelling = value->word != 0 ? "true" : "false";
         return text_append(buf, spelling, strlen(spelling));
     }
-    if (value->type == TY_INT) {
+    if (value->type == TY_INT || value->type == TY_MOD) {
         char digits[MAX_INT_DECIMAL];
         if (!big_format(&value->big, digits, sizeof digits)) {
             return 0;
@@ -6028,6 +7124,128 @@ static void release_loop_values(Compiler *c) {
     }
 }
 
+static int offset_from_power(Compiler *c, const Big *modulus, uint32_t bit, int *below, uint64_t *offset) {
+    Big one = big_zero();
+    Big power = big_zero();
+    Big diff = big_zero();
+    int cmp;
+    if (!big_from_u64(&c->arena, 1, &one) || !big_shl(&c->arena, &one, bit, &power)) {
+        return 0;
+    }
+    cmp = big_cmp(&power, modulus);
+    if (cmp == 0) {
+        *below = 1;
+        *offset = 0;
+        return 1;
+    }
+    if (cmp > 0) {
+        *below = 1;
+        if (!big_sub(&c->arena, &power, modulus, &diff)) {
+            return 0;
+        }
+    } else {
+        *below = 0;
+        if (!big_sub(&c->arena, modulus, &power, &diff)) {
+            return 0;
+        }
+    }
+    if (diff.negative || big_bits(&diff) > 64) {
+        return 2;
+    }
+    *offset = 0;
+    if (diff.nlimbs > 0) {
+        *offset = diff.limbs[0];
+    }
+    if (diff.nlimbs > 1) {
+        *offset |= (uint64_t)diff.limbs[1] << 32;
+    }
+    return 1;
+}
+
+static int format_modulus(Compiler *c, const Big *modulus, char *buffer, size_t cap) {
+    uint32_t bits = big_bits(modulus);
+    int below_ok = 0;
+    int above_ok = 0;
+    int below_flag = 0;
+    int above_flag = 0;
+    uint64_t below_off = 0;
+    uint64_t above_off = 0;
+    int use_below = 0;
+    uint32_t bit = 0;
+    uint64_t offset = 0;
+    int nearer_below = 0;
+    if (bits <= 64) {
+        return big_format(modulus, buffer, cap);
+    }
+    below_ok = offset_from_power(c, modulus, bits, &below_flag, &below_off);
+    if (bits > 0) {
+        above_ok = offset_from_power(c, modulus, bits - 1u, &above_flag, &above_off);
+    }
+    if (below_ok == 0 || above_ok == 0) {
+        return 0;
+    }
+    if (below_ok == 1 && above_ok == 1) {
+        use_below = !(above_off < below_off);
+    } else if (below_ok == 1) {
+        use_below = 1;
+    } else if (above_ok == 1) {
+        use_below = 0;
+    } else {
+        uint32_t index;
+        int length;
+        if (modulus->nlimbs == 0) {
+            return 0;
+        }
+        length = snprintf(buffer, cap, "0x%x", modulus->limbs[modulus->nlimbs - 1]);
+        if (length < 0 || (size_t)length >= cap) {
+            return 0;
+        }
+        for (index = modulus->nlimbs - 1u; index > 0; index--) {
+            int next = snprintf(buffer + length, cap - (size_t)length, "%08x", modulus->limbs[index - 1u]);
+            if (next < 0 || (size_t)length + (size_t)next >= cap) {
+                return 0;
+            }
+            length += next;
+        }
+        return 1;
+    }
+    if (use_below) {
+        bit = bits;
+        offset = below_off;
+        nearer_below = below_flag;
+    } else {
+        bit = bits - 1u;
+        offset = above_off;
+        nearer_below = above_flag;
+    }
+    if (offset == 0) {
+        return snprintf(buffer, cap, "1 << %u", bit) > 0;
+    }
+    if (nearer_below) {
+        return snprintf(buffer, cap, "(1 << %u) - %llu", bit, (unsigned long long)offset) > 0;
+    }
+    return snprintf(buffer, cap, "(1 << %u) + %llu", bit, (unsigned long long)offset) > 0;
+}
+
+static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index) {
+    char modulus_text[160];
+    int written;
+    if (type == TY_MOD) {
+        const Big *modulus = modulus_at(c, mod_index);
+        if (modulus == NULL || !format_modulus(c, modulus, modulus_text, sizeof modulus_text)) {
+            return 0;
+        }
+        if (length == 0) {
+            written = snprintf(buffer, cap, "Mod[%s]", modulus_text);
+        } else {
+            written = snprintf(buffer, cap, "Mod[%s]^%u", modulus_text, length);
+        }
+        return written > 0 && (size_t)written < cap;
+    }
+    write_type(buffer, cap, type, length);
+    return 1;
+}
+
 static int evaluate_source(Compiler *c, FILE *out) {
     TextBuf program = {0};
     uint32_t index;
@@ -6039,7 +7257,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
         Func *func = &c->funcs[index];
         Value result;
         TextBuf value = {0};
-        char type_text[64];
+        char type_text[192];
         int stop = 0;
         if (!func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
             continue;
@@ -6049,14 +7267,23 @@ static int evaluate_source(Compiler *c, FILE *out) {
             value_clear(&result);
             break;
         }
-        if (func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL) {
+        if (func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL && func->result != TY_MOD) {
             result.type = func->result;
             if (result.elems == NULL) {
                 result.length = 0;
             }
             result.word &= word_mask_of(type_width(func->result));
         }
-        write_type(type_text, sizeof type_text, func->result, func->result_len);
+        if (func->result == TY_MOD && result.length == 0) {
+            result.type = TY_MOD;
+            result.mod_index = func->result_mod;
+        }
+        if (!format_type(c, type_text, sizeof type_text, func->result, func->result_len, func->result_mod)) {
+            c->failed = 1;
+            add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a type",
+                     "resource limit reached", NULL, 2);
+            break;
+        }
         if (!format_value(&result, &value) ||
             !text_append(&program, c->text + c->module_start, (size_t)(c->module_end - c->module_start)) ||
             !text_append(&program, "::", 2) ||
@@ -6122,6 +7349,9 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->loop_k);
     free(compiler->loop_acc);
     free(compiler->requested);
+    free(compiler->types);
+    free(compiler->sites);
+    free(compiler->moduli);
     if (compiler->own_text) {
         free(compiler->text);
     }
@@ -6716,7 +7946,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, conditional, lookup, and module fragment.\n"
+        "conversion, array, loop, conditional, lookup, module, and residue fragment.\n"
         "It does not use the Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -6743,7 +7973,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3h\n", stdout);
+            fputs("orangec (standalone C) slice S3i\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
