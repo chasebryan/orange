@@ -6606,6 +6606,7 @@ mod tests {
             ExpressionKind::Index(index) => tree_height(&index.base).max(tree_height(&index.index)),
             ExpressionKind::Update(update) => tree_height(&update.base)
                 .max(tree_height(&update.index))
+                .max(update.path.iter().map(tree_height).max().unwrap_or(0))
                 .max(tree_height(&update.value)),
             ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
                 .max(block_height(&r#loop.step_bindings, &r#loop.step))

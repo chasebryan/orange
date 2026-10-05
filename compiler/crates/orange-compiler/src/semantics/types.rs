@@ -494,6 +494,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Update(update) => {
                 self.resolve_moduli_within(&update.base);
                 self.resolve_moduli_within(&update.index);
+                for index in &update.path {
+                    self.resolve_moduli_within(index);
+                }
                 self.resolve_moduli_within(&update.value);
             }
             ExpressionKind::Loop(r#loop) => {

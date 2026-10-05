@@ -11206,6 +11206,25 @@ fn a_tests_moduli_and_types_are_resolved_with_the_modules() {
 }
 
 #[test]
+fn every_index_of_an_update_path_resolves_its_moduli() {
+    // A residue type written in any index of a path, as in the value, is
+    // resolved before the path is checked.
+    let (fixture, core) = accepted(concat!(
+        "  type Row = Word[8]^3; type Matrix = Row^2; type Cube = Matrix^2;\n",
+        "  spec put(m: Matrix, k: Word[8]) -> Matrix {\n",
+        "    m with [(k as Mod[2]) as Int][(k as Mod[3]) as Int] = (k as Mod[7]) as Word[8]\n",
+        "  }\n",
+        "  spec deep(c: Cube, k: Word[8]) -> Cube {\n",
+        "    c with [0][(k as Mod[2]) as Int][(k as Mod[3]) as Int] = 1\n",
+        "  }\n",
+    ));
+    for (index, operation) in [(0, "update path of 2"), (1, "update path of 3")] {
+        let nodes = core_nodes(&fixture, &core.functions[index]);
+        assert_eq!(nodes.last().unwrap().0, operation);
+    }
+}
+
+#[test]
 fn update_paths_type_each_index_against_its_own_axis() {
     let (fixture, core) = accepted(concat!(
         "  type Row = Word[8]^4; type Plane = Row^3; type Cube = Plane^2;\n",
