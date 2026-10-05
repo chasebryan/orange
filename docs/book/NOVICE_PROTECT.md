@@ -1670,3 +1670,871 @@ key and obtaining letters does not tell the receiver that the sender used
 that key. The next sections separate the words people reach for when they
 try to repair the failure by saying “use a random key,” and then they
 state the conditions under which a pad meets the epigraph.
+
+### N11.13 A key, a distribution, a nonce, and a counter
+
+Four words get used as if they were one. They name four different objects.
+This section gives each object one definition and then shows a value that
+satisfies one and fails the others. The one-time pad needs all four
+sentences kept apart, because its hypotheses do not survive being merged.
+
+**Definition N11.12 — Key.** In a symmetric scheme, a **key** is an
+element of the key set `K`. It is an input to `E` and to `D`. Under
+Assumption N11.1 the set `K` and the functions are public. The selected
+element is not part of the method. The adversary’s view, Definition
+N11.3, does not include it unless a further assumption puts it there.
+
+**Definition N11.13 — Distribution of a key.** A **distribution** of a
+key is a finite probability space whose outcomes are the elements of `K`,
+or of a stated subset of `K`. It is the object Definition N10.4 names.
+A single key string is not a distribution. A missing distribution is not
+filled in by Assumption N10.2.
+
+**Definition N11.14 — Nonce.** A **nonce** is a value, drawn from a
+stated set, that a stated construction assumes will not be repeated
+together with the same key. The assumption is about repetition. It is
+not an assumption about secrecy. A nonce may be sent in the clear beside
+the ciphertext. Publishing it does not, by this definition, publish the
+key. Repeating it means the construction’s assumption is false, whatever
+the key still is.
+
+**Definition N11.15 — Counter.** A **counter** is an integer in a stated
+sequence whose successive values differ by one, starting from a stated
+start, or it is one term of that sequence. The sequence `0, 1, 2, ...`
+up to a stated bound is a counter. A counter can be used as a nonce when
+the construction’s “not repeated” assumption is discharged by “the next
+integer has not been used with this key.” The counter is still the
+sequence. The nonce is still the non-repetition assumption. One integer
+can play both roles only after both sentences have been written.
+
+**Example N11.12 — Four values, four jobs.**
+
+1. The residue `3` in Example N11.3 is a key of the shift scheme. No
+   distribution has been stated for it. It is not a nonce: the scheme
+   reuses it at every letter, and the definition of the shift scheme says
+   so. It is not a counter.
+2. The uniform distribution on `A26` is a distribution. It is not a key.
+   A key is one residue. This distribution has twenty-six outcomes.
+   Saying “the key is uniform” without naming the set is not this
+   distribution. Assumption N10.2 still requires the set and the weights.
+3. Suppose three ciphertexts are sent with the public integers `0`, `1`,
+   and `2` beside them, and the construction says each integer will be
+   used once with a fixed secret key. Those integers are a counter. They
+   are being used as nonces. They are not keys: they are in the
+   adversary’s view. An adversary who reads `1` has not read the secret
+   key.
+4. Suppose an eight-bit string is drawn from the uniform distribution on
+   the `256` byte strings and is sent in the clear, and the construction
+   forbids repeating that string with the same secret key. The drawn
+   string is a nonce. The uniform distribution is the distribution of
+   that draw, not the nonce itself, and not the secret key. A second
+   draw that happens to equal the first violates Definition N11.14 even
+   though the secret key was not revealed. The collision probability of
+   such draws is an N10 question about the stated space. It is not a
+   reason to call the nonce a key.
+
+Predict which of the four a reused Vigenère key is. The string `DOG` is a
+key of Definition N11.11. Reusing it on `ATTACK` and on `MEET` is the
+scheme as defined: one key, two messages. It is not a nonce failure
+inside the Vigenère definition, because that definition does not assume
+the key will be used once. The cancellation in Proposition N11.16 is what
+reuse costs. If a different construction had assumed the key string would
+not be repeated, that assumption would be Definition N11.14, and the
+example would violate it. The word you reach for depends on the sentence
+the construction actually contains.
+
+“Random” is still not a name for any of the four. N10 refused the word as
+a technical term. A draw is described by its space. A key is described by
+membership in `K`. A nonce is described by a non-repetition assumption. A
+counter is described by its sequence. A sentence that says “use a random
+nonce as the key” has stacked three definitions and stated none of them.
+
+### N11.14 The one-time pad
+
+The classical schemes failed because a short key was reused across
+positions or across messages, and the reuse left an equation the
+adversary could write. The one-time pad is the scheme that refuses that
+reuse in the definition, and then proves what the refusal buys. The
+proof uses one symbol first, where the arithmetic is visible, and then
+a finite string of symbols.
+
+**Definition N11.16 — One-time pad, one symbol.** Let `q ≥ 2` be an
+integer, and let `A` be a set of `q` symbols, represented as the residues
+`0` through `q - 1`. The **one-time pad** on one symbol has plaintext set
+and ciphertext set and key set all equal to `A`. Encryption and
+decryption are
+
+```text
+E(k, m) = the representative of m + k modulo q,
+D(k, c) = the representative of c - k modulo q.
+```
+
+The following conditions are part of the definition whenever a secrecy
+claim is made. They are not part of correctness.
+
+1. The key `K` is uniform on `A`: each residue has weight `1/q`.
+2. The key choice and the message choice are independent in the sense of
+   Definition N10.10.
+3. One key is used for one message. The probability space is the space of
+   pairs `(m, k)`, not a space of two messages sharing `k`.
+4. The receiver is given `k`. The adversary’s view is the ciphertext and
+   the method, not `k`.
+
+Condition 4 is an access assumption. Conditions 1 through 3 are
+statements about a finite probability space. Mixing them produces
+sentences that cannot be checked.
+
+**Proposition N11.17 — The one-symbol pad is correct.** For every `k` and
+every `m` in `A`, `D(k, E(k, m)) = m`.
+
+**Proof.** This is Proposition N11.4 with modulus `q` in place of `26`.
+The proof there used uniqueness of the representative and the
+cancellation `(m + k) - k = m`. Neither step used the value `26`.
+
+When `q = 2`, addition modulo `2` is XOR on one bit. The four pairs are
+the truth table:
+
+| `m` | `k` | `m + k` mod `2` | `m XOR k` |
+| --- | --- | --- | --- |
+| 0 | 0 | 0 | 0 |
+| 0 | 1 | 1 | 1 |
+| 1 | 0 | 1 | 1 |
+| 1 | 1 | 0 | 0 |
+
+The two operation columns agree on every row. A one-bit pad may therefore
+be written as XOR. A pad on a larger alphabet may not. XOR is an
+operation on bits, defined in Chapter 3 by that table and then positionwise
+on strings. Modular addition is the operation in Definition N11.16 for a
+general `q`.
+
+**Listing N11.10 — `bitpad.or`**
+
+```orange
+edition 2026;
+module bitpad {
+  spec table() -> Mod[2]^4 {
+    [0 + 0, 0 + 1, 1 + 0, 1 + 1]
+  }
+
+  spec words() -> Word[8]^4 {
+    [0x00 ^ 0x00, 0x00 ^ 0x01, 0x01 ^ 0x00, 0x01 ^ 0x01]
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+bitpad::table: Mod[2]^4 = [0, 1, 1, 0]
+bitpad::words: Word[8]^4 = [0x00, 0x01, 0x01, 0x00]
+```
+
+The residue column is the third column of the table. The word column is
+XOR on the low bit of a byte, with every higher bit zero. The two arrays
+agree. That agreement is the four-row check, exhaustive for one bit. It
+is not a definition of XOR on `Mod[26]`.
+
+**Listing N11.11 — `residue_xor.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module residue_xor {
+  spec mix(x: Mod[26], k: Mod[26]) -> Mod[26] {
+    x ^ k
+  }
+}
+```
+
+**Diagnostic:**
+
+```text
+error[ORC0215]: `^` is not defined for `Mod[26]`
+ --> <stdin>:4:7
+  |
+4 |     x ^ k
+  |       ^ `Mod[26]` is required here
+  = note: bitwise operators apply only to `Word[n]` values
+```
+
+The status is `1`. Standard output is empty. The code is `ORC0215`. The
+locus is the operator `^`. The note says bitwise operators apply to
+words. A letter residue is not a word. The shift scheme’s addition is
+legal on `Mod[26]`, and Listing N11.1 evaluates it. XOR is legal on
+`Word[8]`, and Listing N11.10 evaluates it. Writing XOR on a letter
+residue is neither function. The checker refuses the conflation. A
+one-time pad on the English alphabet, in this lesson, is addition modulo
+`26` under Definition N11.16. A one-time pad on bits is XOR. The epigraph’s
+Vernam system, in Shannon’s §10, is the alphabet form with a key as long
+as the message. The binary form is the case `q = 2` of the same
+definition. The rejected listing is what it looks like to pretend the
+two spellings are one operator.
+
+**Definition N11.17 — Perfect secrecy.** Let `M` be a message-valued
+outcome on a finite probability space, and let `C` be a ciphertext-valued
+outcome on the same space. The pair `(M, C)` has **perfect secrecy** when,
+for every message `m` and every ciphertext `c` with `P(C = c) > 0`,
+
+```text
+P(M = m | C = c) = P(M = m).
+```
+
+If `P(C = c) = 0`, Definition N10.7 assigns no conditional probability.
+That gap is not filled with zero, and it is not counted as a failure of
+the equality. The equality that is required is exactly the case Shannon
+names in the sentence after the definition quoted at the opening: the a
+posteriori probability equals the a priori probability. On a finite list
+of weights, those are the conditional weights of Proposition N10.5 and
+the original weights. No entropy is used. N10 did not define a weighted
+substitute for `log2`, and this lesson does not add one.
+
+**Proposition N11.18 — The one-symbol pad has perfect secrecy.** Assume
+conditions 1 through 3 of Definition N11.16. Let the message distribution
+on `A` be any finite probability space: weights nonnegative and summing
+to `1`. Then for every message `m` and every ciphertext `c`,
+
+```text
+P(M = m | C = c) = P(M = m),
+```
+
+and `P(C = c) = 1/q`, so the conditioning event is never the zero event.
+
+**Proof.** The outcomes of the joint space are pairs `(m, k)`.
+Independence and uniformity give the pair the weight
+`P(M = m) · (1/q)`. The ciphertext equals `c` and the message equals `m`
+together exactly when `k` is the representative of `c - m`. There is one
+such `k`. Therefore
+
+```text
+P(M = m and C = c) = P(M = m) / q.
+```
+
+Sum over the `q` possible messages. The weights `P(M = m)` sum to `1`, so
+
+```text
+P(C = c) = 1/q.
+```
+
+The sum does not depend on `c`. Every ciphertext has the same
+probability, and that probability is positive because `q ≥ 2`. Definition
+N10.7 therefore supplies
+
+```text
+P(M = m | C = c) = (P(M = m) / q) / (1/q) = P(M = m).
+```
+
+The message distribution cancelled. It did not have to be uniform. That
+is the content of the proposition: whatever the a priori weights were,
+within the class of finite probability spaces, the ciphertext leaves them
+as they were.
+
+Read the quantifiers. For every message distribution, for every message,
+for every ciphertext, the equality holds. A single numerical example is
+not this statement. The example is still worth computing, because it is
+where a dropped hypothesis shows up.
+
+**Example N11.13 — A biased message and a uniform key.** Let `q = 2`,
+`P(M = 0) = 1/4`, and `P(M = 1) = 3/4`. The key is uniform, weight `1/2`
+each, and independent of `M`. Then
+
+```text
+P(M = 0 and C = 0) = (1/4) · (1/2) = 1/8,
+P(M = 1 and C = 0) = (3/4) · (1/2) = 3/8,
+P(C = 0) = 1/8 + 3/8 = 1/2,
+P(M = 0 | C = 0) = (1/8) / (1/2) = 1/4.
+```
+
+The conditional probability equals the prior. The ciphertext `0` is more
+often produced by message `1` than by message `0`, because message `1` is
+more common: the joint weights are `3/8` and `1/8`. Dividing by
+`P(C = 0)` scales both, and the ratio returns to `1/4` and `3/4`. Seeing
+the ciphertext did not update the message weights. That is perfect
+secrecy on this space. It is not a claim that the adversary assigns equal
+weight to the two messages. The adversary’s uncertainty, in the sense of
+§N10.14, remains the biased list.
+
+**Counterexample — a key that is not uniform.** Keep the same message
+weights and drop condition 1. Let `P(K = 0) = 3/4` and `P(K = 1) = 1/4`,
+still independent of `M`. The pair weights at ciphertext `0` are
+
+```text
+P(M = 0 and C = 0) = (1/4) · (3/4) = 3/16,
+P(M = 1 and C = 0) = (3/4) · (1/4) = 3/16,
+P(C = 0) = 3/8,
+P(M = 0 | C = 0) = (3/16) / (3/8) = 1/2.
+```
+
+The prior was `1/4`. The conditional probability is `1/2`. They are not
+equal, so Definition N11.17 fails. The same space at ciphertext `1` gives
+
+```text
+P(M = 0 and C = 1) = (1/4) · (1/4) = 1/16,
+P(C = 1) = 1/16 + (3/4) · (3/4) = 1/16 + 9/16 = 10/16 = 5/8,
+P(M = 0 | C = 1) = (1/16) / (5/8) = 1/10,
+```
+
+which is also not `1/4`. One biased key distribution is enough to reject
+the universal claim “every pad is perfectly secret.” The word “pad” in
+that sentence omitted condition 1. The omission is the whole
+counterexample.
+
+**Definition N11.18 — One-time pad on a string.** Let the message be a
+string of length `n ≥ 1` over `A`. The key is a string of length `n` over
+`A`. Encrypt and decrypt position by position with Definition N11.16. The
+secrecy conditions become: each key symbol is uniform on `A`; the `n` key
+symbols are independent of each other and of the message, in the sense of
+Definition N10.10 extended by multiplying one weight per symbol, as N10
+states for more than two choices; the key string is used for one message
+string; the receiver is given the key string and the adversary is not.
+
+**Proposition N11.19 — The string pad has perfect secrecy.** Under those
+conditions, for every message string `m` and every ciphertext string `c`
+of length `n`,
+
+```text
+P(M = m | C = c) = P(M = m),
+```
+
+and `P(C = c) = 1/q^n`.
+
+**Proof.** There are `q^n` key strings. Independence and uniformity give
+each key string weight `1/q^n`, by the product of `n` factors `1/q`. For
+a fixed message string `m` and ciphertext string `c`, exactly one key
+string satisfies the positionwise equation `c_i ≡ m_i + k_i`: take `k_i`
+to be the representative of `c_i - m_i`. Independence of the key choice
+and the message choice gives
+
+```text
+P(M = m and C = c) = P(M = m) / q^n.
+```
+
+Sum over all `q^n` message strings. The message weights sum to `1`, so
+`P(C = c) = 1/q^n`, for every `c`. Divide. The conditional probability
+equals `P(M = m)`.
+
+The proof is the one-symbol proof with `q` replaced by `q^n` and with the
+unique key string in place of the unique key symbol. The replacement is
+legitimate because both proofs use the same two facts: exactly one key
+takes a given message to a given ciphertext, and that key has the same
+weight no matter which message was named. A shift scheme has the first
+fact for each single key and does not have the second fact across
+messages of length greater than one, because one key symbol is shared.
+The shared symbol is why Proposition N11.16 can cancel it.
+
+**What you must not drop.** If the key string is shorter than the message
+and a symbol is reused, you are no longer in Definition N11.18. You are
+in the Vigenère scheme, and Proposition N11.16 applies. If the key string
+has length `n` but is used on a second message, you are in the next
+section. If the key symbols are uniform but the message and the key are
+not independent, Definition N10.10 does not give the product weight, and
+the line `P(M = m and C = c) = P(M = m) / q^n` is unavailable. The proof
+stops at the hypothesis it used. It does not stop at a slogan about pads.
+
+The length of the key string is `n` symbols. The distribution is uniform
+on `q^n` strings. The adversary’s uncertainty about the message, given
+the ciphertext, is the original message distribution. Those are the three
+quantities of §N10.14, and on this scheme they do different jobs. The key
+length equals the message length. The distribution is uniform. The
+uncertainty about the message is whatever it was before the ciphertext
+arrived. A shorter key can have a uniform distribution on its own shorter
+set and still leave the message uncertainty smaller than it started, as
+the biased-key counterexample and the Vigenère cancellation both show,
+each by dropping a different hypothesis.
+
+### N11.15 The same pad used twice
+
+**Proposition N11.20 — Two encryptions with one key string cancel.** Let
+`m1` and `m2` be bit strings of length `n`, and let `k` be a bit string
+of length `n`. Let `c1 = m1 ⊕ k` and `c2 = m2 ⊕ k`, with XOR the
+positionwise operation of Chapter 3. Then `c1 ⊕ c2 = m1 ⊕ m2`.
+
+**Proof.** Work at one position. The key bit is `0` or `1`. If it is `0`,
+both ciphertext bits equal the corresponding message bits, so their XOR
+equals the XOR of the message bits. If it is `1`, each ciphertext bit is
+the message bit flipped. XOR of the two flipped bits equals XOR of the
+two original bits: flipping both inputs leaves `0 XOR 0 = 0` and
+`1 XOR 1 = 0` as the equal case, and `0 XOR 1 = 1` and `1 XOR 0 = 1` as
+the unequal case. Both values of the key bit are covered, which is a
+proof by cases on a two-element set. Every position behaves the same way,
+and XOR does not change the length, so the strings are equal.
+
+The proof did not assume the key was uniform or secret. Cancellation is
+an identity of the operation. It holds for the all-zero key, which hides
+nothing, and for every other key. Secrecy hypotheses are not what make
+the identity true. They are what make a single use of the key leave the
+message weights unchanged. The identity says a second use publishes the
+message difference.
+
+**Listing N11.12 — `pad.or`**
+
+```orange
+edition 2026;
+module pad {
+  spec enc(m: Word[8], k: Word[8]) -> Word[8] {
+    m ^ k
+  }
+
+  spec sample() -> Word[8]^3 {
+    let m1: Word[8] = 0x41;
+    let m2: Word[8] = 0x42;
+    let k: Word[8] = 0x3c;
+    [enc(m1, k), enc(m2, k), enc(m1, k) ^ enc(m2, k)]
+  }
+
+  spec plain() -> Word[8] {
+    0x41 ^ 0x42
+  }
+
+  test "two-time pad cancels the key" {
+    let m1: Word[8] = 0x41;
+    let m2: Word[8] = 0x42;
+    let k: Word[8] = 0x3c;
+    (enc(m1, k) ^ enc(m2, k)) == (m1 ^ m2)
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+pad::sample: Word[8]^3 = [0x7d, 0x7e, 0x03]
+pad::plain: Word[8] = 0x03
+```
+
+**Test report:**
+
+```text
+test "two-time pad cancels the key" ... ok
+1 test: 1 passed, 0 failed
+```
+
+Compute the bytes before you trust the line. `0x41` is `01000001`.
+`0x3c` is `00111100`. XOR gives `01111101`, which is `0x7d`. `0x42` is
+`01000010`, and XOR with the same key gives `01111110`, which is `0x7e`.
+XOR of the two ciphertexts is `00000011`, which is `0x03`. XOR of the
+two plaintexts is the same `0x03`, because they differ only in the last
+bit. The test’s `Bool` is that equality on these three bytes. Proposition
+N11.20 is the identity for every triple of equal-length strings. The test
+is one triple. A passing test is not the proposition, and the proposition
+is not a secrecy claim.
+
+**Proposition N11.21 — A second use destroys perfect secrecy.** Let two
+message bytes `M1` and `M2` be drawn independently and uniformly from the
+`256` byte values, and let `K` be an independent uniform byte used as the
+pad for both. Let `C1 = M1 ⊕ K` and `C2 = M2 ⊕ K`. Let `d` be the byte
+`0x03`. Then `P(M1 ⊕ M2 = d) = 1/256`, while
+
+```text
+P(M1 ⊕ M2 = d | C1 ⊕ C2 = d) = 1.
+```
+
+The two probabilities differ, so the pair of messages and the pair of
+ciphertexts do not have perfect secrecy.
+
+**Proof.** For each of the `256` values of `M1` there is exactly one `M2`
+with `M1 ⊕ M2 = d`, namely `M2 = M1 ⊕ d`. Independence and uniformity
+give each pair weight `1/256 · 1/256`, so the event has probability
+`256 / 65536 = 1/256`. On the other side, Proposition N11.20 says
+`C1 ⊕ C2 = M1 ⊕ M2` for every key. The event `C1 ⊕ C2 = d` is the same
+set of outcomes as the event `M1 ⊕ M2 = d`. Conditioning on an event
+that is identical to the event being asked yields conditional probability
+`1`, provided the event has positive probability, which `1/256` is. A
+probability `1` is not a probability `1/256`.
+
+The numerical gap is the whole failure. An adversary who sees `0x7d` and
+`0x7e` computes `0x03` and now knows the plaintext difference with
+conditional probability `1`. Before seeing the ciphertexts, that
+difference was one byte among `256`. The key never appears in the
+difference. Withholding `k` does not withhold `m1 ⊕ m2`.
+
+If the adversary also has a recognition rule that accepts one of the two
+messages, the other message is determined. Guess `M1 = 0x41`. Then
+`M2 = 0x41 ⊕ 0x03 = 0x42`. The guess is an extra assumption, of the same
+kind as Assumption N11.7. Without it, the adversary knows the difference
+and does not know either byte. That is already enough to reject perfect
+secrecy for the pair. It is not a recovery of both messages from nothing.
+
+Condition 3 of Definition N11.16 is what this section removed. Putting it
+back, with an independent fresh key for the second byte, returns the
+setup to Proposition N11.19 on a message string of length `2`, or to two
+separate one-symbol pads. The fresh key is a second draw, not a second
+name for the first draw. A counter beside the ciphertext does not supply
+that draw. A nonce assumption that the key will not be reused is the
+sentence condition 3 already is. Calling the key a nonce does not create
+a second independent sample.
+
+### N11.16 The finish line
+
+The six outcomes from the opening are discharged as follows.
+
+1. Encoding, encryption, hashing, and authentication are Definitions
+   N11.1, N11.2, N11.4, and N11.5. The public shift `E3` is an encoding
+   and a correct scheme with a one-element key set, and it reveals the
+   message. Parity is a hash function on two-bit strings and collides.
+   A public parity tag accepts the carrier’s substitute. Decryption that
+   always returns a letter is not an authentication check.
+2. The shift, affine, and substitution schemes are Definitions N11.6,
+   N11.9, and N11.10. Correctness is Propositions N11.4, N11.10, and
+   N11.12. The inverse exists for the affine multiplier exactly under
+   Proposition N11.9. The breaks are Example N11.4 under the rule “equals
+   `HELLO`,” Example N11.7 under two known pairs, and Example N11.9 under
+   distinct counts.
+3. The Vigenère scheme is Definition N11.11. A known period reduces to
+   shifts, as Example N11.11 does for `DOG`. The same key on two messages
+   cancels by Proposition N11.16, and Listing N11.8 prints the difference.
+4. Key, distribution, nonce, and counter are Definitions N11.12 through
+   N11.15. Example N11.12 separates four values.
+5. The one-time pad’s conditions are Definitions N11.16 and N11.18.
+   Perfect secrecy is Definition N11.17. The one-symbol proof is
+   Proposition N11.18, and the string proof is Proposition N11.19. The
+   second use is Proposition N11.20 and Proposition N11.21, with Listing
+   N11.12 as one byte triple.
+6. A passing test is one true `Bool` on one run. An evaluation print is
+   one value of the listed function. The ledger recomputes the finite
+   claims it names. None of those three is Proposition N11.18, and none
+   of them says that a construction is fit to deploy.
+
+### N11.17 What was not established
+
+The propositions state their hypotheses and stop. Several nearby sentences
+are not theorems of this lesson.
+
+No procedure is given for producing a key that meets condition 1. A
+uniform distribution is a mathematical object. A machine that emits bytes
+is an implementation, and nothing here proves that a particular machine’s
+output is that distribution. N10 already separated those subjects. This
+lesson inherits the separation.
+
+No authentication check is built. Proposition N11.3 still applies to a
+public tag. A pad ciphertext can be altered. Decryption will return some
+plaintext. The receiver who needed to reject the alteration was promised
+something Definition N11.16 does not contain.
+
+A function that stretches a short key into a long string and then adds
+that string to the message is not Definition N11.18. The definition
+requires the key string itself to be the uniform independent string of
+length `n`. A stretch is a different function, with a different key set,
+and its secrecy is not Proposition N11.19. This lesson does not define
+that function. A practical stream cipher, a block cipher, a hash function
+in the sense of a standard, and a message authentication code are later
+constructions. They are not introduced here, and none of the listings is
+one of them.
+
+Perfect secrecy is not a computational claim. It does not mention the
+work of trying keys. The shift scheme’s trial count of `26` and the
+substitution scheme’s trial count of `26!` are exhaustive counts under
+Assumption N10.4. They are not approximations to Proposition N11.18, and
+Proposition N11.18 is not a reason to call a large finite key set
+perfectly secret. The biased-key counterexample has a key set of size `2`
+and already fails. Size was not the hypothesis that failed.
+
+Shannon’s §10 also discusses a key as long as an infinite message and
+names the Vernam system as realizing that type of secrecy. The proof in
+this lesson is the finite case, on a stated alphabet and a stated length.
+It does not prove the infinite case, and it does not cite entropy. The
+epigraph’s sentence is the finite definition’s consequence, which
+Proposition N11.18 proves under the stated conditions. It is not a remark
+about `KHOOR`, about `DHZDQQ`, or about a pad whose key was used twice.
+
+Listing N11.2, Listing N11.9, and Listing N11.11 are rejections. Each one
+is evidence about that source and this checker: a residue literal outside
+the modulus, a key index whose proved range leaves the array, and a
+bitwise operator on a residue type. A rejection is not a proof of the
+proposition the repaired program is meant to illustrate. The repaired
+programs are the listings that evaluate. Their printed values match the
+hand calculations on the inputs named beside them.
+
+The reference test recomputes the ledger: the factorial, the affine key
+count, the one-symbol posterior weights, the two-time probabilities, and
+the exhaustive identities on the small alphabets it loops over. That test
+does not execute Orange. The Orange test executes the listings. Neither
+test is a cryptographic security claim, a recommendation of a key length,
+or an acceptance of the language proposal the compiler implements.
+
+### N11.18 Work at the desk
+
+**Exercise N11.1 — Name the job.** For each item, say which of
+Definitions N11.1, N11.2, N11.4, and N11.5 applies, and which of the
+other three does not, by pointing at the clause that fails. (a) The
+public map from a byte to two hexadecimal digits, with the public inverse
+on its image. (b) The shift scheme with key set `A26`. (c) Parity of two
+bits, from Example N11.1. (d) A receiver who accepts a message when a
+recomputed public parity bit matches a tag sent beside it.
+
+**Exercise N11.2 — The meeting line.** `MEET` was sent as `PHHW` by adding
+three. Under Assumption N11.1, what does the carrier compute, and what
+plaintext results? Is the one-element scheme correct? Does the carrier’s
+success contradict correctness?
+
+**Exercise N11.3 — One wrap, then the quantifier.** Take `x = 24` and
+`k = 3` in the shift scheme. Compute `E(k, x)` and `D(k, E(k, x))` from
+the definition of the representative. Which step of Proposition N11.4 is
+this pair an instance of, and which keys does the pair not cover?
+
+**Exercise N11.4 — Read a row.** In the output of Listing N11.3, which
+index is the row `[7, 4, 11, 11, 14]`? If the recognition rule is changed
+to “accept every string whose first residue is `10`,” which keys are
+accepted? What does Assumption N11.7 require you to say about the
+sender’s key?
+
+**Exercise N11.5 — Invert or refuse.** For each of `9`, `13`, `14`, and
+`25` modulo `26`, either give the inverse residue or give a common
+divisor greater than `1`. Use Proposition N11.9, not a search of the
+Orange operator `/`.
+
+**Exercise N11.6 — Two pairs.** An affine key sends `1` to `8` and `2` to
+`13`. Find `a` and `b`. Why does the plaintext difference allow the
+multiplication that Example N11.7 used?
+
+**Exercise N11.7 — The operator that returned zero.** Listing N11.5
+prints `0` for `2 / 2` on `Mod[26]`. What value would Euclidean division
+of the integers `2` and `2` give? Why does the residue operation differ,
+and what does acceptance of the listing not prove?
+
+**Exercise N11.8 — Three counts.** The integers `26`, `312`, and `26!`
+each count a set named in this lesson. Name the set, and name the
+procedure whose worst-case trial count under Assumption N10.4 is that
+integer. Which of the three procedures is Proposition N11.14?
+
+**Exercise N11.9 — Sort the five counts.** Using only the array
+`[5, 2, 8, 1, 4]` from Listing N11.7 and Assumption N11.8, write `π_inv`
+as the images of ciphertext symbols `0` through `4`. How many keys of the
+five-symbol substitution scheme did you try?
+
+**Exercise N11.10 — The difference you were given.** Two Vigenère
+ciphertexts under one unknown key have difference
+`[14, 15, 15, 7]` on their first four positions. Assume the second
+plaintext is `MEET`. Recover the first four plaintext residues. Which
+proposition lets you do this without the key? What do you know if the
+assumption about `MEET` is false?
+
+**Exercise N11.11 — The rejected period.** In Listing N11.9, what is the
+code, and what set of indices does the note’s range describe? Does the
+loop body run? If the intended period is `3`, what is the one-token
+repair, and why is a longer key a different repair?
+
+**Exercise N11.12 — Four labels.** Label each item as a key, a
+distribution, a nonce, a counter, or a combination you can justify from
+Definitions N11.12 through N11.15. (a) The residue `3` used for every
+letter of `HELLO`. (b) The uniform weights `1/26` on `A26`, with no
+residue selected. (c) The public integers `0, 1, 2` sent once each beside
+three ciphertexts under one fixed secret key. (d) A second copy of the
+byte `0x3c` used as the pad for `0x42` after it was already used as the
+pad for `0x41`.
+
+**Exercise N11.13 — The uniform key.** Repeat Example N11.13 far enough
+to compute `P(M = 1 | C = 0)`. Why does the larger joint weight on
+message `1` not produce a larger conditional probability than `3/4`?
+
+**Exercise N11.14 — The biased key.** Under the counterexample weights
+`P(K = 0) = 3/4` and `P(K = 1) = 1/4`, compute `P(M = 0 | C = 1)`. Which
+condition of Definition N11.16 fails, and which equality of Definition
+N11.17 fails with it?
+
+**Exercise N11.15 — Two bytes.** Take `m1 = 0x41`, `m2 = 0x42`, and
+`k = 0x3c`. Compute `c1`, `c2`, and `c1 ⊕ c2`. Compare with `m1 ⊕ m2`.
+If a recognition rule says the first plaintext is `0x41`, what is the
+second? What does the adversary know about the difference if the
+recognition rule is absent and the messages were uniform and independent?
+
+**Exercise N11.16 — Three subjects.** State one fact established by the
+passing test in Listing N11.1, one fact established by Proposition N11.4,
+and one fact that neither the test nor the proposition establishes about
+the carrier who sees `KHOOR`.
+
+## Worked answers
+
+**N11.1.** (a) Encoding, Definition N11.1: both directions are public and
+there is no key. It is not a hash function, because a byte and its two
+hexadecimal digits are not a domain strictly larger than the codomain in
+the sense that would force a collision; the inverse recovers the byte.
+It is not an authentication check. (b) Encryption, Definition N11.2, with
+key set `A26`. It is not an encoding, because the key is selected from a
+set rather than written into a single public function. It is not, by that
+definition, an authentication check: there is no `V`. (c) Hash function,
+Definition N11.4: four strings into two bits. It collides, as the table
+showed. It is not encryption: there is no key. (d) Authentication check,
+Definition N11.5, and it is complete for honest tags. It does not meet
+the hope that every substitute is rejected. Proposition N11.3 says the
+carrier who recomputes the public parity produces an accepted pair.
+
+**N11.2.** The carrier subtracts three. `P` returns to `M`, and `PHHW`
+returns to `MEET`. The one-element scheme is correct by Proposition
+N11.1, which is Proposition N11.4 at the only key. The carrier’s success
+uses correctness. It does not contradict it. Correctness says the holder
+of the key recovers the plaintext. The carrier holds the only key.
+
+**N11.3.** `24 + 3 = 27 = 1 · 26 + 1`, so `E(3, 24) = 1`. Then
+`1 - 3 = -2 = (-1) · 26 + 24`, so the representative is `24`. This pair
+is one instance of the congruence `(x + k) - k ≡ x` inside the proof of
+Proposition N11.4. It covers the key `3` and the plaintext `24`. It does
+not cover any other pair. The quantifiers in the proposition cover the
+rest.
+
+**N11.4.** The row is index `3`. The rule “first residue is `10`” accepts
+only index `0`, whose row is `[10, 7, 14, 14, 17]`. Assumption N11.7
+requires you to say that the rule, not the ciphertext alone, selected
+that key. If the sender’s key was `3`, this rule accepts a different key.
+The arithmetic did not fail. The assumption did.
+
+**N11.5.** `gcd(9, 26) = 1`. From `26 = 2 · 9 + 8`, `9 = 1 · 8 + 1`, and
+`8 = 8 · 1 + 0`, the gcd is `1`. Bézout back-substitution gives an
+inverse; the representative is `3`, because `9 · 3 = 27 ≡ 1 (mod 26)`.
+`13` shares the divisor `13` with `26`. `14` shares the divisor `2`.
+`25 ≡ -1`, and `25 · 25 = 625`. `625 - 24 · 26 = 625 - 624 = 1`, so the
+inverse of `25` is `25`.
+
+**N11.6.** Subtract the congruences: `13 - 8 ≡ a · (2 - 1)`, so
+`a ≡ 5 (mod 26)`. Then `b ≡ 8 - 5 · 1 = 3`. Check: `5 · 2 + 3 = 13`. The
+plaintext difference is `1`, and `gcd(1, 26) = 1`, so Proposition N11.9
+says the multiplier of the difference is unique. That is the same
+multiplication Example N11.7 used, with a difference of `1` instead of a
+difference of `3`.
+
+**N11.7.** Euclidean division of the integers gives quotient `1` and
+remainder `0`, because `2 = 2 · 1 + 0`. The residue operation `/` on
+`Mod[26]` multiplies by a modular inverse, and `2` has none, so the
+operation returns `0`. Acceptance shows that `/` is defined on the type.
+It does not show that `2` is coprime to `26`, and it does not show that
+the result is an integer quotient.
+
+**N11.8.** `26` is `|A26|`, the shift key set, and the worst-case trial
+count for trying shift keys. `312` is the affine key set of Definition
+N11.9, twelve multipliers times twenty-six addends. `26!` is the number
+of permutations of `A26`, the substitution key set. Trying every
+permutation is the procedure whose worst-case count is `26!`. Proposition
+N11.14 is not that procedure. It matches counts. On the five-symbol
+example it sorts five integers.
+
+**N11.9.** The array says ciphertext `2` has count `8`, `0` has count
+`5`, `4` has count `4`, `1` has count `2`, and `3` has count `1`.
+Matching to plaintext symbols `0` through `4` gives
+`π_inv(2) = 0`, `π_inv(0) = 1`, `π_inv(4) = 2`, `π_inv(1) = 3`,
+`π_inv(3) = 4`. In order of ciphertext symbols `0, 1, 2, 3, 4`, the
+images are `1, 3, 0, 4, 2`. No key was tried. The matching used five
+counts.
+
+**N11.10.** Proposition N11.16 says the ciphertext difference equals the
+plaintext difference. Adding it to `MEET` = `[12, 4, 4, 19]` gives
+`[0, 19, 19, 0]`, because `12 + 14 = 26 ≡ 0`, `4 + 15 = 19`, and
+`19 + 7 = 26 ≡ 0`. If `MEET` is not the second plaintext, the recovered
+string is not the first plaintext. The difference remains true and the
+identification does not.
+
+**N11.11.** The code is `ORC0223`. The index `i % 4` runs through `0, 1,
+2, 3`, and the key has indices `0, 1, 2`. The body does not run. The
+one-token repair, if the intended period is `3`, is to write `% 3`. A
+longer key is the repair for a different function, one whose period is
+`4`, and its ciphertexts are not Listing N11.8’s.
+
+**N11.12.** (a) A key of the shift scheme, reused on purpose. Not a
+nonce, and not a counter. (b) A distribution, and not a key: no residue
+has been selected. (c) A counter used as a nonce, public, and not the
+secret key. (d) A second use of one key byte. It violates condition 3 of
+Definition N11.16. Calling the byte a nonce records the assumption that
+was broken. It does not make the second encryption a fresh pad.
+
+**N11.13.** `P(M = 1 and C = 0) = 3/8` and `P(C = 0) = 1/2`, so
+`P(M = 1 | C = 0) = 3/4`, which equals the prior. The joint weight is
+larger because the prior is larger. Dividing by the same `P(C = 0)`
+scales every message, and the ratios return to the priors. That scaling
+is the last line of the proof of Proposition N11.18.
+
+**N11.14.** `P(M = 0 and C = 1) = 1/16` and `P(C = 1) = 5/8`, so the
+conditional probability is `1/10`. Condition 1 fails: the key is not
+uniform. The equality `P(M = 0 | C = 1) = P(M = 0)` fails because `1/10`
+is not `1/4`.
+
+**N11.15.** `c1 = 0x7d`, `c2 = 0x7e`, and `c1 ⊕ c2 = 0x03 = m1 ⊕ m2`. If
+the rule says the first plaintext is `0x41`, the second is
+`0x41 ⊕ 0x03 = 0x42`. If the messages are independent and uniform and no
+recognition rule is stated, the adversary knows the difference equals
+`0x03` with conditional probability `1`, and the prior of that difference
+was `1/256`. Neither plaintext is singled out by the difference alone.
+
+**N11.16.** The test establishes that `back() == [7, 4, 11, 11, 14]`
+evaluated to true on one run of Listing N11.1. Proposition N11.4
+establishes correctness for every key and every one-symbol plaintext, and
+then for every position of a string. Neither one establishes that the
+carrier who sees `KHOOR` fails to recover `HELLO`. Under the recognition
+rule of Example N11.4 the carrier recovers it by trying the twenty-six
+keys. Under the empty recognition rule the carrier is left with
+twenty-six candidates. The proposition does not choose between those
+rules.
+
+```text
+n11-ledger
+shift-keys = 26/1
+affine-units = 12/1
+affine-keys = 312/1
+excluded-affine-pairs = 364/1
+shift-expected-trials = 27/2
+affine-expected-trials = 313/2
+substitution-keys = 403291461126605635584000000/1
+small-substitution-keys = 120/1
+uniform-joint-m0-c0 = 1/8
+uniform-joint-m1-c0 = 3/8
+uniform-cipher = 1/2
+uniform-posterior-m0 = 1/4
+biased-joint-m0-c0 = 3/16
+biased-joint-m1-c0 = 3/16
+biased-cipher-0 = 3/8
+biased-posterior-m0-c0 = 1/2
+biased-joint-m0-c1 = 1/16
+biased-cipher-1 = 5/8
+biased-posterior-m0-c1 = 1/10
+two-time-prior = 1/256
+two-time-posterior = 1/1
+pad-difference = 3/1
+hello-row = 3/1
+inverse-of-5 = 21/1
+inverse-of-9 = 3/1
+inverse-of-25 = 25/1
+known-plaintext-b = 3/1
+```
+
+## Source note for the epigraph
+
+**[S9] Claude E. Shannon.** “Communication Theory of Secrecy Systems.”
+*Bell System Technical Journal* 28(4), 1949, pp. 656–715. The epigraph is
+the sentence that begins the page whose footer is 680, in §10, “Perfect
+Secrecy.” The preceding sentence, which starts at the bottom of the page
+whose footer is 679, defines perfect secrecy by the condition that the a
+posteriori probabilities equal the a priori probabilities independently
+of the values of the cryptograms. A mathematical symbol between “for all”
+and “the a posteriori” in that preceding sentence is set in a distinct
+face and is not part of the epigraph sentence. The epigraph sentence
+itself contains no such symbol. Wording was checked on 2026-10-05 against
+the retypeset PDF hosted by the University of Wisconsin–Madison, the same
+copy used for [S1] and [S8]. This is a retypeset copy, not a scan of the
+1949 printing. No translation is involved. The sentence says that, in the
+case just defined, interception gives the cryptanalyst no information. It
+does not say that every transformed message has that property, and it is
+not a claim that this lesson has established perfect secrecy for any
+construction except the one-time pad under the conditions of Propositions
+N11.18 and N11.19.
+
+Source: <https://pages.cs.wisc.edu/~rist/642-spring-2014/shannon-secrecy.pdf>
+
+Epigraph verification establishes wording and attribution, not publication-
+rights clearance.
+
+## Evidence boundary
+
+N11 adds sixteen exercises with worked answers. The ledger is recomputed
+by `tools/test_book_foundations.py`. That check does not execute Orange.
+The Orange listings are executed by
+`compiler/crates/orangec/tests/book_novice.rs`. A passing test or a
+matching print is one run of one source. Neither check establishes a
+cryptographic security claim, a key-length recommendation, or acceptance
+of a language proposal.
+
+The compiler used to produce the printed values and the three diagnostics
+identifies itself as `orangec 0.0.1 (Orange edition 2026; implemented
+slice S3t)`. The listings use residue types, bounded loops, and tests
+that this binary accepts. Implementation of those slices is not
+acceptance of the proposals, and it adds no cryptographic claim.
+
+The lesson was drafted with Grok 4.7 in Cursor on 2026-10-05 at the
+owner's direction. It is stacked after N10 on
+`book/novice-journeyman-master-opening`. Owner review is pending. No
+deployment claim is made.
