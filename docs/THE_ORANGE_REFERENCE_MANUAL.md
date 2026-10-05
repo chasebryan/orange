@@ -6328,13 +6328,23 @@ where $q$ is the number of encryption queries and $L$ is block length.
 
 ## Part XII: Deductive Proof System & Metatheory (`proof`)
 
-**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
-through slice S3u does not implement `proof` or `orange-check`.
+**Status: Proposed.** This part is not the Current `spec` stratum. The
+`orangec` 0.0.1 binary in this tree reports slice S3t and does not implement
+`proof` or `orange-check`.
 
 ### §76. Propositions as Types and the $\text{Prop}$ Universe
 
-The `proof` stratum implements an intuitionistic dependent type theory formalizing
-the Curry-Howard correspondence:
+**Current rejection.** `proof` is a reserved word. `proof f() {}` is
+`ORC0103`, message `` expected a `spec` or `impl` function declaration ``,
+label `` this token cannot begin a module member ``. `spec proof() -> Int { 1 }`
+is `ORC0101`, message `` expected an identifier for the function name ``,
+token `KW_PROOF`, note `` reserved words cannot be used as names ``. `claim`
+(`KW_CLAIM`) and `game` (`KW_GAME`) are the same pair of diagnostics. There
+is no `Prop` type and no proof term in this tree. The judgments below are
+the proposal recorded for the proof stratum in §4 (D-006, D-007). They are
+not checks `orangec` runs.
+
+The proposed `proof` stratum is an intuitionistic dependent type theory:
 
 $$\text{Propositions-as-Types} \qquad \text{Proofs-as-Terms}$$
 
