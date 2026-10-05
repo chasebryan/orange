@@ -94,6 +94,7 @@ Edition: `2026`
   - [AES, FIPS 197](#aes-fips-197)
   - [HMAC, FIPS 198-1](#hmac-fips-198-1)
   - [HKDF, RFC 5869](#hkdf-rfc-5869)
+  - [AEAD, RFC 8439](#aead-rfc-8439)
 
 - [Part VIII: Implementation Stratum (`impl`) & Memory Model](#part-viii-implementation-stratum-impl--memory-model)
   - [§53. Imperative Execution Semantics and Place Logic](#53-imperative-execution-semantics-and-place-logic)
@@ -2410,8 +2411,9 @@ Poly1305 as RFC 8439 section 2.5 writes it. The listing is accepted by
 Group"), appendix A.3 item 1 (zeros under the zero key), and the clamped $r$
 of the section 2.5.2 key. Section 2.8's AEAD construction, which feeds
 Poly1305 a padded string of additional data, ciphertext, and lengths, is the
-same `mac` on that string. `algorithms/chacha20-poly1305/chacha20-poly1305.or`
-carries those lengths. This section is the field MAC.
+same `mac` on that string. The AEAD section transcribes that construction,
+including the lengths of section 2.8.2 and appendix A.5. This section is the
+field MAC.
 
 #### 1. The Field and the Key (section 2.5)
 
@@ -4073,6 +4075,834 @@ module hkdf_spec {
   test "RFC 5869 A.3 empty salt and empty info" {
     (rfc5869_a_3_prk() == rfc5869_a_3_prk_expected())
       && (rfc5869_a_3_okm() == rfc5869_a_3_okm_expected())
+  }
+}
+```
+
+### AEAD, RFC 8439
+
+AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. ChaCha20 is §50
+and Poly1305 is §52. The listing restates both, because a module has no
+imports. Poly1305 here is arithmetic on `Int` modulo $2^{130} - 5$, with
+`%` after the product: the field of §52. `orangec test` accepts six tests:
+the one-time keys of sections 2.6.2 and 2.8.2, the section 2.8.2 seal, its
+opening, a tag whose last bit is flipped, and appendix A.5.
+
+#### 1. The One-Time Key (section 2.6)
+
+`poly1305_key_gen` keeps the first 32 bytes of ChaCha20 block 0 and discards
+the rest. The ciphertext uses the key stream from counter 1 upward. Block 0
+is not mixed into the ciphertext.
+
+Section 2.6.2 uses the section 2.8.2 key and the nonce
+`000000000001020304050607`. Its one-time key is
+`8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646`.
+
+Section 2.8.2 uses the nonce `070000004041424344454647`. Its one-time key is
+`7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff`.
+
+#### 2. The MAC Input (section 2.8)
+
+$\mathrm{pad16}$ appends zeros until the length is a multiple of 16. The
+MAC input is
+
+$$\mathrm{aad} \parallel \mathrm{pad16}(\mathrm{aad}) \parallel C \parallel \mathrm{pad16}(C) \parallel \mathrm{le64}(|\mathrm{aad}|) \parallel \mathrm{le64}(|C|).$$
+
+The tag is Poly1305 of that string under the one-time key. The listing
+absorbs each 16-byte block as it is formed, rather than allocating one array
+for the whole padded string. The lengths it writes are 12 bytes of
+additional data with 114 bytes of ciphertext (section 2.8.2), 12 bytes with
+265 bytes (appendix A.5: a 256-byte head under counters 1 through 4, then a
+9-byte tail under counter 5), and 8 bytes with 47 bytes. The 47-byte
+function is the length a Wycheproof vector uses. That vector is not a test
+in this section.
+
+#### 3. Seal and Open
+
+The seal is the ciphertext followed by the 16-byte tag. Opening recomputes
+the tag and compares it with the received tag, one byte at a time. The
+plaintext is released only when every byte matches. Otherwise the result is
+zeros of the plaintext's length. The comparison is a `Bool` fold. The spec
+stratum has no timing, so the fold is the accept-or-reject check the tests
+run, and it is not a claim about a constant-time comparison.
+
+#### 4. Known Answers
+
+Section 2.8.2 encrypts the 114-byte sentence that begins "Ladies and
+Gentlemen of the class of '99", under key `80818283` through `9f` and
+additional data `50515253c0c1c2c3c4c5c6c7`. The ciphertext begins
+`d31a8d34648e60db7b86afbc53ef7ec2`. The tag is
+`1ae10b594f09e26a7e902ecbd0600691`. Replacing the last tag byte `0x91` by
+`0x90` makes verification false, and the opened result is 114 zero bytes.
+
+Appendix A.5 uses key `1c9240a5` through `75c0`, nonce
+`000000000102030405060708`, and additional data
+`f33388860000000000004e91`. The tag is
+`eead9d67890cbb22392336fea1851f38`. The plaintext begins "Internet-Drafts
+are draft documents". Its last nine bytes are `726573732e2fe2809d`.
+
+#### 5. Compiler-Checked Transcription
+
+AEAD_XCHACHA20_POLY1305 is in
+`algorithms/chacha20-poly1305/chacha20-poly1305.or`. This listing is
+AEAD_CHACHA20_POLY1305.
+
+```orange
+// AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. ChaCha20
+// (sections 2.1 through 2.4) and Poly1305 (section 2.5) are restated because
+// a module has no imports. The tests are the section 2.6.2 one-time key, the
+// section 2.8.2 seal, open, and rejected tag, and appendix A.5.
+edition 2026;
+module aead_spec {
+  // Section 2.1: the quarter round on four 32-bit words a, b, c, d.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  // Section 2.3: inner_block, a column round QUARTERROUND(0, 4, 8, 12)
+  // through (3, 7, 11, 15) followed by a diagonal round QUARTERROUND(0, 5,
+  // 10, 15) through (3, 4, 9, 14). Each quarter round returns its four words,
+  // and the state is rebuilt as one literal.
+  spec inner_block(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  // Section 2.8: num_to_8_le_bytes, a length as eight little-endian bytes.
+  spec num_to_8_le_bytes(x: Word[64]) -> Word[8]^8 {
+    [
+      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
+      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
+    ]
+  }
+
+  // Section 2.3: the initial state. Words 0 through 3 are the constants
+  // "expand 32-byte k", words 4 through 11 the key, word 12 the block
+  // counter, and words 13 through 15 the nonce, each read little-endian.
+  spec initial_state(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
+    let constants: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      counter, 0, 0, 0,
+    ];
+    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
+      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+    };
+    for i in 0..3 with s: Word[32]^16 = keyed {
+      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
+    }
+  }
+
+  // Section 2.3: the sixteen words serialized as 64 little-endian bytes,
+  // written as one literal: an update of a 64-byte array costs 64 steps,
+  // a literal element one.
+  spec serialize(s: Word[32]^16) -> Word[8]^64 {
+    let b0: Word[8]^4 = le_bytes(s[0]);
+    let b1: Word[8]^4 = le_bytes(s[1]);
+    let b2: Word[8]^4 = le_bytes(s[2]);
+    let b3: Word[8]^4 = le_bytes(s[3]);
+    let b4: Word[8]^4 = le_bytes(s[4]);
+    let b5: Word[8]^4 = le_bytes(s[5]);
+    let b6: Word[8]^4 = le_bytes(s[6]);
+    let b7: Word[8]^4 = le_bytes(s[7]);
+    let b8: Word[8]^4 = le_bytes(s[8]);
+    let b9: Word[8]^4 = le_bytes(s[9]);
+    let b10: Word[8]^4 = le_bytes(s[10]);
+    let b11: Word[8]^4 = le_bytes(s[11]);
+    let b12: Word[8]^4 = le_bytes(s[12]);
+    let b13: Word[8]^4 = le_bytes(s[13]);
+    let b14: Word[8]^4 = le_bytes(s[14]);
+    let b15: Word[8]^4 = le_bytes(s[15]);
+    [
+      b0[0], b0[1], b0[2], b0[3], b1[0], b1[1], b1[2], b1[3],
+      b2[0], b2[1], b2[2], b2[3], b3[0], b3[1], b3[2], b3[3],
+      b4[0], b4[1], b4[2], b4[3], b5[0], b5[1], b5[2], b5[3],
+      b6[0], b6[1], b6[2], b6[3], b7[0], b7[1], b7[2], b7[3],
+      b8[0], b8[1], b8[2], b8[3], b9[0], b9[1], b9[2], b9[3],
+      b10[0], b10[1], b10[2], b10[3], b11[0], b11[1], b11[2], b11[3],
+      b12[0], b12[1], b12[2], b12[3], b13[0], b13[1], b13[2], b13[3],
+      b14[0], b14[1], b14[2], b14[3], b15[0], b15[1], b15[2], b15[3],
+    ]
+  }
+
+  // Section 2.3: chacha20_block. Twenty rounds, that is ten inner blocks,
+  // then the initial state is added word by word and the result serialized.
+  spec chacha20_block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 = initial_state(key, counter, nonce);
+    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { inner_block(s) };
+    serialize(for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] })
+  }
+
+  // Section 2.4: chacha20_encrypt on a 114-byte message, the length of the
+  // section 2.8.2 example, from block `counter` on: the first 64 bytes use
+  // that block and the remaining 50 the next. A message's length is part of
+  // its array type, so each length the vectors need has its own spec.
+  // Decryption is the same function applied to the ciphertext.
+  spec chacha20_encrypt(
+    key: Word[8]^32,
+    counter: Word[32],
+    nonce: Word[8]^12,
+    plaintext: Word[8]^114,
+  ) -> Word[8]^114 {
+    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
+    let second: Word[8]^64 = chacha20_block(key, counter + 1, nonce);
+    let head: Word[8]^114 = for n in 0..64 with c: Word[8]^114 = plaintext {
+      c with [n] = plaintext[n] ^ first[n]
+    };
+    for n in 64..114 with c: Word[8]^114 = head { c with [n] = plaintext[n] ^ second[n - 64] }
+  }
+
+  // Section 2.4 for a 47-byte message, the length of Wycheproof tcId 71:
+  // one block.
+  spec chacha20_encrypt_47(
+    key: Word[8]^32,
+    counter: Word[32],
+    nonce: Word[8]^12,
+    plaintext: Word[8]^47,
+  ) -> Word[8]^47 {
+    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
+    for n in 0..47 with c: Word[8]^47 = plaintext { c with [n] = plaintext[n] ^ first[n] }
+  }
+
+  // Section 2.4 for four whole blocks: the first 256 bytes of the 265-byte
+  // ciphertext of appendix A.5, under block counters counter through
+  // counter + 3.
+  spec chacha20_encrypt_256(
+    key: Word[8]^32,
+    counter: Word[32],
+    nonce: Word[8]^12,
+    plaintext: Word[8]^256,
+  ) -> Word[8]^256 {
+    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
+    let second: Word[8]^64 = chacha20_block(key, counter + 1, nonce);
+    let third: Word[8]^64 = chacha20_block(key, counter + 2, nonce);
+    let fourth: Word[8]^64 = chacha20_block(key, counter + 3, nonce);
+    let c1: Word[8]^256 = for n in 0..64 with c: Word[8]^256 = plaintext {
+      c with [n] = plaintext[n] ^ first[n]
+    };
+    let c2: Word[8]^256 = for n in 64..128 with c: Word[8]^256 = c1 {
+      c with [n] = plaintext[n] ^ second[n - 64]
+    };
+    let c3: Word[8]^256 = for n in 128..192 with c: Word[8]^256 = c2 {
+      c with [n] = plaintext[n] ^ third[n - 128]
+    };
+    for n in 192..256 with c: Word[8]^256 = c3 { c with [n] = plaintext[n] ^ fourth[n - 192] }
+  }
+
+  // Section 2.4 for the 9 bytes that follow those four blocks, under the
+  // block counter of the fifth.
+  spec chacha20_encrypt_9(
+    key: Word[8]^32,
+    counter: Word[32],
+    nonce: Word[8]^12,
+    plaintext: Word[8]^9,
+  ) -> Word[8]^9 {
+    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
+    for n in 0..9 with c: Word[8]^9 = plaintext { c with [n] = plaintext[n] ^ first[n] }
+  }
+
+  // Section 2.5: Poly1305 works modulo the prime p = 2^130 - 5.
+  spec prime() -> Int { 1361129467683753853853498429727072845819 }
+
+  // Section 2.5: clamp(r) clears the top four bits of bytes 3, 7, 11 and 15
+  // and the bottom two bits of bytes 4, 8 and 12. `Int` has no bitwise and,
+  // so the mask 0ffffffc0ffffffc0ffffffc0fffffff is applied to r's bytes.
+  spec clamp(r: Word[8]^16) -> Word[8]^16 {
+    let mask: Word[8]^16 = [
+      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+    ];
+    for i in 0..16 with c: Word[8]^16 = r { c with [i] = r[i] & mask[i] }
+  }
+
+  // Section 2.5.1: le_bytes_to_num on sixteen bytes.
+  spec le_bytes_to_num(b: Word[8]^16) -> Int {
+    for i in 0..16 with n: Int = 0 { n * 256 + (b[15 - i] as Int) }
+  }
+
+  // Section 2.5.1: r is the first half of the key, clamped; s the second.
+  spec poly1305_r(key: Word[8]^32) -> Int {
+    le_bytes_to_num(clamp(for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = key[i] }))
+  }
+
+  spec poly1305_s(key: Word[8]^32) -> Int {
+    le_bytes_to_num(for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = key[16 + i] })
+  }
+
+  // Section 2.5.1: one block enters the accumulator as a = (r * (a + n)) mod p.
+  spec absorb(a: Int, r: Int, n: Int) -> Int { ((a + n) * r) % prime() }
+
+  // Section 2.5.1: the number n of a block is its bytes, little-endian, with
+  // the byte 0x01 immediately above them: above byte 15 of a whole block,
+  // and above the last byte present of a partial final block. Folding a
+  // block's positions from 15 down to 0, a position inside the message
+  // contributes its byte, the position equal to the length contributes the
+  // 0x01, and positions beyond the length contribute nothing.
+  spec block_byte(n: Int, byte: Word[8], position: Int, len: Int) -> Int {
+    if position < len { n * 256 + (byte as Int) }
+    else if position == len { n * 256 + 1 }
+    else { n }
+  }
+
+  // Section 2.5.1: the blocks of one 256-byte segment of a message of `len`
+  // bytes; the segment holds message bytes `first` through `first + 255`.
+  // Block j is absorbed when it begins inside the message; its number starts
+  // from 1 (the 0x01 above byte 15) when the block is whole and from 0, to
+  // receive the 0x01 at the message's length, when it is partial. A message
+  // of at most 256 bytes is one segment.
+  spec poly1305_blocks(a: Int, r: Int, m: Word[8]^256, first: Int, len: Int) -> Int {
+    for j in 0..16 with acc: Int = a {
+      if (first + 16 * j) < len {
+        absorb(acc, r, for i in 0..16 with n: Int = if (first + 16 * j + 16) <= len { 1 } else { 0 } {
+          block_byte(n, m[16 * j + 15 - i], first + 16 * j + 15 - i, len)
+        })
+      } else { acc }
+    }
+  }
+
+  // 256^i for 0 <= i < 16.
+  spec byte_weights() -> Int^16 {
+    [
+      1, 256,
+      65536, 16777216,
+      4294967296, 1099511627776,
+      281474976710656, 72057594037927936,
+      18446744073709551616, 4722366482869645213696,
+      1208925819614629174706176, 309485009821345068724781056,
+      79228162514264337593543950336, 20282409603651670423947251286016,
+      5192296858534827628530496329220096, 1329227995784915872903807060280344576,
+    ]
+  }
+
+  // Section 2.5.1: num_to_16_le_bytes. Byte i is the residue of x / 256^i
+  // modulo 256, so the bytes above the sixteenth are dropped: the
+  // standard's truncation of a + s to 128 bits.
+  spec num_to_16_le_bytes(x: Int) -> Word[8]^16 {
+    let w: Int^16 = byte_weights();
+    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / w[i]) as Word[8] }
+  }
+
+  // Section 2.5.1: poly1305_mac(msg, key) for a message of `len` bytes,
+  // 0 <= len <= 256, carried in the first `len` bytes of `msg`.
+  spec poly1305_mac(msg: Word[8]^256, len: Int, key: Word[8]^32) -> Word[8]^16 {
+    num_to_16_le_bytes(poly1305_blocks(0, poly1305_r(key), msg, 0, len) + poly1305_s(key))
+  }
+
+  // Section 2.5.1 for a message of 256 < len <= 512 bytes in two segments.
+  spec poly1305_mac_long(
+    head: Word[8]^256,
+    tail: Word[8]^256,
+    len: Int,
+    key: Word[8]^32,
+  ) -> Word[8]^16 {
+    let r: Int = poly1305_r(key);
+    num_to_16_le_bytes(
+      poly1305_blocks(poly1305_blocks(0, r, head, 0, len), r, tail, 256, len) + poly1305_s(key),
+    )
+  }
+
+  // Section 2.6: poly1305_key_gen, the first 32 bytes of ChaCha20 block 0
+  // under the key and nonce; the other 32 are discarded.
+  spec poly1305_key_gen(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
+    let block: Word[8]^64 = chacha20_block(key, 0, nonce);
+    for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block[i] }
+  }
+
+  // Section 2.8: the input of the MAC is aad || pad16(aad) || ciphertext ||
+  // pad16(ciphertext) || num_to_8_le_bytes(|aad|) ||
+  // num_to_8_le_bytes(|ciphertext|). Every block of it is whole, so it is
+  // absorbed part by part, sixteen bytes at a time, instead of being laid
+  // out in one array: the padded aad, the ciphertext with its last block
+  // padded, and the block of the two lengths.
+  spec whole_block(b: Word[8]^16) -> Int {
+    for i in 0..16 with n: Int = 1 { n * 256 + (b[15 - i] as Int) }
+  }
+
+  // aad || pad16(aad) for 12 bytes of aad: one block.
+  spec absorb_aad_12(a: Int, r: Int, aad: Word[8]^12) -> Int {
+    absorb(a, r, whole_block([
+      aad[0], aad[1], aad[2], aad[3], aad[4], aad[5], aad[6], aad[7],
+      aad[8], aad[9], aad[10], aad[11], 0, 0, 0, 0,
+    ]))
+  }
+
+  // aad || pad16(aad) for 8 bytes of aad.
+  spec absorb_aad_8(a: Int, r: Int, aad: Word[8]^8) -> Int {
+    absorb(a, r, whole_block([
+      aad[0], aad[1], aad[2], aad[3], aad[4], aad[5], aad[6], aad[7],
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ]))
+  }
+
+  // ciphertext || pad16(ciphertext) for 114 bytes: seven whole blocks and
+  // two bytes padded to an eighth.
+  spec absorb_ciphertext_114(a: Int, r: Int, c: Word[8]^114) -> Int {
+    let whole: Int = for j in 0..7 with acc: Int = a {
+      absorb(acc, r, whole_block(
+        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = c[16 * j + i] },
+      ))
+    };
+    absorb(whole, r, whole_block(
+      for i in 0..2 with b: Word[8]^16 = [0; 16] { b with [i] = c[112 + i] },
+    ))
+  }
+
+  // ciphertext || pad16(ciphertext) for 47 bytes: two whole blocks and
+  // fifteen bytes padded to a third.
+  spec absorb_ciphertext_47(a: Int, r: Int, c: Word[8]^47) -> Int {
+    let whole: Int = for j in 0..2 with acc: Int = a {
+      absorb(acc, r, whole_block(
+        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = c[16 * j + i] },
+      ))
+    };
+    absorb(whole, r, whole_block(
+      for i in 0..15 with b: Word[8]^16 = [0; 16] { b with [i] = c[32 + i] },
+    ))
+  }
+
+  // ciphertext || pad16(ciphertext) for the 265 bytes of appendix A.5, a
+  // 256-byte head and a 9-byte tail: sixteen whole blocks, then the nine
+  // bytes padded to a seventeenth.
+  spec absorb_ciphertext_265(a: Int, r: Int, head: Word[8]^256, tail: Word[8]^9) -> Int {
+    let whole: Int = for j in 0..16 with acc: Int = a {
+      absorb(acc, r, whole_block(
+        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = head[16 * j + i] },
+      ))
+    };
+    absorb(whole, r, whole_block(
+      for i in 0..9 with b: Word[8]^16 = [0; 16] { b with [i] = tail[i] },
+    ))
+  }
+
+  // num_to_8_le_bytes(|aad|) || num_to_8_le_bytes(|ciphertext|): the last
+  // block.
+  spec absorb_lengths(a: Int, r: Int, aad_len: Word[64], ciphertext_len: Word[64]) -> Int {
+    let al: Word[8]^8 = num_to_8_le_bytes(aad_len);
+    let cl: Word[8]^8 = num_to_8_le_bytes(ciphertext_len);
+    absorb(a, r, whole_block([
+      al[0], al[1], al[2], al[3], al[4], al[5], al[6], al[7],
+      cl[0], cl[1], cl[2], cl[3], cl[4], cl[5], cl[6], cl[7],
+    ]))
+  }
+
+  // Section 2.8: the tag, poly1305_mac of the MAC input under the one-time
+  // key, for 12 bytes of aad and 114 of ciphertext.
+  spec aead_tag(otk: Word[8]^32, aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^16 {
+    let r: Int = poly1305_r(otk);
+    let a: Int = absorb_ciphertext_114(absorb_aad_12(0, r, aad), r, ciphertext);
+    num_to_16_le_bytes(absorb_lengths(a, r, 12, 114) + poly1305_s(otk))
+  }
+
+  // Section 2.8 for 8 bytes of aad and 47 of ciphertext.
+  spec aead_tag_8_47(otk: Word[8]^32, aad: Word[8]^8, ciphertext: Word[8]^47) -> Word[8]^16 {
+    let r: Int = poly1305_r(otk);
+    let a: Int = absorb_ciphertext_47(absorb_aad_8(0, r, aad), r, ciphertext);
+    num_to_16_le_bytes(absorb_lengths(a, r, 8, 47) + poly1305_s(otk))
+  }
+
+  // Section 2.8 for 12 bytes of aad and 265 of ciphertext.
+  spec aead_tag_12_265(
+    otk: Word[8]^32,
+    aad: Word[8]^12,
+    head: Word[8]^256,
+    tail: Word[8]^9,
+  ) -> Word[8]^16 {
+    let r: Int = poly1305_r(otk);
+    let a: Int = absorb_ciphertext_265(absorb_aad_12(0, r, aad), r, head, tail);
+    num_to_16_le_bytes(absorb_lengths(a, r, 12, 265) + poly1305_s(otk))
+  }
+
+  // Section 2.8: chacha20_aead_encrypt. The 96-bit nonce is the constant
+  // and the IV of the standard already joined. The one-time key comes from
+  // block 0, the ciphertext from block 1 on, and the result is the
+  // ciphertext followed by the 16-byte tag.
+  spec chacha20_aead_encrypt(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    plaintext: Word[8]^114,
+  ) -> Word[8]^130 {
+    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
+    let ciphertext: Word[8]^114 = chacha20_encrypt(key, 1, nonce, plaintext);
+    let tag: Word[8]^16 = aead_tag(otk, aad, ciphertext);
+    let sealed: Word[8]^130 = for i in 0..114 with out: Word[8]^130 = [0; 130] {
+      out with [i] = ciphertext[i]
+    };
+    for i in 0..16 with out: Word[8]^130 = sealed { out with [114 + i] = tag[i] }
+  }
+
+  // Section 2.8 for 8 bytes of aad and a 47-byte plaintext.
+  spec chacha20_aead_encrypt_8_47(
+    aad: Word[8]^8,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    plaintext: Word[8]^47,
+  ) -> Word[8]^63 {
+    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
+    let ciphertext: Word[8]^47 = chacha20_encrypt_47(key, 1, nonce, plaintext);
+    let tag: Word[8]^16 = aead_tag_8_47(otk, aad, ciphertext);
+    let sealed: Word[8]^63 = for i in 0..47 with out: Word[8]^63 = [0; 63] {
+      out with [i] = ciphertext[i]
+    };
+    for i in 0..16 with out: Word[8]^63 = sealed { out with [47 + i] = tag[i] }
+  }
+
+  // Section 2.8: decryption recomputes the tag over the received ciphertext
+  // and compares it with the received tag, byte by byte.
+  spec chacha20_aead_verify(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    sealed: Word[8]^130,
+  ) -> Bool {
+    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
+    let ciphertext: Word[8]^114 = for i in 0..114 with c: Word[8]^114 = [0; 114] {
+      c with [i] = sealed[i]
+    };
+    let tag: Word[8]^16 = aead_tag(otk, aad, ciphertext);
+    for i in 0..16 with same: Bool = true { same && (tag[i] == sealed[114 + i]) }
+  }
+
+  // Section 2.8: chacha20_aead_decrypt. The plaintext is released only when
+  // the tag verifies; otherwise the result is all zeros, and the verdict of
+  // chacha20_aead_verify is false.
+  spec chacha20_aead_decrypt(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    sealed: Word[8]^130,
+  ) -> Word[8]^114 {
+    let ciphertext: Word[8]^114 = for i in 0..114 with c: Word[8]^114 = [0; 114] {
+      c with [i] = sealed[i]
+    };
+    if chacha20_aead_verify(aad, key, nonce, sealed) {
+      chacha20_encrypt(key, 1, nonce, ciphertext)
+    } else {
+      [0; 114]
+    }
+  }
+
+  // Section 2.8 for the 265-byte ciphertext of appendix A.5, passed as a
+  // 256-byte head and a 9-byte tail with its tag apart. The tag check is
+  // one spec and the two parts of the plaintext are two, each released only
+  // when the tag verifies.
+  spec chacha20_aead_verify_265(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    head: Word[8]^256,
+    tail: Word[8]^9,
+    tag: Word[8]^16,
+  ) -> Bool {
+    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
+    let computed: Word[8]^16 = aead_tag_12_265(otk, aad, head, tail);
+    for i in 0..16 with same: Bool = true { same && (computed[i] == tag[i]) }
+  }
+
+  spec chacha20_aead_decrypt_265_head(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    head: Word[8]^256,
+    tail: Word[8]^9,
+    tag: Word[8]^16,
+  ) -> Word[8]^256 {
+    if chacha20_aead_verify_265(aad, key, nonce, head, tail, tag) {
+      chacha20_encrypt_256(key, 1, nonce, head)
+    } else {
+      [0; 256]
+    }
+  }
+
+  spec chacha20_aead_decrypt_265_tail(
+    aad: Word[8]^12,
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    head: Word[8]^256,
+    tail: Word[8]^9,
+    tag: Word[8]^16,
+  ) -> Word[8]^9 {
+    if chacha20_aead_verify_265(aad, key, nonce, head, tail, tag) {
+      chacha20_encrypt_9(key, 5, nonce, tail)
+    } else {
+      [0; 9]
+    }
+  }
+
+  spec rfc8439_2_8_2_key() -> Word[8]^32 {
+    [
+      0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+      0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+    ]
+  }
+
+  spec rfc8439_2_8_2_nonce() -> Word[8]^12 { [
+      0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+    ] }
+
+  spec rfc8439_2_8_2_aad() -> Word[8]^12 { [
+      0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+    ] }
+
+  spec sunscreen() -> Word[8]^114 {
+    [
+      0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x47,
+      0x65, 0x6e, 0x74, 0x6c, 0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20,
+      0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x20, 0x6f, 0x66,
+      0x20, 0x27, 0x39, 0x39, 0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
+      0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66, 0x65, 0x72, 0x20, 0x79,
+      0x6f, 0x75, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6f, 0x6e, 0x65, 0x20,
+      0x74, 0x69, 0x70, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x74, 0x68, 0x65, 0x20,
+      0x66, 0x75, 0x74, 0x75, 0x72, 0x65, 0x2c, 0x20, 0x73, 0x75, 0x6e, 0x73,
+      0x63, 0x72, 0x65, 0x65, 0x6e, 0x20, 0x77, 0x6f, 0x75, 0x6c, 0x64, 0x20,
+      0x62, 0x65, 0x20, 0x69, 0x74, 0x2e,
+    ]
+  }
+
+  // RFC 8439 section 2.6.2: the one-time key under the key 80 81 ... 9f and
+  // the nonce 00 00 00 00 00 01 02 03 04 05 06 07.
+  spec rfc8439_2_6_2() -> Word[8]^32 {
+    poly1305_key_gen(rfc8439_2_8_2_key(), [
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    ])
+  }
+
+  spec rfc8439_2_6_2_expected() -> Word[8]^32 {
+    [
+      0x8a, 0xd5, 0xa0, 0x8b, 0x90, 0x5f, 0x81, 0xcc, 0x81, 0x50, 0x40, 0x27, 0x4a, 0xb2, 0x94, 0x71,
+      0xa8, 0x33, 0xb6, 0x37, 0xe3, 0xfd, 0x0d, 0xa5, 0x08, 0xdb, 0xb8, 0xe2, 0xfd, 0xd1, 0xa6, 0x46,
+    ]
+  }
+
+  // RFC 8439 section 2.8.2: sealing the 114-byte sunscreen text; the
+  // ciphertext followed by the tag 1a e1 0b 59 ... 06 91.
+  spec rfc8439_2_8_2() -> Word[8]^130 {
+    chacha20_aead_encrypt(rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), sunscreen())
+  }
+
+  spec rfc8439_2_8_2_expected() -> Word[8]^130 {
+    [
+      0xd3, 0x1a, 0x8d, 0x34, 0x64, 0x8e, 0x60, 0xdb, 0x7b, 0x86, 0xaf, 0xbc, 0x53, 0xef, 0x7e, 0xc2,
+      0xa4, 0xad, 0xed, 0x51, 0x29, 0x6e, 0x08, 0xfe, 0xa9, 0xe2, 0xb5, 0xa7, 0x36, 0xee, 0x62, 0xd6,
+      0x3d, 0xbe, 0xa4, 0x5e, 0x8c, 0xa9, 0x67, 0x12, 0x82, 0xfa, 0xfb, 0x69, 0xda, 0x92, 0x72, 0x8b,
+      0x1a, 0x71, 0xde, 0x0a, 0x9e, 0x06, 0x0b, 0x29, 0x05, 0xd6, 0xa5, 0xb6, 0x7e, 0xcd, 0x3b, 0x36,
+      0x92, 0xdd, 0xbd, 0x7f, 0x2d, 0x77, 0x8b, 0x8c, 0x98, 0x03, 0xae, 0xe3, 0x28, 0x09, 0x1b, 0x58,
+      0xfa, 0xb3, 0x24, 0xe4, 0xfa, 0xd6, 0x75, 0x94, 0x55, 0x85, 0x80, 0x8b, 0x48, 0x31, 0xd7, 0xbc,
+      0x3f, 0xf4, 0xde, 0xf0, 0x8e, 0x4b, 0x7a, 0x9d, 0xe5, 0x76, 0xd2, 0x65, 0x86, 0xce, 0xc6, 0x4b,
+      0x61, 0x16, 0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60,
+      0x06, 0x91,
+    ]
+  }
+
+  // RFC 8439 section 2.8.2 opened: the tag of the published ciphertext
+  // verifies, and the decryption is the sunscreen text.
+  spec rfc8439_2_8_2_verify() -> Bool {
+    chacha20_aead_verify(
+      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), rfc8439_2_8_2_expected(),
+    )
+  }
+
+  spec rfc8439_2_8_2_verify_expected() -> Bool { true }
+
+  spec rfc8439_2_8_2_open() -> Word[8]^114 {
+    chacha20_aead_decrypt(
+      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), rfc8439_2_8_2_expected(),
+    )
+  }
+
+  spec rfc8439_2_8_2_open_expected() -> Word[8]^114 { sunscreen() }
+
+  // The published ciphertext with the last bit of its tag flipped: the
+  // verdict is false and the decryption withholds the plaintext. A check of
+  // the tag comparison, not a published vector.
+  spec rfc8439_2_8_2_tampered_verify() -> Bool {
+    chacha20_aead_verify(
+      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(),
+      rfc8439_2_8_2_expected() with [129] = 0x90,
+    )
+  }
+
+  spec rfc8439_2_8_2_tampered_verify_expected() -> Bool { false }
+
+  // RFC 8439 appendix A.5: the 265-byte ciphertext, its 12-byte aad and
+  // its tag under the key 1c 92 40 a5 ... and the nonce 00 00 00 00 01 02
+  // ... 08. The ciphertext is a 256-byte head and a 9-byte tail.
+  spec rfc8439_a5_key() -> Word[8]^32 {
+    [
+      0x1c, 0x92, 0x40, 0xa5, 0xeb, 0x55, 0xd3, 0x8a, 0xf3, 0x33, 0x88, 0x86, 0x04, 0xf6, 0xb5, 0xf0,
+      0x47, 0x39, 0x17, 0xc1, 0x40, 0x2b, 0x80, 0x09, 0x9d, 0xca, 0x5c, 0xbc, 0x20, 0x70, 0x75, 0xc0,
+    ]
+  }
+
+  spec rfc8439_a5_nonce() -> Word[8]^12 { [
+      0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    ] }
+
+  spec rfc8439_a5_aad() -> Word[8]^12 { [
+      0xf3, 0x33, 0x88, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4e, 0x91,
+    ] }
+
+  spec rfc8439_a5_ciphertext_head() -> Word[8]^256 {
+    [
+      0x64, 0xa0, 0x86, 0x15, 0x75, 0x86, 0x1a, 0xf4, 0x60, 0xf0, 0x62, 0xc7, 0x9b, 0xe6, 0x43, 0xbd,
+      0x5e, 0x80, 0x5c, 0xfd, 0x34, 0x5c, 0xf3, 0x89, 0xf1, 0x08, 0x67, 0x0a, 0xc7, 0x6c, 0x8c, 0xb2,
+      0x4c, 0x6c, 0xfc, 0x18, 0x75, 0x5d, 0x43, 0xee, 0xa0, 0x9e, 0xe9, 0x4e, 0x38, 0x2d, 0x26, 0xb0,
+      0xbd, 0xb7, 0xb7, 0x3c, 0x32, 0x1b, 0x01, 0x00, 0xd4, 0xf0, 0x3b, 0x7f, 0x35, 0x58, 0x94, 0xcf,
+      0x33, 0x2f, 0x83, 0x0e, 0x71, 0x0b, 0x97, 0xce, 0x98, 0xc8, 0xa8, 0x4a, 0xbd, 0x0b, 0x94, 0x81,
+      0x14, 0xad, 0x17, 0x6e, 0x00, 0x8d, 0x33, 0xbd, 0x60, 0xf9, 0x82, 0xb1, 0xff, 0x37, 0xc8, 0x55,
+      0x97, 0x97, 0xa0, 0x6e, 0xf4, 0xf0, 0xef, 0x61, 0xc1, 0x86, 0x32, 0x4e, 0x2b, 0x35, 0x06, 0x38,
+      0x36, 0x06, 0x90, 0x7b, 0x6a, 0x7c, 0x02, 0xb0, 0xf9, 0xf6, 0x15, 0x7b, 0x53, 0xc8, 0x67, 0xe4,
+      0xb9, 0x16, 0x6c, 0x76, 0x7b, 0x80, 0x4d, 0x46, 0xa5, 0x9b, 0x52, 0x16, 0xcd, 0xe7, 0xa4, 0xe9,
+      0x90, 0x40, 0xc5, 0xa4, 0x04, 0x33, 0x22, 0x5e, 0xe2, 0x82, 0xa1, 0xb0, 0xa0, 0x6c, 0x52, 0x3e,
+      0xaf, 0x45, 0x34, 0xd7, 0xf8, 0x3f, 0xa1, 0x15, 0x5b, 0x00, 0x47, 0x71, 0x8c, 0xbc, 0x54, 0x6a,
+      0x0d, 0x07, 0x2b, 0x04, 0xb3, 0x56, 0x4e, 0xea, 0x1b, 0x42, 0x22, 0x73, 0xf5, 0x48, 0x27, 0x1a,
+      0x0b, 0xb2, 0x31, 0x60, 0x53, 0xfa, 0x76, 0x99, 0x19, 0x55, 0xeb, 0xd6, 0x31, 0x59, 0x43, 0x4e,
+      0xce, 0xbb, 0x4e, 0x46, 0x6d, 0xae, 0x5a, 0x10, 0x73, 0xa6, 0x72, 0x76, 0x27, 0x09, 0x7a, 0x10,
+      0x49, 0xe6, 0x17, 0xd9, 0x1d, 0x36, 0x10, 0x94, 0xfa, 0x68, 0xf0, 0xff, 0x77, 0x98, 0x71, 0x30,
+      0x30, 0x5b, 0xea, 0xba, 0x2e, 0xda, 0x04, 0xdf, 0x99, 0x7b, 0x71, 0x4d, 0x6c, 0x6f, 0x2c, 0x29,
+    ]
+  }
+
+  spec rfc8439_a5_ciphertext_tail() -> Word[8]^9 { [
+      0xa6, 0xad, 0x5c, 0xb4, 0x02, 0x2b, 0x02, 0x70, 0x9b,
+    ] }
+
+  spec rfc8439_a5_tag() -> Word[8]^16 {
+    [
+      0xee, 0xad, 0x9d, 0x67, 0x89, 0x0c, 0xbb, 0x22, 0x39, 0x23, 0x36, 0xfe, 0xa1, 0x85, 0x1f, 0x38,
+    ]
+  }
+
+  spec rfc8439_a5_verify() -> Bool {
+    chacha20_aead_verify_265(
+      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
+      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+    )
+  }
+
+  spec rfc8439_a5_verify_expected() -> Bool { true }
+
+  // The plaintext of appendix A.5, the Internet-Drafts boilerplate, released
+  // by the decryption in the same two parts.
+  spec rfc8439_a5_head() -> Word[8]^256 {
+    chacha20_aead_decrypt_265_head(
+      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
+      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+    )
+  }
+
+  spec rfc8439_a5_head_expected() -> Word[8]^256 {
+    [
+      0x49, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x73, 0x20,
+      0x61, 0x72, 0x65, 0x20, 0x64, 0x72, 0x61, 0x66, 0x74, 0x20, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65,
+      0x6e, 0x74, 0x73, 0x20, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x61, 0x20,
+      0x6d, 0x61, 0x78, 0x69, 0x6d, 0x75, 0x6d, 0x20, 0x6f, 0x66, 0x20, 0x73, 0x69, 0x78, 0x20, 0x6d,
+      0x6f, 0x6e, 0x74, 0x68, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x6d, 0x61, 0x79, 0x20, 0x62, 0x65,
+      0x20, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x2c, 0x20, 0x72, 0x65, 0x70, 0x6c, 0x61, 0x63,
+      0x65, 0x64, 0x2c, 0x20, 0x6f, 0x72, 0x20, 0x6f, 0x62, 0x73, 0x6f, 0x6c, 0x65, 0x74, 0x65, 0x64,
+      0x20, 0x62, 0x79, 0x20, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x20, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65,
+      0x6e, 0x74, 0x73, 0x20, 0x61, 0x74, 0x20, 0x61, 0x6e, 0x79, 0x20, 0x74, 0x69, 0x6d, 0x65, 0x2e,
+      0x20, 0x49, 0x74, 0x20, 0x69, 0x73, 0x20, 0x69, 0x6e, 0x61, 0x70, 0x70, 0x72, 0x6f, 0x70, 0x72,
+      0x69, 0x61, 0x74, 0x65, 0x20, 0x74, 0x6f, 0x20, 0x75, 0x73, 0x65, 0x20, 0x49, 0x6e, 0x74, 0x65,
+      0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x73, 0x20, 0x61, 0x73, 0x20, 0x72,
+      0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x20, 0x6d, 0x61, 0x74, 0x65, 0x72, 0x69, 0x61,
+      0x6c, 0x20, 0x6f, 0x72, 0x20, 0x74, 0x6f, 0x20, 0x63, 0x69, 0x74, 0x65, 0x20, 0x74, 0x68, 0x65,
+      0x6d, 0x20, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x20, 0x74, 0x68, 0x61, 0x6e, 0x20, 0x61, 0x73, 0x20,
+      0x2f, 0xe2, 0x80, 0x9c, 0x77, 0x6f, 0x72, 0x6b, 0x20, 0x69, 0x6e, 0x20, 0x70, 0x72, 0x6f, 0x67,
+    ]
+  }
+
+  spec rfc8439_a5_tail() -> Word[8]^9 {
+    chacha20_aead_decrypt_265_tail(
+      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
+      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+    )
+  }
+
+  spec rfc8439_a5_tail_expected() -> Word[8]^9 { [
+      0x72, 0x65, 0x73, 0x73, 0x2e, 0x2f, 0xe2, 0x80, 0x9d,
+    ] }
+
+  // RFC 8439 section 2.8.2: the one-time key is the first 32 bytes of
+  // ChaCha20 block 0 under that section's key and nonce.
+  spec rfc8439_2_8_2_otk() -> Word[8]^32 {
+    poly1305_key_gen(rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce())
+  }
+
+  spec rfc8439_2_8_2_otk_expected() -> Word[8]^32 {
+    [
+      0x7b, 0xac, 0x2b, 0x25, 0x2d, 0xb4, 0x47, 0xaf, 0x09, 0xb6, 0x7a, 0x55, 0xa4, 0xe9, 0x55, 0x84,
+      0x0a, 0xe1, 0xd6, 0x73, 0x10, 0x75, 0xd9, 0xeb, 0x2a, 0x93, 0x75, 0x78, 0x3e, 0xd5, 0x53, 0xff,
+    ]
+  }
+
+  // The same ciphertext with the last tag byte 0x91 replaced by 0x90.
+  // Decryption withholds the plaintext.
+  spec rfc8439_2_8_2_tampered_open() -> Word[8]^114 {
+    chacha20_aead_decrypt(
+      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(),
+      rfc8439_2_8_2_expected() with [129] = 0x90,
+    )
+  }
+
+  spec rfc8439_2_8_2_tampered_open_expected() -> Word[8]^114 { [0; 114] }
+
+
+  test "RFC 8439 section 2.6.2 one-time key" {
+    rfc8439_2_6_2() == rfc8439_2_6_2_expected()
+  }
+
+  test "RFC 8439 section 2.8.2 one-time key" {
+    rfc8439_2_8_2_otk() == rfc8439_2_8_2_otk_expected()
+  }
+
+  test "RFC 8439 section 2.8.2 seal" {
+    rfc8439_2_8_2() == rfc8439_2_8_2_expected()
+  }
+
+  test "RFC 8439 section 2.8.2 open" {
+    rfc8439_2_8_2_verify() && (rfc8439_2_8_2_open() == rfc8439_2_8_2_open_expected())
+  }
+
+  test "RFC 8439 section 2.8.2 rejects a flipped tag bit" {
+    (rfc8439_2_8_2_tampered_verify() == false)
+      && (rfc8439_2_8_2_tampered_open() == rfc8439_2_8_2_tampered_open_expected())
+  }
+
+  test "RFC 8439 appendix A.5" {
+    rfc8439_a5_verify()
+      && (rfc8439_a5_head() == rfc8439_a5_head_expected())
+      && (rfc8439_a5_tail() == rfc8439_a5_tail_expected())
   }
 }
 ```
