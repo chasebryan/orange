@@ -1134,6 +1134,784 @@ on the inputs the test wrote. The word Verified, when it appears
 in this lesson, is the RFC Editor's status on an erratum record.
 It is not a name for the Match.
 
+The integers the listings compute, and the integers the two
+editions print, are one ledger. Every line is an integer already
+derived above.
+
+```text
+j2-ledger
+blocks = 4294967295
+block-bytes = 64
+p-max = 274877906880
+p-max-old = 247877906880
+p-gap = 27000000000
+tag-octets = 16
+c-max = 274877906896
+c-max-old = 247877906896
+length-7539 = 4
+length-8439 = 8
+two-33 = 8589934592
+step1 = 6442450944
+root = 6074000999
+stable-quot = 6074001000
+iv-word = 1779033703
+sha1-word = 1732584193
+step1-quot = 5726623061
+step1-rem = 2147483648
+prose-bytes = 8
+code-bits = 32
+```
+
+### J2.12 What changes when the pin changes
+
+A pin is a choice. Changing it changes some values and leaves others
+standing. The lists below are the choices this lesson actually made,
+and the values that move or stay. Each row is something already
+checked against the file it names.
+
+**From the uncorrected May 2015 text of RFC 7539 §2.8 to the June
+2018 text of RFC 8439 §2.8.** The product `(2^32 - 1) * 64` does
+not change, because the note in both files describes that product.
+The printed total changes, from `247,877,906,880` to
+`274,877,906,880`. `C_MAX` changes by the same gap, because both
+files add the same tag length. The pseudocode width of each length
+field changes from `num_to_4_le_bytes` to `num_to_8_le_bytes`. The
+sentence that calls the output twofold changes to the sentence that
+calls it a concatenation. The four constant words of §2.3 do not
+change. A test of those words, after you change the pin, still
+passes, and the pass is not evidence that you changed the pin.
+
+**Inside RFC 7539, from the prose of §2.8 to the pseudocode of
+§2.8.1.** Both files, May 2015 and June 2018, say that the length
+of the additional data goes into the MAC input as a 64-bit
+little-endian integer, and that the length of the ciphertext does
+too. Sixty-four bits are eight bytes, because a byte in this
+arithmetic is eight bits: `64 / 8 = 8`. Four bytes are thirty-two
+bits: `4 * 8 = 32`. The May 2015 pseudocode appends each length
+with `num_to_4_le_bytes`, which is a 32-bit field sitting where the
+same section's prose asked for a 64-bit field. That is a
+disagreement inside one edition, found before any comparison with
+RFC 8439. Erratum 4371 is that disagreement, and its note says the
+lengths should be 64-bit, hence 8 bytes, not 4. The June 2018
+pseudocode uses `num_to_8_le_bytes`, which matches the prose both
+files already printed. Listing J2.7 computes the two widths. It
+does not search either file for the function name. The titles are
+the reader's pin, and they are only as good as the reading that
+put 64 and 4 into the source.
+
+**Listing J2.7 — `width.or`**
+
+```orange
+edition 2026;
+module width {
+  spec prose_bytes() -> Int { 64 / 8 }
+  spec code_bits() -> Int { 4 * 8 }
+  test "RFC 8439 2.8 prose, 64-bit length" { prose_bytes() == 8 }
+  test "RFC 7539 2.8.1 pseudocode width" { code_bits() == 32 }
+}
+```
+
+```sh
+./compiler/target/debug/orangec check width.or
+./compiler/target/debug/orangec eval width.or
+./compiler/target/debug/orangec test width.or
+```
+
+Check is silent.
+
+**Expected evaluation output:**
+
+```text
+width::prose_bytes: Int = 8
+width::code_bits: Int = 32
+```
+
+**Test report:**
+
+```text
+test "RFC 8439 2.8 prose, 64-bit length" ... ok
+test "RFC 7539 2.8.1 pseudocode width" ... ok
+2 tests: 2 passed, 0 failed
+```
+
+Both tests pass, and they do not agree with each other about a
+single width. Eight bytes is not thirty-two bits. The file is
+allowed to contain both tests because they are different `Bool`s.
+A reader who sees `2 passed` and concludes that RFC 7539 and RFC
+8439 describe the same length field has treated two passes as one
+pin. They are two pins. The first matches the prose of §2.8 in
+the June 2018 file, and it also matches the prose of §2.8 in the
+May 2015 file, which says “64-bit” as well. The second matches the
+arithmetic of a 4-byte field. It passes whether or not the source
+text contains the characters `num_to_4_le_bytes`. The title is
+what connects the `4` to RFC 7539 §2.8.1. Take the title away and
+the test is only `4 * 8 = 32`.
+
+**From RFC 8439's layout to the layout the RFC calls the original.**
+Section 2.3 of RFC 8439, and the same section of RFC 7539, says
+that the original ChaCha had a 64-bit nonce and a 64-bit block
+count, and that this document modifies that, for consistency with
+§3.2 of RFC 5116. This lesson does not open RFC 5116, and it does
+not open the 2008 paper. N12 already separated that paper from the
+RFC's input sizes. What the pin change does, on the RFC's own
+telling, is move bits between the counter and the nonce. The four
+constant words the RFC prints for its 256-bit state are not the
+thing that sentence says it modified. Listing J2.2 therefore
+survives the layout change and still does not check the layout.
+`algorithms/chacha20/chacha20.or` puts the counter in one `Word[32]`
+and says, in the comment on `initial_state`, that this is the RFC
+8439 width. That comment is the pin of the layout. Deleting the
+comment would leave the four constants and a 32-bit parameter, and
+a later reader would have to recover the pin from somewhere else.
+
+**From FIPS 180-4 §5.3.3 to the neighboring addresses.** Moving to
+§5.3.1 changes the first word, from `6a09e667` to `67452301`, and
+Listing J2.5 fails. Moving to §5.3.5 keeps the leading hex digits
+`6a09e667` and adds `f3bcc908`, because that subsection's first
+word is 64 bits wide. A test written against the 32-bit word still
+passes if you only check the first eight hex digits and forget the
+width. Moving from August 2015 to October 2008 does not, on the
+contents, renumber §5.3.3 or §6.2.2. It does change the title of
+§5.2, and it does omit the sections the later standard added. The
+date still belongs on the citation. The digits of those two
+SHA-256 addresses are not a substitute for it.
+
+**From Figure 7 of the November 26, 2001 text to Figure 7 of the
+May 9, 2023 update.** The number is the same and the referent is
+not. The S-box byte at `xy = 00` stays `63`, which is why a test
+of that byte does not notice the move. The comment in `aes.or`
+notices the move by writing both locators. A pin that keeps only
+one of them is the pin of one edition.
+
+**From a real file digest to the Gate 0 placeholder.** Replacing
+the sixty-four hex digits of the RFC 8439 plain text with
+sixty-four `a` characters changes the pin from a file that was
+hashed to a value the fixture itself calls synthetic. The integer
+`274877906880` can stay in a test while the digest is swapped.
+The test will still pass. The acquisition will have been lost.
+Outcome 5 is that sentence.
+
+### J2.13 A copied word is not a derived word
+
+Section 5.3.3 prints eight words. This lesson derived the first.
+The other seven are copies. The difference is the record, not the
+type of the word. A copy can be exact and still be a copy. Calling
+it a derivation would be a false role, which is Assumption J2.5
+applied to the reader's own work.
+
+The eight words, as the August 2015 text prints them, are:
+
+```text
+6a09e667
+bb67ae85
+3c6ef372
+a54ff53a
+510e527f
+9b05688c
+1f83d9ab
+5be0cd19
+```
+
+The publication says they are the first thirty-two bits of the
+fractional parts of the square roots of the first eight primes.
+Those primes are 2, 3, 5, 7, 11, 13, 17, and 19, in that order.
+The first prime is the one Listing J2.4 uses. This page does not
+run the recurrence for 3, or for any later prime. A test that
+placed `0xbb67ae85` in a source and titled it “derived as §J2.7
+derived the first word” would be false. The hex would still match
+the publication. The title would not. The compiler would pass a
+comparison of the literal with itself, or of a copied literal with
+the same literal written twice, and the pass would not make the
+title true.
+
+`algorithms/sha2/sha2.or` stores all eight in `initial_hash_256`,
+under a comment that names §5.3.3 and the square-root description.
+The comment is the right shape for a copy: it says where the words
+came from. It does not, by itself, show the arithmetic of each
+square root. A reviewer who wants the derivation of the first word
+has it in this lesson. A reviewer who wants the other seven has to
+do them, or has to accept them as copies from the publication,
+with that acceptance written down. Both are honest. A silent
+mixture, in which five are copies and three are derivations and
+the file says “derived” once for the whole array, is not.
+
+The same section's neighbors are copies this lesson also did not
+derive. Section 5.3.1's first word is `67452301`, used only as the
+wrong expected value in Listing J2.5. Section 5.3.2's first word,
+for SHA-224, is printed `c1059ed8`. Section 5.3.5's first word is
+the 64-bit word `6a09e667f3bcc908`. Each of those was read off the
+August 2015 page and checked against the extract of that page.
+None of them was produced by the recurrence. The record for each
+is: copied from that subsection, on that date, from the file whose
+digest is in §J2.10. If a later erratum changed one of them, the
+copy would be stale, and the digest would be how you noticed you
+were holding an old file. The recurrence for `sqrt(2)` would not
+notice an erratum in the seventh word.
+
+An audit card is the pin written as fields, one value at a time.
+Two cards follow. They are the cards for the two integers the
+failing tests turned on. They are not the Gate 0 fixture.
+
+Card for `274877906880`. Issuer: IRTF, plain text from the RFC
+Editor. Identifier: RFC 8439. Edition and date: June 2018.
+Obsoletes: RFC 7539, May 2015. Retrieved: 2026-10-05. URI:
+`https://www.rfc-editor.org/rfc/rfc8439.txt`. File digest: the
+SHA-256 in §J2.10 beginning `25bef70f`. Clause: §2.8, the sentence
+that gives the total of `(2^32 - 1)` blocks of 64 bytes, and the
+`P_MAX` bullet that prints the same integer. Role: output of the
+multiplication in that sentence. Not an input. Errata: 4858 and
+4861, Verified; 4371 consulted and not tested by this integer.
+Disagreement recorded: RFC 7539 prints `247877906880` for the same
+sentence. What the Orange test establishes: `bytes()` denotes the
+June 2018 integer. What it does not establish: the 8-byte length
+field, the nonce sentence, the AEAD construction, the file digest.
+
+Card for `1779033703`, which is `6a09e667`. Issuer: NIST.
+Identifier: FIPS PUB 180-4. Edition and date: August 2015. DOI:
+`10.6028/NIST.FIPS.180-4`. Supersedes, by the publication's own
+announcement: FIPS 180-3, October 2008. Retrieved: 2026-10-05.
+File digest: the SHA-256 in §J2.10 beginning `0455b406`. Clause:
+§5.3.3, the first of the eight words. Role: a constant the section
+defines, derived here from the section's own description, the
+first thirty-two bits of the fractional part of `sqrt(2)`. The
+other seven words on the same page are copies, not this
+derivation. Neighbor that must not be substituted: §5.3.1's
+`67452301`. Wider word that must not be truncated without a
+record: §5.3.5's `6a09e667f3bcc908`. What the Orange test
+establishes: the recurrence's result equals the printed hex. What
+it does not establish: §6.2.2, the other seven words, SHA-224's
+initial value, or that October 2008 printed a different hex at
+§5.3.3. The contents of October 2008 use the same section number.
+This card does not claim the hex was compared word-for-word with
+that earlier PDF.
+
+A card that cannot fill the clause, the role, and the edition is
+not finished. A test that passes beside an unfinished card has
+done outcome 4 and not outcome 3. The finish line asks for both.
+
+### J2.14 One integer, kept in four records
+
+The integer `274877906880` is easy to treat as one fact. This
+lesson keeps it in four records. They can be edited separately.
+A reader who checks only one of them has not pinned the standard.
+
+The first record is the June 2018 plain-text file of RFC 8439,
+section 2.8, and it is two sentences rather than one. The note
+says the amount of encrypted data in one invocation is
+`(2^32 - 1)` blocks of 64 bytes. The limit list in the same
+section prints `P_MAX` as `274,877,906,880` bytes. In that file
+the two sentences agree, which is why §J2.3 counted the digit
+string twice. Agreement of two sentences inside one file is not
+agreement with another file. In the May 2015 plain text the note
+still describes the same product, and the printed total is
+`247,877,906,880`. The formula and the printed total are
+different sentences. Erratum 4858 is the record of that split.
+A citation that says “the formula in §2.8” and a citation that
+says “the integer §2.8 prints for `P_MAX`” are the same citation
+only after you have checked that the file in hand prints them
+as equal. In June 2018 they are equal. In May 2015 they are not.
+
+The second record is erratum 4858 itself. It has a number, a
+section, a reporter, a date, a status, an old integer, and a
+corrected integer. It is not the RFC file. A reader who has the
+erratum and does not have the June 2018 file has a correction
+record. A reader who has the June 2018 file and does not have
+the erratum has a text that already prints the new integer and
+has not yet said which record produced the change. The abstract
+of RFC 8439 says the document merges the errata filed against
+RFC 7539. That sentence does not print the number 4858. The
+count in §J2.3 is the check this lesson actually did for this
+one integer: in the May 2015 file the old digit string occurs
+twice and the new digit string occurs zero times, and in the
+June 2018 file the counts are reversed. That check is about
+those two strings. It does not read a Held erratum, and it does
+not apply erratum 4700, which changes a description of the
+output and does not change this integer.
+
+The third record is the `Bool` in Listing J2.1. `bytes()` denotes
+`(2^32 - 1) * 64`, and the test compares that value with
+`274877906880`. On this compiler the comparison is true, the
+report says `ok`, and standard error is empty. The report does
+not open the RFC file, does not open the errata page, and does
+not read the ledger below. A passing test is evidence about the
+`Bool` the file contains. It becomes evidence about RFC 8439
+§2.8 only when a reader has already tied the right-hand integer
+to the first record and the title to that section. Take the
+title away and the same `Bool` is only the product. Put the May
+2015 integer on the right, as Listing J2.3 does, and the product
+is unchanged while the test fails. The failure is how this
+compiler shows a mixed pin. A prose sentence can assert the mix.
+The report prints the two integers and a status of 1.
+
+The fourth record is the ledger line `p-max = 274877906880`. The
+Python check recomputes it as `4294967295 * 64` and compares the
+printed line with that product. The recomputation does not fetch
+a file. Its job is to keep the chapter's own arithmetic in one
+place, so that a later edit of the listing, of Proposition J2.1,
+or of an answer cannot leave a different integer standing in the
+block. If someone edited the listing's expected integer and the
+ledger line to the May 2015 total together, the Python comparison
+against `(2^32 - 1) * 64` would fail, because the product is not
+that total. If someone edited only a prose sentence and left the
+ledger, the ledger would not notice. The ledger guards the
+integers it lists. It does not guard a quotation.
+
+Those four records answer four questions.
+
+The file answers which edition printed the integer, and whether
+the note and the `P_MAX` bullet print the same digits.
+
+The erratum answers who reported the old integer, which section
+was cited, which status the RFC Editor assigned, and which
+integer the correction prints.
+
+The test answers whether, on this compiler, the function in the
+listing denotes the integer written on the right of `==`.
+
+The ledger answers whether the integers printed in this chapter
+are the integers the stated arithmetic produces.
+
+None of the four answers the other three. Listing J2.1 can pass
+on a day when the local copy of RFC 8439 has been replaced by
+the May 2015 file, because the listing does not hash the file.
+The digest in §J2.10 is the record that would change. Exercise
+J2.16 already separates that digest from the placeholder of
+sixty-four `a` characters. The same separation applies here. A
+matching integer with a mismatched digest means the arithmetic
+still holds and the file in hand is not the file that was pinned.
+A matching digest with a failing test means the file was the
+pinned file and the listing's expected integer is not the
+integer that file prints. You need both failures to be visible
+as different failures. Collapsing them into “the test failed, so
+the standard is wrong” erases the pin.
+
+The same four-place habit applies where the integer does not
+move and the locator does. The byte `63` is the first S-box
+entry in Figure 7 of the November 26, 2001 text and in Table 4
+of the May 9, 2023 update. The integer did not change. Figure 7
+did. In the 2023 update, Figure 7 is an AES-192 key-expansion
+illustration, which Appendix D item 18 describes as one of the
+new figures, and the S-box is Table 4. A test whose body is the
+literal comparison `0x63 == 0x63` passes under either figure
+number. It has no left value computed from a section, so a
+failure report cannot appear. The comment in `algorithms/aes/aes.or`
+is the record that keeps both locators: Section 5.1.1, Table 4,
+and Figure 7 of the 2001 text. Delete either half of that
+comment and the byte in the table can stay correct while the
+citation becomes the citation of one edition only.
+
+Appendix D item 17 is the case where the changelog and the
+contents disagree about digits. The item names `INVSHIFTROWS()`
+and the section digits `5.3.2`. The contents of the May 9, 2023
+update, and the contents of the 2001 text, number `INVSHIFTROWS()`
+as §5.3.1 and number `INVSUBBYTES()` as §5.3.2. Assumption J2.4
+says the edition is read from the publication, not from a
+changelog's memory of it. The repair is to open §5.3.1 when the
+function you were sent to find is `INVSHIFTROWS()`. The
+changelog remains a record of an editorial intent. It does not
+override the contents of the same PDF. This lesson does not
+transcribe the inverse-shift formula, and it does not claim to
+have identified an error in the 2001 equation. The disagreement
+it uses is the section number, which is enough to send a reader
+to the wrong function.
+
+Changing a pin is therefore not one edit. Changing the edition
+from June 2018 to May 2015, for this integer, changes the first
+record and, if you are honest, the title of the test. It does
+not by itself change `bytes()`, which is why Listing J2.3 fails
+instead of silently following the old total. Changing only the
+title, and leaving `274877906880` on the right, leaves the test
+passing. The compiler has nothing new to reject. The human
+record now names the wrong document, and outcome 5 is the
+observation that the pass did not catch it. Changing the ledger
+alone makes the Python check fail and leaves `orangec test`
+passing. Changing the digest alone leaves both the test and the
+ledger passing and loses the file. A reader who wants a single
+command to police all four has asked this compiler for a
+document fetch it does not do. The command it does run is the
+one that prints `left` and `right` when the expected integer and
+the computed integer disagree. That is the part of the pin a
+prose book cannot reject for you. The other three records stay
+on the page, and the finish line counts them.
+
+### Exercises
+
+Nineteen exercises. Twelve close the walk through §J2.11. Four use
+the pin changes of §J2.12. Two use the copied words of §J2.13.
+One names the four records of §J2.14. Each answer is in the next
+section. A guess without the arithmetic is not an answer.
+
+**Exercise J2.1 — Name the object.** A colleague writes “implemented
+against RFC 7539 with the errata.” List the objects that sentence
+has not yet separated, using Assumption J2.3 and the statuses in
+§J2.3. Say which two Verified errata change a printed integer, and
+which Verified erratum changes a width rather than an integer.
+
+**Exercise J2.2 — The swapped group.** Compute
+`274877906880 - 247877906880`. Say which digits of the two
+integers differ, and state the erratum that records the same swap.
+Do not appeal to the compiler.
+
+**Exercise J2.3 — Sixteen octets.** From the two integers RFC 8439
+prints for `P_MAX` and `C_MAX`, compute the tag length the equation
+uses. Then say, in one sentence, why a passing `C_MAX` test still
+does not decide erratum 4371.
+
+**Exercise J2.4 — The first constant, by hand.** Pack the ASCII
+bytes `65 78 70 61` as a little-endian `Word[32]`, the way
+`pack` does in Listing J2.2. Show the hex word. Then say why a
+passing test of that word does not choose RFC 8439 over RFC 7539.
+
+**Exercise J2.5 — Capitals.** Quote the nonce sentence of RFC 7539
+§2.3 and the nonce sentence of RFC 8439 §2.3, as far as the words
+that differ. Using only §1.1 of RFC 8439, say whether the June
+2018 sentence contains the BCP 14 phrase `MUST NOT`.
+
+**Exercise J2.6 — Read the report.** Listing J2.3 fails with left
+`274877906880` and right `247877906880`. Which side of `==` do you
+edit, and which spec do you leave alone? One sentence on why
+rewriting `bytes` is not the repair the report shows.
+
+**Exercise J2.7 — Remainders.** Expand `1779033703` into hex by
+repeated remainder on division by 16, low digit first. The result
+must be the word §5.3.3 prints. Show each remainder.
+
+**Exercise J2.8 — The second Newton step.** Start from
+`6442450944`, which is row 1. Divide `2^65` by that integer. Give
+the quotient, the remainder, the sum of the divisor and the
+quotient, and the half, which is row 2. You may use
+`36893488147419103232 / 6442450944 = 5726623061` with remainder
+`2147483648`, and you must still show the sum and the half.
+
+**Exercise J2.9 — Digits that did not move.** Compare the October
+2008 contents of FIPS 180-3 with the August 2015 contents of FIPS
+180-4. Give one address that names SHA-256's initial hash value in
+both, one address that names the SHA-256 hash computation in both,
+and one address whose title changed. Say why the shared address
+still needs a date.
+
+**Exercise J2.10 — Figure 7.** Say what Figure 7 denotes in the
+November 26, 2001 text of FIPS 197, and what Figure 7 denotes in
+the May 9, 2023 update. Say where the 2023 text puts the S-box.
+Explain why a test whose body is `0x63 == 0x63` would not catch a
+citation of the wrong figure.
+
+**Exercise J2.11 — The changelog's digits.** Appendix D item 17 of
+the May 9, 2023 update names `INVSHIFTROWS()` and the digits
+`5.3.2`. The contents of that update number `INVSHIFTROWS()`
+differently. Which section do you open, and which assumption says
+the changelog's digits are not enough?
+
+**Exercise J2.12 — A role, not an edition.** Listing J2.6 is a file
+this chapter did not repair in the walk. Run it. The report fails.
+Say whether the failure is the May 2015 integer, the SHA-1 word,
+or a demand for `C_MAX` from the function that computes `P_MAX`.
+Name the minimal edit that makes the test match its title, and the
+minimal edit that makes the title match the function. Say what
+either repair still does not establish.
+
+**Listing J2.6 — `role_mismatch.or`**
+
+```orange
+edition 2026;
+module role_mismatch {
+  spec blocks() -> Int { 4294967296 - 1 }
+  spec bytes() -> Int { blocks() * 64 }
+  test "RFC 8439 2.8 C_MAX" { bytes() == 274877906896 }
+}
+```
+
+```sh
+./compiler/target/debug/orangec check role_mismatch.or
+./compiler/target/debug/orangec eval --spec bytes role_mismatch.or
+./compiler/target/debug/orangec test role_mismatch.or
+```
+
+Check is silent.
+
+**Expected evaluation output:**
+
+```text
+role_mismatch::bytes: Int = 274877906880
+```
+
+**Test report:**
+
+```text
+test "RFC 8439 2.8 C_MAX" ... FAILED
+    left:  274877906880
+    right: 274877906896
+1 test: 0 passed, 1 failed
+```
+
+The status is 1. Standard error is empty. The diagnosis is
+Exercise J2.12. Do it before you read the answer.
+
+**Exercise J2.13 — Two passes, two widths.** Listing J2.7 passes
+both tests. How many bytes is a 64-bit length, and how many bits
+is a 4-byte field? Why does `2 passed` not mean that RFC 7539
+§2.8.1 and RFC 8439 §2.8 agree about the length field?
+
+**Exercise J2.14 — The sentence the constants miss.** RFC 8439
+§2.3 says the original ChaCha had a 64-bit nonce and a 64-bit
+block count, and that this document modifies that. Which part of
+the state does that sentence say changed, and which listing in
+this lesson would still pass if you changed only that part of
+your citation?
+
+**Exercise J2.15 — The wider word.** FIPS 180-4 §5.3.5 prints
+`6a09e667f3bcc908` as a 64-bit word. §5.3.3 prints `6a09e667` as
+a 32-bit word. Say what a test of `word() == 0x6a09e667` does
+not establish about §5.3.5.
+
+**Exercise J2.16 — The placeholder.** The Gate 0 fixture's digest
+value is sixty-four characters `a`. The digest of the RFC 8439
+plain text retrieved for this lesson is
+`25bef70fbf7a07ff45c2fe4cb7c6ce954eac687413d8610603268b4e4415324c`.
+Say which question each digest answers, and why Listing J2.1 can
+pass after the digest has been replaced by the placeholder.
+
+**Exercise J2.17 — Copy versus derivation.** Of the eight words
+§5.3.3 prints, which one did this lesson derive, and which prime
+did it use? What is dishonest about a title that says the fifth
+word, `510e527f`, was derived on this page?
+
+**Exercise J2.18 — Finish a card.** A card says “SHA-256, initial
+value, `6a09e667`.” Which fields of the §J2.13 card are still
+empty? Name four. Say whether Listing J2.4's passing test fills
+them.
+
+**Exercise J2.19 — Four records.** Take the integer
+`274877906880`. Name the four records §J2.14 keeps for it, in
+the order that section gives them. Say which one `orangec test`
+on Listing J2.1 checks, and which command's failure you would
+see if the ledger line were changed to `247877906880` while the
+listing stayed as it is.
+
+## Worked answers
+
+**J2.1.** The sentence names RFC 7539 and then says “the errata”
+as if that phrase were one text. It has not said which errata,
+which status, or whether the text in hand is RFC 7539
+unmodified, RFC 7539 with some records applied, or RFC 8439.
+Assumption J2.3 separates the RFC, each erratum, and the
+obsoleting RFC. The statuses in §J2.3 are Verified, Held for
+Document Update, and Rejected. A Rejected record is not applied.
+A Held record is not automatically the text of RFC 8439. The two
+Verified errata that change a printed integer are 4858
+(`247,877,906,880` to `274,877,906,880`) and 4861
+(`247,877,906,896` to `274,877,906,896`). Erratum 4371 changes
+`num_to_4_le_bytes` to `num_to_8_le_bytes`. That is a width.
+Erratum 4700 changes “twofold” to “the concatenation of,” which
+is a description of the output's shape, not one of those
+integers.
+
+**J2.2.** Subtract digitwise. The trailing nine digits
+`877906880` occur in both integers and cancel. The leading groups
+are `274` and `247`. Their difference is `27`, standing in the
+billions place, so the difference of the integers is
+`27 * 1000000000 = 27000000000`. Check by adding back:
+`247877906880 + 27000000000 = 274877906880`. The digits that
+differ are the second and third of the leading group, `7` and
+`4`, exchanged. Erratum 4858 records that swap. The note on the
+erratum marks the exchanged pair. Proposition J2.2 is the same
+identity.
+
+**J2.3.** RFC 8439 prints `P_MAX` as `274,877,906,880` and prints
+`C_MAX = P_MAX + tag length = 274,877,906,896`. The difference is
+`274877906896 - 274877906880 = 16`. The equation's tag length is
+16 octets. A 128-bit tag is `128 / 8 = 16` octets, which agrees,
+and the agreement is with the width of the tag, not with the
+width of the length fields in the pseudocode. Erratum 4371 is
+those length fields: 4 bytes in RFC 7539 §2.8.1, 8 bytes in RFC
+8439 §2.8.1. Listing J2.1's `C_MAX` test compares `bytes() + 16`
+with `274877906896`. It never mentions 4 or 8. A pass leaves
+4371 unread.
+
+**J2.4.** The bytes in sentence order are `0x65`, `0x78`,
+`0x70`, `0x61`, which are `e`, `x`, `p`, `a`. Little-endian
+placement puts `0x65` in the low byte and `0x61` in the high
+byte. Shift the others: `0x78` moves by 8, `0x70` moves by 16,
+and `0x61` moves by 24. The word is
+
+`0x61 * 2^24 + 0x70 * 2^16 + 0x78 * 2^8 + 0x65`.
+
+`2^8 = 256`, `2^16 = 65536`, `2^24 = 16777216`. Then
+`0x78 * 256 = 120 * 256 = 30720`, and `30720 + 0x65 = 30720 + 101
+= 30821`, which is the low sixteen bits `0x7865`. Next,
+`0x70 * 65536 = 112 * 65536 = 7340032`, and
+`7340032 + 30821 = 7370853`, which is `0x707865`. Finally
+`0x61 * 16777216 = 97 * 16777216 = 1627389952`, and
+`1627389952 + 7370853 = 1634760805`. That integer is
+`0x61707865`. Listing J2.2's `word0` is this assembly, and the
+test demands the hex both RFCs print in §2.3. The pass is
+compatible with either file. It does not read the nonce sentence,
+which is where the two files differ inside that section.
+
+**J2.5.** RFC 7539 §2.3 says the nonce “should not be repeated
+for the same key.” RFC 8439 §2.3 says the nonce “MUST not be
+repeated for the same key.” Section 1.1 of RFC 8439 lists
+`MUST NOT` among the phrases that are interpreted as BCP 14 key
+words when, and only when, they appear in all capitals, as shown
+there. The §2.3 sentence has `MUST` in capitals and `not` in
+lowercase. It does not contain the all-capitals phrase
+`MUST NOT`. Listing J2.2 does not mention the sentence, so its
+passing test is not a reading of it.
+
+**J2.6.** Edit the right-hand side. Replace `247877906880` with
+`274877906880`. Leave `blocks` and `bytes` alone. Left is the
+value `bytes()` denotes, and Proposition J2.1 says that value is
+the product the note describes. The report shows left already
+equal to the June 2018 integer. Rewriting `bytes` would be how
+you respond if left were the surprising side. It is not.
+
+**J2.7.** Divide `1779033703` by 16. The successive remainders,
+low digit first, are `7`, `6`, `6`, `14`, `9`, `0`, `10`, `6`.
+The hex digits for `14` and `10` are `e` and `a`. High digit
+first, that is `6`, `a`, `0`, `9`, `e`, `6`, `6`, `7`, the word
+`6a09e667` printed in FIPS 180-4 §5.3.3. The quotients along the
+way are `111189606`, `6949350`, `434334`, `27145`, `1696`, `106`,
+`6`, and `0`, and each remainder was checked against the next
+quotient times 16. This expansion is Proposition J2.6's last
+sentence, done in full. It does not compute the other seven words
+of the section.
+
+**J2.8.** Row 1 is `x = 6442450944`. The problem gives
+`floor(2^65 / x) = 5726623061` and remainder `2147483648`. Check
+the division identity: `x * 5726623061 + 2147483648` must be
+`2^65`. The product `6442450944 * 5726623061` is
+`36893488145271619584`. Add the remainder:
+`36893488145271619584 + 2147483648 = 36893488147419103232`, which
+is `2^65`. The identity holds. The sum of the divisor and the
+quotient is `6442450944 + 5726623061 = 12169074005`. Half of that,
+in Euclidean division, is `12169074005 / 2 = 6084537002`, because
+the sum is odd by `1` and the remainder on division by 2 is `1`,
+and `6084537002 * 2 = 12169074004`, one below the sum. Row 2 is
+`6084537002`. The listing's six steps include this one. Doing it
+by hand does not run §6.2.2.
+
+**J2.9.** Both contents name SHA-256's initial hash value at
+§5.3.3, and both name the SHA-256 hash computation at §6.2.2.
+Section 5.2 is “Parsing the Padded Message” in the October 2008
+contents and “Parsing the Message” in the August 2015 contents.
+The digits `5.2` were reused for a title that dropped a word.
+The August 2015 contents also add sections the October 2008
+contents do not have, including §5.3.6 and §6.6 and §6.7. A
+shared address still needs a date because the documents are not
+the same document: Appendix C of the August 2015 text records
+technical changes from FIPS 180-3, and the cover date is part of
+Assumption J2.4 even when the digits of one clause happened to
+stay put. Citing §6.2.2 is still not transcribing it.
+
+**J2.10.** In the November 26, 2001 text, Figure 7 is the S-box,
+substitution values for the byte `xy`. In the May 9, 2023 update,
+Figure 7 is the illustration of `KEYEXPANSION()` for AES-192. The
+2023 S-box is Table 4. Both print `63` as the entry at row `0`,
+column `0`. A test whose body is `0x63 == 0x63` is true for any
+citation you write above it. The compiler compares the literals.
+It does not compare figure numbers. The citation of the figure is
+Assumption J2.4, done by the reader, which is why `aes.or` writes
+“Table 4 (Figure 7 of the 2001 text)” instead of “Figure 7”
+alone.
+
+**J2.11.** Open §5.3.1. That is the number the contents assign to
+`INVSHIFTROWS()` in the May 9, 2023 update, and it is also the
+number in the 2001 contents. Section 5.3.2 in both contents is
+`INVSUBBYTES()`. Assumption J2.4 says a section number is an
+address inside the edition, checked against that edition's
+contents, not against a digit that happens to sit in a change
+log next to a familiar name. Item 17's digits fail that check.
+This answer does not identify the formula the item calls a
+mistake. The lesson did not derive the inverse shift.
+
+**J2.12.** The failure is the third one. Left is
+`274877906880`, which is `P_MAX`, the value `bytes()` denotes.
+Right is `274877906896`, which is `C_MAX`. The gap is 16, the tag
+length from Exercise J2.3. It is not the gap of `27000000000`
+from the May 2015 integer, and it is not the SHA-1 word. The
+title demands `C_MAX`. The function computes `P_MAX`. That is a
+wrong role, Assumption J2.5, not a wrong edition.
+
+To make the test match the title, the value on the left has to
+become `C_MAX`. The minimal such edit is to compare `bytes() + 16`,
+or to call the `c_max` spec from Listing J2.1, against
+`274877906896`. To make the title match the function, change the
+title to name `P_MAX` and change the expected integer to
+`274877906880`. Either repair makes one `Bool` true. Neither
+repair reads §2.8.1, so neither decides the 4-byte width against
+the 8-byte width. Neither hashes a message. Neither is called
+verified.
+
+**J2.13.** `64 / 8 = 8`, so a 64-bit length is 8 bytes. `4 * 8 =
+32`, so a 4-byte field is 32 bits. The two tests in Listing J2.7
+are two `Bool`s. The first matches the prose width, which both
+RFC files print as 64-bit. The second is the arithmetic of the
+4-byte helper in the May 2015 pseudocode. Eight bytes and
+thirty-two bits are not the same width. A report of two passes
+counts `Bool`s. It does not assert that the two sections describe
+one field. RFC 8439 §2.8.1 uses the 8-byte helper. RFC 7539
+§2.8.1 uses the 4-byte helper. The prose in both says 64-bit.
+The passes do not search the files for those names.
+
+**J2.14.** The sentence says the original design had a 64-bit
+nonce and a 64-bit block count, and that this document modifies
+that. The part that changes is the split of those bits between
+the counter and the nonce, which is words 12 through 15 of the
+state in the RFC's layout. The four constant words are not what
+the sentence says it modified. Listing J2.2 tests those words. It
+would still pass. It would not tell you that the counter width
+had been part of the citation.
+
+**J2.15.** The test establishes that the 32-bit value `word()`
+denotes equals the hex literal `0x6a09e667`. Section 5.3.5's
+first word is 64 bits and continues `f3bcc908` after those eight
+digits. The test has no 64-bit value and no comparison against
+`0x6a09e667f3bcc908`. A pass is compatible with having stopped at
+the first half of the longer word. The width is part of the pin.
+The leading digits are not the whole word.
+
+**J2.16.** The sixty-four `a` characters answer the question “what
+did the fixture write in its digest field?” The fixture's own
+limitations say that value is synthetic and is not a verified
+acquisition. The digest beginning `25bef70f` answers the question
+“what was the SHA-256 digest of the plain-text file retrieved on
+2026-10-05?” Listing J2.1 compares `(2^32 - 1) * 64` with
+`274877906880`. It does not hash the RFC file. Replacing the
+digest in a notebook does not change `bytes()`. The test can pass
+on a day when the acquisition record has been swapped for the
+placeholder. The two records answer different questions, which is
+why both belong on the pin and neither replaces the other.
+
+**J2.17.** The derived word is the first, `6a09e667`, from the
+square root of the first prime, which is 2. The fifth printed
+word is `510e527f`. The page lists it as a copy from §5.3.3 and
+does not run a recurrence for the fifth prime, which is 11. A
+title that says the word was derived on this page assigns a role
+the page did not perform. A comparison of the copied hex with the
+same hex would pass and would not make the title true.
+
+**J2.18.** Still empty: the edition and its date, the section
+number, the role (constant defined by the section, and whether
+this copy was derived or only copied), and the file digest or
+other retrieval record. Also still empty, if you want a fifth,
+is the statement of what the number is not, such as the SHA-1
+word or the 64-bit word. Listing J2.4's passing test fills the
+equality between the recurrence and the hex literal. It does not
+write the date, the section, or the digest. Those stay on the
+card. A pass beside an empty card has done outcome 4 and left
+outcome 3 undone.
+
+**J2.19.** The four records, in the section's order, are the
+June 2018 plain-text file of RFC 8439 §2.8, erratum 4858, the
+`Bool` in Listing J2.1, and the ledger line `p-max`. The test
+checks the third. It compares `bytes()` with `274877906880` and
+does not open the other three. Changing the ledger line to
+`247877906880` leaves Listing J2.1 passing, because the listing
+does not read the ledger. The Python check recomputes
+`4294967295 * 64` and compares that product with the printed
+line, so that check is the one that fails. The product is
+Proposition J2.1, which is not the May 2015 total.
+
 ## Sources and epigraph record
 
 The quotation is the borrowed sentence. The dates and identifiers
@@ -1163,15 +1941,44 @@ The authors' names are the names in the RFC's “Authors' Addresses”
 section: Yoav Nir and Adam Langley. The cover also prints `Y. Nir`
 and `A. Langley`.
 
+**[T9] Retrieved files.** On 2026-10-05 the lesson retrieved the
+plain text of RFC 8439 and of RFC 7539 from the RFC Editor, the
+errata page for RFC 7539, the August 2015 PDF of FIPS PUB 180-4
+at `10.6028/NIST.FIPS.180-4`, the May 9, 2023 PDF of NIST FIPS
+197-upd1 at `10.6028/NIST.FIPS.197-upd1`, the archived November
+26, 2001 PDF of FIPS 197 carrying the withdrawal notice, and the
+October 2008 PDF of FIPS 180-3 carrying its archive wrapper. The
+SHA-256 digests of the files used for the quotations are the ones
+printed in §J2.10, except the errata page and the FIPS 180-3
+file, which were read for statuses, contents, and the wrapper
+date and are not the pin of an expected integer. A digest is of
+the retrieved file. Another rendering can carry the same sentence
+and a different digest. No translation is involved. These files
+are not an endorsement of Orange, and the retrieval is not a
+certification.
+This record's tag is [T9].
+
+**[C3] Pin surface.** The listings use `edition 2026`, `module`,
+`spec`, `Int`, `Word[32]`, `Word[8]`, `for`, `/`, `*`, `+`, `-`,
+`<<`, `|`, `as`, `&&`, `==`, and `test`. Those forms are the ones
+N10, N12, and N14 already ran on this compiler. No form in the
+listings is Proposed. `Int` division in these listings is of
+positive integers. A passing test is a Match on the inputs it
+writes. It is not a constant-time claim, not a certification, and
+not a transcription of FIPS 180-4 §6.2.2.
+This record's tag is [C3].
+
 ## Evidence boundary
 
 J2 is a Journeyman lesson. The six outcomes in §J2.1 are the finish
 line. The assumptions in §J2.2 bound them. Listings J2.1 through
-J2.3 pin RFC 8439 against RFC 7539. Listings J2.4 and J2.5 pin
-FIPS 180-4 §5.3.3 and show the neighboring section failing.
-Worked answers close the lesson. Those checks do not establish a
-cryptographic security claim, they do not derive FIPS 180-4
-§6.2.2, and they do not accept a proposal.
+J2.7 are the pins, the unchanged constant, the width arithmetic,
+and the failing tests. Nineteen exercises have worked answers. The
+integer ledger is recomputed by `tools/test_book_foundations.py`.
+The Orange listings are the fenced programs in this file.
+`compiler/crates/orangec/tests/book_j2.rs` runs them. Those checks
+do not establish a cryptographic security claim, they do not
+derive FIPS 180-4 §6.2.2, and they do not accept a proposal.
 
 The lesson was drafted with Grok 4.7 in Cursor on 2026-10-05 at the
 owner's direction. Owner review is pending. No deployment
