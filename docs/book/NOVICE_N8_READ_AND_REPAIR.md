@@ -523,7 +523,7 @@ header Listing N8.9 already used.
 edition 2026;
 module reversed_bytes {
   spec reversed(x: Word[8]^4) -> Word[8]^4 {
-    for i in 0..4 with s: Word[8]^4 = x { s with [3 - i] = x[i] }
+    for i in 0..4 with s: Word[8]^4 = x { s with [i] = x[3 - i] }
   }
 
   spec sample() -> Word[8]^4 {
@@ -532,15 +532,15 @@ module reversed_bytes {
 }
 ```
 
-Follow `sample` the way N7 followed `reversed`. The accumulator starts as
-`[0x11, 0x22, 0x33, 0x44]`.
+Follow `sample` for each `i`. The accumulator starts as
+`[0x11, 0x22, 0x33, 0x44]`. Each step writes `x[3 - i]` at `[i]`.
 
-| `i` | `3 - i` | value written |
+| `i` | `3 - i` | `x[3 - i]` at `[i]` |
 | --- | --- | --- |
-| 0 | 3 | `0x11` |
-| 1 | 2 | `0x22` |
-| 2 | 1 | `0x33` |
-| 3 | 0 | `0x44` |
+| 0 | 3 | `0x44` |
+| 1 | 2 | `0x33` |
+| 2 | 1 | `0x22` |
+| 3 | 0 | `0x11` |
 
 **Expected evaluation output:**
 
@@ -1072,10 +1072,11 @@ would make a different array, and the diagnostic did not say the literal
 had the wrong length.
 
 **N8.6.** `i + 1` is 1, 2, 3, 4. `3 - i` is 3, 2, 1, 0. Listing N8.10
-writes `3 - i`, the family that stays inside 0 through 3. Listing N8.9
-is rejected with `ORC0223` before any step, so the body does not run.
-The `...` is the renderer's window, not a source token. The carets at
-column 58 cover `i + 1`, and that expression is what you replace.
+keeps the update at `[i]` and reads `x[3 - i]`, the family that stays
+inside 0 through 3. Listing N8.9 is rejected with `ORC0223` before any
+step, so the body does not run. The `...` is the renderer's window, not a
+source token. The carets at column 58 cover `i + 1`, and that expression
+is what you replace.
 
 **N8.7.** Left is `vector()`, the program. Right is the expected array.
 They differ at `[3]`. The program's word there is `0x5881c4bb`. The
