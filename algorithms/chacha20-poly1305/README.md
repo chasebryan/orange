@@ -96,7 +96,8 @@ message, the `0x01` when its position equals the length, and nothing
 beyond; a whole block starts the fold from 1 so that the `0x01` lands above
 byte 15, a partial one from 0. That is the RFC's `le_bytes_to_num(msg[...] | [0x01])`
 for both the whole and the final block in one expression. The 375-byte text
-of appendix A.3 exceeds an array, so `poly1305_mac_long` absorbs a 256-byte
+of appendix A.3 fits in one array. The fixed 256-byte segment shape was
+retained from the old bound, so `poly1305_mac_long` absorbs a 256-byte
 head and a second segment starting at byte 256 with the same loop.
 
 The AEAD's MAC input is never laid out as one array. Every block of it is

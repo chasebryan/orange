@@ -296,8 +296,11 @@ corpus entry in the sense of The Orange Book chapter 12.
 - The files' long cases (1024 to 2600 bytes) are reproduced as their first
   128 or 192 bytes. Those lengths fit in one array (the bound is 65,536);
   the sources were written when it was 256 and were not widened. Crypto++'s
-  131072-byte XOR digests are longer than 65,536 elements and are not
-  reproduced.
+  131,072-byte figure for set 6, vector 3 is the stream covered by the XOR
+  of 2,048 blocks. The stored result is one 64-byte block, which a loop of
+  2,048 iterations can accumulate under the current loop bound. The entry
+  does not record that pair; the omission is not an array-length gap past
+  65,536.
 - Arrays have no length parameter, so the encryption of section 10 is
   written once per message length (`encrypt_32` to `encrypt_238`), eight
   copies of the same few lines.

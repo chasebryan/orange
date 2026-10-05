@@ -168,10 +168,12 @@ per file; so `aes-ccm.or` holds C.1 and C.2 (about 802,000), `aes-ccm-c3.or`
 C.3 and the Wycheproof case (about 941,000) and `aes-ccm-decrypt.or` the
 three decryption pairs (about 763,000). Nothing planned was dropped.
 
-Not expressed: associated data of `2^16 - 2^8` bytes or more. The shortest
-6-byte length encoding of A.2.2 is 65,286 bytes and fits in an array (the
-bound is 65,536); the 10-byte encoding is for `a >= 2^32` and does not.
-This entry writes neither. Also not expressed: payloads over 32 bytes and
+Not expressed: associated data of `2^16 - 2^8` bytes or more. A.2.2's
+length encoding for that range is 6 bytes. 65,286 is the minimum size of
+the complete formatted associated-data field, that prefix plus 65,280
+bytes of `A`. The 10-byte length encoding itself fits in an array; the
+associated data it prefixes, `a >= 2^32`, does not. This entry writes
+neither. Also not expressed: payloads over 32 bytes and
 associated data over 32 bytes, since an array's length is part of its type
 (a second set of specs over `Word[8]^64` would be the same text); AES-192
 and AES-256 as the block cipher (the Appendix C examples are all
@@ -275,9 +277,11 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
 - No length polymorphism: the associated data and payload are 32-byte
   buffers with their lengths beside them, and the nonce a 13-byte buffer
   with `n`. An array holds 1 through 65,536 elements, not at most 256. The
-  long associated-data encodings of A.2.2 are still not written: the
-  shortest 6-byte form is 65,286 bytes and fits, and the 10-byte form does
-  not.
+  long associated-data encodings of A.2.2 are still not written. The
+  6-byte length encoding is 6 bytes; 65,286 is the minimum size of the
+  complete formatted field (that prefix plus 65,280 bytes of `A`). The
+  10-byte encoding itself fits; an associated-data payload of `a >= 2^32`
+  does not.
 - No sum type: `INVALID` or `P` of section 6.2 is a `Bool` verdict and a
   separate payload spec, and the caller carries the rule that the payload
   counts only when the verdict is `true`; a `Bool` result also cannot be
