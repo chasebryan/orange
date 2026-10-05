@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the standalone C compiler with the Rust frontend on the S3a–S3i fixtures."""
+"""Compare the standalone C compiler with the Rust frontend on the S3a–S3j fixtures."""
 
 import re
 import subprocess
@@ -44,6 +44,9 @@ VALID = [
     "s3i/valid-fields.or",
     "s3i/valid-poly1305.or",
     "s3i/valid-x25519.or",
+    "s3j/valid-blocks.or",
+    "s3j/valid-sha256.or",
+    "s3j/valid-x25519.or",
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
 # large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
@@ -114,6 +117,9 @@ INVALID = [
     "s3i/invalid-residues.or",
     "s3i/invalid-type-syntax.or",
     "s3i/invalid-types.or",
+    "s3j/invalid-block-names.or",
+    "s3j/invalid-block-syntax.or",
+    "s3j/invalid-block-types.or",
 ]
 
 
