@@ -92,6 +92,7 @@ Edition: `2026`
   - [§51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)](#51-complete-reference-specification-curve25519--x25519-rfc-7748)
   - [§52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-complete-reference-specification-poly1305-field-mac-rfc-8439)
   - [AES, FIPS 197](#aes-fips-197)
+  - [HMAC, FIPS 198-1](#hmac-fips-198-1)
 
 - [Part VIII: Implementation Stratum (`impl`) & Memory Model](#part-viii-implementation-stratum-impl--memory-model)
   - [§53. Imperative Execution Semantics and Place Logic](#53-imperative-execution-semantics-and-place-logic)
@@ -3089,6 +3090,555 @@ module aes_spec {
   test "FIPS 197 Appendix C.3 AES-256" {
     (fips197_c3_aes256() == fips197_c3_aes256_expected())
       && (fips197_c3_aes256_inverse() == fips197_c3_aes256_inverse_expected())
+  }
+}
+```
+
+### HMAC, FIPS 198-1
+
+HMAC-SHA-256 as FIPS 198-1 (2008, DOI 10.6028/NIST.FIPS.198-1) sections 4 and
+5 write it, and as RFC 2104 first defined it. The hash $H$ is SHA-256 of §49.
+The listing restates that hash, because a module has no imports. The buffer
+is not the byte array of §49. Each byte string is a length together with a
+`Word[32]^64`: the big-endian words of FIPS 180-4 section 5.2.1, zero after
+the last byte. One `sha256` and one `hmac_sha256` then serve every length in
+the tests. `orangec test` accepts the ten tests: the pad words of RFC 4231
+case 2, $K_0$ of case 6, the seven HMAC-SHA-256 cases of RFC 4231 section 4
+(case 5 also truncated to 128 bits), and Wycheproof `hmac_sha256` tcId 171.
+
+#### 1. Parameters (FIPS 198-1, sections 3 and 4)
+
+$B = 64$ is the SHA-256 block in bytes. $L = 32$ is the digest length. The
+pads are the bytes `0x36` and `0x5c`, each repeated $B$ times. As words they
+are `0x36363636` and `0x5c5c5c5c`.
+
+| Step | $K_0$, the key brought to $B$ bytes |
+| :--- | :--- |
+| Key length $= B$ | the key |
+| Key length $> B$ | $H(\mathrm{key})$, then zeros through byte $B$ |
+| Key length $< B$ | the key, then zeros |
+
+The buffer is already zero past the key, so a key of at most $B$ bytes
+contributes its first sixteen words unchanged. A longer key is hashed only
+in the taken branch of `k0`.
+
+#### 2. The MAC (section 4, steps 4 through 9)
+
+$$\mathrm{HMAC}(K, \mathrm{text}) = H((K_0 \oplus \mathrm{opad}) \parallel H((K_0 \oplus \mathrm{ipad}) \parallel \mathrm{text})).$$
+
+`xor_pad` XORs each of the sixteen words of $K_0$ with the pad word. The
+inner hash is SHA-256 of the 64-byte inner pad followed by the text. The
+outer hash is SHA-256 of the 64-byte outer pad followed by the 32-byte inner
+digest, a message of 96 bytes. Truncation keeps the leftmost $t$ bits of
+that digest. `leftmost_128` is $t = 128$, RFC 2104 section 5 and the
+HMAC-SHA-256-128 value RFC 4231 prints for case 5.
+
+RFC 4231 case 2 has key "Jefe", the word `0x4a656665`, shorter than the
+block. $K_0 \oplus \mathrm{ipad}$ begins `0x7c535053` and every later word is
+`0x36363636`. $K_0 \oplus \mathrm{opad}$ begins `0x16393a39` and every later
+word is `0x5c5c5c5c`.
+
+RFC 4231 case 6 has key `0xaa` repeated 131 times, longer than $B$. $K_0$ is
+SHA-256 of that key,
+
+`45ad4b37c6e2fc0a2cfcc1b5da524132ec707615c2cae1dbbc43c97aa521db81`,
+
+followed by 32 zero bytes.
+
+#### 3. Known Answers (RFC 4231, section 4)
+
+| Case | Key and text | MAC |
+| :--- | :--- | :--- |
+| 4.2 | `0x0b` repeated 20 times, "Hi There" | `b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7` |
+| 4.3 | "Jefe", "what do ya want for nothing?" | `5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843` |
+| 4.4 | `0xaa` 20 times, `0xdd` 50 times | `773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe` |
+| 4.5 | bytes `01` through `19`, `0xcd` 50 times | `82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b` |
+| 4.6 | `0x0c` 20 times, "Test With Truncation" | `a3b6167473100ee06e0c796c2955552b` in the first 128 bits |
+| 4.7 | `0xaa` 131 times, the 54-byte block-size sentence | `60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54` |
+| 4.8 | the same key, the 152-byte sentence | `9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2` |
+
+RFC 4231 prints case 5 only after truncation to 128 bits. The listing also
+checks the full 32-byte MAC
+`a3b6167473100ee06e0c796c2955552bfa6f7c0a6a8aef8b93f860aab0cd20c5`.
+Wycheproof `hmac_sha256_test.json` tcId 171 is a 65-byte key, one byte over
+$B$, and a 32-byte message. Its tag is
+`e542ac8ac8f364bae4b7da8b7a0777df350f001de4e8cfa2d9ef0b15019496ec`.
+
+The inner message is $64 + n$ bytes. SHA-256 padding needs nine bytes past
+a whole-byte message, and the buffer is 256 bytes, so the text in this
+listing is at most 183 bytes. A key that is hashed first is at most 247
+bytes. Case 7, at 152 bytes of text and 131 bytes of key, sits inside both
+bounds. A longer string is the same functions on a larger finite buffer.
+HKDF-Extract and HKDF-Expand are the next section. They are not in this
+listing: one evaluation budget is $1\,048\,576$ steps, and the three RFC
+5869 appendix A cases are a separate file in `algorithms/hmac-hkdf/`.
+
+#### 4. Compiler-Checked Transcription
+
+```orange
+// HMAC-SHA-256 as FIPS 198-1 (2008, DOI 10.6028/NIST.FIPS.198-1) sections 4
+// and 5 write it, first published as RFC 2104. The hash is SHA-256 of FIPS
+// 180-4, restated here because a module has no imports. Every byte string is
+// its length and a Word[32]^64 of big-endian words, zero past the last byte,
+// so one sha256 and one hmac_sha256 serve the RFC 4231 lengths. The seven
+// HMAC-SHA-256 cases of RFC 4231 section 4 are the tests, case 5 also
+// truncated to 128 bits, plus the 65-byte key of Wycheproof hmac_sha256
+// tcId 171. HKDF is a separate transcription.
+edition 2026;
+module hmac_spec {
+  // A word to its bytes, big-endian (FIPS 180-4 section 3.1); the inputs
+  // are already words, so only the output direction is needed.
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  // FIPS 180-4 section 4.1.2: the SHA-256 functions.
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  // FIPS 180-4 section 4.2.2: K{256}, the first 32 bits of the fractional
+  // parts of the cube roots of the first 64 primes.
+  spec round_constants() -> Word[32]^64 {
+    [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+  }
+
+  // FIPS 180-4 section 5.3.3: H(0), the first 32 bits of the fractional parts
+  // of the square roots of the first eight primes.
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // FIPS 180-4 section 6.2.2, step 1: the message schedule W_0 through W_63.
+  spec schedule(m: Word[32]^16) -> Word[32]^64 {
+    let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
+    for t in 16..64 with w: Word[32]^64 = head {
+      w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+    }
+  }
+
+  // FIPS 180-4 section 6.2.2, step 3: one round on the working variables a
+  // through h, carried as v = [a, b, c, d, e, f, g, h].
+  spec round(v: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+    [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+  }
+
+  // FIPS 180-4 section 6.2.2, steps 1 through 4: one block, H(i-1) to H(i).
+  spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(m);
+    let k: Word[32]^64 = round_constants();
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+    for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+  }
+
+  // Byte p of the buffer, 0 <= p < 256, set to v by or: byte p lives in
+  // word p / 4, at the shift that p % 4 selects. The shift amount must be a
+  // literal, so the four positions are a conditional. This writes the
+  // padding byte 0x80 of SHA-256, the byte whose position depends on a
+  // length.
+  spec put_byte(m: Word[32]^64, p: Int, v: Word[8]) -> Word[32]^64 {
+    let shifted: Word[32] = if (p % 4) == 0 { (v as Word[32]) << 24 }
+      else if (p % 4) == 1 { (v as Word[32]) << 16 }
+      else if (p % 4) == 2 { (v as Word[32]) << 8 }
+      else { v as Word[32] };
+    for i in 0..64 with out: Word[32]^64 = m {
+      if i == (p / 4) { out with [i] = out[i] | shifted } else { out }
+    }
+  }
+
+  // FIPS 180-4 section 5.1.1 for a message of n bytes, n <= 247: the bit 1
+  // (the byte 0x80, since every message is whole bytes) after the message,
+  // k zero bits, and the length l = 8n as a 64-bit big-endian integer at
+  // the end of block N, N = (n + 72) / 64 = ceiling((n + 9) / 64). The high
+  // word of l is zero for every n here, so only the last word is written.
+  spec pad(m: Word[32]^64, n: Int) -> Word[32]^64 {
+    let marked: Word[32]^64 = put_byte(m, n, 0x80);
+    let blocks: Int = (n + 72) / 64;
+    for i in 0..4 with w: Word[32]^64 = marked {
+      if (i + 1) == blocks { w with [16 * i + 15] = (8 * n) as Word[32] } else { w }
+    }
+  }
+
+  // FIPS 180-4 section 6.2.2, "for i = 1 to N": the N blocks of the padded
+  // message in order, each sixteen words of the buffer, from H(0).
+  spec sha256(m: Word[32]^64, n: Int) -> Word[32]^8 {
+    let w: Word[32]^64 = pad(m, n);
+    let blocks: Int = (n + 72) / 64;
+    for i in 0..4 with h: Word[32]^8 = initial_hash() {
+      if i < blocks {
+        compress(h, [
+          w[16 * i], w[16 * i + 1], w[16 * i + 2], w[16 * i + 3],
+          w[16 * i + 4], w[16 * i + 5], w[16 * i + 6], w[16 * i + 7],
+          w[16 * i + 8], w[16 * i + 9], w[16 * i + 10], w[16 * i + 11],
+          w[16 * i + 12], w[16 * i + 13], w[16 * i + 14], w[16 * i + 15],
+        ])
+      } else { h }
+    }
+  }
+
+  // FIPS 198-1 section 4: B = 64, the block size of SHA-256 in bytes, and
+  // the pads ipad = 0x36 and opad = 0x5c repeated B times, here as words.
+  spec ipad() -> Word[32] { 0x36363636 }
+  spec opad() -> Word[32] { 0x5c5c5c5c }
+
+  // FIPS 198-1 section 4, steps 1 to 3: K0, the key brought to B bytes. A
+  // key of B bytes is used as it is; a longer key is hashed to L = 32 bytes
+  // and zeros are appended; a shorter key has zeros appended. The buffer
+  // is zero beyond the key, so its first sixteen words are the padded key.
+  spec k0(key: Word[32]^64, key_len: Int) -> Word[32]^16 {
+    let hashed: Word[32]^8 = if key_len > 64 { sha256(key, key_len) } else { [0; 8] };
+    if key_len > 64 {
+      [hashed[0], hashed[1], hashed[2], hashed[3], hashed[4], hashed[5], hashed[6], hashed[7],
+       0, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+      [key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7],
+       key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15]]
+    }
+  }
+
+  // Steps 4 and 7: K0 xor ipad and K0 xor opad.
+  spec xor_pad(k: Word[32]^16, pad_word: Word[32]) -> Word[32]^16 {
+    for i in 0..16 with out: Word[32]^16 = k { out with [i] = k[i] ^ pad_word }
+  }
+
+  // FIPS 198-1 section 4, steps 4 to 9, and section 5:
+  // HMAC(K, text) = H((K0 xor opad) || H((K0 xor ipad) || text)).
+  // Step 5 appends the text, of n <= 183 bytes, to the 64-byte inner pad
+  // (so the inner message fits four blocks); step 8 appends the 32-byte
+  // inner hash to the outer pad, a 96-byte message. Truncation to t bytes
+  // is left to the caller (`leftmost_128`); the full L = 32 bytes are
+  // returned as the eight words of the hash.
+  spec hmac_sha256(key: Word[32]^64, key_len: Int, text: Word[32]^64, n: Int) -> Word[32]^8 {
+    let k: Word[32]^16 = k0(key, key_len);
+    let ki: Word[32]^16 = xor_pad(k, ipad());
+    let ko: Word[32]^16 = xor_pad(k, opad());
+    let inner: Word[32]^8 = sha256([
+      ki[0], ki[1], ki[2], ki[3], ki[4], ki[5], ki[6], ki[7],
+      ki[8], ki[9], ki[10], ki[11], ki[12], ki[13], ki[14], ki[15],
+      text[0], text[1], text[2], text[3], text[4], text[5], text[6], text[7],
+      text[8], text[9], text[10], text[11], text[12], text[13], text[14], text[15],
+      text[16], text[17], text[18], text[19], text[20], text[21], text[22], text[23],
+      text[24], text[25], text[26], text[27], text[28], text[29], text[30], text[31],
+      text[32], text[33], text[34], text[35], text[36], text[37], text[38], text[39],
+      text[40], text[41], text[42], text[43], text[44], text[45], text[46], text[47],
+    ], 64 + n);
+    sha256([
+      ko[0], ko[1], ko[2], ko[3], ko[4], ko[5], ko[6], ko[7],
+      ko[8], ko[9], ko[10], ko[11], ko[12], ko[13], ko[14], ko[15],
+      inner[0], inner[1], inner[2], inner[3], inner[4], inner[5], inner[6], inner[7],
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ], 96)
+  }
+
+  // The truncated output of FIPS 198-1 and RFC 2104 section 5: the
+  // leftmost t = 128 bits of the MAC, RFC 4231's HMAC-SHA-256-128.
+  spec leftmost_128(mac: Word[32]^8) -> Word[8]^16 {
+    for i in 0..16 with out: Word[8]^16 = [0; 16] { out with [i] = be_bytes(mac[i / 4])[i % 4] }
+  }
+  spec words_8(w: Word[32]^8) -> Word[32]^64 {
+    for i in 0..8 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+
+  spec words_1(w: Word[32]^1) -> Word[32]^64 { [0; 64] with [0] = w[0] }
+  spec words_2(w: Word[32]^2) -> Word[32]^64 {
+    for i in 0..2 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_5(w: Word[32]^5) -> Word[32]^64 {
+    for i in 0..5 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_7(w: Word[32]^7) -> Word[32]^64 {
+    for i in 0..7 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_13(w: Word[32]^13) -> Word[32]^64 {
+    for i in 0..13 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_14(w: Word[32]^14) -> Word[32]^64 {
+    for i in 0..14 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_16(w: Word[32]^16) -> Word[32]^64 {
+    for i in 0..16 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_17(w: Word[32]^17) -> Word[32]^64 {
+    for i in 0..17 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_33(w: Word[32]^33) -> Word[32]^64 {
+    for i in 0..33 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_38(w: Word[32]^38) -> Word[32]^64 {
+    for i in 0..38 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  // RFC 4231 section 4.2, test case 1: key 0x0b repeated 20 times, data
+  // "Hi There". The value as printed in Go's crypto/hmac/hmac_test.go,
+  // which copies the RFC's SHA-256 cases (also Python's hmac).
+  spec rfc4231_case_1() -> Word[32]^8 {
+    hmac_sha256(
+      words_5([0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b]), 20,
+      words_2([0x48692054, 0x68657265]), 8,
+    )
+  }
+  spec rfc4231_case_1_expected() -> Word[32]^8 {
+    [
+      0xb0344c61, 0xd8db3853, 0x5ca8afce, 0xaf0bf12b, 0x881dc200, 0xc9833da7, 0x26e9376c, 0x2e32cff7,
+    ]
+  }
+
+  // RFC 4231 section 4.3, test case 2: key "Jefe", data "what do ya want
+  // for nothing?"; a key shorter than the block. The value as printed in
+  // Botan's hmac.vec, [HMAC(SHA-256)], and Go's hmac_test.go (also hmac).
+  spec rfc4231_case_2() -> Word[32]^8 {
+    hmac_sha256(
+      words_1([0x4a656665]), 4,
+      words_7([
+        0x77686174, 0x20646f20, 0x79612077, 0x616e7420, 0x666f7220, 0x6e6f7468, 0x696e673f,
+      ]), 28,
+    )
+  }
+  spec rfc4231_case_2_expected() -> Word[32]^8 {
+    [
+      0x5bdcc146, 0xbf60754e, 0x6a042426, 0x089575c7, 0x5a003f08, 0x9d273983, 0x9dec58b9, 0x64ec3843,
+    ]
+  }
+
+  // RFC 4231 section 4.4, test case 3: key 0xaa repeated 20 times, data
+  // 0xdd repeated 50 times. The value as printed in Go's hmac_test.go
+  // (also hmac).
+  spec rfc4231_case_3() -> Word[32]^8 {
+    hmac_sha256(
+      words_5([0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa]), 20,
+      words_13([
+        0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd,
+        0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddddddd, 0xdddd0000,
+      ]), 50,
+    )
+  }
+  spec rfc4231_case_3_expected() -> Word[32]^8 {
+    [
+      0x773ea91e, 0x36800e46, 0x854db8eb, 0xd09181a7, 0x2959098b, 0x3ef8c122, 0xd9635514, 0xced565fe,
+    ]
+  }
+
+  // RFC 4231 section 4.5, test case 4: key 0x01, 0x02, ..., 0x19 (25
+  // bytes), data 0xcd repeated 50 times. The value as printed in Go's
+  // hmac_test.go (also hmac).
+  spec rfc4231_case_4() -> Word[32]^8 {
+    hmac_sha256(
+      words_7([
+        0x01020304, 0x05060708, 0x090a0b0c, 0x0d0e0f10, 0x11121314, 0x15161718, 0x19000000,
+      ]), 25,
+      words_13([
+        0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd,
+        0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcdcdcd, 0xcdcd0000,
+      ]), 50,
+    )
+  }
+  spec rfc4231_case_4_expected() -> Word[32]^8 {
+    [
+      0x82558a38, 0x9a443c0e, 0xa4cc8198, 0x99f2083a, 0x85f0faa3, 0xe578f807, 0x7a2e3ff4, 0x6729665b,
+    ]
+  }
+
+  // RFC 4231 section 4.6, test case 5: key 0x0c repeated 20 times, data
+  // "Test With Truncation"; the RFC prints only the MAC truncated to 128
+  // bits. No fetched file carries this case, so both values are from
+  // Python's hmac; the RFC's printed value is the 16 bytes.
+  spec rfc4231_case_5() -> Word[32]^8 {
+    hmac_sha256(
+      words_5([0x0c0c0c0c, 0x0c0c0c0c, 0x0c0c0c0c, 0x0c0c0c0c, 0x0c0c0c0c]), 20,
+      words_5([0x54657374, 0x20576974, 0x68205472, 0x756e6361, 0x74696f6e]), 20,
+    )
+  }
+  spec rfc4231_case_5_expected() -> Word[32]^8 {
+    [
+      0xa3b61674, 0x73100ee0, 0x6e0c796c, 0x2955552b, 0xfa6f7c0a, 0x6a8aef8b, 0x93f860aa, 0xb0cd20c5,
+    ]
+  }
+  spec rfc4231_case_5_truncated() -> Word[8]^16 { leftmost_128(rfc4231_case_5()) }
+  spec rfc4231_case_5_truncated_expected() -> Word[8]^16 {
+    [
+      0xa3, 0xb6, 0x16, 0x74, 0x73, 0x10, 0x0e, 0xe0, 0x6e, 0x0c, 0x79, 0x6c, 0x29, 0x55, 0x55, 0x2b,
+    ]
+  }
+
+  // RFC 4231 section 4.7, test case 6: key 0xaa repeated 131 times, longer
+  // than the block, so it is hashed first; data "Test Using Larger Than
+  // Block-Size Key - Hash Key First". The value as printed in Botan's
+  // hmac.vec and Go's hmac_test.go (also hmac).
+  spec rfc4231_case_6() -> Word[32]^8 {
+    hmac_sha256(
+      words_33([
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaa00,
+      ]), 131,
+      words_14([
+        0x54657374, 0x20557369, 0x6e67204c, 0x61726765, 0x72205468, 0x616e2042, 0x6c6f636b, 0x2d53697a,
+        0x65204b65, 0x79202d20, 0x48617368, 0x204b6579, 0x20466972, 0x73740000,
+      ]), 54,
+    )
+  }
+  spec rfc4231_case_6_expected() -> Word[32]^8 {
+    [
+      0x60e43159, 0x1ee0b67f, 0x0d8a26aa, 0xcbf5b77f, 0x8e0bc621, 0x3728c514, 0x0546040f, 0x0ee37f54,
+    ]
+  }
+
+  // RFC 4231 section 4.8, test case 7: the same 131-byte key and 152 bytes
+  // of data, "This is a test using a larger than block-size key and a
+  // larger than block-size data. The key needs to be hashed before being
+  // used by the HMAC algorithm." The value as printed in Botan's hmac.vec
+  // and Go's hmac_test.go (also hmac).
+  spec rfc4231_case_7() -> Word[32]^8 {
+    hmac_sha256(
+      words_33([
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaa00,
+      ]), 131,
+      words_38([
+        0x54686973, 0x20697320, 0x61207465, 0x73742075, 0x73696e67, 0x2061206c, 0x61726765, 0x72207468,
+        0x616e2062, 0x6c6f636b, 0x2d73697a, 0x65206b65, 0x7920616e, 0x64206120, 0x6c617267, 0x65722074,
+        0x68616e20, 0x626c6f63, 0x6b2d7369, 0x7a652064, 0x6174612e, 0x20546865, 0x206b6579, 0x206e6565,
+        0x64732074, 0x6f206265, 0x20686173, 0x68656420, 0x6265666f, 0x72652062, 0x65696e67, 0x20757365,
+        0x64206279, 0x20746865, 0x20484d41, 0x4320616c, 0x676f7269, 0x74686d2e,
+      ]), 152,
+    )
+  }
+  spec rfc4231_case_7_expected() -> Word[32]^8 {
+    [
+      0x9b09ffa7, 0x1b942fcb, 0x27635fbc, 0xd5b0e944, 0xbfdc6364, 0x4f071393, 0x8a7f5153, 0x5c3a35e2,
+    ]
+  }
+
+  // Project Wycheproof, testvectors_v1/hmac_sha256_test.json, tcId 171,
+  // "long key": a 65-byte key, one byte over the block, and a 32-byte
+  // message; the tag as printed there (also hmac).
+  spec wycheproof_hmac_tc_171() -> Word[32]^8 {
+    hmac_sha256(
+      words_17([
+        0x21178e26, 0xbc28ffc2, 0x7c06f762, 0xba190a62, 0x7075856d, 0x7ca6feab, 0x79ac6314, 0x9b17126e,
+        0x34fd9e55, 0x90e0e90a, 0xac801df0, 0x9505d8af, 0x2dd0a270, 0x3b352c57, 0x3ac9d2cb, 0x063927f2,
+        0xaf000000,
+      ]), 65,
+      words_8([
+        0x7d5f1d6b, 0x993452b1, 0xb53a4375, 0x760d10a2, 0x0d46a0ab, 0x9ec3943f, 0xc4b07a2c, 0xe735e731,
+      ]), 32,
+    )
+  }
+  spec wycheproof_hmac_tc_171_expected() -> Word[32]^8 {
+    [
+      0xe542ac8a, 0xc8f364ba, 0xe4b7da8b, 0x7a0777df, 0x350f001d, 0xe4e8cfa2, 0xd9ef0b15, 0x019496ec,
+    ]
+  }
+
+  // FIPS 198-1 steps 4 and 7 on RFC 4231 case 2. Key "Jefe" is shorter than
+  // the block, so K0 is that key and then zeros. The first word of K0 xor
+  // ipad is 0x4a656665 xor 0x36363636.
+  spec rfc4231_case_2_inner_pad() -> Word[32]^16 {
+    xor_pad(k0(words_1([0x4a656665]), 4), ipad())
+  }
+  spec rfc4231_case_2_inner_pad_expected() -> Word[32]^16 {
+    [
+      0x7c535053, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636,
+      0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636, 0x36363636,
+    ]
+  }
+  spec rfc4231_case_2_outer_pad() -> Word[32]^16 {
+    xor_pad(k0(words_1([0x4a656665]), 4), opad())
+  }
+  spec rfc4231_case_2_outer_pad_expected() -> Word[32]^16 {
+    [
+      0x16393a39, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c,
+      0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c, 0x5c5c5c5c,
+    ]
+  }
+
+  // FIPS 198-1 steps 1 to 3 on RFC 4231 case 6: the key is 131 bytes, longer
+  // than B, so K0 is SHA-256(key) and then eight zero words.
+  spec rfc4231_case_6_k0() -> Word[32]^16 {
+    k0(
+      words_33([
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa, 0xaaaaaaaa,
+        0xaaaaaa00,
+      ]),
+      131,
+    )
+  }
+  spec rfc4231_case_6_k0_expected() -> Word[32]^16 {
+    [
+      0x45ad4b37, 0xc6e2fc0a, 0x2cfcc1b5, 0xda524132, 0xec707615, 0xc2cae1db, 0xbc43c97a, 0xa521db81,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+  }
+
+
+  test "RFC 4231 case 2 inner and outer pads" {
+    (rfc4231_case_2_inner_pad() == rfc4231_case_2_inner_pad_expected())
+      && (rfc4231_case_2_outer_pad() == rfc4231_case_2_outer_pad_expected())
+  }
+
+  test "RFC 4231 case 6 hashes a key longer than the block" {
+    rfc4231_case_6_k0() == rfc4231_case_6_k0_expected()
+  }
+
+  test "RFC 4231 section 4.2 case 1" {
+    rfc4231_case_1() == rfc4231_case_1_expected()
+  }
+
+  test "RFC 4231 section 4.3 case 2" {
+    rfc4231_case_2() == rfc4231_case_2_expected()
+  }
+
+  test "RFC 4231 section 4.4 case 3" {
+    rfc4231_case_3() == rfc4231_case_3_expected()
+  }
+
+  test "RFC 4231 section 4.5 case 4" {
+    rfc4231_case_4() == rfc4231_case_4_expected()
+  }
+
+  test "RFC 4231 section 4.6 case 5 and its 128-bit truncation" {
+    (rfc4231_case_5() == rfc4231_case_5_expected())
+      && (rfc4231_case_5_truncated() == rfc4231_case_5_truncated_expected())
+  }
+
+  test "RFC 4231 section 4.7 case 6" {
+    rfc4231_case_6() == rfc4231_case_6_expected()
+  }
+
+  test "RFC 4231 section 4.8 case 7" {
+    rfc4231_case_7() == rfc4231_case_7_expected()
+  }
+
+  test "Wycheproof hmac_sha256 tcId 171, key one byte over the block" {
+    wycheproof_hmac_tc_171() == wycheproof_hmac_tc_171_expected()
   }
 }
 ```
