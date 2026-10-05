@@ -11338,3 +11338,103 @@ fn update_paths_type_each_index_against_its_own_axis() {
         [("c", "this array has fewer dimensions")]
     );
 }
+
+/// A path whose base does not have the required type is checked on the
+/// base's own axes (DIMENSIONS §7). An index that fits the required type
+/// and misses the base is still out of range, and an index that fits the
+/// base is not rejected for the required type.
+#[test]
+fn update_path_of_a_mistyped_base_uses_the_bases_axes() {
+    let (fixture, result) = rejected(concat!(
+        "  type Short = Word[8]^2; type Tall = Word[8]^8;\n",
+        "  type PlaneS = Short^4; type PlaneT = Tall^4;\n",
+        "  type CubeS = PlaneS^3; type CubeT = PlaneT^3;\n",
+        "  type Inner = Word[8]^2; type By3 = Inner^3; type By4 = By3^4; type Narrow = By4^5;\n",
+        "  type WideLeaf = Word[8]^5; type WideBy4 = WideLeaf^4;\n",
+        "  type WideBy3 = WideBy4^3; type Wide = WideBy3^2;\n",
+        "  spec in_range(t: Tall^4) -> Short^4 { t with [0][3] = 1 }\n",
+        "  spec fitting_row(t: CubeT) -> CubeS {\n",
+        "    t with [0][1] = [1, 2, 3, 4, 5, 6, 7, 8]\n",
+        "  }\n",
+        "  spec past(row: Word[8]^4) -> Short^2 { row with [0][0] = 1 }\n",
+        "  spec short_axis(t: Short^4) -> Tall^4 { t with [0][3] = 1 }\n",
+        "  spec long_row(t: CubeS) -> CubeT {\n",
+        "    t with [0][1] = [1, 2, 3, 4, 5, 6, 7, 8]\n",
+        "  }\n",
+        "  spec swapped(t: Narrow) -> Wide { t with [0][0][2][4] = 1 }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                String::from("`t` has type `(Word[8]^8)^4`, but `(Word[8]^2)^4` is required here")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                String::from(
+                    "`t` has type `((Word[8]^8)^4)^3`, but `((Word[8]^2)^4)^3` is required here"
+                )
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "row",
+                String::from("`row` has type `Word[8]^4`, but `(Word[8]^2)^2` is required here")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "0",
+                String::from("only an array can be indexed, but this selects within `Word[8]`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                String::from("`t` has type `(Word[8]^2)^4`, but `(Word[8]^8)^4` is required here")
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "3",
+                String::from("index 3 is out of range for `Word[8]^2`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                String::from(
+                    "`t` has type `((Word[8]^2)^4)^3`, but `((Word[8]^8)^4)^3` is required here"
+                )
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "[1, 2, 3, 4, 5, 6, 7, 8]",
+                String::from("this array has 8 elements, but `Word[8]^2` has 2")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                String::from(
+                    "`t` has type `(((Word[8]^2)^3)^4)^5`, but `(((Word[8]^5)^4)^3)^2` is \
+                     required here"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "4",
+                String::from("index 4 is out of range for `Word[8]^2`")
+            ),
+        ]
+    );
+    let past = &result.diagnostics[3];
+    assert_eq!(past.label(), "`Word[8]` has no elements");
+    assert_eq!(
+        past.secondary_spans()
+            .iter()
+            .map(|secondary| (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label()
+            ))
+            .collect::<Vec<_>>(),
+        [("row", "this array has fewer dimensions")]
+    );
+}

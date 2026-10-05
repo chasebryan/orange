@@ -672,11 +672,15 @@ OEP-0022 P2 has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,
 carrying and canonicalization. The same source supplies partial P4 mathematical
-preparation: exact `Int` product accumulators and three-pass normalization.
-Boundary and generated mathematical-reference tests check coefficients and
-every carry stage; transparent aliases do not enforce an invariant or establish
-refinement. P4 is incomplete. Native wide multiplication, checked P3 contracts
-and full X25519 implementation refinement remain later obligations.
+preparation: exact `Int` product accumulators and three-pass normalization,
+biased subtraction with a dedicated difference carry below 4B, dedicated
+squaring that doubles off-diagonal pairs, and multiplication by the ladder
+constant a24 = 121665 with exact coefficients above `Word[64]`. Boundary and
+generated mathematical-reference tests check coefficients, differences, squares,
+a24 products and every carry stage; transparent aliases do not enforce an
+invariant or establish refinement. P4 is incomplete. Native wide multiplication,
+checked P3 contracts and full X25519 implementation refinement remain later
+obligations.
 
 Lists of types named once for several functions, positions given as parameters,
 so that one quarter round can act on

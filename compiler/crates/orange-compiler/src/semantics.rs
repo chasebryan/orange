@@ -2577,11 +2577,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> bool {
         let base_type =
             first_typed_leaf(&update.base).and_then(|leaf| self.leaf_type(leaf, context, scope));
-        if let Some(base_type) = base_type
+        if let Some(base_type) = base_type.as_ref()
             && base_type.as_array().is_none()
         {
-            self.report_not_an_array(update.base.span, &base_type, true);
-            self.check_expression(&update.base, &base_type, context, scope, output);
+            self.report_not_an_array(update.base.span, base_type, true);
+            self.check_expression(&update.base, base_type, context, scope, output);
             return false;
         }
         let Some(array) = expected.as_array() else {
@@ -2602,18 +2602,31 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return false;
         }
-        let mut indices = self.check_static_index(&update.index, array, context, scope, output);
+        // A path of two or more indices is typed on the base's own axes.
+        // When that array differs from the type required of the update,
+        // DIMENSIONS §7 says the path is not checked against the required
+        // type: an index in range for the base stays in range, and a path
+        // past the base's scalars is `ORC0224` even if the required type
+        // is taller. A single index keeps its existing check against the
+        // required type. An untyped base (a literal, for example) has no
+        // axes of its own, so it still uses the required type.
+        let actual = base_type.as_ref().and_then(CoreType::as_array);
+        let walk_actual = !update.path.is_empty() && actual.is_some_and(|actual| actual != array);
+        let path_array = actual.filter(|_| walk_actual).unwrap_or(array);
+        let mut indices =
+            self.check_static_index(&update.index, path_array, context, scope, output);
         if self.halted {
             return false;
         }
         // Each further index selects within the element the one before it
         // reached: `x with [i][j] = v` replaces element j of row i.
-        let mut element = array.element();
+        let mut element = path_array.element();
         for index in &update.path {
             let Some(row) = element.as_array() else {
-                // A base of the wrong type is reported already, and its
-                // path was read against the type required instead.
-                if base {
+                // A path walked on the required type still skips this report
+                // when the base expression is itself ill-typed. A path walked
+                // on a different base array reports the base's own scalars.
+                if base || walk_actual {
                     self.report_path_past_scalars(update, index, &element);
                 }
                 return false;

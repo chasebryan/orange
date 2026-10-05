@@ -225,13 +225,15 @@ blocks would fit; no vector had to be moved or dropped.
 | `botan_xchacha_3` | Botan `src/tests/data/stream/chacha.vec`, third case under "XChaCha tests" | 128 bytes of XChaCha20 keystream, key 00:01:...:1f, nonce 00:01:...:17 |
 
 Every expected value is copied from the named source; none was produced by
-an oracle. A message longer than 256 bytes cannot be one Orange array, so
-A.2 test vector 2 (375 bytes) and the draft's two examples (304 bytes each)
-are each passed as two arrays, the second encrypted from the block counter
-its first block has (5, 4 and 5), which is what the RFC's `chacha20_encrypt`
-loop would have reached; the two halves together are the source's whole
-ciphertext. The draft prints each example twice, as a hex dump in A.2 and as
-continuous hex in A.3.2; `ref.py` parses both and asserts they agree.
+an oracle. These sources were written when an array held at most 256
+elements. `orangec` now admits 1 through 65,536, so the 375-byte and 304-byte
+messages fit in one array. The sources still pass A.2 test vector 2 (375
+bytes) and the draft's two examples (304 bytes each) as two arrays, the
+second encrypted from the block counter its first block has (5, 4 and 5),
+which is what the RFC's `chacha20_encrypt` loop would have reached; the two
+halves together are the source's whole ciphertext. The draft prints each
+example twice, as a hex dump in A.2 and as continuous hex in A.3.2; `ref.py`
+parses both and asserts they agree.
 
 ### Provenance and claims
 
@@ -267,10 +269,11 @@ corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the two messages longer than that
-  (375 and 304 bytes) are passed as two arrays with the second array's
-  block counter set by hand; the RFC's single `chacha20_encrypt` call over
-  the whole message is not one spec here.
+- The two messages longer than 256 bytes (375 and 304) are still passed as
+  two arrays, with the second array's block counter set by hand. An array
+  holds 1 through 65,536 elements, so that split is no longer required by
+  the language; the RFC's single `chacha20_encrypt` call over the whole
+  message is not one spec here.
 - Arrays have no length parameter, so the partial-block case of section
   2.4.1 is written once per message length (`encrypt_48`, `encrypt_64`,
   `encrypt_114`, `encrypt_119`, `encrypt_127`, `encrypt_128`), six copies
