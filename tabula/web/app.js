@@ -658,16 +658,16 @@ async function renameEntry(node) {
   }
   for (const tab of S.tabs) {
     if (tab.kind !== "file") continue;
-    if (tab.path === node.path || tab.path.startsWith(`${node.path}/`)) {
-      tab.path = to + tab.path.slice(node.path.length);
-      tab.key = `file:${tab.path}`;
-      tab.title = baseName(tab.path);
-    }
+    const next = movedPath(tab.path, node.path, to);
+    if (next === tab.path) continue;
+    tab.path = next;
+    tab.key = `file:${tab.path}`;
+    tab.title = baseName(tab.path);
+    if (tab.result) tab.result.path = movedPath(tab.result.path, node.path, to);
   }
-  if (folder && S.expanded.has(node.path)) {
-    S.expanded.delete(node.path);
-    S.expanded.add(to);
-  }
+  S.expanded = new Set([...S.expanded].map((path) => movedPath(path, node.path, to)));
+  S.selectedFolder = movedPath(S.selectedFolder, node.path, to);
+  store.set(workspaceKey("recent"), store.get(workspaceKey("recent"), []).map((path) => movedPath(path, node.path, to)).slice(0, 12));
   expandTo(to);
   renderTabs();
   persistTabs();
@@ -695,6 +695,11 @@ async function deleteEntry(node) {
     tab.dirty = false;
     await closeTab(tab);
   }
+  const removed = (path) => path === node.path || path.startsWith(`${node.path}/`);
+  S.expanded = new Set([...S.expanded].filter((path) => !removed(path)));
+  store.set(workspaceKey("expanded"), [...S.expanded]);
+  store.set(workspaceKey("recent"), store.get(workspaceKey("recent"), []).filter((path) => !removed(path)));
+  if (removed(S.selectedFolder)) S.selectedFolder = dirName(node.path);
   await refreshTree();
   toast(`Moved ${node.name} to .tabula/trash`);
 }
@@ -884,7 +889,7 @@ function createFileTab(path, text) {
   const existing = S.tabs.find((candidate) => candidate.key === `file:${path}`);
   if (existing) return existing;
   const view = h("div", { class: "view" });
-  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const eol = lineEndingOf(text);
   const tab = registerTab({
     id: ++tabSequence,
     kind: "file",
@@ -1015,8 +1020,29 @@ async function runTab(tab, action, { quiet = false } = {}) {
   applyResult(tab, action, source, response);
 }
 
+// The ending the file used when it was opened. A textarea only ever holds LF,
+// so saving and checking put this ending back. A file that mixes endings is
+// kept as CRLF when it has any CRLF, and otherwise as LF.
+function lineEndingOf(text) {
+  if (text.includes("\r\n")) return "\r\n";
+  if (text.includes("\r")) return "\r";
+  return "\n";
+}
+
+function lineEndingLabel(eol) {
+  if (eol === "\r\n") return "CRLF";
+  if (eol === "\r") return "CR";
+  return "LF";
+}
+
 function diskTextOf(tab, text) {
-  return tab.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+  return tab.eol === "\n" ? text : text.replace(/\n/g, tab.eol);
+}
+
+// A path, or a path inside it, after `from` is renamed to `to`.
+function movedPath(path, from, to) {
+  if (path === from || (from && path.startsWith(`${from}/`))) return to + path.slice(from.length);
+  return path;
 }
 
 function mapDiagnostic(diagnostic, source, starts) {
@@ -2248,7 +2274,7 @@ function renderStatus() {
   statusItems.live.replaceChildren(icon(S.live ? "eye" : "pencil"), S.live ? "Live checks on" : "Live checks off");
   statusItems.live.title = S.live ? "orangec checks the file as you type. Click to check only when you press Check or Evaluate." : "Click to let orangec check the file as you type.";
   statusItems.saved.textContent = file ? (tab.dirty ? "Unsaved changes" : "Saved") : tab && tab.kind === "doc" ? `Reading ${tab.path}` : "";
-  statusItems.eol.textContent = file ? (tab.eol === "\r\n" ? "CRLF" : "LF") : "";
+  statusItems.eol.textContent = file ? lineEndingLabel(tab.eol) : "";
   statusItems.eol.hidden = !file;
   renderCursor();
 }
