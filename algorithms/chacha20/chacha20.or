@@ -418,9 +418,10 @@ module chacha20 {
   }
 
   // Appendix A.2, test vector 2: the 375-byte IETF text under the key whose
-  // last byte is 1, the nonce whose last byte is 2, initial counter 1. An
-  // array holds at most 256 bytes, so the message is passed as its first 256
-  // bytes (blocks 1 to 4) and its last 119 bytes (blocks 5 and 6).
+  // last byte is 1, the nonce whose last byte is 2, initial counter 1. The
+  // message is passed as its first 256 bytes (blocks 1 to 4) and its last
+  // 119 bytes (blocks 5 and 6). An array holds 1 through 65,536 elements;
+  // this split remains from when the bound was 256.
   spec ietf_text_head() -> Word[8]^256 {
     [
       0x41, 0x6e, 0x79, 0x20, 0x73, 0x75, 0x62, 0x6d, 0x69, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x20, 0x74,
