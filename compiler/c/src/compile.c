@@ -5697,9 +5697,13 @@ static void analyze(Compiler *c) {
                          "parameters and bindings share one set of names", 2);
                 local->duplicate = 1;
             }
-            if (!local->type_ok && !local->type_reported) {
-                reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
-                                local->length_start, local->length_end);
+            if (!local->type_ok) {
+                /* A rejected binding type is already diagnosed. Do not also
+                   typecheck its initializer (Float = 1 must not add ORC0207). */
+                if (!local->type_reported) {
+                    reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
+                                    local->length_start, local->length_end);
+                }
                 continue;
             }
             check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
