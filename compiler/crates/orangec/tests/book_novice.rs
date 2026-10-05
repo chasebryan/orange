@@ -127,7 +127,7 @@ fn n7_sources() -> Vec<&'static str> {
 fn n7_positive_listings_check_and_evaluate_repeatably() {
     let sources = n7_sources();
     let outputs = fences(N7, "text");
-    let rejected = ["mixed_conversion", "past_end", "slipped"];
+    let rejected = ["mixed_conversion", "past_end", "slipped", "no_range"];
     let mut checked = 0;
     for source in &sources {
         let name = module_name(source);
@@ -163,7 +163,7 @@ fn n7_positive_listings_check_and_evaluate_repeatably() {
         checked += 1;
     }
     assert_eq!(checked, 8, "named_round through bounded");
-    assert_eq!(sources.len(), 11);
+    assert_eq!(sources.len(), 12);
 }
 
 #[test]
@@ -172,6 +172,7 @@ fn n7_rejected_listings_print_no_value() {
         ("mixed_conversion", "ORC0108"),
         ("past_end", "ORC0223"),
         ("slipped", "ORC0223"),
+        ("no_range", "ORC0226"),
     ] {
         let source = n7_sources()
             .into_iter()
@@ -200,8 +201,49 @@ fn n7_rejected_listings_print_no_value() {
         .expect("slipped index listing");
     let slipped_diagnostic = String::from_utf8(run("check", slipped).stderr).expect("UTF-8");
     assert!(
-        slipped_diagnostic.contains("1 through 4"),
+        slipped_diagnostic.contains(
+            "this index runs from 1 through 4, out of range for `Word[8]^4`"
+        ),
         "{slipped_diagnostic}"
     );
-    assert!(slipped_diagnostic.contains("ORC0223"), "{slipped_diagnostic}");
+    assert!(
+        slipped_diagnostic.contains(
+            "every value an index can take, over every loop index and word in it, \
+             must select an element"
+        ),
+        "{slipped_diagnostic}"
+    );
+    let past_end = n7_sources()
+        .into_iter()
+        .find(|source| module_name(source) == "past_end")
+        .expect("past-end listing");
+    let past_end_diagnostic = String::from_utf8(run("check", past_end).stderr).expect("UTF-8");
+    assert!(
+        past_end_diagnostic.contains("index `4` is out of range for `Word[32]^4`"),
+        "{past_end_diagnostic}"
+    );
+    assert!(
+        past_end_diagnostic.contains("a literal index must be less than the array's length"),
+        "{past_end_diagnostic}"
+    );
+    let no_range = n7_sources()
+        .into_iter()
+        .find(|source| module_name(source) == "no_range")
+        .expect("unbounded Int index listing");
+    let no_range_diagnostic = String::from_utf8(run("check", no_range).stderr).expect("UTF-8");
+    assert!(
+        no_range_diagnostic.contains(
+            "an `Int` index may use only integer literals, loop indices, and words \
+             converted with `as Int`"
+        ),
+        "{no_range_diagnostic}"
+    );
+    assert!(
+        no_range_diagnostic.contains("this `Int` has no bound"),
+        "{no_range_diagnostic}"
+    );
+    assert!(
+        no_range_diagnostic.contains("every index is proved in range when the program is checked"),
+        "{no_range_diagnostic}"
+    );
 }

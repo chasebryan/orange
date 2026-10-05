@@ -104,11 +104,12 @@ expression that produced it, but only when you write the conversion.
 operand as Type
 ```
 
-**Assumption A2.** Among `Int`, `Word[8]`, `Word[16]`, `Word[32]`, and
-`Word[64]`, `as` keeps the operand's integer value and then, if the target
-is `Word[n]`, reduces that integer modulo 2ⁿ. Nothing else converts
-implicitly. Widening does not invent high bits. Narrowing keeps the low
-bits, which is the residue rule you already used for wrapping.
+**Assumption A2.** `as` keeps the operand's integer value. If the target is
+`Word[n]`, it then reduces that integer modulo 2ⁿ. Nothing else converts
+implicitly. Chapter 6 used widths 8 and 16. `Word[32]` is that type with
+width 32, so its values are the integers 0 through 2³² − 1. Widening does
+not invent high bits. Narrowing keeps the low bits, which is the residue
+rule you already used for wrapping.
 
 On a byte, 255 has integer value 255. `255` as `Word[32]` is still 255,
 written `0x000000ff`. The wider word has room; the value does not change.
@@ -183,9 +184,9 @@ module mixed_conversion {
 ```
 
 The diagnostic is `ORC0108`: `` `as` follows `+` without grouping parentheses ``.
-The note says that `as` converts exactly one operand, so you parenthesize
-the conversion or the expression it converts. No value is printed. The
-checker has not picked a winner between Proposition N7.1's two functions.
+The note says `` `as` converts exactly one operand; parenthesize the conversion or the expression it converts ``.
+No value is printed. The checker has not picked a winner between
+Proposition N7.1's two functions.
 [B1]
 
 ### N7.5 The quarter round, one name per update
@@ -204,17 +205,19 @@ c += d; b ^= c; b <<<= 7;
 Read each statement as “the new value of this name is the old value
 combined with the operation.” The standard then uses the same letter for
 the new value. Under assumption A1, Orange cannot store the new value
-back into `a`. The transcription therefore names each update: `a1` is the
-value of `a` after the first addition, `d1` is the value of `d` after the
-first rotation, and so on through `a2`, `d2`, `c2`, and `b2`.
+back into `a`. Each update therefore needs a fresh name: `a1`, `d1`,
+`c1`, `b1`, `a2`, `d2`, `c2`, and `b2`.
 
-This fragment still has no way to return four words from one function.
-Each output word is its own function, and that function repeats only the
-prefix of the round that the word depends on. The dependency is real:
-final `a` is `a2`, which does not need `d2`, `c2`, or `b2`; final `d` is
-`d2`, which needs `a2` but not `c2` or `b2`. Repeating a prefix is the
-cost of having only one result. It is not a second algorithm. Later in
-this lesson, one function will hold all four words.
+One function still returns one word, as in Chapter 5, so the transcription
+uses four functions. Each function names the prefix its result depends on
+and recomputes that prefix from the original inputs. The result of
+`quarter_a` is `a2`, written `a1 + b1`, not a second binding of `a2`.
+The result of `quarter_d` is `d2`. `quarter_c` adds `c1` to that `d2`.
+`quarter_b` rotates `b1` XOR the resulting `c2`. Final `a` does not need
+`d2`, `c2`, or `b2`. Final `d` needs `a2` and does not need `c2` or `b2`.
+Repeating a prefix is the cost of one result. It is not a second
+algorithm. Later in this lesson, one function binds all eight names and
+returns all four words.
 
 **Listing N7.4 — `quarter.or`**
 
@@ -302,13 +305,79 @@ one end reenter the other. Therefore:
 d1 = 0x51721330
 ```
 
-The remaining six names follow the same three operations. Carrying them
-out yields `c1 = 0xecff8273`, `b1 = 0xd8177edf`, `a2 = 0xea2a92f4`,
-`d2 = 0x5881c4bb`, `c2 = 0x4581472e`, and `b2 = 0xcb1cf8ce`. The four
-final names are the RFC's four results. The interesting point is not the
-arithmetic of one vector. It is that each name in the program is one
-update in the standard, and each update uses only names that the preceding
-updates have defined.
+The remaining six names use the same three operations. Two of the additions
+stay below 2³². The addition that produces `c2` does not.
+
+`c + d1` produces no carry from one byte into the next. From the low
+byte:
+
+```text
+0x43 + 0x30 = 0x73
+0x6f + 0x13 = 0x82
+0x8d + 0x72 = 0xff
+0x9b + 0x51 = 0xec
+```
+
+The second of those sums is 111 + 19 = 130, which is `0x82` and still
+below 256, so the carry inside that byte stops there. Thus `c1 = 0xecff8273`, and the
+sum is less than 2³². XOR with `b`:
+
+```text
+0x01020304 ^ 0xecff8273 = 0xedfd8177
+```
+
+A left rotation by 12 moves the high 12 bits, `0xedf`, to the low end and
+the low 20 bits, `0xd8177`, to the high end. Thus `b1 = 0xd8177edf`.
+
+`a1 + b1` does involve carries, and the integer sum still fits:
+
+```text
+303240213 + 3625418463 = 3928658676 = 0xea2a92f4
+```
+
+`2³² = 4294967296`. Because 3928658676 < 4294967296, `a2 = 0xea2a92f4`.
+This is already the RFC's final `a`. XOR with `d1`, then rotate left by 8.
+On a 32-bit word that rotation moves each byte one place toward the high
+end and brings the high byte around to the low end:
+
+```text
+0x51721330 ^ 0xea2a92f4 = 0xbb5881c4
+d2 = 0x5881c4bb
+```
+
+`0x5881c4bb` is the RFC's final `d`. The next addition is the one that
+wraps. In ordinary integers:
+
+```text
+0xecff8273 + 0x5881c4bb = 3976168051 + 1484899515 = 5461067566
+5461067566 = 0x14581472e = 1 × 2³² + 0x4581472e
+```
+
+Addition on `Word[32]` denotes the residue modulo 2³², so the leading 1
+is dropped and `c2 = 0x4581472e`. That is the RFC's final `c`. Stopping
+at 5461067566 keeps the integer sum and skips that reduction. XOR with
+`b1`:
+
+```text
+0xd8177edf ^ 0x4581472e = 0x9d9639f1
+```
+
+Left rotation by 7 moves the high seven bits, `1001110`, onto the low end.
+The other 25 bits move up. These are the bits of `0x9d9639f1`, then the
+bits after that rotation:
+
+```text
+1001 1101 1001 0110 0011 1001 1111 0001
+1100 1011 0001 1100 1111 1000 1100 1110
+```
+
+The second line is `b2 = 0xcb1cf8ce`, the RFC's final `b`.
+
+The four final names are the RFC's four results. `a2` and `d2` matched
+them before the last addition. `c2` matches only after the residue is
+taken, and `b2` is computed from that residue. The interesting point of
+the program is still the names: each name is one update in the standard,
+and each update uses only names that the preceding updates have defined.
 
 **Proposition N7.2.** Suppose `+` on `Word[32]` denotes addition modulo
 2³², `^` denotes bitwise XOR, and `<<< n` denotes left rotation by the
@@ -356,9 +425,10 @@ compiler build implements the same operators.
 
 Listing N7.4 repeats the early updates because each function returns one
 word. An **array** holds a fixed number of elements of one type as a single
-value. `Word[32]^4` means four words of width 32. The `^4` is a length,
-not an exponent. A **literal index** selects one element by an integer
-written in the source. Counting starts at zero.
+value. `Word[32]^4` means four words of width 32. In a type, `^` followed
+by a length is not the XOR operator from Chapter 5. XOR remains the
+operator between two values, as in `d ^ a1`. A **literal index** selects
+one element by an integer written in the source. Counting starts at zero.
 
 **Assumption A3.** An array literal is checked against the length in its
 type. A literal index `k` on an array of length `n` is accepted only when
@@ -421,9 +491,10 @@ module past_end {
 }
 ```
 
-The diagnostic is `ORC0223`: index `` `4` `` is out of range for
-`Word[32]^4`, and the indices run from 0 through 3. The failure is a
-check, not a wrapped position and not a value invented past the end. [A1]
+The diagnostic is `ORC0223`: `` index `4` is out of range for `Word[32]^4` ``.
+The label says the indices run from 0 through 3. The note says `` a literal index must be less than the array's length ``.
+The failure is a check, not a wrapped position and not a value invented
+past the end. [A1]
 
 One function can now follow every update once and return all four results.
 Position 0 holds final `a`, position 1 final `b`, position 2 final `c`,
@@ -707,7 +778,9 @@ order. Each index in the table is inside 0 through 3, which is
 Proposition N7.7's first claim. The checker accepts the loop because of
 that range, not because a particular run happened to stay inside.
 
-`total` converts each selected word to `Int` and adds it to an
+The parentheses in `s + (x[i] as Int)` are the rule from Listing N7.3.
+`as` converts the selected word, and the addition sits outside that
+conversion. `total` converts each selected word to `Int` and adds it to an
 accumulator that starts at 0. Conversion to `Int` keeps the word's
 integer value, so the four addends are 286331153, 16909060, 2609737539,
 and 19088743. Their sum is 2932066495. That integer is less than 2³², so
@@ -729,20 +802,39 @@ module slipped {
 }
 ```
 
-The diagnostic is `ORC0223`: this index runs from 1 through 4, which is
-out of range for `Word[8]^4`, whose indices run from 0 through 3. The
-note says that every value the index can take must select an element.
+The diagnostic is `ORC0223`: `` this index runs from 1 through 4, out of range for `Word[8]^4` ``.
+The label says the indices run from 0 through 3. The note says `` every value an index can take, over every loop index and word in it, must select an element ``.
 No step runs. The parameter `x` is never read for a value, because the
-program is rejected first. An `Int` that is not built from the loop index
-and integer literals, such as a parameter used directly in brackets, is a
-different rejection, `ORC0226`: the checker has no range it can prove.
-Listing N7.11 is the case where a range can be proved, and the proof says
-the range leaves the array. [E1]
+program is rejected first.
+
+An `Int` parameter is not built from the loop index and integer literals.
+The checker has no range for it, so it does not guess that the parameter
+stayed inside the array.
+
+**Listing N7.12 — `no_range.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module no_range {
+  spec at(k: Int, words: Word[32]^4) -> Word[32] {
+    words[k]
+  }
+}
+```
+
+The diagnostic is `ORC0226`: `` an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``.
+The label says `` this `Int` has no bound ``.
+The note says `` every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals ``.
+No step runs, and `words` is not read for a value. Listing N7.11 proved a
+range and found that the range leaves the array. Listing N7.12 has no
+range to prove. The division, remainder, and conditional forms in that
+note are the checker's list. The indices in this lesson use addition and
+subtraction of the loop index and integer literals. Those further forms
+are not a new exercise. [E1]
 
 ### N7.10 The finish line
 
-The reading index stated this lesson before it was written. Finishing N7
-means four outcomes, in dependency order. This section is that finish line.
+Four outcomes finish this lesson, in the order the listings introduced them.
 
 1. **Name the step.** You can bind an intermediate value with a name, a
    stated type, and one evaluation, and you can write the ChaCha20 quarter
@@ -751,7 +843,8 @@ means four outcomes, in dependency order. This section is that finish line.
    with `as`, and you can say why `x + y as Word[32]` is rejected: the two
    parenthesizations are different functions.
 3. **Keep several values.** You can store one type at literal indices in
-   an array, choose with `Bool` and `if`, and hold a short fixed sequence
+   an array and reject an index that fails `0 ≤ k < n` before evaluation.
+   You can choose with `Bool` and `if`, and hold a short fixed sequence
    of values in a tuple, including the four words of one quarter round.
 4. **Repeat inside a proved bound.** You can write a bounded `for` whose
    index runs through a finite range known before the loop starts, and you
@@ -761,20 +854,23 @@ means four outcomes, in dependency order. This section is that finish line.
 All four are now in the listings above, and each stops at a stated
 boundary.
 
-1. Listings N7.1 and N7.4 name each step. Proposition N7.2 still assumes
-   what `+`, `^`, and `<<<` denote.
+1. Listing N7.1 names the byte steps. Listing N7.4 names each prefix its
+   result depends on. Listings N7.7 and N7.9 bind all eight updates.
+   Proposition N7.2 still assumes what `+`, `^`, and `<<<` denote.
 2. Listing N7.2 shows the two conversions, and Listing N7.3 is rejected
    with `ORC0108` rather than silently picking one.
-3. Listings N7.5, N7.7, N7.8, and N7.9 hold several values: an array at
-   literal indices, a `Bool` choice, and one tuple for the four words.
+3. Listing N7.5 selects positions 0 and 3. Listing N7.6 is rejected with
+   `ORC0223` because 4 is not below the length. Listings N7.7, N7.8, and
+   N7.9 then hold several values: the quarter round as an array, a `Bool`
+   choice, and one tuple for the four words.
 4. Listing N7.10 repeats inside `0..4`. Proposition N7.7 is why `3 - i`
    is in range. Listing N7.11 is rejected with `ORC0223` before any step
-   runs, because `i + 1` is not.
+   runs, because the proved range of `i + 1` leaves the array. Listing
+   N7.12 is rejected with `ORC0226` because an `Int` parameter has no
+   range to prove.
 
-This compiler accepts every one of those forms. The lesson does not stop
-early for a missing feature. Finishing the four outcomes still does not
-prove ChaCha20 secure, does not prove the compiler correct, and does not
-renumber the original manuscript.
+Finishing the four outcomes does not prove ChaCha20 secure, does not prove
+the compiler correct, and does not renumber the original manuscript.
 
 ### N7.11 Work at the desk
 
@@ -826,7 +922,8 @@ tuple's order rather than a new arithmetic step?
 **Exercise N7.11 — Stay inside the length.** For each `i` in 0, 1, 2, and
 3, compute `3 - i` and `i + 1`. Which of those two families is entirely
 inside 0 through 3? What does the compiler do with the other family, and
-does the loop body run?
+does the loop body run? What does Listing N7.12 reject, and why is that
+diagnostic not `ORC0223`?
 
 **Exercise N7.12 — Add the words as integers.** Convert each of
 `0x11111111`, `0x01020304`, `0x9b8d6f43`, and `0x01234567` to an integer
@@ -904,7 +1001,11 @@ does recompute the body; the projection only reads the element.
 **N7.11.** `3 - i` is 3, 2, 1, 0, all inside 0 through 3. `i + 1` is
 1, 2, 3, 4. The value 4 is not a legal index of a length-4 array, so
 Listing N7.11 is rejected with `ORC0223` before any step. The body does
-not run, and no array is printed.
+not run, and no array is printed. Listing N7.12 is rejected with
+`ORC0226`. The parameter `k` is an `Int` with no bound the checker can
+compute, so there is no range to compare with the length. `words` is not
+read. The two codes are different failures: a proved range that leaves
+the array, and no proved range at all.
 
 **N7.12.** The integers are 286331153, 16909060, 2609737539, and
 19088743. Their sum is 2932066495, which is `bounded::total`, because
@@ -955,7 +1056,8 @@ slice is implemented here; that is not acceptance of the proposal.
 **[E1] Orange loops.** `docs/LOOPS_2026.md` and the S3e fixtures in this
 repository. A loop's bounds are integer literals, and an index built from
 a loop index is proved in range before evaluation. The diagnostic quoted
-for Listing N7.11 is `ORC0223`, including the computed range. `ORC0226` is
-the separate rejection for an `Int` index that has no such range. Bounded
+for Listing N7.11 is `ORC0223`, including the computed range. Listing N7.12
+is `ORC0226`: `` an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``,
+with the label `` this `Int` has no bound ``. Bounded
 iteration here is not a general `while`, and it adds no cryptographic
 claim.
