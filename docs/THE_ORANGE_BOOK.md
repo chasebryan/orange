@@ -2237,7 +2237,7 @@ error[ORC0226]: an `Int` index may use only integer literals, loop indices, and 
   |
 4 |     sbox[k]
   |          ^ this `Int` has no bound
-  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
+  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, position parameters, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
 ```
 
 A byte does have a bound, 0 through 255, and a lookup keyed by a byte is how
@@ -4694,7 +4694,7 @@ source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3w)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4952,6 +4952,16 @@ and [OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md)
 record S3u in owner review. The corpus tests representation and arithmetic;
 it makes no complete ML-KEM claim.
 
+S3w, recorded in the [position-parameter specification](POSITIONS_2026.md) and
+[OEP-0027](governance/oeps/OEP-0027-orange-2026-position-parameters.md), both
+in owner review, builds on S3u and does not depend on S3v. A function may
+name positions, `quarter[a at 0..16, b at 0..16, c at 0..16, d at 0..16]`,
+and a call chooses them, `quarter[0, 4, 8, 12](s)`. The body is checked once
+for every integer in each range, so one quarter round acts on four positions
+of a 16-word state. `at` is not a reserved word. ChaCha20's double round is
+written that way, and the quarter-round vector of RFC 8439 section 2.1.1 is
+reproduced at those positions.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
@@ -4997,10 +5007,11 @@ which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
 through OEP-0023, and S3t's, which builds on S3s, through OEP-0024, and
-S3u's, which builds on S3t, through OEP-0025.
+S3u's, which builds on S3t, through OEP-0025, and S3w's, which builds on
+S3u, through OEP-0027.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All twenty migrations so far are small: every source
+documented migration. All twenty-one migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -5027,7 +5038,9 @@ under S3s; rank-two type aliases and chained indices are newly admitted.
 S3t retains S3s values and costs and admits own finite size names in modulus
 expressions, while rejecting invalid concrete instances before evaluation.
 S3u retains S3t values and costs; a third and fourth dimension and update
-paths, both rejected before, are newly admitted.
+paths, both rejected before, are newly admitted. S3w retains S3u values and
+costs; position parameters `a at lo..hi`, rejected as ordinary names before,
+are newly admitted, and the note of `ORC0226` names them.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6380,7 +6393,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u and S3w in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -6985,7 +6998,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0242` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated |
+| `ORC0201`–`ORC0243` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated, a position parameter whose range is empty or too large, or a call position that is not an integer in that range |
 | `ORC0250`–`ORC0252` | Formatting | Formatter resource limit, inconsistent result, source requiring formatting under `--check` |
 | `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
 | `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |

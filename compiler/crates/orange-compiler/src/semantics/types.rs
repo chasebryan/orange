@@ -416,6 +416,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Instance {
                     parameters: &function.sizes,
                     values: [0; MAX_SIZES_PER_FUNCTION],
+                    positions: [(0, 0); MAX_SIZES_PER_FUNCTION],
                 },
                 &[],
             );

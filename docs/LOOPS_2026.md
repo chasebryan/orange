@@ -413,10 +413,9 @@ not lift.
 Static indices are a deliberate limit, not an accident. An index that depends
 on data is the classic source of a timing channel in table-driven
 cryptography, and in Orange it is simply not expressible. The ChaCha20
-quarter round still names its four positions literally, because the
-positions of a quarter round are parameters of the round, and an index built
-from parameters is not static. A later slice may add index parameters that are
-themselves static, such as a quarter round over positions known at each call.
+quarter round can take its four positions as the position parameters of S3w,
+`a at lo..hi`, each proved against the state. An index built from a run-time
+parameter is still not static.
 
 A fixture that reproduces a standard's example value is not thereby a verified
 transcription of that standard. No statement here says whether a loop, an

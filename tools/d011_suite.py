@@ -632,7 +632,7 @@ ORACLE_SOURCES = (
     ("OS-HMAC", "algorithms/hmac-hkdf/hmac-hkdf.or", "2cff7fbc89366fe90df5acc5e024a0b0342e8f733a5c7e9cdbaa33aa126701eb"),
     ("OS-HKDF", "algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or",
      "6c56017c937602a018e03d569749504fd6afcc19420a0933cfff56b66a0c2b84"),
-    ("OS-CHACHA", "algorithms/chacha20/chacha20.or", "28673361293e18f3350ea42f86d701ef07bbe0819c8ce41850e12e9339258e0a"),
+    ("OS-CHACHA", "algorithms/chacha20/chacha20.or", "f7f10542190fca4fd930a8eb46a815b898eed260c5c32ca906518dee7d4a5623"),
     ("OS-AEAD", "algorithms/chacha20-poly1305/chacha20-poly1305.or",
      "56cfb47a2794af840a513611aa20e8778083dcf26c85f801f5ff44953f03d4a2"),
     ("OS-AES", "algorithms/aes/aes.or", "4a4ba27158e2e61a92510891a82d7227b5c1ad87667ecc69cd0daf53c1546603"),

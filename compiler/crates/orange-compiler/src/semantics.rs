@@ -87,7 +87,8 @@ const STATIC_MODULUS_NOTE: &str = "a modulus is built from integer literals and,
 const BUILT_IN_TYPE_NAMES: [&str; 4] = ["Int", "Bool", "Word", "Mod"];
 const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program is checked: a \
      word index ranges over its type, and an `Int` index is built from integer literals, loop \
-     indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals";
+     indices, position parameters, and words converted with `as Int`, using `+`, `-`, `*`, `/`, \
+     `%`, and conditionals";
 const BOOL_OPERATOR_NOTE: &str = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
 const SHIFT_AMOUNT_NOTE: &str = "an amount written as one integer literal is from 0 through n - 1; \
      any other amount is computed, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`";
@@ -691,6 +692,13 @@ struct CheckedBinding {
 enum NameResolution<'ast> {
     /// A size parameter, whose value is fixed in the instance.
     Size(u32),
+    /// A position parameter. `high` is exclusive. `slot` counts only
+    /// position parameters, in declaration order.
+    Position {
+        low: u32,
+        high: u32,
+        slot: u32,
+    },
     Parameter(usize),
     Binding(usize, Option<u32>),
     /// The binding at `index` of the block at `block` in the block scopes.
@@ -758,6 +766,9 @@ impl<'ast> BodyContext<'ast> {
         if let Some((_, value)) = self.instance.find(name) {
             return NameResolution::Size(value);
         }
+        if let Some((_, low, high, slot)) = self.instance.find_position(name) {
+            return NameResolution::Position { low, high, slot };
+        }
         if let Some(index) = self
             .parameters
             .iter()
@@ -811,7 +822,7 @@ impl<'ast> BodyContext<'ast> {
     /// Returns the type of a name in scope without reporting.
     fn name_type(&self, name: &str) -> Option<CoreType> {
         match self.resolve(name) {
-            NameResolution::Size(_) => Some(CoreType::Int),
+            NameResolution::Size(_) | NameResolution::Position { .. } => Some(CoreType::Int),
             NameResolution::Parameter(index) => self.parameter_types.get(index).cloned().flatten(),
             NameResolution::Binding(index, element) => {
                 element_type(self.binding_types.get(index).cloned().flatten(), element)
@@ -844,6 +855,9 @@ impl<'ast> BodyContext<'ast> {
     fn earlier_name(&self, name: &str) -> Option<(Span, &'static str)> {
         if let Some((size, _)) = self.instance.find(name) {
             return Some((size.name.span, "the size parameter is here"));
+        }
+        if let Some((parameter, _, _, _)) = self.instance.find_position(name) {
+            return Some((parameter.name.span, "the position parameter is here"));
         }
         if let Some(parameter) = self
             .parameters
@@ -1563,21 +1577,35 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .conditionals
             .into_iter()
             .collect::<Option<Vec<_>>>()?;
-        let parameters = context
+        let mut parameters = context
             .parameter_types
             .iter()
             .cloned()
             .collect::<Option<Vec<_>>>()?;
+        let position_count = function.sizes.iter().filter(|size| size.is_index()).count();
+        if parameters.try_reserve(position_count).is_err() {
+            self.resource_limit(function.span, "parameter type storage allocation failed");
+            return None;
+        }
+        for _ in 0..position_count {
+            parameters.push(CoreType::Int);
+        }
         let name = self.copy_core_name(&function.name.text, function.name.span)?;
         let mut sizes = Vec::new();
-        if sizes
-            .try_reserve_exact(context.instance.values().len())
-            .is_err()
-        {
+        let size_count = function
+            .sizes
+            .iter()
+            .filter(|size| !size.is_index())
+            .count();
+        if sizes.try_reserve_exact(size_count).is_err() {
             self.resource_limit(function.span, "size storage allocation failed");
             return None;
         }
-        sizes.extend_from_slice(context.instance.values());
+        for (parameter, value) in function.sizes.iter().zip(context.instance.values()) {
+            if !parameter.is_index() {
+                sizes.push(*value);
+            }
+        }
         let instance = context
             .instance
             .suffix(&type_spellings(self.source, &function.sizes));
@@ -1627,7 +1655,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .sizes
                 .iter()
                 .find(|size| !size.is_type() && size.name.text == *text)
-                .map(|size| (size.name.span, "the size parameter is here"));
+                .map(|size| {
+                    (
+                        size.name.span,
+                        if size.is_index() {
+                            "the position parameter is here"
+                        } else {
+                            "the size parameter is here"
+                        },
+                    )
+                });
             let parameter = function
                 .parameters
                 .iter()
@@ -1912,14 +1949,28 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     None,
                 )
             }
+            // A position is the call's integer, stored after the source parameters.
+            NameResolution::Position { slot, .. } => (
+                Some(Some(CoreType::Int)),
+                u32::try_from(context.parameters.len())
+                    .ok()
+                    .and_then(|count| count.checked_add(slot))
+                    .map(CoreNodeKind::Parameter)
+                    .ok_or(()),
+                None,
+            ),
             NameResolution::Parameter(index) => (
                 context.parameter_types.get(index).cloned(),
-                u32::try_from(index).map(CoreNodeKind::Parameter),
+                u32::try_from(index)
+                    .map(CoreNodeKind::Parameter)
+                    .map_err(|_| ()),
                 None,
             ),
             NameResolution::Binding(index, element) => (
                 context.binding_types.get(index).cloned(),
-                u32::try_from(index).map(CoreNodeKind::Local),
+                u32::try_from(index)
+                    .map(CoreNodeKind::Local)
+                    .map_err(|_| ()),
                 element,
             ),
             NameResolution::BlockBinding {
@@ -1929,7 +1980,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             } => match context.blocks.get(block) {
                 Some(block) => (
                     block.binding_types.get(index).cloned(),
-                    u32::try_from(index).map(|index| block.owner.node(index)),
+                    u32::try_from(index)
+                        .map(|index| block.owner.node(index))
+                        .map_err(|_| ()),
                     element,
                 ),
                 None => (None, Ok(CoreNodeKind::Local(0)), None),
@@ -3671,7 +3724,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         let declaration = first_declaration(declarations, FunctionKind::Spec, &callee_name.text);
         let signature = declaration.and_then(|entry| signatures.get(entry.source_index)?.as_ref());
-        let Some(signature) = signature else {
+        let Some(callee) = signature else {
             if self.begin_report(callee_name.span) {
                 let place = call.module().map_or_else(
                     || String::from("this module"),
@@ -3742,12 +3795,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         };
         // The instance called: its sizes are computed in the caller's
-        // instance and must lie in the callee's ranges.
-        let Some((id, signature)) =
-            self.called_instance(expression, call, signature, expected, context, scope)
+        // instance and must lie in the callee's ranges. A position is an
+        // integer of this call, passed after the source arguments.
+        let Some(called) = self.called_instance(expression, call, callee, expected, context, scope)
         else {
             return false;
         };
+        let id = called.id;
+        let signature = called.signature;
         // An unresolved callee type was reported at the callee's declaration.
         if !signature.is_complete() {
             self.record_call_edge(context, id, expression.span, output);
@@ -3815,7 +3870,46 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return false;
         }
-        let Ok(arguments) = u32::try_from(call.arguments.len()) else {
+        let mut position_spans = [expression.span; MAX_SIZES_PER_FUNCTION];
+        let mut written = 0_usize;
+        for (index, entry) in call.sizes().iter().enumerate() {
+            if callee.sizes.get(index).is_some_and(SizeParameter::is_index) {
+                if let Some(slot) = position_spans.get_mut(written) {
+                    *slot = entry.span;
+                }
+                written = written.saturating_add(1);
+            }
+        }
+        for (offset, value) in called
+            .positions
+            .iter()
+            .take(called.position_count)
+            .enumerate()
+        {
+            let Some(exact) = ExactInteger::from_u64(u64::from(*value), self.reserve_range_limbs)
+            else {
+                self.resource_limit(expression.span, "position storage allocation failed");
+                return false;
+            };
+            let span = position_spans
+                .get(offset)
+                .copied()
+                .unwrap_or(expression.span);
+            if !self.push_node(
+                output,
+                span,
+                CoreType::Int,
+                CoreNodeKind::Literal(CoreValue::Int(exact)),
+            ) {
+                return false;
+            }
+        }
+        let arguments = u32::try_from(call.arguments.len()).ok().and_then(|count| {
+            u32::try_from(called.position_count)
+                .ok()
+                .and_then(|extra| count.checked_add(extra))
+        });
+        let Some(arguments) = arguments else {
             self.resource_limit(
                 expression.span,
                 "argument count exceeds the u32 representation limit",

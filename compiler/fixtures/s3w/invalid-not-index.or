@@ -1,0 +1,7 @@
+edition 2026;
+module invalid_not_index {
+  spec sized[a at 0..4](s: Word[8]^a) -> Word[8] { s[0] }
+  spec sliced[a at 0..4](s: Word[8]^4) -> Word[8]^2 { s[a..2] }
+  spec runtime(i: Int, s: Word[8]^4) -> Word[8] { s[i] }
+  spec bounded[a at 0..4](s: Int) -> Int { for i in 0..a with t: Int = s { t } }
+}

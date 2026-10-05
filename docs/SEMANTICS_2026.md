@@ -68,7 +68,10 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > evaluates own finite size names in modulus expressions for each eagerly
 > checked instance, retaining exact concrete residue-domain types, and the S3u
 > slice proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under OEP-0025,
-> which adds arrays of up to four dimensions and update paths.
+> which adds arrays of up to four dimensions and update paths, and the S3w
+> slice proposed in [`POSITIONS_2026.md`](POSITIONS_2026.md) under OEP-0027,
+> which adds position parameters `a at lo..hi`, checked once for the whole
+> range.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

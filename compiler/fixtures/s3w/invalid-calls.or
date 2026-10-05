@@ -1,0 +1,7 @@
+edition 2026;
+module invalid_calls {
+  spec lane[a at 0..4](s: Word[8]^4) -> Word[8] { s[a] }
+  spec missing() -> Word[8] { lane([1, 2, 3, 4]) }
+  spec past() -> Word[8] { lane[4]([1, 2, 3, 4]) }
+  spec moved(i: Int) -> Word[8] { lane[i]([1, 2, 3, 4]) }
+}

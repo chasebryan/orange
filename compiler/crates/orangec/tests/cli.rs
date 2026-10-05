@@ -1125,7 +1125,7 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(
         String::from_utf8(version_first.stdout).unwrap(),
         format!(
-            "orangec {} (Orange edition 2026; implemented slice S3u)\n",
+            "orangec {} (Orange edition 2026; implemented slice S3w)\n",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -1164,7 +1164,7 @@ fn version_slice_has_executable_language_evidence() {
     let version = orangec().arg("--version").output().unwrap();
     assert!(version.status.success());
     assert_eq!(version.stderr, b"");
-    assert!(version.stdout.ends_with(b"; implemented slice S3u)\n"));
+    assert!(version.stdout.ends_with(b"; implemented slice S3w)\n"));
 
     let source = concat!(
         "edition 2026; module version_probe {\n",
