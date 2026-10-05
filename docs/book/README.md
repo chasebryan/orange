@@ -66,19 +66,30 @@ understand each operation rather than memorize its notation.
   arithmetic, wrapping, shifts, rotations, literal and computed amounts,
   explicit grouping and the inverse of a small nonsecure composition.
   Twelve exercises with answers; includes a deliberately ungrouped program.
+- **N7.** [Name the Intermediate Step](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step):
+  bindings and explicit conversions, the ChaCha20 quarter round written
+  with the intermediate names of RFC 8439 §2.1, and a rejected
+  `x + y as Word[32]`. Five exercises with worked answers. The lesson's
+  finish line is the four outcomes in that section. N7 is not the
+  manuscript chapter titled No Disposable Prototype.
 
 The opening was approved by the owner before this continuation. Its source
 is unchanged. Chapters 4–6 and the new executable checks remain reviewable
 new work. Across the six chapters there are 52 exercises with worked answers.
+N7 adds five further exercises in its own file.
 
 ### Remaining teaching sequence
 
-This is a curriculum specification, not a claim that these lessons have been
-written. Extend the manuscript in the following dependency order:
+Items 2–6 remain a curriculum specification, not a claim that those lessons
+have been written. Item 1 is underway. Extend the manuscript in the
+following dependency order:
 
-1. **Name the Intermediate Step.** Expressions, grouping, bindings, explicit
-   conversions, arrays, indexing, bounds, conditions, tuples and bounded
-   iteration, introduced in dependency order with supported examples.
+1. **Name the Intermediate Step.** Under way in
+   [N7](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step).
+   Expressions, grouping, bindings, explicit conversions, arrays, indexing,
+   bounds, conditions, tuples and bounded iteration, introduced in
+   dependency order with supported examples. The four outcomes in N7 are
+   the finish line.
 2. **Read and Repair a Program.** Parsing, type checking, evaluation,
    diagnostics, minimal counterexamples, known-answer tests and reference
    calculations. Explain each command before asking the reader to run it.

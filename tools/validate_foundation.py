@@ -613,6 +613,7 @@ docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md
 docs/book/NOVICE_OPENING.md
 docs/book/NOVICE_PROGRAMMING.md
 docs/book/README.md

@@ -1,0 +1,464 @@
+# The Orange Book
+
+By Chase Bryan
+
+## Part 1, The Novice
+
+N7: Name the Intermediate Step. Draft 2026-10-05.
+
+Continue from [Words Have Edges](NOVICE_PROGRAMMING.md#chapter-6-words-have-edges).
+This lesson is **N7**. It is not a renumbering of the original manuscript.
+The manuscript chapter titled No Disposable Prototype keeps its own number
+and its own job. N7 belongs to the novice sequence.
+
+The listings use the Orange you already know from the first six novice
+lessons, plus two forms this repository's compiler accepts in a typed `spec`
+body: a `let` binding, and an `as` conversion. Both are specified for the
+bindings slice and exercised by its quarter-round fixture. They are not a
+new language proposal, and accepting a source file is not a security claim.
+[B1]
+
+## N7: Name the Intermediate Step
+
+### N7.1 The value between two operations
+
+Listing 6.6 applies three operations and returns only the last result:
+
+```text
+((x + 7) ^ 0x3c) <<< 1
+```
+
+The parentheses say which operation happens first. They do not give the
+middle results names. If the final byte is wrong, you cannot point at the
+program and say “this is the value after the addition.” You have to
+recompute that value in your head and hope you and the expression agree.
+
+A **binding** names one value for the rest of the body. Its form is:
+
+```text
+let name: Type = expression;
+```
+
+Three parts are written every time. `name` is the identifier you will use
+later. `Type` is the type of the value, stated rather than inferred.
+`expression` is computed once, and that result is what `name` denotes.
+The semicolon ends the binding. The body's final expression still has no
+semicolon; it is the result, as in Chapter 5.
+
+A binding is not an assignment you may repeat. The name is fixed. The
+standard you are about to read updates `a` in place. Orange will not do
+that. It will give the next value of `a` a new name. That is a difference
+of notation, not a difference of the number being computed, provided the
+new name is defined to be exactly the updated value.
+
+**Assumption A1.** In one typed `spec`, parameters and bindings share one
+set of names. A binding may not reuse a parameter's name or an earlier
+binding's name. A name is in scope after its own semicolon: in later
+bindings and in the result. It is not in scope inside its own expression.
+
+### N7.2 The same small round, with the steps visible
+
+Take the educational byte construction from §6.10. It is still not a
+cipher. Input `0xfa`, add seven, XOR `0x3c`, rotate left by one.
+
+**Listing N7.1 — `named_round.or`**
+
+```orange
+edition 2026;
+module named_round {
+  spec forward(x: Word[8]) -> Word[8] {
+    let added: Word[8] = x + 7;
+    let masked: Word[8] = added ^ 0x3c;
+    masked <<< 1
+  }
+
+  spec example() -> Word[8] {
+    forward(0xfa)
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+named_round::example: Word[8] = 0x7a
+```
+
+Work the bindings before trusting the line above. `0xfa` is 250. Adding
+seven on a byte wraps: 257 = 1 × 256 + 1, so `added` is `0x01`. XOR with
+`0x3c` gives `0x3d`. Rotating that byte left by one gives `0x7a`. These
+are the same three numbers as the trace in §6.10. The only change is that
+the first two now have names in the source.
+
+`example` calls `forward`. The bindings inside `forward` are not results
+of the module. A nullary `spec` is what evaluation prints. A binding is
+local to its body.
+
+### N7.3 Say which type the bits move into
+
+A binding can also hold a value of a different numeric type from the
+expression that produced it, but only when you write the conversion.
+`as` takes one operand and a target type:
+
+```text
+operand as Type
+```
+
+**Assumption A2.** Among `Int`, `Word[8]`, `Word[16]`, `Word[32]`, and
+`Word[64]`, `as` keeps the operand's integer value and then, if the target
+is `Word[n]`, reduces that integer modulo 2ⁿ. Nothing else converts
+implicitly. Widening does not invent high bits. Narrowing keeps the low
+bits, which is the residue rule you already used for wrapping.
+
+On a byte, 255 has integer value 255. `255` as `Word[32]` is still 255,
+written `0x000000ff`. The wider word has room; the value does not change.
+The type does. A `Word[8]` and a `Word[32]` that happen to denote the same
+integer are not the same type, just as §6.4 separated a byte sum from an
+integer sum.
+
+### N7.4 Two readings, and a form the compiler rejects
+
+Let `x` and `y` be bytes. Consider the two expressions
+
+```text
+(x + y) as Word[32]
+(x as Word[32]) + (y as Word[32])
+```
+
+**Proposition N7.1.** These expressions do not denote the same function.
+
+*Proof.* Interpret `x` and `y` as integers in the range 0 through 255.
+Byte addition denotes the sum modulo 256. So the first expression denotes
+`(x + y) mod 256`, and that residue already lies in 0 through 255, which
+fits in `Word[32]` without a further change. The second expression widens
+first. Each widened value is `x` or `y` itself, and their sum is at most
+510. Since 510 < 2³², addition on `Word[32]` does not wrap, and the second
+expression denotes the integer `x + y`. These integers agree exactly when
+`x + y < 256`. They disagree when `x = 255` and `y = 1`: the first result
+is 0 and the second is 256. □
+
+That is why Orange will not choose one of them for you. A conversion is
+its own group. It applies to one operand. The ungrouped spelling sits
+between the two meanings and is rejected.
+
+**Listing N7.2 — `widenings.or`**
+
+```orange
+edition 2026;
+module widenings {
+  spec add_then_widen() -> Word[32] {
+    let x: Word[8] = 0xff;
+    let y: Word[8] = 0x01;
+    (x + y) as Word[32]
+  }
+
+  spec widen_then_add() -> Word[32] {
+    let x: Word[8] = 0xff;
+    let y: Word[8] = 0x01;
+    (x as Word[32]) + (y as Word[32])
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+widenings::add_then_widen: Word[32] = 0x00000000
+widenings::widen_then_add: Word[32] = 0x00000100
+```
+
+`0x00000100` is 256. The successful run agrees with the two cases in the
+proof. It does not replace the proof: the proof is about every pair of
+bytes, and the run is one pair.
+
+**Listing N7.3 — `mixed_conversion.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module mixed_conversion {
+  spec mixed(x: Word[8], y: Word[8]) -> Word[32] {
+    x + y as Word[32]
+  }
+}
+```
+
+The diagnostic is `ORC0108`: `` `as` follows `+` without grouping parentheses ``.
+The note says that `as` converts exactly one operand, so you parenthesize
+the conversion or the expression it converts. No value is printed. The
+checker has not picked a winner between Proposition N7.1's two functions.
+[B1]
+
+### N7.5 The quarter round, one name per update
+
+RFC 8439 §2.1 defines the ChaCha quarter round on four 32-bit unsigned
+integers `a`, `b`, `c`, and `d`. In the standard's C-like notation, `+` is
+addition modulo 2³², `^` is XOR, and `<<< n` is left rotation by `n`:
+
+```text
+a += b; d ^= a; d <<<= 16;
+c += d; b ^= c; b <<<= 12;
+a += b; d ^= a; d <<<= 8;
+c += d; b ^= c; b <<<= 7;
+```
+
+Read each statement as “the new value of this name is the old value
+combined with the operation.” The standard then uses the same letter for
+the new value. Under assumption A1, Orange cannot store the new value
+back into `a`. The transcription therefore names each update: `a1` is the
+value of `a` after the first addition, `d1` is the value of `d` after the
+first rotation, and so on through `a2`, `d2`, `c2`, and `b2`.
+
+This fragment still has no way to return four words from one function.
+Each output word is its own function, and that function repeats only the
+prefix of the round that the word depends on. The dependency is real:
+final `a` is `a2`, which does not need `d2`, `c2`, or `b2`; final `d` is
+`d2`, which needs `a2` but not `c2` or `b2`. Repeating a prefix is the
+cost of having only one result. It is not a second algorithm. Later in
+this lesson, one function will hold all four words.
+
+**Listing N7.4 — `quarter.or`**
+
+```orange
+edition 2026;
+module quarter {
+  spec quarter_a(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    a1 + b1
+  }
+
+  spec quarter_d(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    (d1 ^ a2) <<< 8
+  }
+
+  spec quarter_c(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let d1: Word[32] = (d ^ (a + b)) <<< 16;
+    let c1: Word[32] = c + d1;
+    c1 + quarter_d(a, b, c, d)
+  }
+
+  spec quarter_b(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let d1: Word[32] = (d ^ (a + b)) <<< 16;
+    let b1: Word[32] = (b ^ (c + d1)) <<< 12;
+    (b1 ^ quarter_c(a, b, c, d)) <<< 7
+  }
+
+  spec word_a() -> Word[32] { quarter_a(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec word_b() -> Word[32] { quarter_b(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec word_c() -> Word[32] { quarter_c(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec word_d() -> Word[32] { quarter_d(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+}
+```
+
+The parenthesized XOR-then-rotate is the same grouping rule as §6.9.
+`+` and `^` are different operator families. `^` and `<<<` are too. Each
+pair is written with parentheses, so the source picks the standard's order
+instead of leaving it to a precedence guess.
+
+Section 2.1.1 of the RFC gives one test vector:
+
+```text
+a = 0x11111111
+b = 0x01020304
+c = 0x9b8d6f43
+d = 0x01234567
+```
+
+and states that the quarter round sends it to:
+
+```text
+a = 0xea2a92f4
+b = 0xcb1cf8ce
+c = 0x4581472e
+d = 0x5881c4bb
+```
+
+Compute the first two names by hand. The integer sum
+`0x11111111 + 0x01020304` is `0x12131415`. That integer is less than 2³²,
+so reduction modulo 2³² leaves it unchanged:
+
+```text
+a1 = 0x12131415
+```
+
+XOR with `d`:
+
+```text
+0x01234567 ^ 0x12131415 = 0x13305172
+```
+
+A left rotation by 16 on a 32-bit word exchanges the two 16-bit halves,
+because each half moves exactly to the other half and the bits that leave
+one end reenter the other. Therefore:
+
+```text
+d1 = 0x51721330
+```
+
+The remaining six names follow the same three operations. Carrying them
+out yields `c1 = 0xecff8273`, `b1 = 0xd8177edf`, `a2 = 0xea2a92f4`,
+`d2 = 0x5881c4bb`, `c2 = 0x4581472e`, and `b2 = 0xcb1cf8ce`. The four
+final names are the RFC's four results. The interesting point is not the
+arithmetic of one vector. It is that each name in the program is one
+update in the standard, and each update uses only names that the preceding
+updates have defined.
+
+**Proposition N7.2.** Suppose `+` on `Word[32]` denotes addition modulo
+2³², `^` denotes bitwise XOR, and `<<< n` denotes left rotation by the
+literal `n`. Then, on every four input words, `quarter_a`, `quarter_d`,
+`quarter_c`, and `quarter_b` denote the standard's final `a`, `d`, `c`,
+and `b`.
+
+*Proof.* Define the eight mathematical values by the eight updates in
+§2.1, using a fresh name wherever the standard updates a letter. Final `a`
+is `a1 + b1` modulo 2³², which is the body of `quarter_a`. Final `d` is
+the rotation of `d1 XOR a2` by 8, which is the body of `quarter_d`. Final
+`c` is `c1` plus final `d`, and `quarter_c` writes that sum by calling
+`quarter_d`. Final `b` is the rotation by 7 of `b1 XOR` final `c`, and
+`quarter_b` writes that by calling `quarter_c`. Each call receives the
+original four inputs, and each callee recomputes the prefix it needs from
+those inputs. By the supposition, recomputing a prefix denotes the same
+values as naming them once. Therefore each function denotes the
+corresponding final word on every input, not merely on the test vector. □
+
+The supposition is an assumption about what the Orange operators mean. It
+is not proved by printing the test vector. The test vector is one point in
+a domain of 2¹²⁸ four-word inputs. Agreement at that point is evidence
+that this implementation, on that input, produced the RFC's stated output.
+It is not, by itself, Proposition N7.2.
+
+**Expected evaluation output:**
+
+```text
+quarter::word_a: Word[32] = 0xea2a92f4
+quarter::word_b: Word[32] = 0xcb1cf8ce
+quarter::word_c: Word[32] = 0x4581472e
+quarter::word_d: Word[32] = 0x5881c4bb
+```
+
+Separate the three lines of work. The mathematics is Proposition N7.2,
+under an assumption about the operators. The test is one RFC vector, which
+checks one element of the domain. The implementation is whatever `orangec`
+does with Listing N7.4. A match between the test and the implementation
+supports the implementation at that input. It does not prove the
+supposition, and it says nothing about whether ChaCha20 is a secure cipher,
+whether the rest of RFC 8439 has been transcribed, or whether a different
+compiler build implements the same operators.
+
+### N7.6 The finish line
+
+The reading index stated this lesson before it was written. Finishing N7
+means four outcomes, in dependency order. This section is the finish line,
+not a claim that every outcome is already demonstrated above.
+
+1. **Name the step.** You can bind an intermediate value with a name, a
+   stated type, and one evaluation, and you can write the ChaCha20 quarter
+   round so that each update in RFC 8439 §2.1 has a name.
+2. **Convert on purpose.** You can move a value between the numeric types
+   with `as`, and you can say why `x + y as Word[32]` is rejected: the two
+   parenthesizations are different functions.
+3. **Keep several values.** You can store one type at literal indices in
+   an array, choose with `Bool` and `if`, and hold a short fixed sequence
+   of values in a tuple, including the four words of one quarter round.
+4. **Repeat inside a proved bound.** You can write a bounded `for` whose
+   index runs through a finite range known before the loop starts, and you
+   can use that index only where it has already been shown to lie inside
+   the array.
+
+Outcomes 1 and 2 are the work of the listings above. Outcomes 3 and 4 are
+the rest of this same lesson. They are not optional color, and they are
+not yet claimed. A feature is added here only when this branch's compiler
+accepts it. If one of them is unsupported, the lesson stops at the last
+supported step and says so.
+
+What finishing does not mean: that you have proved ChaCha20 secure, that
+the compiler is correct, or that the original manuscript has been
+renumbered.
+
+### N7.7 Work at the desk
+
+**Exercise N7.1 — Name the byte steps.** Starting from `0xfa`, compute
+`added`, `masked`, and the final rotation in Listing N7.1. Which of those
+three values does evaluation of the module print, and why?
+
+**Exercise N7.2 — Separate the two sums.** For bytes `x = 200` and
+`y = 100`, compute `(x + y) as Word[32]` and
+`(x as Word[32]) + (y as Word[32])`. Do the same for `x = 255` and
+`y = 1`. Why is `x + y as Word[32]` not a way to avoid choosing?
+
+**Exercise N7.3 — Check the first quarter-round sum.** Show that
+`0x11111111 + 0x01020304` needs no reduction modulo 2³². Give `a1`.
+
+**Exercise N7.4 — Rotate by a half turn.** From `d XOR a1 = 0x13305172`,
+obtain `d1` by a left rotation of 16. State the general fact about
+16-bit halves that makes the arithmetic unnecessary.
+
+**Exercise N7.5 — Locate the assumption.** Proposition N7.2 concludes that
+the four functions match the standard on every input. Name the assumption
+the proof does not discharge. What does Listing N7.4's expected output
+add, and what does it still not add?
+
+## Worked answers
+
+**N7.1.** `added` is `0x01`, because 250 + 7 = 257 = 1 × 256 + 1.
+`masked` is `0x01 XOR 0x3c = 0x3d`. The rotation is `0x7a`. Evaluation
+prints only `named_round::example`, the nullary spec. `added` and `masked`
+are bindings inside `forward`. They are not module results. Calling
+`forward` from `example` is what makes the final byte a printed result.
+
+**N7.2.** 200 + 100 = 300. Modulo 256 that is 44, so the add-then-widen
+result is `0x0000002c`. The widen-then-add result is 300, or `0x0000012c`.
+For 255 and 1, add-then-widen is 0 and widen-then-add is 256, or
+`0x00000100`, as in Listing N7.2. The ungrouped spelling is rejected with
+`ORC0108` because `as` would have to attach either to `y` alone or to the
+sum, and those attachments are Proposition N7.1's two functions. Leaving
+out the parentheses does not select the mathematically nicer one. It
+selects neither.
+
+**N7.3.** `0x11111111 + 0x01020304 = 0x12131415 = 303240213`.
+`2³² = 4294967296`. Because 303240213 < 4294967296, the residue modulo
+2³² is the sum. Thus `a1 = 0x12131415`.
+
+**N7.4.** `d1 = 0x51721330`. On a 32-bit word, left rotation by 16 sends
+each 16-bit half onto the other half. The bits that leave either end are
+exactly the other half, so the operation is an exchange:
+`0x1330` and `0x5172` trade places. The same fact holds for every 32-bit
+word, not only this one.
+
+**N7.5.** The undischarged assumption is that Orange's `+`, `^`, and
+`<<<` on `Word[32]` denote addition modulo 2³², XOR, and left rotation.
+The expected output adds one checked input, the RFC 8439 §2.1.1 vector,
+and only after a real run of that listing. One agreeing input does not
+discharge the assumption for every operator on every word, does not cover
+the other 2¹²⁸ − 1 inputs by itself, and does not establish confidentiality,
+integrity, or any property of the ChaCha20 block function beyond this
+quarter round.
+
+## Sources
+
+**[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
+Protocols,” May 2015, §2.1 and §2.1.1. The four update lines and the
+quarter-round test vector are those sections. `+`, `^`, and `<<<` in the
+quotation have the meanings the RFC states there: addition modulo 2³²,
+XOR, and left rotation. Consulted 2026-10-05. This lesson transcribes the
+quarter round into named bindings. It does not transcribe the block
+function, and it is not a recommendation to deploy an implementation.
+
+<https://www.rfc-editor.org/rfc/rfc8439>
+
+**[B1] Orange bindings.** `docs/BINDINGS_2026.md` and the S3c fixtures in
+this repository, including the quarter round with named steps and the
+rejection of an ungrouped conversion. `let` begins a binding only where a
+body item starts with `let` and a name. `as` converts only after one
+complete operand. Elsewhere both words can still be ordinary names. The
+diagnostic quoted for Listing N7.3 is `ORC0108` with the message that
+`` `as` follows `+` without grouping parentheses ``. Implementation of the
+slice is not acceptance of the proposal, and it adds no cryptographic
+claim.
