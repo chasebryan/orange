@@ -77,6 +77,14 @@ understand each operation rather than memorize its notation.
   exercises with worked answers. The lesson's finish line is the four
   outcomes in that section.
   N7 is not the manuscript chapter titled No Disposable Prototype.
+- **N8.** [Read and Repair a Program](NOVICE_N8_READ_AND_REPAIR.md#n8-read-and-repair-a-program):
+  predicting an `ORC` code and its locus, then confirming with `orangec
+  check`, `eval`, and `test`. Repairs stay on the N7 surface: grouping,
+  `as`, a literal index, a bounded-loop index, and a test whose expected
+  word is wrong. A silent check means the source was well-formed. A passing
+  test means one claim's `Bool` was true. Ten exercises with worked answers.
+  N8 is not the manuscript chapter titled Orange 2026: The Smallest Honest
+  Slice.
 - **N9.** [Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean):
   sets, membership, subsets, relations, functions and inverses, quantifiers,
   implication, equivalence, negation, cases, contradiction, contrapositive,
@@ -95,27 +103,29 @@ understand each operation rather than memorize its notation.
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
-corrected source. Chapters 4–6, N7, N9, and the new executable checks remain
+corrected source. Chapters 4–6, N7, N8, N9, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
-worked answers. N7 adds twelve further exercises in its own file. N9 adds
-20. N10 adds sixteen further exercises, numbered N10.1 onward. N8 is not
-in that count.
+worked answers. N7 adds twelve further exercises in its own file. N8 adds
+ten further exercises in its own file. N9 adds 20. N10 adds sixteen
+further exercises, numbered N10.1 onward.
 
 ### Remaining teaching sequence
 
-Item 1 is drafted as N7. Item 3 is drafted as N9 and listed above. Item 4
-is drafted as N10. Items 2, 5, and 6 have not been written. Extend the
-manuscript in the following dependency order:
+Item 1 is drafted as N7. Item 2 is drafted as N8. Item 3 is drafted as N9
+and listed above. Item 4 is drafted as N10. Items 5 and 6 have not been
+written. Extend the manuscript in the following dependency order:
 
-1. **Name the Intermediate Step.** Under way in
+1. **Name the Intermediate Step.** Drafted in
    [N7](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step).
    Expressions, grouping, bindings, explicit conversions, arrays, indexing,
    bounds, conditions, tuples and bounded iteration, introduced in
    dependency order with supported examples. The four outcomes in N7 are
    the finish line.
-2. **Read and Repair a Program.** Parsing, type checking, evaluation,
-   diagnostics, minimal counterexamples, known-answer tests and reference
-   calculations. Explain each command before asking the reader to run it.
+2. **Read and Repair a Program.** Drafted in
+   [N8](NOVICE_N8_READ_AND_REPAIR.md#n8-read-and-repair-a-program).
+   Parsing, type checking, evaluation, diagnostics, minimal repairs,
+   known-answer tests, and the difference between a silent check and a
+   passing test. The five outcomes in N8 are the finish line.
 3. **Say What You Mean.** Drafted as
    [N9: Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean).
    The locked label is N9. It does not use a manuscript chapter numeral.
@@ -291,8 +301,9 @@ python3 tools/test_book_foundations.py
 ```
 
 These checks validate the worked examples, finite models, the 52 chapter
-answers, the N7 answers, the 20 lesson-N9 answers, the 16 lesson-N10
-answers, and document structure. Python test discovery through
+answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
+answers, the 16 lesson-N10 answers, and document structure. Python test
+discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
 They do not execute Orange, establish a cryptographic security claim, or
@@ -305,7 +316,10 @@ extracts the nine actual Orange listings from the continuation and runs the
 compiler against the seven expected successes and two intended rejections.
 It also checks that removing the computed-amount parentheses exposes the
 literal guard. The same test reads the Orange listings in N7 and checks
-their printed results and intended rejections. Run it in a build-capable
+their printed results and intended rejections. The same test reads the
+Orange listings in N8 and checks the printed values, the printed
+diagnostics, the failing and passing tests, and the `--spec` and `--steps`
+commands the lesson names. Run it in a build-capable
 checkout:
 
 ```sh
@@ -317,8 +331,8 @@ delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
 
 New drafting and integration through Chapters 4–6 are AI-assisted with
-ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lesson N9
-is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. The opening is owner-approved; continuation and N9 review are
+ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lessons N8 and N9
+are AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
+direction. The opening is owner-approved; continuation, N8, and N9 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

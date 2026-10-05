@@ -6,6 +6,7 @@ use std::process::{Command, Output, Stdio};
 
 const CHAPTERS: &str = include_str!("../../../../docs/book/NOVICE_PROGRAMMING.md");
 const N7: &str = include_str!("../../../../docs/book/NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md");
+const N8: &str = include_str!("../../../../docs/book/NOVICE_N8_READ_AND_REPAIR.md");
 
 fn fences<'a>(text: &'a str, language: &str) -> Vec<&'a str> {
     let start = format!("```{language}\n");
@@ -28,8 +29,12 @@ fn module_name(source: &str) -> &str {
 }
 
 fn run(command: &str, source: &str) -> Output {
+    run_with(&[command, "-"], source)
+}
+
+fn run_with(arguments: &[&str], source: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_orangec"))
-        .args([command, "-"])
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -201,9 +206,8 @@ fn n7_rejected_listings_print_no_value() {
         .expect("slipped index listing");
     let slipped_diagnostic = String::from_utf8(run("check", slipped).stderr).expect("UTF-8");
     assert!(
-        slipped_diagnostic.contains(
-            "this index runs from 1 through 4, out of range for `Word[8]^4`"
-        ),
+        slipped_diagnostic
+            .contains("this index runs from 1 through 4, out of range for `Word[8]^4`"),
         "{slipped_diagnostic}"
     );
     assert!(
@@ -245,5 +249,237 @@ fn n7_rejected_listings_print_no_value() {
     assert!(
         no_range_diagnostic.contains("every index is proved in range when the program is checked"),
         "{no_range_diagnostic}"
+    );
+}
+
+fn n8_sources() -> Vec<&'static str> {
+    fences(N8, "orange")
+}
+
+fn n8_text() -> Vec<&'static str> {
+    fences(N8, "text")
+}
+
+fn n8_source(name: &str) -> &'static str {
+    n8_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N8 listing {name}"))
+}
+
+fn one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n8_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn eval_fence(name: &str) -> &'static str {
+    let prefix = format!("{name}::");
+    one_text(
+        |text| text.starts_with(&prefix) && text.contains(" = "),
+        name,
+    )
+}
+
+fn test_fence(name: &str) -> &'static str {
+    let prefix = format!("test \"{name}");
+    one_text(
+        |text| {
+            text.starts_with(&prefix) && (text.contains("... ok") || text.contains("... FAILED"))
+        },
+        name,
+    )
+}
+
+fn diagnostic_fence(marker: &str) -> &'static str {
+    one_text(
+        |text| text.starts_with("error[") && text.contains(marker),
+        marker,
+    )
+}
+
+fn assert_silent_check(name: &str, source: &str) {
+    let check = run("check", source);
+    assert!(
+        check.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(check.stdout.is_empty(), "{name}: check printed a value");
+    assert!(check.stderr.is_empty(), "{name}: check diagnostics");
+}
+
+fn assert_eval_matches(name: &str, source: &str) {
+    let expected = format!("{}\n", eval_fence(name));
+    let first = run("eval", source);
+    assert!(
+        first.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+    assert!(first.stderr.is_empty(), "{name}: eval diagnostics");
+    let second = run("eval", source);
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+}
+
+#[test]
+fn n8_repaired_listings_check_and_evaluate_repeatably() {
+    let sources = n8_sources();
+    assert_eq!(sources.len(), 18);
+    assert!(!N8.contains("Chapter 8"));
+    for name in [
+        "silent_wrong",
+        "heard_round",
+        "grouped_mix",
+        "added_widen",
+        "last_lane",
+        "reversed_bytes",
+        "wrong_claim",
+        "right_claim",
+        "two_specs",
+    ] {
+        let source = n8_source(name);
+        assert_silent_check(name, source);
+        assert_eval_matches(name, source);
+    }
+}
+
+#[test]
+fn n8_rejected_listings_match_the_printed_diagnostics() {
+    for (name, marker) in [
+        ("bare_mix", "a + b ^ a"),
+        ("bare_widen", "x + y as Word[32]"),
+        ("past_lane", "words[4]"),
+        ("slipped_copy", "i + 1"),
+        ("torn_round", "d ^ a1 <<< 16"),
+        ("bad_field", "quad.4"),
+    ] {
+        let source = n8_source(name);
+        let expected = format!("{}\n", diagnostic_fence(marker));
+        for command in ["check", "eval"] {
+            let result = run(command, source);
+            assert_eq!(result.status.code(), Some(1), "{name}: {command}");
+            assert!(result.stdout.is_empty(), "no partial values for {name}");
+            assert_eq!(
+                String::from_utf8(result.stderr).expect("UTF-8 diagnostic"),
+                expected,
+                "{name}: {command}"
+            );
+        }
+    }
+    let torn = n8_source("torn_round");
+    let test_result = run("test", torn);
+    assert_eq!(test_result.status.code(), Some(1));
+    assert!(
+        test_result.stdout.is_empty(),
+        "no test report before acceptance"
+    );
+    assert_eq!(test_result.stderr, run("check", torn).stderr);
+}
+
+#[test]
+fn n8_tests_separate_a_false_claim_from_a_passing_one() {
+    for name in ["plain_false", "recorded_and", "mended_round"] {
+        let source = n8_source(name);
+        assert_silent_check(name, source);
+        let evaluation = run("eval", source);
+        assert!(evaluation.status.success(), "{name}");
+        assert!(
+            evaluation.stdout.is_empty(),
+            "{name}: eval had no spec to print"
+        );
+        assert!(evaluation.stderr.is_empty(), "{name}");
+    }
+    for (name, status) in [
+        ("plain_false", 1),
+        ("wrong_claim", 1),
+        ("recorded_and", 0),
+        ("right_claim", 0),
+        ("mended_round", 0),
+    ] {
+        let source = n8_source(name);
+        let expected = format!("{}\n", test_fence(name));
+        let first = run("test", source);
+        assert_eq!(first.status.code(), Some(status), "{name}");
+        assert!(
+            first.stderr.is_empty(),
+            "{name}: a test report is not a diagnostic"
+        );
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        let second = run("test", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+    }
+}
+
+#[test]
+fn n8_spec_and_step_budget_match_the_lesson() {
+    let grouped = n8_source("grouped_mix");
+    let stats = run_with(&["eval", "--stats", "-"], grouped);
+    assert!(stats.status.success());
+    assert_eq!(
+        stats.stdout,
+        format!("{}\n", eval_fence("grouped_mix")).as_bytes()
+    );
+    assert_eq!(
+        String::from_utf8(stats.stderr).expect("UTF-8 stats"),
+        format!(
+            "{}\n",
+            one_text(|text| text.contains("8 steps"), "step count")
+        )
+    );
+
+    let stopped = run_with(&["eval", "--steps", "7", "-"], grouped);
+    assert_eq!(stopped.status.code(), Some(1));
+    assert!(stopped.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stopped.stderr).expect("UTF-8 budget diagnostic"),
+        format!("{}\n", diagnostic_fence("at most 7 evaluation steps"))
+    );
+
+    let finished = run_with(&["eval", "--steps", "8", "-"], grouped);
+    assert!(finished.status.success());
+    assert_eq!(finished.stdout, stats.stdout);
+    assert!(finished.stderr.is_empty());
+
+    let zero = run_with(&["eval", "--steps", "0", "-"], grouped);
+    assert_eq!(zero.status.code(), Some(2));
+    assert!(zero.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&zero.stderr).contains("from 1 through 1073741824"));
+
+    let two = n8_source("two_specs");
+    let selected = run_with(&["eval", "--spec", "first", "-"], two);
+    assert!(selected.status.success());
+    assert_eq!(
+        selected.stdout,
+        b"two_specs::first: Word[32] = 0x11111111\n"
+    );
+    assert!(selected.stderr.is_empty());
+
+    let parameterized = run_with(
+        &["eval", "--spec", "quarter_round", "-"],
+        n8_source("wrong_claim"),
+    );
+    assert_eq!(parameterized.status.code(), Some(1));
+    assert!(parameterized.stdout.is_empty());
+    let diagnostic = String::from_utf8(parameterized.stderr).expect("UTF-8");
+    assert!(diagnostic.contains("ORC1016"), "{diagnostic}");
+    assert!(
+        diagnostic.contains("no function `quarter_round` without parameters"),
+        "{diagnostic}"
+    );
+
+    let misuse = run_with(&["test", "--spec", "first", "-"], two);
+    assert_eq!(misuse.status.code(), Some(2));
+    assert!(misuse.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&misuse.stderr).contains("option `--spec` applies only to eval")
     );
 }

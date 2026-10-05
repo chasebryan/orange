@@ -380,6 +380,64 @@ class ContinuationExamples(unittest.TestCase):
         self.assertTrue(all(0 <= 3 - i < 4 for i in range(4)))
         self.assertFalse(all(0 <= i + 1 < 4 for i in range(4)))
 
+    def test_n8_exercises_answers_and_label(self):
+        text = (ROOT / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.md').read_text(
+            encoding='utf-8')
+        exercises = re.findall(r'^\*\*Exercise (N8\.\d+) —', text, re.M)
+        answers = re.findall(r'^\*\*(N8\.\d+)\.\*\*', text, re.M)
+        self.assertEqual(exercises, [f'N8.{n}' for n in range(1, 11)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotIn('Chapter 8', text)
+        self.assertIn('verified', text)
+        index = INDEX.read_text(encoding='utf-8')
+        self.assertIn('**N8.**', index)
+        self.assertIn(
+            'NOVICE_N8_READ_AND_REPAIR.md#n8-read-and-repair-a-program',
+            index)
+        self.assertNotIn('Chapter 8', index)
+        headings = re.findall(r'^#{1,6} (.+)$', text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n8-read-and-repair-a-program', anchors)
+        sources = re.findall(r'^```orange\n(.*?)\n```', text, re.M | re.S)
+        self.assertEqual(len(sources), 18)
+        self.assertEqual(len({re.search(r'module (\w+)', s).group(1) for s in sources}), 18)
+
+    def test_n8_repair_arithmetic(self):
+        def rotl(value, amount):
+            value &= 0xFFFFFFFF
+            return ((value << amount) | (value >> (32 - amount))) & 0xFFFFFFFF
+
+        a, b, c, d = 0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567
+        a1 = (a + b) & 0xFFFFFFFF
+        mixed = a1 ^ a
+        self.assertEqual(a1, 0x12131415)
+        self.assertEqual(mixed, 0x03020504)
+        self.assertEqual((a + (b ^ a)) & 0xFFFFFFFF, 0x21242326)
+        self.assertNotEqual(mixed, (a + (b ^ a)) & 0xFFFFFFFF)
+        xor_d = d ^ a1
+        self.assertEqual(xor_d, 0x13305172)
+        self.assertEqual(rotl(xor_d, 8), 0x30517213)
+        self.assertEqual(rotl(xor_d, 16), 0x51721330)
+        d1 = rotl(xor_d, 8)
+        c1 = (c + d1) & 0xFFFFFFFF
+        b1 = rotl(b ^ c1, 12)
+        a2 = (a1 + b1) & 0xFFFFFFFF
+        d2 = rotl(d1 ^ a2, 8)
+        c2 = (c1 + d2) & 0xFFFFFFFF
+        b2 = rotl(b1 ^ c2, 7)
+        wrong = (a2, b2, c2, d2)
+        rfc = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+        self.assertEqual(wrong, (0xe03840c2, 0x9a4fc5fd, 0x3511b326, 0x6932d1d0))
+        self.assertNotEqual(wrong, rfc)
+        self.assertEqual(wrong[3], 0x6932d1d0)
+        self.assertEqual(rfc[3], 0x5881c4bb)
+        self.assertEqual((0xff + 0x01) & 0xff, 0)
+        self.assertEqual(0xff + 0x01, 0x100)
+        self.assertFalse(4 < 4)
+        self.assertTrue(0 <= 3 < 4)
+        self.assertEqual([3 - i for i in range(4)], [3, 2, 1, 0])
+        self.assertEqual((True and False), False)
+
     def test_opening_retained_byte_for_byte(self):
         import hashlib
         data = MANUSCRIPT.read_bytes()
