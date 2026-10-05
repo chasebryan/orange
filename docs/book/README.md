@@ -2,9 +2,11 @@
 
 By Chase Bryan
 
-Three-part study structure, first manuscript increment — 2026-10-05.
+Three-part study structure, opening and programming continuation — 2026-10-05.
 
 [Begin reading: A word before we begin](NOVICE_OPENING.md#a-word-before-we-begin)
+
+[Continue reading: Chapters 4–6](NOVICE_PROGRAMMING.md#chapter-4-a-place-to-work)
 
 This directory is part of *The Orange Book*, not a second book. It supplies
 new foundational teaching and a three-part reading structure for the existing
@@ -20,9 +22,10 @@ was read; it is not a release or assurance claim.
 
 The part names below are fixed by the owner. Placement of existing chapters
 is an editorial integration draft. Existing chapter numbers and anchors
-remain unchanged during migration. The new opening has Chapters 1–3 of the
-novice sequence; a link to an original chapter retains that manuscript's
-number until the complete sequence is ready to renumber consistently.
+remain unchanged during migration. The new opening and continuation have
+Chapters 1–6 of the novice sequence; a link to an original chapter retains
+that manuscript's number until the complete sequence is ready to renumber
+consistently.
 
 ## Part 1, The Novice
 
@@ -30,7 +33,7 @@ Begin without assumed programming or cryptography knowledge. Establish the
 meaning of a term before relying on it, and build enough mathematics to
 understand each operation rather than memorize its notation.
 
-### Written in this increment
+### Available manuscript
 
 - [A word before we begin](NOVICE_OPENING.md#a-word-before-we-begin): the
   author-to-reader teaching relationship, study method, and scope of the book.
@@ -48,41 +51,49 @@ understand each operation rather than memorize its notation.
   grouping, parity, and the scope of exhaustive checks. Ten exercises with
   worked answers.
 
+- [Chapter 4: A Place to Work](NOVICE_PROGRAMMING.md#chapter-4-a-place-to-work):
+  files, directories, paths, plain text, terminals and shells, arguments,
+  exit status, source revisions, compiler identity and reproducible working
+  records. Seven exercises with answers. One explicit POSIX-style command
+  track, not an untested claim of identical installation on every platform.
+- [Chapter 5: Tell the Machine Exactly](NOVICE_PROGRAMMING.md#chapter-5-tell-the-machine-exactly):
+  a first complete Orange program, every delimiter explained, functions,
+  types, expressions, parameters, arguments, scope, calls, diagnostics and
+  the distinction between accepted source and fulfilled intention. Eight
+  exercises with answers; includes a deliberately rejected literal.
+- [Chapter 6: Words Have Edges](NOVICE_PROGRAMMING.md#chapter-6-words-have-edges):
+  finite words, signed mathematical integers, Euclidean division, modular
+  arithmetic, wrapping, shifts, rotations, literal and computed amounts,
+  explicit grouping and the inverse of a small nonsecure composition.
+  Twelve exercises with answers; includes a deliberately ungrouped program.
+
+The opening was approved by the owner before this continuation. Its source
+is unchanged. Chapters 4–6 and the new executable checks remain reviewable
+new work. Across the six chapters there are 52 exercises with worked answers.
+
 ### Remaining teaching sequence
 
 This is a curriculum specification, not a claim that these lessons have been
 written. Extend the manuscript in the following dependency order:
 
-1. **Tell the Machine Exactly.** Programs and evaluation; values and types;
-   functions, parameters and results; a complete, supported Orange source
-   file explained character by character. Introduce mathematical functions
-   before relying on function notation.
-2. **A Place to Work.** Files, extensions, directories, paths, plain text,
-   terminals, commands, arguments, exit status, installation and version
-   checks. Provide platform-specific instructions only after testing them.
-3. **Words Have Edges.** Fixed width, nonnegative and negative integers,
-   wrapping arithmetic, congruence, remainders, shifts, rotations, and the
-   difference between a value's mathematical meaning and its representation.
-   Use paper models freely; executable examples must use admitted Orange
-   widths, not invented types such as `Word[4]`.
-4. **Name the Intermediate Step.** Expressions, grouping, bindings, explicit
+1. **Name the Intermediate Step.** Expressions, grouping, bindings, explicit
    conversions, arrays, indexing, bounds, conditions, tuples and bounded
    iteration, introduced in dependency order with supported examples.
-5. **Read and Repair a Program.** Parsing, type checking, evaluation,
+2. **Read and Repair a Program.** Parsing, type checking, evaluation,
    diagnostics, minimal counterexamples, known-answer tests and reference
    calculations. Explain each command before asking the reader to run it.
-6. **Say What You Mean.** Sets, relations, functions, quantifiers, implication,
+3. **Say What You Mean.** Sets, relations, functions, quantifiers, implication,
    equivalence, proof by cases, contradiction, induction, invariants, and
    finite exhaustive arguments. Build on the earlier concrete proofs without
    copying their explanations.
-7. **Count What You Do Not Know.** Fractions, ratios, probability,
+4. **Count What You Do Not Know.** Fractions, ratios, probability,
    conditional knowledge, independent choices, powers and logarithms;
    distinguish key length, distribution and adversary uncertainty.
-8. **Protect More Than Appearance.** Explicitly educational classical
+5. **Protect More Than Appearance.** Explicitly educational classical
    constructions; encoding, encryption, hashing, authentication; keys,
    randomness, nonces and counters; the conditions of the one-time pad.
    Do not introduce a practical primitive before its prerequisites.
-9. **The First Complete Study.** A supported small Orange construction,
+6. **The First Complete Study.** A supported small Orange construction,
    a hand-derived expected result, documented tests, a deliberate error,
    a repair, and a precisely scoped explanation of what was established.
 
@@ -190,8 +201,10 @@ reader completed it.
 - [Appendix D: Source Notes](../THE_ORANGE_BOOK.md#appendix-d-source-notes).
 - [Existing manuscript map](../THE_ORANGE_BOOK.md#manuscript-map) and
   [sources and drafting disclosure](../THE_ORANGE_BOOK.md#sources-and-drafting-disclosure).
-- [New worked answers](NOVICE_OPENING.md#answers-and-worked-reasoning) and
+- [Opening worked answers](NOVICE_OPENING.md#answers-and-worked-reasoning) and
   [epigraph record](NOVICE_OPENING.md#source-notes-and-epigraph-record).
+- [Continuation worked answers](NOVICE_PROGRAMMING.md#worked-answers-chapters-46) and
+  [source record](NOVICE_PROGRAMMING.md#sources-and-epigraph-record).
 
 Expand the final reference matter with a notation register, topic and
 algorithm indexes, symbol-to-language mapping, prerequisites, exercise
@@ -238,13 +251,30 @@ Run the reference checks from the repository root:
 python3 tools/test_book_foundations.py
 ```
 
-These checks validate the new worked examples and elementary finite models.
+These 29 checks validate the worked examples, finite models, 52 exercise
+answers and document structure. The normal Python test discovery loads the
+same suite through `tools/tests/test_book_foundations.py`.
 They do not execute Orange, establish a cryptographic security claim, or
 constitute independent review. The index preserves all seventeen original
 chapter links without changing the original file. Check repository-wide
 links and documentation policy in CI before any merge.
 
+The Rust integration test `compiler/crates/orangec/tests/book_novice.rs`
+extracts the nine actual Orange listings from the continuation and runs the
+compiler against the seven expected successes and two intended rejections.
+It also checks that removing the computed-amount parentheses exposes the
+literal guard. Run it in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --locked --offline
+```
+
+The existence of this test is not a claim that a run passed. The PR and
+delivery validation record identify which checks were actually executed.
+No native code generation or cryptographic security claim is added.
+
 New drafting and integration are AI-assisted with ChatGPT (GPT-6 Astra Pro),
-2026-10-05, at the owner's direction. Owner review is pending. The working
+2026-10-05, at the owner's direction. The opening is owner-approved;
+continuation review is pending. The working
 names, legal boundaries and source disclosures of the original manuscript
 continue to apply.
