@@ -1313,7 +1313,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, computed amounts, nested arrays, static moduli, and array dimensions in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, and computed amounts in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -1344,11 +1344,8 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [byte order](docs/ORDER_2026.md),
   [type parameters](docs/TYPE_PARAMETERS_2026.md),
   [lengths and evaluation controls](docs/LENGTHS_2026.md),
-  [known-answer tests](docs/TESTS_2026.md),
-  [computed amounts](docs/AMOUNTS_2026.md),
-  [nested arrays](docs/NESTED_ARRAYS_2026.md),
-  [static moduli](docs/STATIC_MODULI_2026.md), and
-  [array dimensions](docs/DIMENSIONS_2026.md): the definition of what the
+  [known-answer tests](docs/TESTS_2026.md), and
+  [computed amounts](docs/AMOUNTS_2026.md): the definition of what the
   compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
