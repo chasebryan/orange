@@ -1328,14 +1328,10 @@ static int finish_index_node(Compiler *c, uint32_t base, uint32_t end, ExprKind 
     return note_height(c, *out);
 }
 
-static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
+static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
     Token index;
     Token close;
     uint32_t child = UINT32_MAX;
-    if (peek_kind(c) != TK_LBRACKET) {
-        *out = base;
-        return 1;
-    }
     advance_token(c);
     if (peek_kind(c) == TK_RBRACKET) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an index after `[`", "empty index",
@@ -1347,11 +1343,6 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
         advance_token(c);
         close = peek_token(c);
         advance_token(c);
-        if (peek_kind(c) == TK_LBRACKET) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected one index", "repeated index",
-                     "an element is not an array, so it cannot be indexed again", 1);
-            return 0;
-        }
         return finish_index_node(c, base, close.end, EX_INDEX, UINT32_MAX, index.start, index.end, out);
     }
     if (!enter_nest(c, index.start, index.end)) {
@@ -1368,12 +1359,25 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
         return 0;
     }
     advance_token(c);
-    if (peek_kind(c) == TK_LBRACKET) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected one index", "repeated index",
-                 "an element is not an array, so it cannot be indexed again", 1);
-        return 0;
-    }
     return finish_index_node(c, base, close.end, EX_SELECT, child, 0, 0, out);
+}
+
+/* A second `[` is another index, not a syntax error. Indexing the resulting
+   scalar is ORC0224. Arrays of arrays stay outside this slice. */
+static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
+    if (peek_kind(c) != TK_LBRACKET) {
+        *out = base;
+        return 1;
+    }
+    for (;;) {
+        if (!parse_one_index(c, base, out)) {
+            return 0;
+        }
+        if (peek_kind(c) != TK_LBRACKET) {
+            return 1;
+        }
+        base = *out;
+    }
 }
 
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
@@ -1587,6 +1591,7 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     advance_token(c);
     if (c->nopen >= MAX_OPEN_LOOPS) {
         resource_diag(c, "ORC0106", for_token.start, for_token.end, "expression exceeds the nesting limit of 64");
+        skip_open_braces(c, 1);
         leave_nest(c);
         return 0;
     }
@@ -1598,6 +1603,9 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     c->nopen++;
     if (!parse_expr(c, &step)) {
         c->nopen--;
+        /* The step's `{` is already open. Consume through its `}` so the
+           function-body skip does not treat that brace as the function's. */
+        skip_open_braces(c, 1);
         leave_nest(c);
         return 0;
     }
@@ -1606,6 +1614,7 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     close = peek_token(c);
     if (close.kind != TK_RBRACE) {
         add_diag(c, "ORC0101", close.start, close.end, "expected `}`", "a loop step ends at `}`", NULL, 1);
+        skip_open_braces(c, 1);
         leave_nest(c);
         return 0;
     }
@@ -2808,6 +2817,18 @@ static int index_below(const Big *value, uint32_t length) {
     return value->limbs[0] < length;
 }
 
+/* Type of the value an index selects from. A chain sees through earlier
+   indices, so `t[0][1]` knows that `t[0]` is one element. */
+static int index_subject(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+                         uint32_t *length, int *silent) {
+    const Expr *expr = &c->exprs[index];
+    uint32_t leaf = index;
+    if (expr->kind == EX_INDEX || expr->kind == EX_SELECT) {
+        return find_leaf(c, index, func_index, locals_in_scope, type, length, &leaf, silent);
+    }
+    return base_type(c, index, func_index, locals_in_scope, type, length, silent);
+}
+
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -2913,13 +2934,18 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return 2;
     case EX_INDEX:
     case EX_SELECT: {
-        int state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
-        if (state != 1 || *length == 0) {
+        int state = index_subject(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        if (state != 1) {
             if (state < 0) {
                 return -1;
             }
             *silent = 0;
             return -1;
+        }
+        /* An index of a scalar still has that scalar's type. The checker
+           reports ORC0224 once, on the first index that left the array. */
+        if (*length == 0) {
+            return 1;
         }
         *length = 0;
         return 1;
@@ -3892,6 +3918,33 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
     return check_expr(c, expr->right, operand, operand_len, func_index, locals_in_scope);
 }
 
+/* True when `base` is itself an index of a scalar, so a longer chain such as
+   `t[0][1][2]` reports ORC0224 once, on `t[0]`. */
+static int scalar_index_base(Compiler *c, uint32_t base, uint32_t func_index, uint32_t locals_in_scope) {
+    const Expr *expr = &c->exprs[base];
+    TypeKind type = TY_NONE;
+    uint32_t length = 0;
+    int silent = 0;
+    int state;
+    if (expr->kind != EX_INDEX && expr->kind != EX_SELECT) {
+        return 0;
+    }
+    state = index_subject(c, expr->left, func_index, locals_in_scope, &type, &length, &silent);
+    return state == 1 && length == 0;
+}
+
+static int finish_scalar_index(Compiler *c, uint32_t base, TypeKind base_kind, uint32_t func_index,
+                               uint32_t locals_in_scope) {
+    if (!scalar_index_base(c, base, func_index, locals_in_scope)) {
+        char message[192];
+        snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
+                 type_spelling(base_kind));
+        add_diag(c, "ORC0224", c->exprs[base].start, c->exprs[base].end, message, "not an array",
+                 "an index selects one element of a value of type T^n", 2);
+    }
+    return check_expr(c, base, base_kind, 0, func_index, locals_in_scope);
+}
+
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr;
@@ -3943,7 +3996,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
         int silent = 0;
-        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        int state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
         if (state != 1) {
             if (silent) {
                 return 1;
@@ -3951,12 +4004,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
         }
         if (base_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
-                     type_spelling(base_kind));
-            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
-                     "an index selects one element of a value of type T^n", 2);
-            return check_expr(c, expr->left, base_kind, 0, func_index, locals_in_scope);
+            return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
         }
         {
             Big magnitude = big_zero();
@@ -4312,7 +4360,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
         int silent = 0;
-        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        int state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
         if (state != 1) {
             if (silent) {
                 return 1;
@@ -4320,12 +4368,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
         }
         if (base_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
-                     type_spelling(base_kind));
-            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
-                     "an index selects one element of a value of type T^n", 2);
-            return check_expr(c, expr->left, base_kind, 0, func_index, locals_in_scope);
+            return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
         }
         if (base_kind != expected || expected_len != 0) {
             char message[192];
