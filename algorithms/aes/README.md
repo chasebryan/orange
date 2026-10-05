@@ -117,24 +117,27 @@ SubBytes and in SubWord of the key schedule, 200 lookups per AES-128 block
 and 276 per AES-256 block. Nothing else depends on the data: ShiftRows is a
 fixed reindexing, MixColumns and its inverse are `xtime` chains and
 exclusive-ors, and the key schedule's branches are on the word index, which
-is static. Indices in Orange must be static, so `sbox[x]` is written as a
-selection: the 256 entries are packed eight to a `Word[64]` so that every
-literal reads like a row of the standard's table, `lookup` walks the 32 words
-comparing `x >> 3` with each position, and `byte_at` picks the byte `x & 7`.
+is static. A byte may index a table of 256 entries. This rendering still
+writes `sbox[x]` as a selection: the 256 entries are packed eight to a
+`Word[64]` so that every literal reads like a row of the standard's table,
+`lookup` walks the 32 words comparing `x >> 3` with each position, and
+`byte_at` picks the byte `x & 7`.
 One lookup costs 295 steps (measured), and the lookups are about 80 percent
 of a block: with a given key schedule an AES-128 block costs about 58,000
 steps and an AES-256 block about 81,000; `key_expansion_128` costs about
 16,000 and `key_expansion_256` about 22,000; an AES-128 inverse block about
 65,000, InvMixColumns being the costlier half.
 
-Two consequences of static indexing shape the code. The round key of round
-`round` is `w[4 round .. 4 round + 3]`, so the round index must be a loop
-index: `cipher` loops over rounds 1 through 14 and lets the rounds above `Nr`
-pass the state through, and `inv_cipher` counts a loop index up and takes
-`round = 14 - j`. For the same reason the schedule is `Word[32]^60` for all
-three key sizes, with AES-128 and AES-192 leaving the tail at zero, and the
-recurrence `w[i] = w[i - Nk] ^ temp` is written once per `Nk`, because
-`w[i - nk]` with `nk` a parameter is not a static index.
+An `Int` is not an index, and a slice bound is a literal or a loop index.
+The round key of round `round` is `w[4 round .. 4 round + 3]`, and `nr` is
+an `Int`, so the round index is the loop index: `cipher` loops over rounds
+1 through 14 and lets the rounds above `Nr` pass the state through, and
+`inv_cipher` counts a loop index up and takes `round = 14 - j`. The schedule
+is `Word[32]^60` for all three key sizes, with AES-128 and AES-192 leaving
+the tail at zero, and the recurrence `w[i] = w[i - Nk] ^ temp` is written
+once per `Nk`, because `w[i - nk]` with `nk: Int` is rejected. A size is an
+index, including `w[i - nk]` when `nk` is a size and `i` is a loop index;
+this file does not use one.
 
 The budget sized the vectors. The seven FIPS 197 cases of `aes.or` cost about
 594,000 of the 1,048,576 steps a file has (measured with a filler spec). The
@@ -148,7 +151,8 @@ Not expressed: the modes' decryption direction (CBC and ECB decryption use
 InvCipher; CFB, OFB and CTR decryption reuse the forward cipher), since a
 spec without a vector would be dead code and its vectors do not fit the
 budget; messages of other lengths, since an array's length is part of its
-type and there is no length polymorphism; and the Equivalent Inverse Cipher
+type (a size parameter covers a finite family of lengths; these modes do not
+use one); and the Equivalent Inverse Cipher
 of FIPS 197 section 5.3.5, which is an implementation arrangement rather than
 a different function.
 
@@ -161,8 +165,9 @@ a different function.
   KeyExpansion for `Nk = 4, 6, 8`, `cipher` and `inv_cipher`, the six
   AES-128/192/256 entry points, and the vectors of Appendix B and C.
 - `aes-modes.or`: module `aes_modes`, the five modes of SP 800-38A over
-  two-block messages, with the forward cipher of FIPS 197 repeated (a module
-  has no imports) and the first two blocks of six Appendix F examples.
+two-block messages, with the forward cipher of FIPS 197 repeated (a module
+may `use` another; this file does not) and the first two blocks of six
+Appendix F examples.
 
 ### Running
 
@@ -235,15 +240,15 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- No imports: `aes-modes.or` repeats about 200 lines of `aes.or` (the
-  forward cipher and its tables) to use them.
-- Static indices only: a table lookup is a 32-way selection at 295 steps,
-  which makes a block cost 58,000 to 81,000 steps and limits the modes file
-  to two blocks of each example; the round index has to be a loop index, so
-  `cipher` and `inv_cipher` iterate over 14 rounds for every key size and the
-  schedule is sized for AES-256; the key expansion recurrence is written
-  once per `Nk`.
-- No length polymorphism: the modes are fixed to two-block messages
-  (`Word[8]^32`), and other lengths would be further specs.
+- A module may `use` another. `aes-modes.or` still repeats about 200 lines
+  of `aes.or` (the forward cipher and its tables).
+- A byte may index a table of 256 entries. The lookup is still a 32-way
+  selection at 295 steps, which makes a block cost 58,000 to 81,000 steps
+  and limits the modes file to two blocks of each example. `nr` and `nk` are
+  `Int` values, and an `Int` is not an index, so `cipher` and `inv_cipher`
+  iterate over 14 rounds for every key size, the schedule is sized for
+  AES-256, and the key expansion recurrence is written once per `Nk`.
+- A size parameter covers a finite family of lengths. The modes are still
+  fixed to two-block messages (`Word[8]^32`).
 - The step budget per file (1,048,576) kept the modes' decryption direction
   and blocks 3 and 4 of the Appendix F examples out of the entry.
