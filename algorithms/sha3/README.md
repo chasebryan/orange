@@ -122,13 +122,14 @@ depends on the message, and the Orange file has no conditional inside the
 permutation. The state array with its (x, y) coordinates becomes a flat
 `Word[64]^25` because Orange has no arrays of arrays; the index x + 5y is the
 standard's own lane order (section 3.1.2), so the little-endian byte loading
-is the one the standard describes. Rho is the one place the language shapes
-the text: a rotation amount must be a literal, so Table 2 appears as the 25
-written-out rotations `a[i] <<< offset` rather than as an offset table read
-in a loop. Theta, pi and chi are 25-element array literals laid out one line
-per plane y, so each line is the standard's formula for one row; the column
-parities C and D of theta are loops with the indices (x + 4) mod 5 and
-(x + 1) mod 5 of the standard.
+is the one the standard describes. Rho writes Table 2 as the 25 rotations
+`a[i] <<< offset` rather than as an offset table read in a loop. A rotation
+amount need not be a literal: an `Int`, a word, or a table element is
+accepted, so a loop may rotate by `offsets[i]`. A literal amount on
+`Word[64]` is still only 0 through 63. Theta, pi and chi are 25-element
+array literals laid out one line per plane y, so each line is the standard's
+formula for one row; the column parities C and D of theta are loops with the
+indices (x + 4) mod 5 and (x + 1) mod 5 of the standard.
 
 The sponge needs a message length, and Orange has no data-dependent index, so
 `pad` finds the suffix byte by comparing the loop index with n and the final
@@ -198,10 +199,10 @@ chapter 12.
 
 ## Gaps
 
-- Rotation amounts must be literals, so rho cannot loop over an offset table;
-  the 25 rotations are written out with their amounts. No cost, but the
-  table of section 3.2.2 is read from the code rather than from a literal
-  array.
+- Rho is written as 25 rotations with literal amounts, so the table of
+  section 3.2.2 is read from the code rather than from an offset array.
+  A rotation amount may be computed, and a loop may rotate by `offsets[i]`;
+  this source has not been rewritten that way.
 - Indices must be static, so the padding positions n and r - 1 are found by
   comparison in a loop over the 200-byte string (about 3,800 steps per
   message instead of two updates), and a message length cannot parametrize an

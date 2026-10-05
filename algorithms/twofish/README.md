@@ -111,11 +111,11 @@ depends on the mode and on nonce or IV discipline, not on the cipher.
 ### What the Orange rendering shows
 
 Two things in Twofish are data-dependent: the four nibble selections inside
-each q permutation and the key-dependent xors around them. Orange has no
-data-dependent index, so each 4-bit table is one `Word[64]` and `nibble_at`
-is a sixteen-arm conditional on the nibble; a byte through q0 or q1 costs
-about 242 steps, where a table-driven implementation spends one memory
-access. Nothing is precomputed: an implementation would expand the four
+each q permutation and the key-dependent xors around them. A 4-bit index may
+select a table of 16 entries (`k & 15`). This rendering keeps each 4-bit
+table as one `Word[64]` and `nibble_at` as a sixteen-arm conditional on the
+nibble; a byte through q0 or q1 costs about 242 steps, where a table-driven
+implementation spends one memory access. Nothing is precomputed: an implementation would expand the four
 key-dependent S-boxes, once per key, into 1024 bytes or four 256-word
 tables, whereas here g is written as the paper defines it, as h applied to
 the S-box key words, and every S-box evaluation recomputes its two or
@@ -249,12 +249,13 @@ files:
   algorithm part instead of one; a third 192-bit block would have exceeded
   the budget by a margin smaller than the data-dependent variation, and
   was not attempted.
-- Indices must be static, so each nibble of a 4-bit table is selected by a
-  sixteen-arm conditional (about 35 steps) and a byte through q costs about
-  242 steps; and a spec cannot index an array with a parameter, so `f` and
-  `round` receive the two round subkeys as parameters and the loops in
-  `encrypt` and `decrypt` index the expanded key with the loop variable.
-- A spec returns one value, so the key schedule's forty subkeys and the
-  S-box key words travel in one flat `Word[32]^44` whose layout the
+- A 4-bit index may select a table of 16 entries. Each nibble is still
+  selected by a sixteen-arm conditional (about 35 steps) and a byte through
+  q costs about 242 steps. An `Int` parameter is not an index, and a
+  `Word[32]` runs past a table of 44, so `f` and `round` receive the two
+  round subkeys as parameters and the loops in `encrypt` and `decrypt`
+  index the expanded key with the loop variable.
+- A spec may return a tuple. The key schedule's forty subkeys and the
+  S-box key words still travel in one flat `Word[32]^44` whose layout the
   comments state, and h's list L is padded to four words with k passed
   beside it.
