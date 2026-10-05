@@ -12,6 +12,9 @@
 #define MAX_SOURCE_BYTES (16u * 1024u * 1024u)
 #define MAX_TOKENS 262144u
 #define MAX_EXPRS 262144u
+/* Repeated updates keep every array. AES-128 retains about a million elements
+   across one process, above the expression table, so the store has its own cap. */
+#define MAX_ELEMS (1u << 21)
 #define MAX_ORDINARY_DIAGS 100u
 #define MAX_NESTING 64
 #define MAX_HEIGHT 256
@@ -306,7 +309,7 @@ typedef struct Diag {
     const char *code;
     char message[192];
     char label[128];
-    char note[192];
+    char note[320];
     uint32_t start;
     uint32_t end;
 } Diag;
@@ -3041,37 +3044,315 @@ static int bound_above(Compiler *c, uint32_t start, uint32_t end, int *above, ui
     return 1;
 }
 
-static int static_index(Compiler *c, uint32_t index, uint32_t *bad) {
+static uint64_t word_maximum(TypeKind type) {
+    int width = type_width(type);
+    if (width >= 64) {
+        return UINT64_MAX;
+    }
+    if (width <= 0) {
+        return 0;
+    }
+    return (UINT64_C(1) << width) - 1u;
+}
+
+/* Least value of the form 2^k - 1 that is at least `value`. */
+static uint64_t all_ones_u64(uint64_t value) {
+    if (value == 0) {
+        return 0;
+    }
+    return UINT64_MAX >> __builtin_clzll(value);
+}
+
+static int big_as_u64(const Big *value, uint64_t *out) {
+    if (value->negative) {
+        return 0;
+    }
+    if (value->nlimbs == 0) {
+        *out = 0;
+        return 1;
+    }
+    if (value->nlimbs == 1) {
+        *out = value->limbs[0];
+        return 1;
+    }
+    if (value->nlimbs == 2) {
+        *out = (uint64_t)value->limbs[0] | ((uint64_t)value->limbs[1] << 32);
+        return 1;
+    }
+    return 0;
+}
+
+static int literal_shift_amount(Compiler *c, const Expr *amount, uint32_t *out) {
+    Big magnitude = big_zero();
+    uint64_t value = 0;
+    if (amount->kind != EX_LIT || amount->negative || !decode_literal(c, amount, &magnitude) ||
+        !big_as_u64(&magnitude, &value) || value > UINT32_MAX) {
+        return 0;
+    }
+    *out = (uint32_t)value;
+    return 1;
+}
+
+/* Least and greatest values of a word expression whose type ends at `maximum`.
+   An operator narrows that only where the result cannot wrap. Anything else
+   ranges over the whole type. Bounds stay within `maximum`. */
+static void word_range(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, uint64_t maximum,
+                       uint64_t *lo, uint64_t *hi) {
+    const Expr *expr = &c->exprs[index];
+    *lo = 0;
+    *hi = maximum;
+    switch (expr->kind) {
+    case EX_LIT: {
+        Big magnitude = big_zero();
+        uint64_t value = 0;
+        if (expr->negative || !decode_literal(c, expr, &magnitude) || !big_as_u64(&magnitude, &value) ||
+            value > maximum) {
+            return;
+        }
+        *lo = value;
+        *hi = value;
+        return;
+    }
+    case EX_GROUP:
+        word_range(c, expr->left, func_index, locals_in_scope, maximum, lo, hi);
+        return;
+    case EX_UNARY:
+        if (expr->op == TK_TILDE) {
+            uint64_t inner_lo = 0;
+            uint64_t inner_hi = 0;
+            word_range(c, expr->left, func_index, locals_in_scope, maximum, &inner_lo, &inner_hi);
+            *lo = maximum - inner_hi;
+            *hi = maximum - inner_lo;
+        }
+        return;
+    case EX_SHIFT: {
+        uint64_t low = 0;
+        uint64_t high = 0;
+        uint32_t amount = 0;
+        word_range(c, expr->left, func_index, locals_in_scope, maximum, &low, &high);
+        if (!literal_shift_amount(c, &c->exprs[expr->right], &amount)) {
+            return;
+        }
+        if (expr->op == TK_RSHIFT) {
+            if (amount >= 64) {
+                *lo = 0;
+                *hi = 0;
+            } else {
+                *lo = low >> amount;
+                *hi = high >> amount;
+            }
+            return;
+        }
+        if (expr->op == TK_LSHIFT) {
+            uint64_t greatest;
+            if (amount >= 128) {
+                return;
+            }
+            if (amount >= 64) {
+                if (high == 0) {
+                    *lo = 0;
+                    *hi = 0;
+                }
+                return;
+            }
+            greatest = high << amount;
+            if ((greatest >> amount) == high && greatest <= maximum) {
+                *lo = low << amount;
+                *hi = greatest;
+            }
+            return;
+        }
+        return;
+    }
+    case EX_BINARY: {
+        uint64_t left_lo = 0;
+        uint64_t left_hi = 0;
+        uint64_t right_lo = 0;
+        uint64_t right_hi = 0;
+        uint64_t peak;
+        word_range(c, expr->left, func_index, locals_in_scope, maximum, &left_lo, &left_hi);
+        word_range(c, expr->right, func_index, locals_in_scope, maximum, &right_lo, &right_hi);
+        switch (expr->op) {
+        case TK_AMP:
+            *lo = 0;
+            *hi = left_hi < right_hi ? left_hi : right_hi;
+            return;
+        case TK_PIPE:
+            peak = left_hi > right_hi ? left_hi : right_hi;
+            *lo = left_lo > right_lo ? left_lo : right_lo;
+            *hi = all_ones_u64(peak);
+            return;
+        case TK_CARET:
+            peak = left_hi > right_hi ? left_hi : right_hi;
+            *lo = 0;
+            *hi = all_ones_u64(peak);
+            return;
+        case TK_PLUS:
+            if (left_lo > UINT64_MAX - right_lo || left_hi > UINT64_MAX - right_hi || left_hi + right_hi > maximum) {
+                return;
+            }
+            *lo = left_lo + right_lo;
+            *hi = left_hi + right_hi;
+            return;
+        case TK_MINUS:
+            if (left_lo < right_hi) {
+                return;
+            }
+            *lo = left_lo - right_hi;
+            *hi = left_hi - right_lo;
+            return;
+        case TK_STAR:
+            if ((right_hi != 0 && left_hi > UINT64_MAX / right_hi) || left_hi * right_hi > maximum) {
+                return;
+            }
+            *lo = left_lo * right_lo;
+            *hi = left_hi * right_hi;
+            return;
+        case TK_SLASH:
+            if (right_lo == 0 || right_hi == 0) {
+                *lo = 0;
+                *hi = left_hi;
+            } else {
+                *lo = left_lo / right_hi;
+                *hi = left_hi / right_lo;
+            }
+            return;
+        case TK_PERCENT:
+            if (right_lo > 0 && left_hi < right_lo) {
+                *lo = left_lo;
+                *hi = left_hi;
+            } else if (right_lo > 0) {
+                uint64_t cap = right_hi - 1u;
+                *lo = 0;
+                *hi = left_hi < cap ? left_hi : cap;
+            } else {
+                *lo = 0;
+                *hi = left_hi;
+            }
+            return;
+        default:
+            return;
+        }
+    }
+    case EX_COND: {
+        uint16_t arm;
+        uint64_t least = 0;
+        uint64_t greatest = 0;
+        int have = 0;
+        for (arm = 0; arm < expr->argc; arm++) {
+            uint64_t arm_lo = 0;
+            uint64_t arm_hi = 0;
+            word_range(c, c->cond_arms[expr->arg0 + arm].value, func_index, locals_in_scope, maximum, &arm_lo, &arm_hi);
+            if (!have || arm_lo < least) {
+                least = arm_lo;
+            }
+            if (!have || arm_hi > greatest) {
+                greatest = arm_hi;
+            }
+            have = 1;
+        }
+        {
+            uint64_t arm_lo = 0;
+            uint64_t arm_hi = 0;
+            word_range(c, expr->right, func_index, locals_in_scope, maximum, &arm_lo, &arm_hi);
+            if (!have || arm_lo < least) {
+                least = arm_lo;
+            }
+            if (!have || arm_hi > greatest) {
+                greatest = arm_hi;
+            }
+            have = 1;
+        }
+        if (have) {
+            *lo = least;
+            *hi = greatest;
+        }
+        return;
+    }
+    case EX_CONV: {
+        TypeKind leaf_type = TY_NONE;
+        uint32_t leaf_len = 0;
+        uint32_t leaf = index;
+        int silent = 0;
+        int state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        uint64_t from_max;
+        uint64_t inner_lo = 0;
+        uint64_t inner_hi = 0;
+        if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+            from_max = word_maximum(leaf_type);
+            word_range(c, expr->left, func_index, locals_in_scope, from_max, &inner_lo, &inner_hi);
+            if (inner_hi <= maximum) {
+                *lo = inner_lo;
+                *hi = inner_hi;
+            }
+        }
+        return;
+    }
+    default:
+        return;
+    }
+}
+
+static int static_index(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, uint32_t *bad) {
     const Expr *expr = &c->exprs[index];
     switch (expr->kind) {
     case EX_LIT:
     case EX_LOOP_INDEX:
         return 1;
     case EX_GROUP:
-        return static_index(c, expr->left, bad);
+        return static_index(c, expr->left, func_index, locals_in_scope, bad);
     case EX_UNARY:
         if (expr->op != TK_MINUS) {
             *bad = index;
             return 0;
         }
-        return static_index(c, expr->left, bad);
+        return static_index(c, expr->left, func_index, locals_in_scope, bad);
     case EX_BINARY:
         if (expr->op != TK_PLUS && expr->op != TK_MINUS && expr->op != TK_STAR && expr->op != TK_SLASH &&
             expr->op != TK_PERCENT) {
             *bad = index;
             return 0;
         }
-        if (!static_index(c, expr->left, bad)) {
+        if (!static_index(c, expr->left, func_index, locals_in_scope, bad)) {
             return 0;
         }
-        return static_index(c, expr->right, bad);
+        return static_index(c, expr->right, func_index, locals_in_scope, bad);
+    case EX_COND: {
+        uint16_t arm;
+        for (arm = 0; arm < expr->argc; arm++) {
+            if (!static_index(c, c->cond_arms[expr->arg0 + arm].value, func_index, locals_in_scope, bad)) {
+                return 0;
+            }
+        }
+        return static_index(c, expr->right, func_index, locals_in_scope, bad);
+    }
+    case EX_CONV: {
+        TypeKind leaf_type = TY_NONE;
+        uint32_t leaf_len = 0;
+        uint32_t leaf = index;
+        int silent = 0;
+        int state;
+        if (!expr->conv_ok || expr->conv_ty != TY_INT) {
+            *bad = index;
+            return 0;
+        }
+        state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+            return 1;
+        }
+        if (state == 1 && leaf_type == TY_INT && leaf_len == 0) {
+            return static_index(c, expr->left, func_index, locals_in_scope, bad);
+        }
+        *bad = index;
+        return 0;
+    }
     default:
         *bad = index;
         return 0;
     }
 }
 
-static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi);
+static int range_of(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, Big *lo, Big *hi);
 
 static int range_combine(Compiler *c, TokenKind op, const Big *left_lo, const Big *left_hi, const Big *right_lo,
                          const Big *right_hi, Big *lo, Big *hi) {
@@ -3248,7 +3529,7 @@ static int divide_ranges(Compiler *c, TokenKind op, const Big *left_lo, const Bi
     return have;
 }
 
-static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
+static int range_of(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, Big *lo, Big *hi) {
     const Expr *expr = &c->exprs[index];
     if (expr->kind == EX_LIT) {
         if (!decode_literal(c, expr, lo)) {
@@ -3258,7 +3539,7 @@ static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
         return 1;
     }
     if (expr->kind == EX_GROUP) {
-        return range_of(c, expr->left, lo, hi);
+        return range_of(c, expr->left, func_index, locals_in_scope, lo, hi);
     }
     if (expr->kind == EX_LOOP_INDEX) {
         const LoopDesc *loop = &c->loops[expr->arg0];
@@ -3270,7 +3551,7 @@ static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
     if (expr->kind == EX_UNARY && expr->op == TK_MINUS) {
         Big inner_lo = big_zero();
         Big inner_hi = big_zero();
-        if (!range_of(c, expr->left, &inner_lo, &inner_hi)) {
+        if (!range_of(c, expr->left, func_index, locals_in_scope, &inner_lo, &inner_hi)) {
             return 0;
         }
         return big_neg(&inner_hi, lo) && big_neg(&inner_lo, hi);
@@ -3281,13 +3562,60 @@ static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
         Big left_hi = big_zero();
         Big right_lo = big_zero();
         Big right_hi = big_zero();
-        if (!range_of(c, expr->left, &left_lo, &left_hi) || !range_of(c, expr->right, &right_lo, &right_hi)) {
+        if (!range_of(c, expr->left, func_index, locals_in_scope, &left_lo, &left_hi) ||
+            !range_of(c, expr->right, func_index, locals_in_scope, &right_lo, &right_hi)) {
             return 0;
         }
         if (expr->op == TK_SLASH || expr->op == TK_PERCENT) {
             return divide_ranges(c, expr->op, &left_lo, &left_hi, &right_lo, &right_hi, lo, hi);
         }
         return range_combine(c, expr->op, &left_lo, &left_hi, &right_lo, &right_hi, lo, hi);
+    }
+    if (expr->kind == EX_COND) {
+        uint16_t arm;
+        int have = 0;
+        for (arm = 0; arm < expr->argc; arm++) {
+            Big arm_lo = big_zero();
+            Big arm_hi = big_zero();
+            if (!range_of(c, c->cond_arms[expr->arg0 + arm].value, func_index, locals_in_scope, &arm_lo, &arm_hi)) {
+                return 0;
+            }
+            if (!have || big_cmp(&arm_lo, lo) < 0) {
+                *lo = arm_lo;
+            }
+            if (!have || big_cmp(&arm_hi, hi) > 0) {
+                *hi = arm_hi;
+            }
+            have = 1;
+        }
+        {
+            Big arm_lo = big_zero();
+            Big arm_hi = big_zero();
+            if (!range_of(c, expr->right, func_index, locals_in_scope, &arm_lo, &arm_hi)) {
+                return 0;
+            }
+            if (!have || big_cmp(&arm_lo, lo) < 0) {
+                *lo = arm_lo;
+            }
+            if (!have || big_cmp(&arm_hi, hi) > 0) {
+                *hi = arm_hi;
+            }
+        }
+        return 1;
+    }
+    if (expr->kind == EX_CONV && expr->conv_ok && expr->conv_ty == TY_INT) {
+        TypeKind leaf_type = TY_NONE;
+        uint32_t leaf_len = 0;
+        uint32_t leaf = index;
+        int silent = 0;
+        int state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        uint64_t wlo = 0;
+        uint64_t whi = 0;
+        if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+            word_range(c, expr->left, func_index, locals_in_scope, word_maximum(leaf_type), &wlo, &whi);
+            return big_from_u64(&c->arena, wlo, lo) && big_from_u64(&c->arena, whi, hi);
+        }
+        return range_of(c, expr->left, func_index, locals_in_scope, lo, hi);
     }
     return 0;
 }
@@ -3305,24 +3633,90 @@ static int big_below_u32(const Big *value, uint32_t limit) {
     return value->limbs[0] < limit;
 }
 
-static int check_index_expr(Compiler *c, uint32_t index_expr, uint32_t length, uint32_t func_index,
+static void report_index_range(Compiler *c, uint32_t start, uint32_t end, const Big *lo, const Big *hi, int have_range,
+                               TypeKind element, uint32_t length) {
+    char message[192];
+    char label[128];
+    char low_text[96];
+    char high_text[96];
+    char type_text[64];
+    uint32_t highest = length == 0 ? 0 : length - 1u;
+    int written = -1;
+    write_type(type_text, sizeof type_text, element, length);
+    snprintf(label, sizeof label, "indices run from 0 through %u", highest);
+    if (have_range && lo != NULL && hi != NULL && big_format(lo, low_text, sizeof low_text) &&
+        big_format(hi, high_text, sizeof high_text)) {
+        if (big_cmp(lo, hi) == 0) {
+            written = snprintf(message, sizeof message, "index %s is out of range for `%s`", low_text, type_text);
+        } else {
+            written = snprintf(message, sizeof message,
+                               "this index runs from %s through %s, out of range for `%s`", low_text, high_text,
+                               type_text);
+        }
+    }
+    if (written < 0 || (size_t)written >= sizeof message) {
+        snprintf(message, sizeof message, "this index is out of range for `%s`", type_text);
+    }
+    add_diag(c, "ORC0223", start, end, message, label,
+             "every value an index can take, over every loop index and word in it, must select an element", 2);
+}
+
+static int check_index_expr(Compiler *c, uint32_t index_expr, TypeKind element, uint32_t length, uint32_t func_index,
                             uint32_t locals_in_scope) {
-    uint32_t bad = index_expr;
-    Big lo = big_zero();
-    Big hi = big_zero();
+    TypeKind leaf_type = TY_NONE;
+    uint32_t leaf_len = 0;
+    uint32_t leaf = index_expr;
+    int silent = 0;
+    int state = find_leaf(c, index_expr, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+    uint32_t diags_before = c->ndiags;
     const Expr *expr = &c->exprs[index_expr];
+    if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+        uint64_t wlo = 0;
+        uint64_t whi = 0;
+        Big lo = big_zero();
+        Big hi = big_zero();
+        if (!check_expr(c, index_expr, leaf_type, 0, func_index, locals_in_scope)) {
+            return 0;
+        }
+        if (c->ndiags != diags_before) {
+            return 1;
+        }
+        word_range(c, index_expr, func_index, locals_in_scope, word_maximum(leaf_type), &wlo, &whi);
+        if (whi >= length) {
+            if (!big_from_u64(&c->arena, wlo, &lo) || !big_from_u64(&c->arena, whi, &hi)) {
+                return 0;
+            }
+            report_index_range(c, expr->start, expr->end, &lo, &hi, 1, element, length);
+        }
+        return 1;
+    }
     if (!check_expr(c, index_expr, TY_INT, 0, func_index, locals_in_scope)) {
         return 0;
     }
-    if (!static_index(c, index_expr, &bad)) {
-        add_diag(c, "ORC0226", c->exprs[bad].start, c->exprs[bad].end,
-                 "an index may use only integer literals and loop indices", "index is not static",
-                 "build the index from literals and enclosing loop indices with +, -, *, /, and %", 2);
+    if (c->ndiags != diags_before) {
         return 1;
     }
-    if (!range_of(c, index_expr, &lo, &hi) || (lo.negative && lo.nlimbs != 0) || !big_below_u32(&hi, length)) {
-        add_diag(c, "ORC0223", expr->start, expr->end, "index range is not inside the array", "index out of range",
-                 "every value of a static index must select an element", 2);
+    {
+        uint32_t bad = index_expr;
+        Big lo = big_zero();
+        Big hi = big_zero();
+        if (!static_index(c, index_expr, func_index, locals_in_scope, &bad)) {
+            add_diag(c, "ORC0226", c->exprs[bad].start, c->exprs[bad].end,
+                     "an `Int` index may use only integer literals, loop indices, and words converted with `as Int`",
+                     "this `Int` has no bound",
+                     "every index is proved in range when the program is checked: a word index ranges over its type, "
+                     "and an `Int` index is built from integer literals, loop indices, and words converted with "
+                     "`as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals",
+                     2);
+            return 1;
+        }
+        if (!range_of(c, index_expr, func_index, locals_in_scope, &lo, &hi)) {
+            report_index_range(c, expr->start, expr->end, NULL, NULL, 0, element, length);
+            return 1;
+        }
+        if ((lo.negative && lo.nlimbs != 0) || !big_below_u32(&hi, length)) {
+            report_index_range(c, expr->start, expr->end, &lo, &hi, 1, element, length);
+        }
     }
     return 1;
 }
@@ -3937,7 +4331,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (!check_expr(c, expr->left, base_kind, base_len, func_index, locals_in_scope)) {
             return 0;
         }
-        return check_index_expr(c, expr->right, base_len, func_index, locals_in_scope);
+        return check_index_expr(c, expr->right, base_kind, base_len, func_index, locals_in_scope);
     }
     case EX_UPDATE: {
         TypeKind leaf_type = TY_NONE;
@@ -3964,7 +4358,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (!check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope) ||
-            !check_index_expr(c, expr->right, expected_len, func_index, locals_in_scope)) {
+            !check_index_expr(c, expr->right, expected, expected_len, func_index, locals_in_scope)) {
             return 0;
         }
         return check_expr(c, expr->callee, expected, 0, func_index, locals_in_scope);
@@ -4276,16 +4670,42 @@ static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, 
 }
 
 static int push_elem(Compiler *c, Value value, uint32_t *slot) {
-    if (c->nelems >= MAX_EXPRS) {
+    if (c->nelems >= MAX_ELEMS) {
         c->failed = 1;
         return 0;
     }
-    if (!ensure_cap((void **)&c->elems, &c->elem_cap, c->nelems + 1, sizeof(Value), MAX_EXPRS)) {
+    if (!ensure_cap((void **)&c->elems, &c->elem_cap, c->nelems + 1, sizeof(Value), MAX_ELEMS)) {
         c->failed = 1;
         return 0;
     }
     *slot = c->nelems;
     c->elems[c->nelems++] = value;
+    return 1;
+}
+
+/* A word index is the word's unsigned value, after one implicit conversion to Int. */
+static int index_position(Compiler *c, const Value *index_value, uint32_t index_start, uint32_t index_end,
+                          uint32_t *position) {
+    if (index_value->type == TY_INT) {
+        if (index_value->big.negative || index_value->big.nlimbs > 1) {
+            c->failed = 1;
+            return 0;
+        }
+        *position = index_value->big.nlimbs == 0 ? 0 : index_value->big.limbs[0];
+        return 1;
+    }
+    if (type_width(index_value->type) == 0 || !charge(c, index_start, index_end, 1)) {
+        c->failed = 1;
+        return 0;
+    }
+    {
+        uint64_t word = index_value->word & word_mask_of(type_width(index_value->type));
+        if (word > UINT32_MAX) {
+            *position = UINT32_MAX;
+        } else {
+            *position = (uint32_t)word;
+        }
+    }
     return 1;
 }
 
@@ -4655,16 +5075,11 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         Value index_value;
         uint32_t position = 0;
         if (!eval_expr(c, expr->left, params, locals, depth, &base) ||
-            !eval_expr(c, expr->right, params, locals, depth, &index_value)) {
-            return 0;
-        }
-        if (index_value.type != TY_INT || index_value.big.negative || index_value.big.nlimbs > 1 ||
+            !eval_expr(c, expr->right, params, locals, depth, &index_value) ||
+            !index_position(c, &index_value, c->exprs[expr->right].start, c->exprs[expr->right].end, &position) ||
             !charge(c, expr->start, expr->end, 1)) {
             c->failed = 1;
             return 0;
-        }
-        if (index_value.big.nlimbs > 0) {
-            position = index_value.big.limbs[0];
         }
         if (position >= base.length || base.elem0 > UINT32_MAX - position || base.elem0 + position >= c->nelems) {
             c->failed = 1;
@@ -4686,13 +5101,10 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
             !eval_expr(c, expr->callee, params, locals, depth, &element)) {
             return 0;
         }
-        if (base.length == 0 || index_value.type != TY_INT || index_value.big.negative ||
-            index_value.big.nlimbs > 1) {
+        if (base.length == 0 ||
+            !index_position(c, &index_value, c->exprs[expr->right].start, c->exprs[expr->right].end, &position)) {
             c->failed = 1;
             return 0;
-        }
-        if (index_value.big.nlimbs > 0) {
-            position = index_value.big.limbs[0];
         }
         cost = ((uint64_t)base.length + 63u) / 64u;
         if (position >= base.length || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
@@ -5229,7 +5641,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, and conditional fragment. It does not use the\n"
+        "conversion, array, loop, conditional, and lookup fragment. It does not use the\n"
         "Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -5256,7 +5668,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3f\n", stdout);
+            fputs("orangec (standalone C) slice S3g\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
