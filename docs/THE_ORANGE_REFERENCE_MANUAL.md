@@ -174,8 +174,12 @@ Edition: `2026`
 
 The Current language, through implemented slice S3u, is the `spec` stratum:
 pure functions over `Int`, `Bool`, `Word[n]`, `Mod[m]`, arrays, and tuples, plus
-`test`. `impl` may be declared and has no semantics (`ORC0202`). `game`, `proof`,
-and `claim` are reserved words and are not declarations (`ORC0103`).
+`test`. An empty `impl` may be declared and is not evaluated. A typed `impl`
+on the surface is `ORC0101` (§55, §96). `ORC0202` is the semantic gate for a
+typed body whose kind is not `spec`; the parser does not build that body.
+`game`, `proof`, and `claim` are reserved words. A member that begins with
+one of them is `ORC0103`. Using one as a function name is `ORC0101`, note
+`` reserved words cannot be used as names ``.
 
 The five-stratum architecture (`impl`, `machine impl`, `game`, `proof`, `claim`)
 is Proposed. Parts VIII–XVI record it. Those parts are not conformance
@@ -621,9 +625,10 @@ hex_string_literal = "hex\"" (hex_digit hex_digit | " ")* "\"" ;
 1. **Current declarations.** `spec` and `impl` are separate declaration
    namespaces (`ORC0201`). The same module may declare `spec sha256` and
    `impl sha256`. A call names a typed `spec` function. There is no stratum
-   selector at the call. A typed `impl` body has no semantics (`ORC0202`); an
-   empty `impl` declares a name and does not evaluate. `game`, `proof`, and
-   `claim` are not declaration forms (§14).
+   selector at the call. A typed `impl` on the surface is two `ORC0101`
+   diagnostics (§55) and does not emit `ORC0202`. An empty `impl` declares a
+   name and does not evaluate. `game`, `proof`, and `claim` are not
+   declaration forms (§14, §103).
 2. **Proposed strata.** Affine ownership, machine intrinsics, games, proof
    terms, and claims are Parts VIII–XIII. They are not the Current evaluator.
 
@@ -7122,28 +7127,34 @@ the 16 MiB source ceiling are `ORC1003`, outside this range.
 
 - **Subsystem:** Semantic Analyzer (Slice Capability Gate)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(f, \mathcal{S}) \iff \text{Stratum}(f) \ne \texttt{spec} \land \text{HasTypedBody}(f) \land \text{ActiveSlice}(\mathcal{S}) \prec \text{SliceRequired}(f)$$
-- **Theoretical Rationale:** Language slices (S1 through S3t) gate feature stabilization.
-  Declaring typed imperative `impl` or `machine impl` procedure bodies when targeting pure
-  specification slices prevents undefined evaluation behavior.
-- **Erroneous Example:**
 
-  ```orange
-  edition 2026;
-  module test_impl {
-      impl compute(x: Word[32]) -> Word[32] { x + 1 }
-  }
-  ```
+$$
+\mathrm{Trigger}(f) \iff \mathrm{body}(f) = \mathrm{Typed} \land \mathrm{kind}(f) \ne \texttt{spec}
+$$
 
+`semantics.rs` emits this when that predicate holds. The message is
+`` typed bodies are supported only on `spec` functions ``, the label is
+`` this `impl` function has no semantics in the current fragment ``, and the
+note is
+`` use an empty `impl` body or move the typed body to a `spec` function ``.
+The parser does not build a typed `impl` body, so `orangec check` of the
+program below emits two `ORC0101` diagnostics and does not emit `ORC0202`:
+`` `impl` functions have an empty parameter list ``, then
+`` typed bodies are allowed only on `spec` functions ``.
 
-- **Remediation:** Use `spec` for pure mathematical specifications in slice S3t:
+```orange
+edition 2026;
+module test_impl {
+    impl compute(x: Word[32]) -> Word[32] { x + 1 }
+}
+```
 
-  ```orange
-  edition 2026;
-  module test_impl {
-      spec compute(x: Word[32]) -> Word[32] { x + 1 }
-  }
-  ```
+The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
+`ORC0202` by parsing a typed `spec` and setting the function's kind to
+`impl` before analysis.
+
+- **Remediation:** Write the typed body as `spec`. An empty `impl name() {}`
+  declares the name and has no body for this gate to reject.
 
 #### `ORC0203` — `UnsupportedType`
 
