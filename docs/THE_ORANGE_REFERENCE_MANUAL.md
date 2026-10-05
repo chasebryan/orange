@@ -2509,27 +2509,49 @@ module x25519_spec {
 
 ### §52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)
 
-Poly1305 as RFC 8439 section 2.5 writes it. The listing is accepted by
-`orangec test`: section 2.5.2 (the tag of "Cryptographic Forum Research
-Group"), appendix A.3 item 1 (zeros under the zero key), and the clamped $r$
-of the section 2.5.2 key. Section 2.8's AEAD construction, which feeds
-Poly1305 a padded string of additional data, ciphertext, and lengths, is the
-same `mac` on that string. The AEAD section transcribes that construction,
-including the lengths of section 2.8.2 and appendix A.5. This section is the
-field MAC.
+Poly1305 as RFC 8439 section 2.5 writes it. Section 2.8's AEAD construction,
+which feeds Poly1305 a padded string of additional data, ciphertext, and
+lengths, is the same `mac` on that string. The AEAD section transcribes that
+construction. This section is the field MAC.
+
+#### Status
+
+**Current** for the listing in this section. `orangec test` on that listing,
+with the S3t binary of §49, accepts three tests and fails none: section 2.5.2
+(the tag of "Cryptographic Forum Research Group"), appendix A.3 item 1 (64
+zero bytes under the zero key), and the clamped $r$ of the section 2.5.2 key.
+The listing uses `Mod[(1 << 130) - 5]`, size parameters, slices, and
+`as little`.
+
+`algorithms/chacha20-poly1305/chacha20-poly1305.or` writes the same MAC with
+`Int` and `%` instead of `Mod`, and declares no `test` member.
+`orangec eval` of `rfc8439_2_5_2` and of `rfc8439_a3_1` through
+`rfc8439_a3_11` each equals its `_expected` spec. Twelve pairs, zero
+mismatches. The AEAD and XChaCha20 specs in that file are not this section.
+
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing: 1 through 5 blocks, at most 80 message bytes | Current | The three tests above |
+| Appendix A.3 items 2 through 11, including the 375-byte text | Checked by `orangec eval` of `algorithms/chacha20-poly1305/chacha20-poly1305.or` | Not a `test` in this listing. The tags are that file's `rfc8439_a3_*_expected` specs |
+| An empty message | Not in this listing | `blocks in 1..5` has no zero-block instance. The RFC's loop does not run, and the tag is the 16 little-endian bytes of $s$ |
+| A message longer than 80 bytes in this listing | Same algorithm, a larger `blocks` range | At most 256 instances (§30). The file's `poly1305_mac` takes a 256-byte buffer and a length, and `poly1305_mac_long` takes a second buffer |
 
 #### 1. The Field and the Key (section 2.5)
 
-$$p = 2^{130} - 5, \qquad \mathbb{F}_p = \mathbb{Z}/p\mathbb{Z}.$$
+$$p = 2^{130} - 5 = 1361129467683753853853498429727072845819,$$
 
-`Mod[(1 << 130) - 5]` is that field. The 32-byte key splits into $r$, the
+and $\mathbb{F}_p = \mathbb{Z}/p\mathbb{Z}$. `Mod[(1 << 130) - 5]` is that
+field. `+` and `*` on it are the field operations, reduced into $[0, p-1]$
+(§22). The 32-byte key splits into $r$, the
 first 16 bytes as a little-endian integer, and $s$, the second 16 bytes as a
 little-endian integer. $r$ is clamped by
 
 $$r \leftarrow r \land \mathtt{0x0ffffffc0ffffffc0ffffffc0fffffff}.$$
 
-On the bytes, that clears the top four bits of bytes 3, 7, 11, and 15, and
-the bottom two bits of bytes 4, 8, and 12. $s$ is not clamped. `clamped_r`
+On the bytes, that clears the top four bits of bytes 3, 7, 11, and 15
+(`byte & 0x0f`) and the bottom two bits of bytes 4, 8, and 12
+(`byte & 0xfc`). The other thirteen bytes are unchanged. $s$ is not clamped.
+`clamped_r`
 and `s_word` are those two values. The mask in the listing is the same
 integer split into little-endian 64-bit halves, `0x0ffffffc0fffffff` and
 `0x0ffffffc0ffffffc`.
@@ -2555,6 +2577,21 @@ and passes `held`, the number of message bytes in the last block. A longer
 message is the same function with a larger finite `blocks` range. One `spec`
 does not cover every length: a size parameter has at most 256 instances
 (§30).
+
+The RFC's `poly1305_mac` is that loop. The names in the listing:
+
+| RFC 8439 section 2.5 | Orange in the listing |
+| :--- | :--- |
+| $p = (1 \ll 130) - 5$ | `type P = Mod[(1 << 130) - 5]` |
+| `r = le_bytes_to_num(key[0..15])` then `clamp(r)` | `clamped_r`: `key[..16] as little Word[64]^2`, mask the halves, `as little P` |
+| the mask `0x0ffffffc0ffffffc0ffffffc0fffffff` | low half `0x0ffffffc0fffffff`, high half `0x0ffffffc0ffffffc` |
+| `s = le_bytes_to_num(key[16..31])` | `s_word`: `key[16..] as little Int` |
+| `a = 0` | the `with a: P = 0` of the loop |
+| one block, `n = le_bytes_to_num(block \|\| [0x01])` | `(m[16*j .. 16*j+16] as little P) + weight(k)`, and `weight(k)` is $256^{k}$ |
+| `a += n; a = (r * a) % p` | `(a + n) * r` on `P` |
+| `for i = 1 upto ceil(len/16)` | `for j in 0..blocks`, with `k = 16` on every block but the last |
+| `a += s` | `(a as Int) + s_word(key)` |
+| `num_to_16_le_bytes(a)`, the low 128 bits | `as little Word[8]^16`. A number converts to the words of its residue modulo $2^{\mathrm{width}}$ (`pack` in `eval.rs`), here width 128 |
 
 #### 3. The Section 2.5.2 Key, Worked
 
