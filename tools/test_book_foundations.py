@@ -297,6 +297,50 @@ class ContinuationExamples(unittest.TestCase):
         self.assertEqual((1 + 1) ^ 1, 3)
         self.assertEqual(1 + (1 ^ 1), 1)
 
+    def test_n7_exercises_answers_and_label(self):
+        text = (ROOT / 'docs' / 'book' / 'NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md').read_text(
+            encoding='utf-8')
+        exercises = re.findall(r'^\*\*Exercise (N7\.\d+) —', text, re.M)
+        answers = re.findall(r'^\*\*(N7\.\d+)\.\*\*', text, re.M)
+        self.assertEqual(exercises, [f'N7.{n}' for n in range(1, 8)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotIn('Chapter 7', text)
+        index = INDEX.read_text(encoding='utf-8')
+        self.assertIn('**N7.**', index)
+        self.assertIn(
+            'NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step',
+            index)
+        self.assertNotIn('Chapter 7', index)
+        headings = re.findall(r'^#{1,6} (.+)$', text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n7-name-the-intermediate-step', anchors)
+
+    def test_n7_quarter_round_and_index_bounds(self):
+        def rotl(value, amount):
+            value &= 0xFFFFFFFF
+            return ((value << amount) | (value >> (32 - amount))) & 0xFFFFFFFF
+
+        a, b, c, d = 0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567
+        a1 = (a + b) & 0xFFFFFFFF
+        d1 = rotl(d ^ a1, 16)
+        c1 = (c + d1) & 0xFFFFFFFF
+        b1 = rotl(b ^ c1, 12)
+        a2 = (a1 + b1) & 0xFFFFFFFF
+        d2 = rotl(d1 ^ a2, 8)
+        c2 = (c1 + d2) & 0xFFFFFFFF
+        b2 = rotl(b1 ^ c2, 7)
+        self.assertEqual((a2, b2, c2, d2),
+                         (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb))
+        self.assertEqual(a1, 0x12131415)
+        self.assertLess(a + b, 2 ** 32)
+        words = [a, b, c, d]
+        self.assertEqual(words[0], a)
+        self.assertEqual(words[3], d)
+        self.assertEqual([k for k in range(4) if 0 <= k < 4], [0, 1, 2, 3])
+        self.assertFalse(4 < 4)
+        self.assertEqual((0xff + 0x01) & 0xff, 0)
+        self.assertEqual(0xff + 0x01, 0x100)
+
     def test_opening_retained_byte_for_byte(self):
         import hashlib
         data = MANUSCRIPT.read_bytes()

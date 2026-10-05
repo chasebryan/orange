@@ -352,7 +352,132 @@ supposition, and it says nothing about whether ChaCha20 is a secure cipher,
 whether the rest of RFC 8439 has been transcribed, or whether a different
 compiler build implements the same operators.
 
-### N7.6 The finish line
+### N7.6 Four words under one name
+
+Listing N7.4 repeats the early updates because each function returns one
+word. An **array** holds a fixed number of elements of one type as a single
+value. `Word[32]^4` means four words of width 32. The `^4` is a length,
+not an exponent. A **literal index** selects one element by an integer
+written in the source. Counting starts at zero.
+
+**Assumption A3.** An array literal is checked against the length in its
+type. A literal index `k` on an array of length `n` is accepted only when
+`0 ≤ k < n`. That comparison happens before evaluation. An accepted
+program does not find out at run time that a literal index missed the
+array.
+
+**Listing N7.5 — `lanes.or`**
+
+```orange
+edition 2026;
+module lanes {
+  spec words() -> Word[32]^4 {
+    [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567]
+  }
+
+  spec first() -> Word[32] {
+    let words: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567];
+    words[0]
+  }
+
+  spec last() -> Word[32] {
+    let words: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567];
+    words[3]
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+lanes::words: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567]
+lanes::first: Word[32] = 0x11111111
+lanes::last: Word[32] = 0x01234567
+```
+
+`words[0]` is the first element because the positions are 0, 1, 2, and 3.
+`words[3]` is the last because the length is 4 and the last position is
+one less than the length. The same four numbers are the RFC's inputs.
+Putting them in an array does not yet apply the quarter round.
+
+**Proposition N7.3.** On an array of length 4, the literal indices that
+select an element are 0, 1, 2, and 3, and 4 does not.
+
+*Proof.* By assumption A3, index `k` is accepted exactly when `0 ≤ k < 4`.
+The integers satisfying that inequality are 0, 1, 2, and 3. The integer 4
+fails `4 < 4`. □
+
+The next listing is the case the proof rejects. It must not print a value.
+
+**Listing N7.6 — `past_end.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module past_end {
+  spec missing() -> Word[32] {
+    let words: Word[32]^4 = [0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567];
+    words[4]
+  }
+}
+```
+
+The diagnostic is `ORC0223`: index `` `4` `` is out of range for
+`Word[32]^4`, and the indices run from 0 through 3. The failure is a
+check, not a wrapped position and not a value invented past the end. [A1]
+
+One function can now follow every update once and return all four results.
+Position 0 holds final `a`, position 1 final `b`, position 2 final `c`,
+and position 3 final `d`, because that is the order written in the array
+literal.
+
+**Listing N7.7 — `quarter_lane.or`**
+
+```orange
+edition 2026;
+module quarter_lane {
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  spec vector() -> Word[32]^4 {
+    quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+quarter_lane::vector: Word[32]^4 = [0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb]
+```
+
+**Proposition N7.4.** Under the operator assumption of Proposition N7.2,
+the four elements of `quarter_round(a, b, c, d)` are the standard's final
+`a`, `b`, `c`, and `d`, in that order, on every input.
+
+*Proof.* The eight bindings are the eight updates of RFC 8439 §2.1, in
+the same order, and each binding's right-hand side uses only earlier
+names. The result expression is the array whose positions are `a2`, `b2`,
+`c2`, and `d2`. Those four names are the standard's final words, by the
+same identification used in Proposition N7.2. A literal index selects the
+element written at that position, so the array's positions 0 through 3 are
+those four words. Each name is evaluated once. Recomputing a prefix in
+another function is no longer required for the result to contain every
+word. □
+
+The printed vector is again one input. It matches §2.1.1. It does not
+discharge the operator assumption, and the array type does not by itself
+make the construction a cipher.
+
+### N7.7 The finish line
 
 The reading index stated this lesson before it was written. Finishing N7
 means four outcomes, in dependency order. This section is the finish line,
@@ -372,11 +497,12 @@ not a claim that every outcome is already demonstrated above.
    can use that index only where it has already been shown to lie inside
    the array.
 
-Outcomes 1 and 2 are the work of the listings above. Outcomes 3 and 4 are
-the rest of this same lesson. They are not optional color, and they are
-not yet claimed. A feature is added here only when this branch's compiler
-accepts it. If one of them is unsupported, the lesson stops at the last
-supported step and says so.
+Outcomes 1 and 2 are Listings N7.1 through N7.4. Outcome 3 now includes
+arrays and literal indices: Listing N7.7 returns the quarter round as one
+`Word[32]^4`. Conditions, tuples, and outcome 4 are the rest of this same
+lesson. They are not yet claimed. A feature is added here only when this
+branch's compiler accepts it. If one of them is unsupported, the lesson
+stops at the last supported step and says so.
 
 What finishing does not mean: that you have proved ChaCha20 secure, that
 the compiler is correct, or that the original manuscript has been
@@ -404,6 +530,15 @@ obtain `d1` by a left rotation of 16. State the general fact about
 the four functions match the standard on every input. Name the assumption
 the proof does not discharge. What does Listing N7.4's expected output
 add, and what does it still not add?
+
+**Exercise N7.6 — Count from zero.** List every literal index that selects
+an element of `Word[32]^4`. Explain why index 4 is rejected, and why a
+reader who counts the elements as 1, 2, 3, 4 has named the wrong integer.
+
+**Exercise N7.7 — One evaluation of `a1`.** Listing N7.4 computes `a + b`
+in more than one function. Listing N7.7 binds `a1` once. Under Proposition
+N7.4, which array position is final `a`, and which is final `d`? Why does
+agreement of `vector` with the RFC line not by itself prove the proposition?
 
 ## Worked answers
 
@@ -441,6 +576,17 @@ the other 2¹²⁸ − 1 inputs by itself, and does not establish confidentialit
 integrity, or any property of the ChaCha20 block function beyond this
 quarter round.
 
+**N7.6.** The legal literal indices are 0, 1, 2, and 3. Index 4 fails
+`4 < 4`, so `ORC0223` rejects Listing N7.6 before evaluation. Counting the
+elements as 1, 2, 3, 4 names four positions, but it starts at one. The
+first element is position 0, so the fourth element is position 3, not 4.
+
+**N7.7.** Final `a` is position 0, the value `a2`. Final `d` is position
+3, the value `d2`. The printed vector shows those positions for one input.
+Proposition N7.4 claims every input, and its proof uses the operator
+assumption together with the order of the bindings. One matching line does
+not discharge that assumption.
+
 ## Sources
 
 **[R1] RFC 8439.** Y. Nir and A. Langley, “ChaCha20 and Poly1305 for IETF
@@ -462,3 +608,9 @@ diagnostic quoted for Listing N7.3 is `ORC0108` with the message that
 `` `as` follows `+` without grouping parentheses ``. Implementation of the
 slice is not acceptance of the proposal, and it adds no cryptographic
 claim.
+
+**[A1] Orange arrays.** `docs/ARRAYS_2026.md` and the S3d fixtures in this
+repository. A length is a decimal integer on the element type, and a
+literal index is an integer token in brackets. The diagnostic quoted for
+Listing N7.6 is `ORC0223`. An array in this lesson is a value, not a region
+of memory that later text may overwrite.

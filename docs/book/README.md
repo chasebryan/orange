@@ -67,9 +67,10 @@ understand each operation rather than memorize its notation.
   explicit grouping and the inverse of a small nonsecure composition.
   Twelve exercises with answers; includes a deliberately ungrouped program.
 - **N7.** [Name the Intermediate Step](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step):
-  bindings and explicit conversions, the ChaCha20 quarter round written
-  with the intermediate names of RFC 8439 §2.1, and a rejected
-  `x + y as Word[32]`. Five exercises with worked answers. The lesson's
+  bindings, explicit conversions, arrays with literal indices, and the
+  ChaCha20 quarter round written with the intermediate names of RFC 8439
+  §2.1. Rejected forms include `x + y as Word[32]` and a literal index
+  past the array. Seven exercises with worked answers. The lesson's
   finish line is the four outcomes in that section. N7 is not the
   manuscript chapter titled No Disposable Prototype.
 
@@ -78,7 +79,7 @@ corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
 corrected source. Chapters 4–6 and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
-worked answers. N7 adds five further exercises in its own file.
+worked answers. N7 adds seven further exercises in its own file.
 
 ### Remaining teaching sequence
 
@@ -264,7 +265,7 @@ Run the reference checks from the repository root:
 python3 tools/test_book_foundations.py
 ```
 
-These 30 checks validate the worked examples, finite models, 52 exercise
+These 32 checks validate the worked examples, finite models, 52 exercise
 answers and document structure. Python test discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -277,7 +278,9 @@ The Rust integration test `compiler/crates/orangec/tests/book_novice.rs`
 extracts the nine actual Orange listings from the continuation and runs the
 compiler against the seven expected successes and two intended rejections.
 It also checks that removing the computed-amount parentheses exposes the
-literal guard. Run it in a build-capable checkout:
+literal guard. The same test reads the Orange listings in N7 and checks
+their printed results and intended rejections. Run it in a build-capable
+checkout:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --locked --offline
