@@ -416,6 +416,197 @@ def conversion_targets(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
+def logical_operators(rust_compiler: Path, c_compiler: Path) -> int:
+    """A rejected `!`, `&&`, or `||` is only ORC0215; a `Bool` operator still checks operands."""
+    cases = [
+        ("logic-bang-missing", module("  spec f() -> Word[8] { !missing }"), ["ORC0215"]),
+        ("logic-bang-true", module("  spec f() -> Word[8] { !true }"), ["ORC0215"]),
+        ("logic-bang-compare", module("  spec f() -> Word[8] { !(1 == 1) }"), ["ORC0215"]),
+        ("logic-bang-int", module("  spec f() -> Int { !(missing && also) }"), ["ORC0215"]),
+        ("logic-and-literals", module("  spec f() -> Int { true && false }"), ["ORC0215"]),
+        ("logic-and-missing", module("  spec f() -> Word[8] { missing && also }"), ["ORC0215"]),
+        ("logic-or-missing", module("  spec f() -> Int { missing || 1 }"), ["ORC0215"]),
+        ("logic-and-array", module("  spec f() -> Bool^2 { true && false }"), ["ORC0215"]),
+        ("logic-or-array", module("  spec f() -> Word[8]^4 { true || false }"), ["ORC0215"]),
+        ("logic-bang-array", module("  spec f(t: Bool^2) -> Bool^2 { !t }"), ["ORC0215"]),
+        ("logic-defined-missing", module("  spec f() -> Bool { missing || also }"), ["ORC0211", "ORC0211"]),
+        ("logic-defined-and-one", module("  spec f(b: Bool) -> Bool { missing && b }"), ["ORC0211"]),
+        ("logic-defined-literal", module("  spec f() -> Bool { true && 1 }"), ["ORC0214"]),
+        ("logic-defined-bang", module("  spec f() -> Bool { !1 }"), ["ORC0214"]),
+        (
+            "logic-defined-words",
+            module("  spec f(x: Word[8], y: Word[8]) -> Bool { x && y }"),
+            ["ORC0214", "ORC0214"],
+        ),
+        (
+            "logic-defined-condition",
+            module("  spec f(c: Bool) -> Int { if missing && c { 1 } else { 2 } }"),
+            ["ORC0211"],
+        ),
+    ]
+    failures = 0
+    for name, source, expected in cases:
+        if not compare_codes(rust_compiler, c_compiler, name, source):
+            failures += 1
+            continue
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / f"{name}.or")
+            Path(path).write_text(source)
+            observed = codes(run(c_compiler, ["check", path]).stderr)
+        if observed != expected:
+            failures += 1
+            print(f"FAIL check {name} expected {expected} got {observed}")
+    admitted = module(
+        "  spec f() -> Bool { !(true && false) || true }\n"
+        "  spec g(b: Bool) -> Bool { b && !b }\n"
+        "  spec t() -> Bool { g(true) }\n"
+        "  spec u() -> Bool { g(false) }\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory) / "logic-admitted.or")
+        Path(path).write_text(admitted)
+        rust = run(rust_compiler, ["eval", path])
+        c_result = run(c_compiler, ["eval", path])
+    if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout:
+        failures += 1
+        print("FAIL eval logic-admitted")
+        print(f"  rust {rust.returncode} {rust.stdout!r} {codes(rust.stderr)}")
+        print(f"  c    {c_result.returncode} {c_result.stdout!r} {codes(c_result.stderr)}")
+    else:
+        print("ok   eval logic-admitted")
+    return failures
+
+
+def residue_modules(rust_compiler: Path, c_compiler: Path) -> int:
+    """Moduli are values, not per-module table indexes. A rejected result stops the body."""
+
+    def program(root: str, other: str) -> dict[str, str]:
+        return {"a.or": root, "b.or": other}
+
+    root = "edition 2026;\nmodule m {\n%s\n}\n"
+    other = "edition 2026;\nmodule b {\n%s\n}\n"
+    checks = [
+        (
+            "mod-cross-mismatch",
+            program(
+                root % "  use b;\n  spec f() -> Mod[7] { b::g() }",
+                other % "  spec g() -> Mod[11] { 4 }",
+            ),
+            ["ORC0214"],
+        ),
+        (
+            "mod-cross-alias",
+            program(
+                root % "  use b;\n  type F = Mod[7];\n  spec f() -> F { b::g() }",
+                other % "  type G = Mod[11];\n  spec g() -> G { 4 }",
+            ),
+            ["ORC0214"],
+        ),
+        (
+            "mod-arg-mismatch",
+            program(
+                root % "  use b;\n  spec f(x: Mod[7]) -> Mod[11] { b::g(x) }",
+                other % "  spec g(x: Mod[11]) -> Mod[11] { x }",
+            ),
+            ["ORC0214"],
+        ),
+        (
+            "mod-index-wide",
+            program(
+                root % "  use b;\n  spec pad() -> Mod[4] { 1 }\n  spec f(t: Int^4) -> Int { t[b::g() as Int] }",
+                other % "  spec g() -> Mod[100] { 3 }",
+            ),
+            ["ORC0223"],
+        ),
+        (
+            "mod-elem-mismatch",
+            program(
+                root % "  use b;\n  spec f() -> Mod[7] { b::row()[0] }",
+                other % "  spec row() -> Mod[11]^3 { [1, 2, 3] }",
+            ),
+            ["ORC0214"],
+        ),
+        (
+            "mod-result-float",
+            {"a.or": root % "  spec f() -> Float { let x: Int = missing; 1 }"},
+            ["ORC0203"],
+        ),
+        (
+            "mod-result-forward",
+            {"a.or": root % "  type F = G;\n  type G = Mod[7];\n  spec f() -> F { missing }"},
+            ["ORC0203"],
+        ),
+        (
+            "mod-result-modulus",
+            {"a.or": root % "  spec f() -> Mod[1] { missing }"},
+            ["ORC0232"],
+        ),
+    ]
+    evals = [
+        (
+            "mod-cross-same",
+            program(
+                root % "  use b;\n  spec other() -> Mod[7] { 1 }\n  spec f() -> Mod[11] { b::g() + 1 }",
+                other % "  spec g() -> Mod[11] { 4 }",
+            ),
+        ),
+        (
+            "mod-cross-arg",
+            program(
+                root % "  use b;\n  spec pad() -> Mod[5] { 1 }\n  spec f() -> Mod[11] { b::g(4) + 2 }",
+                other % "  spec g(x: Mod[11]) -> Mod[11] { x * 3 }",
+            ),
+        ),
+        (
+            "mod-cross-array",
+            program(
+                root % "  use b;\n  spec pad() -> Mod[3] { 1 }\n  spec f() -> Mod[11] { b::row()[1] + 1 }",
+                other % "  spec row() -> Mod[11]^2 { [1, 2] }",
+            ),
+        ),
+        (
+            "mod-cross-index",
+            program(
+                root
+                % "  use b;\n  spec pad() -> Mod[100] { 1 }\n  spec f(t: Int^4) -> Int { t[b::g() as Int] }\n  spec a() -> Int { f([9, 8, 7, 6]) }",
+                other % "  spec g() -> Mod[4] { 3 }",
+            ),
+        ),
+    ]
+    failures = 0
+    for name, files, expected in checks:
+        with tempfile.TemporaryDirectory() as directory:
+            for filename, source in files.items():
+                Path(directory, filename).write_text(source)
+            path = str(Path(directory) / "a.or")
+            rust = run(rust_compiler, ["check", path])
+            c_result = run(c_compiler, ["check", path])
+        rust_codes = codes(rust.stderr)
+        c_codes = codes(c_result.stderr)
+        if rust.returncode == 0 or c_result.returncode == 0 or rust_codes != c_codes or c_codes != expected:
+            failures += 1
+            print(f"FAIL check {name}")
+            print(f"  rust {rust_codes}")
+            print(f"  c    {c_codes}")
+        else:
+            print(f"ok   check {name}")
+    for name, files in evals:
+        with tempfile.TemporaryDirectory() as directory:
+            for filename, source in files.items():
+                Path(directory, filename).write_text(source)
+            path = str(Path(directory) / "a.or")
+            rust = run(rust_compiler, ["eval", path])
+            c_result = run(c_compiler, ["eval", path])
+        if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout or codes(rust.stderr) or codes(c_result.stderr):
+            failures += 1
+            print(f"FAIL eval {name}")
+            print(f"  rust {rust.returncode} {rust.stdout!r} {codes(rust.stderr)}")
+            print(f"  c    {c_result.returncode} {c_result.stdout!r} {codes(c_result.stderr)}")
+        else:
+            print(f"ok   eval {name}")
+    return failures
+
+
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -499,6 +690,8 @@ def main() -> int:
     failures += loop_bound_magnitude(rust_compiler, c_compiler)
     failures += index_chain_and_loop_recovery(rust_compiler, c_compiler)
     failures += conversion_targets(rust_compiler, c_compiler)
+    failures += logical_operators(rust_compiler, c_compiler)
+    failures += residue_modules(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
