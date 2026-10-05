@@ -676,11 +676,22 @@ module disagree {
 
 ```sh
 ./compiler/target/debug/orangec check -
+./compiler/target/debug/orangec eval -
 ./compiler/target/debug/orangec test -
 ```
 
-Check is silent. The false claim is well-formed. Assumption J4.5:
-silence is not truth.
+Check is silent. The status is 0. The false claim is well-formed.
+Assumption J4.5: silence is not truth.
+
+**Expected evaluation output:**
+
+```text
+disagree::little: Word[32] = 0x04030201
+disagree::big: Word[32] = 0x01020304
+```
+
+`eval` prints the two functions on this string. It does not run
+the test, so it does not say that the claim is false.
 
 **Test report:**
 
@@ -909,7 +920,6 @@ Proposed and is not given a listing. The forms used below are the
 forms Listing J4.1 through Listing J4.6 already ran, plus `&`, `|`,
 array update `with`, and `Mod[m]`, each on an input the binary
 accepts.
-
 
 ### J4.10 How a standard states the convention
 
@@ -2281,7 +2291,6 @@ Source: <https://www.ietf.org/rfc/ien/ien137.html>
 Plain-text copy consulted the same day:
 <https://ftp3.gwdg.de/pub/rfc/ien/ien137.txt>
 
-
 **[J4S2] FIPS PUB 180-4.** National Institute of Standards and
 Technology, *Secure Hash Standard (SHS)*, August 2015, DOI
 `10.6028/NIST.FIPS.180-4`. Wording of §3.1 and §5.1.1 was checked
@@ -2341,7 +2350,6 @@ byte-order change used here.
 This record's tag is [J4S6].
 
 Source: <https://doi.org/10.6028/NIST.FIPS.197-upd1>
-
 
 **[J4T1] Orange edition.** The declaration `edition 2026;` is the
 edition token required at the start of a source.
