@@ -96,8 +96,10 @@ understand each operation rather than memorize its notation.
   independence, an elementary birthday bound, expected value, and base-two
   logarithms. Key length, the distribution a key is drawn from, and an
   adversary's uncertainty are separated. Sixteen exercises with worked
-  answers. No Orange listing is included. The label is lesson N10. It is
-  not a manuscript chapter numeral. N10 does not use the formal vocabulary
+  answers. Nine Orange listings check the integer identities behind the
+  fractions. Eight evaluate; the empty loop is rejected. The listings do
+  not draw an outcome. The label is lesson N10. It is not a manuscript
+  chapter numeral. N10 does not use the formal vocabulary
   reserved for Say What You Mean.
 - **N11.** [Protect More Than Appearance](NOVICE_PROTECT.md#n11-protect-more-than-appearance):
   encoding, encryption, hashing, and authentication as separate claims;
@@ -348,11 +350,14 @@ literal guard. The same test reads the Orange listings in N7 and checks
 their printed results and intended rejections. The same test reads the
 Orange listings in N8 and checks the printed values, the printed
 diagnostics, the failing and passing tests, and the `--spec` and `--steps`
-commands the lesson names. The same test reads the Orange listings in
-N11 and checks their printed values, their printed diagnostics, and the
-passing known-answer tests. The same test reads the six Orange listings in
-N12 and checks the five printed evaluations, the four printed test
-reports, and the `ORC0223` diagnostic of the shifted index. Run it in a
+commands the lesson names. The same test reads the nine Orange listings in
+N10 and checks the eight printed evaluations, the eight printed test
+reports, and the `ORC0225` diagnostic of the empty loop. The same test
+reads the Orange listings in N11 and checks their printed values, their
+printed diagnostics, and the passing known-answer tests. The same test
+reads the six Orange listings in N12 and checks the five printed
+evaluations, the four printed test reports, and the `ORC0223` diagnostic
+of the shifted index. Run it in a
 build-capable checkout:
 
 ```sh
@@ -366,8 +371,9 @@ No native code generation or cryptographic security claim is added.
 New drafting and integration through Chapters 4–6 are AI-assisted with
 ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lessons N8 and N9
 are AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. Lesson N11 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
+direction. Lesson N10, including its Orange listings, is AI-assisted with
+Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. Lesson N11 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
 at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
-2026-10-05, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N11, and N12 review are
+2026-10-05, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, and N12 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

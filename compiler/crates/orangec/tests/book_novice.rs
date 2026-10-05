@@ -484,6 +484,135 @@ fn n8_spec_and_step_budget_match_the_lesson() {
     );
 }
 
+const N10: &str = include_str!("../../../../docs/book/NOVICE_PROBABILITY.md");
+
+fn n10_sources() -> Vec<&'static str> {
+    fences(N10, "orange")
+}
+
+fn n10_text() -> Vec<&'static str> {
+    fences(N10, "text")
+}
+
+fn n10_source(name: &str) -> &'static str {
+    n10_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N10 listing {name}"))
+}
+
+fn n10_one(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n10_text().into_iter().filter(|text| predicate(text)).collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn n10_eval_fence(name: &str) -> &'static str {
+    let prefix = format!("{name}::");
+    n10_one(
+        |text| text.starts_with(&prefix) && text.contains(" = "),
+        name,
+    )
+}
+
+fn n10_test_fence(title: &str) -> &'static str {
+    let prefix = format!("test \"{title}");
+    n10_one(
+        |text| text.starts_with(&prefix) && text.contains("... ok"),
+        title,
+    )
+}
+
+#[test]
+fn n10_listings_check_and_evaluate_repeatably() {
+    let sources = n10_sources();
+    assert_eq!(sources.len(), 9, "cross through expect");
+    assert!(!N10.contains("\n## Chapter "));
+    assert!(!N10.to_ascii_lowercase().contains("provisional"));
+    let rejected = ["empty_sum"];
+    let mut checked = 0;
+    for source in &sources {
+        let name = module_name(source);
+        if rejected.contains(&name) {
+            continue;
+        }
+        let expected = format!("{}\n", n10_eval_fence(name));
+        let check = run("check", source);
+        assert!(
+            check.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&check.stderr)
+        );
+        assert!(check.stdout.is_empty(), "{name}: check printed a value");
+        assert!(check.stderr.is_empty(), "{name}: check diagnostics");
+        let first = run("eval", source);
+        assert!(
+            first.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        assert!(first.stderr.is_empty(), "{name}: eval diagnostics");
+        let second = run("eval", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+        checked += 1;
+    }
+    assert_eq!(checked, 8);
+}
+
+#[test]
+fn n10_empty_sum_matches_the_printed_diagnostic() {
+    let source = n10_source("empty_sum");
+    let expected = format!(
+        "{}\n",
+        n10_one(
+            |text| text.starts_with("error[ORC0225]") && text.contains("0..0"),
+            "empty sum diagnostic"
+        )
+    );
+    for command in ["check", "eval", "test"] {
+        let result = run(command, source);
+        assert_eq!(result.status.code(), Some(1), "{command}");
+        assert!(result.stdout.is_empty(), "{command} printed a value");
+        assert_eq!(
+            String::from_utf8(result.stderr).expect("UTF-8 diagnostic"),
+            expected,
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn n10_counting_tests_pass() {
+    for (name, title) in [
+        ("cross", "one half equals two quarters"),
+        ("weights", "the four weights are a probability space"),
+        ("condition", "00 given a first bit of 0 is three quarters"),
+        ("independent", "disjoint events are not independent"),
+        ("pair_sum", "the sum through ten matches the formula"),
+        ("birthday", "three people and five days, counted two ways"),
+        ("brackets", "the powers that the brackets and the byte use"),
+        ("expect", "a constant factors out of the weights"),
+    ] {
+        let source = n10_source(name);
+        let expected = format!("{}\n", n10_test_fence(title));
+        let first = run("test", source);
+        assert_eq!(first.status.code(), Some(0), "{name}");
+        assert!(
+            first.stderr.is_empty(),
+            "{name}: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        let second = run("test", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+    }
+}
+
 const N11: &str = include_str!("../../../../docs/book/NOVICE_PROTECT.md");
 
 fn n11_sources() -> Vec<&'static str> {

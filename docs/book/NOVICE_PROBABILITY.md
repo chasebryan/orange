@@ -30,12 +30,31 @@ fractions, or a stated finite list of weights.
 the same rules. A finite check confirms those values. It does not turn one
 example into a rule for every list.
 
-**Implementation boundary.** Chapters 4–6 and N7 provide functions,
-bindings, arrays, conditions, tuples, and bounded repetition. They do not
-provide a source of choices. This lesson does not invent one, and it
-contains no Orange listing. A program that draws a key would need a
-specified list, a specified weight for each entry, and a specified source.
-None of those is supplied by a new piece of syntax here.
+**Implementation behavior.** An Orange listing denotes the function its
+body writes, on the inputs evaluation actually runs. A silent check means
+the source was well-formed. A printed value means that run produced that
+value. A passing test means the test's `Bool` was true. None of those is
+the quantifier in a proposition, and none is a security claim. [C1]
+
+The named surface of these listings is `Int`, `Bool`, comparisons,
+Euclidean `/` and `%`, `let`, fixed-length arrays, a bounded `for` whose
+bounds are integer literals, and `test`. There is no fraction type. The
+expression `1 / 2` is Euclidean division of integers. Its value is `0`,
+not the fraction one half. Every rational comparison a listing asks the
+compiler to check is an integer identity. `a/b = c/d` exactly when
+`a*d = b*c`, by Definition N10.1, or the sum is written on a common
+denominator. A comparison of two expressions that are only literals is
+rejected: a literal does not choose `Int` by itself, so the listings pass
+the integers through a parameter of type `Int`. There is no operation
+that draws an outcome. A listing counts and compares. It does not sample.
+
+Not yet expressible on that named surface, and not given a stand-in
+listing: a fraction as a value; a weight the language attaches to an
+outcome; a loop of no steps; a quantifier over every positive integer or
+every event; an exponential function; and a weighted substitute for
+`log2`. Where a proposition needs one of those, the proof is the claim,
+and the listing checks the integers the section names. The section says
+which part is which.
 
 ## N10: Count What You Do Not Know
 
@@ -112,6 +131,153 @@ fails on `12/24`. The fraction equals `1/2`, because `12*2 = 24`. Striking
 the digit `2` leaves `1/4`, and `12*4 = 48`, which is not `24`. So `12/24`
 is not `1/4`.
 
+**Listing N10.1 — `cross.or`**
+
+```orange
+edition 2026;
+module cross {
+  spec equal(a: Int, b: Int, c: Int, d: Int) -> Bool {
+    (a * d) == (b * c)
+  }
+
+  spec euclidean_half() -> Int { 1 / 2 }
+
+  spec half_equals_two_quarters() -> Bool { equal(1, 2, 2, 4) }
+
+  spec sum_num() -> Int { 1 * 3 + 2 * 1 }
+  spec sum_den() -> Int { 2 * 3 }
+
+  spec bad_num() -> Int { 1 + 1 }
+  spec bad_den() -> Int { 2 + 3 }
+
+  spec scaled() -> Bool { equal(1, 2, 2 * 1, 2 * 2) }
+
+  spec sums_agree() -> Bool {
+    equal(2 * 6 + 4 * 2, 4 * 6, sum_num(), sum_den())
+  }
+
+  spec products_agree() -> Bool {
+    equal(2 * 2, 4 * 6, 1 * 1, 2 * 3)
+  }
+
+  spec sixteen() -> Bool { equal(16, 64, 1, 4) }
+
+  spec sixteen_scaled() -> Bool { equal(16, 64, 16 * 1, 16 * 4) }
+
+  spec twelve() -> Bool { equal(12, 24, 1, 2) }
+
+  spec struck() -> Bool { equal(12, 24, 1, 4) }
+
+  spec common_num() -> Int { 3 + 2 + 1 }
+  spec common_den() -> Int { 6 }
+
+  spec successive_num() -> Int { 5 * 6 + 6 * 1 }
+  spec successive_den() -> Int { 6 * 6 }
+
+  spec shared_three() -> Bool { equal(1 + 1 + 1, 6, 3, 6) }
+
+  spec rejected_num() -> Int { 21 + 14 + 6 }
+  spec rejected_den() -> Int { 42 }
+
+  test "one half equals two quarters" { half_equals_two_quarters() }
+
+  test "half plus a third is five sixths" {
+    equal(sum_num(), sum_den(), 5, 6)
+  }
+
+  test "adding across the bar is a different numeral" {
+    equal(bad_num(), bad_den(), 2, 5) && !equal(bad_num(), bad_den(), sum_num(), sum_den())
+  }
+
+  test "scaling by two preserves the half" { scaled() }
+
+  test "an equal replacement preserves the sum and the product" {
+    sums_agree() && products_agree()
+  }
+
+  test "sixteen over sixty-four equals one quarter" {
+    sixteen() && sixteen_scaled()
+  }
+
+  test "striking a digit is not scaling" {
+    twelve() && !struck()
+  }
+
+  test "three unit fractions sum to one" {
+    equal(common_num(), common_den(), 1, 1)
+      && equal(successive_num(), successive_den(), common_num(), common_den())
+      && shared_three()
+  }
+
+  test "one half, one third, and one seventh sum to forty-one forty-seconds" {
+    equal(rejected_num(), rejected_den(), 41, 42) && (rejected_num() != rejected_den())
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+cross::euclidean_half: Int = 0
+cross::half_equals_two_quarters: Bool = true
+cross::sum_num: Int = 5
+cross::sum_den: Int = 6
+cross::bad_num: Int = 2
+cross::bad_den: Int = 5
+cross::scaled: Bool = true
+cross::sums_agree: Bool = true
+cross::products_agree: Bool = true
+cross::sixteen: Bool = true
+cross::sixteen_scaled: Bool = true
+cross::twelve: Bool = true
+cross::struck: Bool = false
+cross::common_num: Int = 6
+cross::common_den: Int = 6
+cross::successive_num: Int = 36
+cross::successive_den: Int = 36
+cross::shared_three: Bool = true
+cross::rejected_num: Int = 41
+cross::rejected_den: Int = 42
+```
+
+**Test report:**
+
+```text
+test "one half equals two quarters" ... ok
+test "half plus a third is five sixths" ... ok
+test "adding across the bar is a different numeral" ... ok
+test "scaling by two preserves the half" ... ok
+test "an equal replacement preserves the sum and the product" ... ok
+test "sixteen over sixty-four equals one quarter" ... ok
+test "striking a digit is not scaling" ... ok
+test "three unit fractions sum to one" ... ok
+test "one half, one third, and one seventh sum to forty-one forty-seconds" ... ok
+9 tests: 9 passed, 0 failed
+```
+
+`equal` is Definition N10.1. `half_equals_two_quarters` is `1/2 = 2/4`.
+`sum_num` and `sum_den` are the half plus the third, `5/6`. `bad_num` and
+`bad_den` are `2/5`, the numeral from adding across the bar. `scaled` is
+Proposition N10.1 at `k = 2` on the half. `sums_agree` replaces `1/2` by
+`2/4` and `1/3` by `2/6`, then compares the sums. `products_agree` compares
+the products of those same pairs. Those two `Bool` values are one instance
+of Proposition N10.2. The proof is the claim for every quadruple the
+hypotheses name. The test calls `equal` on the quadruples written here.
+
+`sixteen` is `16/64 = 1/4`. `sixteen_scaled` cancels the common factor
+`16`, which is Proposition N10.1. `twelve` is `12/24 = 1/2`. `struck` asks
+whether that fraction equals `1/4`, and the printed value is false.
+`common_num` adds `1/2`, `1/3`, and `1/6` on the denominator `6`.
+`successive_num` adds them by Definition N10.2 in two steps. The two sums
+agree, and both equal `1`. `shared_three` is three copies of `1/6`.
+`rejected_num` and `rejected_den` are the sum `41/42` from the
+counterexample in §N10.3. That sum is not `1`.
+
+`euclidean_half` prints `0`. That is what `/` denotes on `Int`. It is not
+the fraction one half. The parentheses in `(a * d) == (b * c)` keep
+multiplication and comparison in separate groups. A quantifier over every
+pair of fractions is the proof, not a type this listing has.
+
 **Assumption N10.1 — Finite explicit list.** Every probability claim in
 this lesson names a finite list of outcomes. An outcome is one named row
 of that list. Writing the same row twice is a different list, not a
@@ -130,7 +296,10 @@ create a second kind of number.
 The ratio `3:8` is the fraction `3/8`. It records the comparison. It does
 not, by itself, say that a slip will be drawn, or that every slip is
 equally likely to be drawn. A ratio becomes a probability only after a
-distribution is stated.
+distribution is stated. Listing N10.1's `equal` is the comparison of the
+two counts once both integers are written. The absence of a distribution
+is not a `Bool` the compiler can compute from a sentence that was not
+given.
 
 ### N10.3 Weights on a finite list
 
@@ -188,6 +357,82 @@ so it is at most `1`. The no-sum is the complement.
 In Example N10.1, let `E` say yes when the second bit is `1`. The matching
 rows are `01` and `11`. `P(E) = 1/6 + 1/6 = 1/3`. The complement is `2/3`.
 The two fractions sum to `1`.
+
+**Listing N10.2 — `weights.or`**
+
+```orange
+edition 2026;
+module weights {
+  spec numerators() -> Int^4 { [3, 1, 1, 1] }
+
+  spec total() -> Int {
+    let w: Int^4 = numerators();
+    for i in 0..4 with s: Int = 0 { s + w[i] }
+  }
+
+  spec none_negative() -> Bool {
+    let w: Int^4 = numerators();
+    for i in 0..4 with ok: Bool = true { ok && (w[i] >= 0) }
+  }
+
+  spec second_bit_num() -> Int { 1 + 1 }
+
+  spec complement_num() -> Int { total() - second_bit_num() }
+
+  spec uniform_copies(n: Int) -> Int { n * 1 }
+
+  test "the four weights are a probability space" {
+    none_negative() && (total() == 6)
+  }
+
+  test "the second bit has probability one third" {
+    (second_bit_num() * 3) == (total() * 1)
+  }
+
+  test "the complement is two thirds and restores the total" {
+    ((complement_num() * 3) == (total() * 2)) && ((second_bit_num() + complement_num()) == total())
+  }
+
+  test "uniform copies on four strings and on the byte" {
+    (uniform_copies(4) == 4) && (uniform_copies(256) == 256)
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+weights::numerators: Int^4 = [3, 1, 1, 1]
+weights::total: Int = 6
+weights::none_negative: Bool = true
+weights::second_bit_num: Int = 2
+weights::complement_num: Int = 4
+```
+
+**Test report:**
+
+```text
+test "the four weights are a probability space" ... ok
+test "the second bit has probability one third" ... ok
+test "the complement is two thirds and restores the total" ... ok
+test "uniform copies on four strings and on the byte" ... ok
+4 tests: 4 passed, 0 failed
+```
+
+The numerators `3, 1, 1, 1` are Example N10.1 on the common denominator
+`6`: `1/2` is three sixths, and each `1/6` is one sixth. `total` is their
+sum, `6`, so the weights sum to `1`. `none_negative` is the
+nonnegativity check on these four rows. `second_bit_num` is `2`, and
+`2/6 = 1/3`. `complement_num` is `4`, and `4/6 = 2/3`. The two numerators
+add back to `6`, which is Proposition N10.3 on this event.
+
+`uniform_copies` is the integer `N` in Proposition N10.4: `N` copies of
+`1/N` sum to `N/N`. The calls check `N = 4` and `N = 256`. An array whose
+length is a parameter `N` is not a type on this surface. The length `4`
+above is a literal. The proof of Proposition N10.4 is the claim for every
+positive `N`. The byte weight `1/256` is that proposition with `N = 256`,
+together with Chapter 2's count of the strings. Listing N10.1 already
+recorded that `1/2 + 1/3 + 1/7` sums to `41/42`.
 
 ### N10.5 Uniform choice
 
@@ -252,6 +497,84 @@ strings, gives a different conditional list. Each old weight is `1/4`, and
 bit is `0`.” The conditional weights are not the weights from Example
 N10.1. The distribution that was conditioned is a different object from the
 observation.
+
+**Listing N10.3 — `condition.or`**
+
+```orange
+edition 2026;
+module condition {
+  spec equal_parts(a: Int, b: Int, c: Int, d: Int) -> Bool {
+    (a * d) == (b * c)
+  }
+
+  spec den() -> Int { 6 }
+  spec event_num() -> Int { 3 }
+  spec condition_num() -> Int { 3 + 1 }
+
+  spec given_00() -> Bool {
+    ((event_num() * den()) * 4) == ((den() * condition_num()) * 3)
+  }
+
+  spec given_01() -> Bool {
+    ((1 * den()) * 4) == ((den() * condition_num()) * 1)
+  }
+
+  spec new_weights() -> Bool { equal_parts(3 + 1, 4, 1, 1) }
+
+  spec reverse() -> Bool { (event_num() * den()) == (den() * event_num()) }
+
+  spec uniform_given() -> Bool { equal_parts(1 * 2, 4 * 1, 1, 2) }
+
+  spec zero_quotient() -> Int { 1 / 0 }
+
+  test "00 given a first bit of 0 is three quarters" { given_00() }
+
+  test "01 given a first bit of 0 is one quarter" { given_01() }
+
+  test "the two new weights sum to one" { new_weights() }
+
+  test "the reverse conditional is one" { reverse() }
+
+  test "the uniform observation gives one half" { uniform_given() }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+condition::den: Int = 6
+condition::event_num: Int = 3
+condition::condition_num: Int = 4
+condition::given_00: Bool = true
+condition::given_01: Bool = true
+condition::new_weights: Bool = true
+condition::reverse: Bool = true
+condition::uniform_given: Bool = true
+condition::zero_quotient: Int = 0
+```
+
+**Test report:**
+
+```text
+test "00 given a first bit of 0 is three quarters" ... ok
+test "01 given a first bit of 0 is one quarter" ... ok
+test "the two new weights sum to one" ... ok
+test "the reverse conditional is one" ... ok
+test "the uniform observation gives one half" ... ok
+5 tests: 5 passed, 0 failed
+```
+
+On the denominator `6`, the weight of `00` is `3` and the first-bit-zero
+rows sum to `4`. `given_00` is `(3/6) / (4/6) = 3/4`. `given_01` is
+`(1/6) / (4/6) = 1/4`. `new_weights` is `3/4 + 1/4 = 1`, which is
+Proposition N10.5 on these two retained rows. `reverse` is
+`(3/6) / (3/6) = 1`. `uniform_given` is `(1/4) / (1/2) = 1/2`.
+
+`zero_quotient` prints `0`. That is Euclidean division by zero on `Int`.
+Definition N10.7 assigns no number when the conditioning event has
+probability `0`. The printed `0` is the operator the definition refuses
+to use. There is no listing of a conditional probability whose
+denominator is zero, because that number is not defined.
 
 ### N10.7 Conditional knowledge
 
@@ -359,6 +682,88 @@ first draw, so the weight of an order is not the product of two weights
 taken from fixed lists. Proposition N10.8 does not apply, and the events
 were not independent.
 
+**Listing N10.4 — `independent.or`**
+
+```orange
+edition 2026;
+module independent {
+  spec equal_parts(a: Int, b: Int, c: Int, d: Int) -> Bool {
+    (a * d) == (b * c)
+  }
+
+  spec differs(a: Int, b: Int) -> Bool { a != b }
+
+  spec orders() -> Int { 3 * 2 }
+
+  spec draw_weight() -> Bool { equal_parts(1 * 1, 3 * 2, 1, 6) }
+
+  spec separate() -> Bool { equal_parts(1 * 1, 3 * 3, 1, 9) }
+
+  spec combined() -> Int { 256 * 2 }
+
+  spec factored_sum() -> Int { 3 * 1 + 2 * 1 }
+  spec factored_den() -> Int { 6 * 4 }
+  spec product_of_sums() -> Int { 5 * 1 }
+
+  test "disjoint events are not independent" { differs(0 * 4, 1 * 1) }
+
+  test "six orders each of weight one sixth" {
+    (orders() == 6) && draw_weight()
+  }
+
+  test "drawing without replacement is not independence" {
+    differs(0 * 9, 1) && separate()
+  }
+
+  test "one uniform byte and one independent bit" { combined() == 512 }
+
+  test "the sum of the products equals the product of the sums" {
+    (factored_sum() == product_of_sums()) && (factored_den() == 24)
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+independent::orders: Int = 6
+independent::draw_weight: Bool = true
+independent::separate: Bool = true
+independent::combined: Int = 512
+independent::factored_sum: Int = 5
+independent::factored_den: Int = 24
+independent::product_of_sums: Int = 5
+```
+
+**Test report:**
+
+```text
+test "disjoint events are not independent" ... ok
+test "six orders each of weight one sixth" ... ok
+test "drawing without replacement is not independence" ... ok
+test "one uniform byte and one independent bit" ... ok
+test "the sum of the products equals the product of the sums" ... ok
+5 tests: 5 passed, 0 failed
+```
+
+`differs(0 * 4, 1 * 1)` is the disjoint counterexample: the intersection
+has probability `0`, and `(1/2)*(1/2) = 1/4`. `orders` is `3*2 = 6`.
+`draw_weight` is `(1/3)*(1/2) = 1/6`. `separate` is `(1/3)*(1/3) = 1/9`.
+The intersection of “first is `A`” and “second is `A`” has weight `0`,
+which is not `1/9`. `combined` is `256*2 = 512`, Proposition N10.7 on one
+byte and one bit. The factor `256` is Chapter 2's count.
+
+`factored_sum` and `product_of_sums` are one instance of the factoring in
+the proof of Proposition N10.8. The first choice has numerators `3, 2, 1`
+on denominator `6`, and the event on that choice keeps `3` and `2`. The
+second choice has numerators `1, 3` on denominator `4`, and the event on
+that choice keeps `1`. The sum of the products is `3*1 + 2*1 = 5` over
+`6*4 = 24`. The product of the sums is `5*1` over the same denominator.
+The proof says this factoring holds for every pair of independent choices.
+The listing checks this pair. A sum over an arbitrary collection of
+weights is the proof's finite sum, not a single array type of parameter
+length.
+
 ### N10.10 The sum that counts pairs
 
 The birthday count needs the sum of the first `m` positive integers.
@@ -375,6 +780,98 @@ pair sums to `m+1`, and there are `m` pairs. Thus `2*S = m*(m+1)`, so
 The number of unordered pairs among `n` people is the number of ways to
 choose a later person for each earlier one: `(n-1) + (n-2) + ... + 1`.
 By Proposition N10.9, that sum is `n*(n-1)/2`.
+
+**Listing N10.5 — `pair_sum.or`**
+
+```orange
+edition 2026;
+module pair_sum {
+  spec formula(m: Int) -> Int { (m * (m + 1)) / 2 }
+
+  spec added_through_ten() -> Int {
+    for i in 1..11 with s: Int = 0 { s + i }
+  }
+
+  spec added_through_four() -> Int {
+    for i in 1..5 with s: Int = 0 { s + i }
+  }
+
+  spec pairs_among(n: Int) -> Int { (n * (n - 1)) / 2 }
+
+  test "the sum through ten matches the formula" {
+    added_through_ten() == formula(10)
+  }
+
+  test "the sum through four is ten" {
+    (added_through_four() == 10) && (formula(4) == 10)
+  }
+
+  test "the formula at zero is zero" { formula(0) == 0 }
+
+  test "three people give three unordered pairs" { pairs_among(3) == 3 }
+
+  test "twenty-three people give two hundred fifty-three pairs" {
+    pairs_among(23) == 253
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+pair_sum::added_through_ten: Int = 55
+pair_sum::added_through_four: Int = 10
+```
+
+**Test report:**
+
+```text
+test "the sum through ten matches the formula" ... ok
+test "the sum through four is ten" ... ok
+test "the formula at zero is zero" ... ok
+test "three people give three unordered pairs" ... ok
+test "twenty-three people give two hundred fifty-three pairs" ... ok
+5 tests: 5 passed, 0 failed
+```
+
+`formula` is the right-hand side of Proposition N10.9. The loops add
+`1` through `10` and `1` through `4`. A loop's bounds are literals, so
+these two ranges are two checks, not a check for every `m`. The pairing
+argument is the proof for every nonnegative `m`. `pairs_among(3)` is the
+three unordered pairs in Example N10.3. `pairs_among(23)` is the `253`
+pairs in Example N10.5. Division in `formula` is exact on these inputs
+because `m*(m+1)` is even. The parentheses put that division outside the
+product.
+
+The sum of no terms is `0`, and `formula(0)` prints that integer through
+the test. A loop cannot add no terms. The bounds `0..0` are empty, and
+the checker rejects them before any step.
+
+**Listing N10.6 — `empty_sum.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module empty_sum {
+  spec none() -> Int {
+    for i in 0..0 with s: Int = 0 { s + i }
+  }
+}
+```
+
+The diagnostic is `ORC0225`: `the loop range 0..0 is empty`.
+
+```text
+error[ORC0225]: the loop range 0..0 is empty
+ --> <stdin>:4:17
+  |
+4 |     for i in 0..0 with s: Int = 0 { s + i }
+  |                 ^ a loop runs at least once
+  = note: a loop `for i in a..b` runs once for each i from a up to b - 1, with a < b <= 65536
+```
+
+No value is printed. The empty sum stays the clause in Proposition N10.9
+that sets the sum of no terms equal to `0`. It is not a loop this surface
+can run.
 
 ### N10.11 An elementary birthday bound
 
@@ -492,7 +989,192 @@ not establish a rounded percentage, a fact about calendars, or a length a
 key ought to have.
 
 A sharper bound that uses the exponential function is not proved here. The
-inequality it needs has not been built.
+inequality it needs has not been built. The named surface has no
+exponential function, so that bound has no listing.
+
+**Listing N10.7 — `birthday.or`**
+
+```orange
+edition 2026;
+module birthday {
+  spec at_most(a: Int, b: Int) -> Bool { a <= b }
+  spec above(a: Int, b: Int) -> Bool { a > b }
+
+  spec distinct_num() -> Int { 4 * 3 }
+  spec distinct_den() -> Int { 5 * 5 }
+  spec collision_num() -> Int { distinct_den() - distinct_num() }
+
+  spec all_distinct() -> Int { 5 * 4 * 3 }
+  spec one_pair() -> Int { 3 * 5 * 4 }
+  spec all_equal() -> Int { 5 }
+  spec classified() -> Int { all_distinct() + one_pair() + all_equal() }
+  spec cube() -> Int {
+    for i in 0..3 with p: Int = 1 { p * 5 }
+  }
+  spec collision_outcomes() -> Int { one_pair() + all_equal() }
+  spec pair_hits() -> Int { 3 * (5 * 5) }
+
+  spec upper_num() -> Int { (3 * 2) / 2 }
+  spec upper_den() -> Int { 5 }
+  spec lower_den() -> Int { upper_den() + upper_num() }
+
+  spec gap_num() -> Int { 4 * 6 }
+  spec square_gap() -> Int { 5 * 5 - 1 }
+  spec expanded() -> Int { 6 * 7 }
+  spec sum_bound() -> Int { 5 * 5 + 5 * 1 + 5 * 2 }
+
+  spec distinct_num_5() -> Int { 4 * 3 * 2 * 1 }
+  spec distinct_den_5() -> Int {
+    for i in 0..4 with p: Int = 1 { p * 5 }
+  }
+  spec collision_num_5() -> Int { distinct_den_5() - distinct_num_5() }
+  spec quiet_upper() -> Int { (5 * 4) / (2 * 5) }
+
+  spec crowded() -> Int {
+    for i in 0..3 with p: Int = 1 { p * 2 }
+  }
+  spec crowded_distinct() -> Int { 2 * 1 * 0 }
+
+  spec pairs_23() -> Int { (23 * 22) / 2 }
+
+  spec twice_distinct_23() -> Int {
+    for k in 1..23 with p: Int = 2 { p * (365 - k) }
+  }
+
+  spec days_power_23() -> Int {
+    for k in 1..23 with p: Int = 1 { p * 365 }
+  }
+
+  spec above_half() -> Bool { twice_distinct_23() < days_power_23() }
+
+  test "three people and five days, counted two ways" {
+    (distinct_num() == 12)
+      && (distinct_den() == 25)
+      && (collision_num() == 13)
+      && (classified() == cube())
+      && (cube() == 125)
+      && (collision_outcomes() == 65)
+      && ((collision_outcomes() * distinct_den()) == (cube() * collision_num()))
+  }
+
+  test "the pair hits bound the colliding outcomes" {
+    (collision_outcomes() <= pair_hits()) && ((pair_hits() * upper_den()) == (cube() * upper_num()))
+  }
+
+  test "the bounds sit around thirteen twenty-fifths" {
+    (upper_num() == 3)
+      && (lower_den() == 8)
+      && at_most(3 * 25, 8 * 13)
+      && at_most(13 * 5, 25 * 3)
+  }
+
+  test "the two algebraic steps on one fifth and two fifths" {
+    (gap_num() == square_gap())
+      && (gap_num() < (5 * 5))
+      && (expanded() == 42)
+      && (sum_bound() == 40)
+      && (expanded() >= sum_bound())
+  }
+
+  test "five people and five days" {
+    (distinct_num_5() == 24)
+      && (distinct_den_5() == 625)
+      && (collision_num_5() == 601)
+      && (quiet_upper() == 2)
+      && above(601 * 3, 625 * 2)
+  }
+
+  test "three people and two days collide with certainty" {
+    (crowded() == 8) && (crowded_distinct() == 0) && ((crowded() - crowded_distinct()) == crowded())
+  }
+
+  test "twenty-three people and three hundred sixty-five days" {
+    (pairs_23() == 253)
+      && ((2 * pairs_23()) < (365 + pairs_23()))
+      && ((2 * pairs_23()) > 365)
+      && above_half()
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+birthday::distinct_num: Int = 12
+birthday::distinct_den: Int = 25
+birthday::collision_num: Int = 13
+birthday::all_distinct: Int = 60
+birthday::one_pair: Int = 60
+birthday::all_equal: Int = 5
+birthday::classified: Int = 125
+birthday::cube: Int = 125
+birthday::collision_outcomes: Int = 65
+birthday::pair_hits: Int = 75
+birthday::upper_num: Int = 3
+birthday::upper_den: Int = 5
+birthday::lower_den: Int = 8
+birthday::gap_num: Int = 24
+birthday::square_gap: Int = 24
+birthday::expanded: Int = 42
+birthday::sum_bound: Int = 40
+birthday::distinct_num_5: Int = 24
+birthday::distinct_den_5: Int = 625
+birthday::collision_num_5: Int = 601
+birthday::quiet_upper: Int = 2
+birthday::crowded: Int = 8
+birthday::crowded_distinct: Int = 0
+birthday::pairs_23: Int = 253
+birthday::twice_distinct_23: Int = 231237366038862245876140619588542231527395949045350400000
+birthday::days_power_23: Int = 234662135214110469141956898203822336135218143463134765625
+birthday::above_half: Bool = true
+```
+
+**Test report:**
+
+```text
+test "three people and five days, counted two ways" ... ok
+test "the pair hits bound the colliding outcomes" ... ok
+test "the bounds sit around thirteen twenty-fifths" ... ok
+test "the two algebraic steps on one fifth and two fifths" ... ok
+test "five people and five days" ... ok
+test "three people and two days collide with certainty" ... ok
+test "twenty-three people and three hundred sixty-five days" ... ok
+7 tests: 7 passed, 0 failed
+```
+
+`distinct_num` and `distinct_den` are Example N10.3's product `12/25`.
+`collision_num` is `13`. The classification is `60 + 60 + 5 = 125`, and
+`cube` is `5^3`. `65/125 = 13/25` is the cross-multiplication in the
+first test. `pair_hits` is `3 * 5^2 = 75`, the count in the proof of
+Proposition N10.10 for these three people, and `65 ≤ 75`. Dividing by
+`125` gives the upper bound `3/5`. `lower_den` is `8`, so `S/(1+S)` is
+`3/8`. The comparisons `3/8 ≤ 13/25 ≤ 3/5` are `at_most(75, 104)` and
+`at_most(65, 75)`.
+
+`gap_num` and `square_gap` are the first step of Proposition N10.11 at
+`x = 1/5`: `(1 - 1/5)*(1 + 1/5) = 1 - (1/5)^2 = 24/25`, and `24 < 25`.
+`expanded` and `sum_bound` are the second step at `1/5` and `2/5`:
+`(6/5)*(7/5) = 42/25` and `1 + 1/5 + 2/5 = 40/25`. The general product,
+over every finite list of fractions in `0` through `1`, is the proof.
+The listing checks these two fractions.
+
+`distinct_num_5` is `24` and `distinct_den_5` is `625`, so Example N10.4's
+collision numerator is `601`. `quiet_upper` is `2`. `601/625` sits above
+`2/3` because `601*3 > 625*2`. `crowded` is `2^3 = 8` and
+`crowded_distinct` is `0`, the case `n > d` in the paragraph before
+Example N10.3: three people and two days. The collision count equals the
+size of the space, so the probability is `1`.
+
+`pairs_23` is `253`. Twice that integer is less than `365 + 253` and
+greater than `365`, so `253/618 < 1/2 < 253/365`. `twice_distinct_23`
+starts at `2` and multiplies `(365 - k)` for each `k` from `1` through
+`22`. That is twice the product of `364` down through `343`.
+`days_power_23` multiplies `365` that same number of times. `above_half`
+is the comparison of those two integers. It is true. The printed integers
+are that comparison. They are not a rounded percentage, a fact about
+calendars, or a length a key ought to have. Propositions N10.10 and
+N10.11 remain the claims for every positive `n` and `d` Assumption N10.3
+names.
 
 ### N10.12 Expected value
 
@@ -532,7 +1214,9 @@ separate probabilities is `1/d^3`. For `d = 5` those fractions are `1/25`
 and `1/125`, which are not equal. The expected number of true pair-events
 is still `3/5`. The probability of at least one collision is still
 `13/25`. Definition N10.11 produces the first number. Definition N10.5
-produces the second. Neither number is a misprint of the other.
+produces the second. Neither number is a misprint of the other. Listing
+N10.9 checks these integers, the constant and sum clauses of Proposition
+N10.13 on Example N10.1, and the trial counts of §N10.15.
 
 ### N10.13 The logarithm asks the inverse question
 
@@ -571,6 +1255,104 @@ groups of eight, so `2^16 = 2^8 * 2^8 = 256*256`. Chapter 2 already
 computed `256 × 256 = 65,536` while counting byte-and-mask pairs. The
 integer is the same. The interpretation here is different: it counts
 sixteen-bit strings, not pairs of bytes.
+
+**Listing N10.8 — `brackets.or`**
+
+```orange
+edition 2026;
+module brackets {
+  spec two_to_2() -> Int {
+    for i in 0..2 with p: Int = 1 { p * 2 }
+  }
+
+  spec two_to_3() -> Int {
+    for i in 0..3 with p: Int = 1 { p * 2 }
+  }
+
+  spec two_to_4() -> Int {
+    for i in 0..4 with p: Int = 1 { p * 2 }
+  }
+
+  spec two_to_8() -> Int {
+    for i in 0..8 with p: Int = 1 { p * 2 }
+  }
+
+  spec two_to_16() -> Int {
+    for i in 0..16 with p: Int = 1 { p * 2 }
+  }
+
+  spec byte_length() -> Int { 8 }
+  spec byte_support() -> Int { 256 }
+  spec short_length() -> Int { 16 }
+  spec short_support() -> Int { 4 }
+  spec after_bit() -> Int { 2 }
+
+  test "the powers that the brackets and the byte use" {
+    (two_to_2() == 4)
+      && (two_to_3() == 8)
+      && (two_to_4() == 16)
+      && (two_to_8() == 256)
+      && (two_to_16() == (256 * 256))
+      && (two_to_16() == 65536)
+  }
+
+  test "ten lies strictly between eight and sixteen" {
+    (two_to_3() <= 10) && (10 <= two_to_4()) && (two_to_3() != 10) && (two_to_4() != 10)
+  }
+
+  test "length, support, and the announcement are three integers" {
+    (byte_length() == 8)
+      && (byte_support() == two_to_8())
+      && (short_length() == 16)
+      && (short_support() == two_to_2())
+      && (short_length() != two_to_2())
+      && (after_bit() == 2)
+      && (after_bit() != short_length())
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+brackets::two_to_2: Int = 4
+brackets::two_to_3: Int = 8
+brackets::two_to_4: Int = 16
+brackets::two_to_8: Int = 256
+brackets::two_to_16: Int = 65536
+brackets::byte_length: Int = 8
+brackets::byte_support: Int = 256
+brackets::short_length: Int = 16
+brackets::short_support: Int = 4
+brackets::after_bit: Int = 2
+```
+
+**Test report:**
+
+```text
+test "the powers that the brackets and the byte use" ... ok
+test "ten lies strictly between eight and sixteen" ... ok
+test "length, support, and the announcement are three integers" ... ok
+3 tests: 3 passed, 0 failed
+```
+
+Each `two_to_k` multiplies `k` factors of two, starting from `1`. The
+results are `4`, `8`, `16`, `256`, and `65536`. So `log2(4) = 2`,
+`log2(8) = 3`, `log2(16) = 4`, `log2(256) = 8`, and `log2(65536) = 16`,
+in the sense of Definition N10.12. The brackets of `10` are `3` and `4`
+because `8 ≤ 10 ≤ 16` and neither power equals `10`. There is no integer
+strictly between `3` and `4`, which is why the definition assigns no
+`log2(10)`. The surface has no logarithm operation. The listing computes
+the powers the definition names and compares them with `10`.
+
+`byte_length` is `8` and `byte_support` is `256`. `short_length` is `16`
+and `short_support` is `4`, which equals `2^2` and does not equal `16`.
+`after_bit` is `2`, the size of the conditional list in §N10.14 after the
+last-bit announcement. Proposition N10.15 says these quantities can vary
+separately. The proof is the four specified spaces in that section. The
+listing records the integers those spaces use. It does not search the
+space of all distributions. A search over every finite list of weights is
+not expressible on this surface.
 
 `log2` of the number of strings in a format equals the number of bit
 positions only for that full list of strings. It does not measure a
@@ -682,13 +1464,133 @@ size `2`. Under Assumption N10.4 applied to that conditional uniform list,
 the worst-case trial count is `2` and the expected trial count is
 `(2+1)/2 = 3/2`.
 
+**Listing N10.9 — `expect.or`**
+
+```orange
+edition 2026;
+module expect {
+  spec equal_parts(a: Int, b: Int, c: Int, d: Int) -> Bool {
+    (a * d) == (b * c)
+  }
+
+  spec differs(a: Int, b: Int) -> Bool { a != b }
+
+  spec constant_num() -> Int { 5 * 6 }
+  spec value_num() -> Int { 3 * 1 }
+  spec other_num() -> Int { 1 * 1 + 1 * 1 + 1 * 1 }
+  spec both_num() -> Int { 3 * 1 + 1 * 1 + 1 * 1 + 1 * 1 }
+  spec den() -> Int { 6 }
+
+  spec indicator_num() -> Int { 1 + 1 }
+
+  spec trial_sum() -> Int {
+    for i in 1..5 with s: Int = 0 { s + i }
+  }
+
+  spec remaining_sum() -> Int {
+    for i in 1..3 with s: Int = 0 { s + i }
+  }
+
+  test "a constant factors out of the weights" {
+    constant_num() == (5 * den())
+  }
+
+  test "the sum of the expectations is the expectation of the sum" {
+    ((value_num() + other_num()) == both_num()) && (both_num() == den())
+  }
+
+  test "the second-bit indicator has the event's numerator" {
+    indicator_num() == 2
+  }
+
+  test "three pair indicators expect three fifths, not thirteen twenty-fifths" {
+    differs(3 * 25, 5 * 13) && differs(1 * 125, 25 * 1)
+  }
+
+  test "four uniform keys have expected trial number five halves" {
+    (trial_sum() == 10) && ((2 * trial_sum()) == (4 * 5))
+  }
+
+  test "stopping after two of four trials has probability one half" {
+    equal_parts(2, 4, 1, 2)
+  }
+
+  test "the logarithm two is neither five halves nor four" {
+    differs(2 * 2, 5) && differs(2, 4)
+  }
+
+  test "the remaining list has expected trial number three halves" {
+    (remaining_sum() == 3) && ((2 * remaining_sum()) == (2 * 3))
+  }
+}
+```
+
+**Expected evaluation output:**
+
+```text
+expect::constant_num: Int = 30
+expect::value_num: Int = 3
+expect::other_num: Int = 3
+expect::both_num: Int = 6
+expect::den: Int = 6
+expect::indicator_num: Int = 2
+expect::trial_sum: Int = 10
+expect::remaining_sum: Int = 3
+```
+
+**Test report:**
+
+```text
+test "a constant factors out of the weights" ... ok
+test "the sum of the expectations is the expectation of the sum" ... ok
+test "the second-bit indicator has the event's numerator" ... ok
+test "three pair indicators expect three fifths, not thirteen twenty-fifths" ... ok
+test "four uniform keys have expected trial number five halves" ... ok
+test "stopping after two of four trials has probability one half" ... ok
+test "the logarithm two is neither five halves nor four" ... ok
+test "the remaining list has expected trial number three halves" ... ok
+8 tests: 8 passed, 0 failed
+```
+
+On Example N10.1's denominator `6`, a constant `5` contributes `5*6`.
+That is `E[v] = c` for this space, the constant clause of Proposition
+N10.13. `value_num` is the weight of `00` times `1`. `other_num` is the
+sum of the other three weights times `1`. `both_num` adds the quantity
+that is `1` on every row. The sum of the two expectations equals the
+expectation of the sum, and that common numerator is `6`. The indicator
+of the second bit has numerator `2`, the same numerator as `P(E)` in
+Listing N10.2. The proof of Proposition N10.13 is the splitting of a
+finite sum. The listing checks this space.
+
+`differs(3 * 25, 5 * 13)` says `3/5` is not `13/25`. Those are the
+expected number of colliding pairs and the collision probability for
+three people and five days. `differs(1 * 125, 25 * 1)` says `1/25` is
+not `1/125`, the triple pair-event against the product of the three
+separate probabilities. Linearity does not need that product.
+
+`trial_sum` adds `1` through `4`. Twice that sum equals `4*5`, which is
+Proposition N10.16 at `N = 4`: `E[T] = 5/2`. Stopping after two trials
+is `2/4 = 1/2`. The integer `2`, which is `log2(4)` by Listing N10.8, is
+not `5/2` and is not the worst-case count `4`. `remaining_sum` adds `1`
+through `2`, and twice that sum equals `2*3`, so the expected trial
+count on the conditional list of size `2` is `3/2`.
+
+The counterexample with no recognition still has a format of `256`
+masks. Listing N10.8's `byte_support` is that count. Assumption N10.4's
+recognition clause is a sentence. Its absence is not an integer the
+listing can test. Removing the sentence removes the warrant for calling
+`256` a count of trials until identification. The listing does not
+supply the missing sentence.
+
 ### N10.16 What was proved, what was checked, and what was not built
 
 The propositions state their assumptions and prove the stated comparisons.
 The ledger records the rational values the reference test recomputes,
 including the integer comparison that places the 23-and-365 collision
-probability above `1/2`. That test does not sample, does not execute
-Orange, and does not establish a security claim.
+probability above `1/2`. That Python test does not execute Orange.
+Listing N10.7 computes the same comparison as two `Int` values and prints
+the `Bool`. A passing test confirms the `Bool` written in that listing.
+It does not sample a key, and it does not establish a security claim.
 
 Nothing above recommends a key length, asserts that a construction is fit
 to deploy, or treats Shannon's work characteristic as a number we
@@ -903,13 +1805,30 @@ Source: <https://pages.cs.wisc.edu/~rist/642-spring-2014/shannon-secrecy.pdf>
 Epigraph verification establishes wording and attribution, not publication-
 rights clearance.
 
+## Source note for the listings
+
+**[C1] Counting surface.** The listings use `Int` arithmetic as specified
+in `docs/EXPRESSIONS_2026.md`; `Bool`, comparisons, and Euclidean `/` and
+`%` as specified in `docs/CONDITIONS_2026.md`; `let` and fixed-length
+arrays as N7 uses them; bounded `for` as specified in `docs/LOOPS_2026.md`;
+and `test` as specified in `docs/TESTS_2026.md`. A loop bound is an integer
+literal with `0 ≤ start < end ≤ 65536`. Comparing two expressions that are
+only literals is `ORC0227`. A parameter of type `Int` gives the comparison
+a type. `1 / 0` evaluates to `0`. The diagnostic quoted for Listing N10.6
+is `ORC0225`. Implementation of these slices is not acceptance of the
+proposals, and it adds no cryptographic claim.
+
 ## Evidence boundary
 
 N10 adds sixteen exercises with worked answers. The rational ledger is
 recomputed by `tools/test_book_foundations.py`. That check does not execute
-Orange, sample a key, or establish a cryptographic security claim. No
-Orange listing was added, because a draw would require a source of choices
-this lesson does not invent.
+Orange. The nine Orange listings are executed by
+`compiler/crates/orangec/tests/book_novice.rs`. Eight of them check and
+evaluate. `empty_sum` is rejected with `ORC0225` before any step. A
+passing test is one `Bool`. It does not sample a key, and it does not
+establish a cryptographic security claim. The listings do not draw an
+outcome. A draw would require a source of choices this lesson does not
+invent.
 
 The lesson was drafted with Grok 4.7 on 2026-10-05 at the owner's
 direction. It is stacked after N9 on `book/novice-journeyman-master-opening`.
