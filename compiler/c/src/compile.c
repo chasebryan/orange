@@ -33,6 +33,8 @@
 #define MAX_MODULI 256
 #define MAX_MODULUS_BITS 521
 #define MAX_TUPLE 16
+#define MAX_SIZES 4
+#define MAX_INSTANCES 256
 
 typedef enum TokenKind {
     TK_EOF,
@@ -191,6 +193,9 @@ typedef struct DeclaredType {
     int tuple_elem;
     uint32_t elem0;
     uint16_t elem_n;
+    /* A length written with sizes: an integer token stays a decoded length. */
+    int has_size_expr;
+    uint32_t length_expr;
 } DeclaredType;
 
 /* One written type. Moduli are filled before names are resolved. */
@@ -227,6 +232,10 @@ typedef struct TypeSite {
     /* Resolved element types in `Compiler.telems`. */
     uint32_t tup0;
     uint16_t tup_n;
+    int has_size_expr;
+    uint32_t length_expr;
+    /* Function that owns this site, or UINT32_MAX for a `type` declaration. */
+    uint32_t owner_func;
 } TypeSite;
 
 typedef struct TypeDecl {
@@ -245,7 +254,8 @@ typedef enum NameRes {
     NAME_BAD,
     NAME_BOOL,
     NAME_BLOCK,
-    NAME_BLOCK_EARLY
+    NAME_BLOCK_EARLY,
+    NAME_SIZE
 } NameRes;
 
 typedef struct Token {
@@ -292,6 +302,13 @@ typedef struct Expr {
     /* `.k` position, or the element of a projected accumulator. */
     uint32_t proj_pos;
     uint8_t is_proj;
+    /* Call sizes, stored in `Compiler.args` at `size0`. */
+    uint8_t nsize;
+    uint32_t size0;
+    /* Fill or other length written as a size expression. UINT32_MAX if none. */
+    uint32_t size_expr;
+    /* Instance this call names. UINT32_MAX until checking resolves it. */
+    uint32_t inst_id;
 } Expr;
 
 typedef struct Param {
@@ -345,6 +362,9 @@ typedef struct Edge {
     uint32_t callee;
     uint32_t start;
     uint32_t end;
+    /* Instance indices. UINT32_MAX when the edge is only a function edge. */
+    uint32_t caller_inst;
+    uint32_t callee_inst;
 } Edge;
 
 typedef struct LoopDesc {
@@ -372,6 +392,10 @@ typedef struct LoopDesc {
     int bounds_ok;
     uint32_t bound_a;
     uint32_t bound_b;
+    int a_sized;
+    int b_sized;
+    uint32_t a_expr;
+    uint32_t b_expr;
     uint32_t bind0;
     uint16_t nbinds;
     /* 0 is one accumulator. 2..16 is a tuple pattern. */
@@ -429,7 +453,44 @@ typedef struct Func {
     uint32_t edge0;
     uint32_t nedges;
     int has_blocks;
+    uint8_t nsizes;
+    int sizes_ok;
+    uint32_t sz_name0[MAX_SIZES];
+    uint32_t sz_name1[MAX_SIZES];
+    uint32_t sz_span0[MAX_SIZES];
+    uint32_t sz_span1[MAX_SIZES];
+    uint32_t sz_a0[MAX_SIZES];
+    uint32_t sz_a1[MAX_SIZES];
+    uint32_t sz_b0[MAX_SIZES];
+    uint32_t sz_b1[MAX_SIZES];
+    int64_t sz_lo[MAX_SIZES];
+    int64_t sz_hi[MAX_SIZES];
+    uint32_t inst0;
+    uint16_t ninst;
 } Func;
+
+/* One concrete signature of a function. A function without sizes has one. */
+typedef struct Instance {
+    uint32_t func;
+    int64_t sz[MAX_SIZES];
+    TypeKind result;
+    uint32_t result_len;
+    uint16_t result_mod;
+    int result_ok;
+    uint32_t tup0;
+    uint16_t tup_n;
+    uint32_t param0;
+    int signature_ok;
+} Instance;
+
+typedef struct InstParam {
+    TypeKind type;
+    uint32_t length;
+    uint16_t mod_index;
+    int type_ok;
+    uint32_t tup0;
+    uint16_t tup_n;
+} InstParam;
 
 typedef struct Diag {
     const char *code;
@@ -576,6 +637,17 @@ typedef struct Compiler {
     uint32_t leaf_tup0;
     uint16_t leaf_tup_n;
     const struct Compiler *leaf_owner;
+    Instance *instances;
+    uint32_t ninstances;
+    size_t instance_cap;
+    InstParam *iparams;
+    uint32_t niparams;
+    size_t iparam_cap;
+    /* Sizes of the instance being checked or evaluated. */
+    int64_t cur_sz[MAX_SIZES];
+    uint8_t ncur;
+    uint32_t cur_func;
+    uint32_t cur_inst;
 } Compiler;
 
 struct Program {
@@ -721,6 +793,8 @@ static int new_expr(Compiler *c, uint32_t *out) {
     expr->left = UINT32_MAX;
     expr->right = UINT32_MAX;
     expr->conv_site = UINT32_MAX;
+    expr->size_expr = UINT32_MAX;
+    expr->inst_id = UINT32_MAX;
     *out = c->nexprs++;
     return 1;
 }
@@ -1368,6 +1442,122 @@ static int canonical_array_length(const char *text, uint32_t start, uint32_t end
     return 1;
 }
 
+static const char SIZE_PARAMETER_NOTE[] =
+    "a sized function is written `spec f[n in 1..5](x: Word[8]^n) -> Type { ... }` and checked once for each n from 1 up to, but not including, 5";
+static const char SIZED_CALL_NOTE[] =
+    "a sized function is called with its sizes in brackets before its arguments, as in `sha256[2](m)`";
+static const char COMPUTED_LENGTH_NOTE[] =
+    "an array length computed from sizes is written in parentheses, as in `Word[8]^(2 * n)`";
+static const char COMPUTED_FILL_NOTE[] =
+    "a length computed from sizes is written in parentheses, as in `[0; (2 * n)]`";
+static const char COMPUTED_BOUND_NOTE[] =
+    "a bound computed from sizes is written in parentheses, as in `for i in 0..(n - 1) with s: Type = start { step }`";
+
+static int size_operator(TokenKind kind) {
+    return kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR || kind == TK_SLASH || kind == TK_PERCENT;
+}
+
+/* A size atom is an integer, a name other than `with`, or a parenthesized expression.
+   An operator after the atom stays for the caller, which asks for parentheses. */
+static int parse_size_atom(Compiler *c, const char *what, const char *note, uint32_t *out) {
+    Token token = peek_token(c);
+    if (token.kind == TK_INT) {
+        advance_token(c);
+        return make_lit(c, token.start, token.end, 0, token.start, token.end, out);
+    }
+    if (token.kind == TK_IDENT && !span_is(c, token.start, token.end, "with")) {
+        advance_token(c);
+        if (!new_expr(c, out)) {
+            return 0;
+        }
+        c->exprs[*out].kind = EX_NAME;
+        c->exprs[*out].start = token.start;
+        c->exprs[*out].end = token.end;
+        c->exprs[*out].name_start = token.start;
+        c->exprs[*out].name_end = token.end;
+        c->exprs[*out].height = 1;
+        return note_height(c, *out);
+    }
+    if (token.kind == TK_LPAREN) {
+        return parse_prefixed(c, out);
+    }
+    add_diag(c, "ORC0101", token.start, token.end, what, "expected a size", note, 1);
+    return 0;
+}
+
+/* Brackets hold only tokens a size list can hold, and `(` follows `]`. */
+static int starts_sized_call(const Compiler *c) {
+    size_t pos;
+    int depth = 0;
+    if (c->at >= c->ntokens || c->tokens[c->at].kind != TK_LBRACKET) {
+        return 0;
+    }
+    pos = c->at + 1;
+    for (;;) {
+        TokenKind kind;
+        if (pos >= c->ntokens) {
+            return 0;
+        }
+        kind = c->tokens[pos].kind;
+        if (kind == TK_INT || kind == TK_IDENT || kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR ||
+            kind == TK_SLASH || kind == TK_PERCENT || kind == TK_COMMA) {
+        } else if (kind == TK_LPAREN) {
+            depth++;
+        } else if (kind == TK_RPAREN && depth > 0) {
+            depth--;
+        } else if (kind == TK_RBRACKET && depth == 0) {
+            return pos + 1 < c->ntokens && c->tokens[pos + 1].kind == TK_LPAREN;
+        } else {
+            return 0;
+        }
+        pos++;
+    }
+}
+
+static int parse_call_sizes(Compiler *c, uint32_t *size0, uint8_t *nsize, int *child_height) {
+    *size0 = c->nargs;
+    *nsize = 0;
+    advance_token(c);
+    if (peek_kind(c) == TK_RBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a size", "expected a size",
+                 SIZED_CALL_NOTE, 1);
+        return 0;
+    }
+    for (;;) {
+        uint32_t size = 0;
+        int size_height;
+        if (!parse_expr(c, &size)) {
+            return 0;
+        }
+        if (*nsize >= MAX_SIZES) {
+            add_diag(c, "ORC0101", c->exprs[size].start, c->exprs[size].end, "a call gives at most 4 sizes",
+                     "one size too many", SIZED_CALL_NOTE, 1);
+            return 0;
+        }
+        if (!ensure_cap((void **)&c->args, &c->arg_cap, c->nargs + 1, sizeof(uint32_t), MAX_EXPRS)) {
+            resource_diag(c, "ORC0106", c->exprs[size].start, c->exprs[size].end, "parser could not retain call sizes");
+            return 0;
+        }
+        c->args[c->nargs++] = size;
+        (*nsize)++;
+        size_height = height_of(c, size);
+        if (size_height > *child_height) {
+            *child_height = size_height;
+        }
+        if (peek_kind(c) == TK_COMMA) {
+            advance_token(c);
+            continue;
+        }
+        if (peek_kind(c) == TK_RBRACKET) {
+            advance_token(c);
+            return 1;
+        }
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` or `]` after the size",
+                 "expected `,` or `]`", SIZED_CALL_NOTE, 1);
+        return 0;
+    }
+}
+
 static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int as_element) {
     Token name = peek_token(c);
     int admit_length = 0;
@@ -1468,29 +1658,53 @@ static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int
         Token length;
         advance_token(c);
         length = peek_token(c);
-        if (length.kind != TK_INT) {
-            add_diag(c, "ORC0101", length.start, length.end, "expected an array length", "expected a length",
-                     "an array type is `T^n` with one decimal length", 1);
-            return 0;
-        }
-        advance_token(c);
-        if (peek_kind(c) == TK_CARET) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "expected the end of the type after its array length", "repeated array length",
-                     "arrays of arrays are not part of this slice", 1);
-            return 0;
-        }
-        type->length_start = length.start;
-        type->length_end = length.end;
-        type->end = length.end;
-        if (admit_length || type->ok) {
-            uint32_t value = 0;
-            if (!canonical_array_length(c->text, length.start, length.end, &value)) {
-                type->ok = 0;
-                type->length_bad = 1;
+        if (length.kind == TK_INT || length.kind == TK_IDENT || length.kind == TK_LPAREN) {
+            uint32_t size = UINT32_MAX;
+            int sized = length.kind != TK_INT;
+            if (sized) {
+                if (!parse_size_atom(c, "expected a length after `^`", COMPUTED_LENGTH_NOTE, &size)) {
+                    return 0;
+                }
             } else {
-                type->length = value;
+                advance_token(c);
             }
+            if (peek_kind(c) == TK_CARET) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                         "expected the end of the type after its array length", "repeated array length",
+                         "arrays of arrays are not part of this slice", 1);
+                return 0;
+            }
+            if (size_operator(peek_kind(c))) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                         "expected the end of the type after its array length", "found an operator", COMPUTED_LENGTH_NOTE,
+                         1);
+                return 0;
+            }
+            if (sized) {
+                type->has_size_expr = 1;
+                type->length_expr = size;
+                type->length_start = c->exprs[size].start;
+                type->length_end = c->exprs[size].end;
+                type->end = c->exprs[size].end;
+                type->length = 0;
+            } else {
+                type->length_start = length.start;
+                type->length_end = length.end;
+                type->end = length.end;
+                if (admit_length || type->ok) {
+                    uint32_t value = 0;
+                    if (!canonical_array_length(c->text, length.start, length.end, &value)) {
+                        type->ok = 0;
+                        type->length_bad = 1;
+                    } else {
+                        type->length = value;
+                    }
+                }
+            }
+        } else {
+            add_diag(c, "ORC0101", length.start, length.end, "expected a length after `^`", "expected a length",
+                     "an array type is `T^n` with one decimal length, or a length written with sizes", 1);
+            return 0;
         }
     }
     return 1;
@@ -1661,7 +1875,10 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     site->elem0 = type->elem0;
     site->elem_n = type->elem_n;
     site->role = role;
-    site->wrote_axis = type->length > 0 && !type->length_bad;
+    site->has_size_expr = type->has_size_expr;
+    site->length_expr = type->length_expr;
+    site->owner_func = c->parsing_func != NULL ? c->nfuncs : UINT32_MAX;
+    site->wrote_axis = type->has_size_expr || (type->length > 0 && !type->length_bad);
     if (!type->named && !type->bare_mod) {
         site->rank = site->wrote_axis ? 1 : 0;
     }
@@ -2045,18 +2262,33 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
     if (peek_kind(c) == TK_SEMI) {
         Token length;
         uint32_t element = local_elems[0];
+        uint32_t size = UINT32_MAX;
+        int sized = 0;
         advance_token(c);
         length = peek_token(c);
-        if (length.kind != TK_INT) {
+        if (length.kind == TK_IDENT || length.kind == TK_LPAREN ||
+            (length.kind == TK_INT && size_operator(c->at + 1 < c->ntokens ? c->tokens[c->at + 1].kind : TK_EOF))) {
+            sized = 1;
+            if (!parse_size_atom(c, "expected a fill length", COMPUTED_FILL_NOTE, &size)) {
+                leave_nest(c);
+                return 0;
+            }
+        } else if (length.kind != TK_INT) {
             add_diag(c, "ORC0101", length.start, length.end, "expected a fill length", "expected an integer length",
                      "a fill literal is `[element; length]`", 1);
             leave_nest(c);
             return 0;
+        } else {
+            advance_token(c);
         }
-        advance_token(c);
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed fill literal", NULL, 1);
+            if (size_operator(close.kind)) {
+                add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the array length", "found an operator",
+                         COMPUTED_FILL_NOTE, 1);
+            } else {
+                add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed fill literal", NULL, 1);
+            }
             leave_nest(c);
             return 0;
         }
@@ -2069,9 +2301,13 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         c->exprs[*out].left = element;
         c->exprs[*out].start = open.start;
         c->exprs[*out].end = close.end;
-        c->exprs[*out].lit_start = length.start;
-        c->exprs[*out].lit_end = length.end;
+        c->exprs[*out].lit_start = sized ? c->exprs[size].start : length.start;
+        c->exprs[*out].lit_end = sized ? c->exprs[size].end : length.end;
+        c->exprs[*out].size_expr = sized ? size : UINT32_MAX;
         c->exprs[*out].height = 1 + height_of(c, element);
+        if (sized && height_of(c, size) + 1 > c->exprs[*out].height) {
+            c->exprs[*out].height = 1 + height_of(c, size);
+        }
         return note_height(c, *out);
     }
     while (peek_kind(c) == TK_COMMA) {
@@ -2416,6 +2652,8 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     c->loops[id].init_expr = UINT32_MAX;
     c->loops[id].step_expr = UINT32_MAX;
     c->loops[id].site = UINT32_MAX;
+    c->loops[id].a_expr = UINT32_MAX;
+    c->loops[id].b_expr = UINT32_MAX;
     advance_token(c);
     index = peek_token(c);
     if (index.kind != TK_IDENT) {
@@ -2432,32 +2670,62 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     }
     advance_token(c);
     bound_a = peek_token(c);
-    if (bound_a.kind != TK_INT) {
+    if (bound_a.kind == TK_IDENT || bound_a.kind == TK_LPAREN) {
+        uint32_t size = UINT32_MAX;
+        if (!parse_size_atom(c, "expected the loop's first bound", COMPUTED_BOUND_NOTE, &size)) {
+            return 0;
+        }
+        c->loops[id].a_sized = 1;
+        c->loops[id].a_expr = size;
+        c->loops[id].a_start = c->exprs[size].start;
+        c->loops[id].a_end = c->exprs[size].end;
+    } else if (bound_a.kind != TK_INT) {
         add_diag(c, "ORC0101", bound_a.start, bound_a.end, "expected a loop bound", "a loop bound is an integer literal",
                  NULL, 1);
         return 0;
+    } else {
+        c->loops[id].a_start = bound_a.start;
+        c->loops[id].a_end = bound_a.end;
+        advance_token(c);
     }
-    c->loops[id].a_start = bound_a.start;
-    c->loops[id].a_end = bound_a.end;
-    advance_token(c);
     if (peek_kind(c) != TK_DOTDOT) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..`", "a loop range is `a..b`", NULL,
-                 1);
+        if (size_operator(peek_kind(c))) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..` between the loop's bounds",
+                     "found an operator", COMPUTED_BOUND_NOTE, 1);
+        } else {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..`", "a loop range is `a..b`",
+                     NULL, 1);
+        }
         return 0;
     }
     advance_token(c);
     bound_b = peek_token(c);
-    if (bound_b.kind != TK_INT) {
+    if (bound_b.kind == TK_IDENT || bound_b.kind == TK_LPAREN) {
+        uint32_t size = UINT32_MAX;
+        if (!parse_size_atom(c, "expected the loop's second bound", COMPUTED_BOUND_NOTE, &size)) {
+            return 0;
+        }
+        c->loops[id].b_sized = 1;
+        c->loops[id].b_expr = size;
+        c->loops[id].b_start = c->exprs[size].start;
+        c->loops[id].b_end = c->exprs[size].end;
+    } else if (bound_b.kind != TK_INT) {
         add_diag(c, "ORC0101", bound_b.start, bound_b.end, "expected a loop bound", "a loop bound is an integer literal",
                  NULL, 1);
         return 0;
+    } else {
+        c->loops[id].b_start = bound_b.start;
+        c->loops[id].b_end = bound_b.end;
+        advance_token(c);
     }
-    c->loops[id].b_start = bound_b.start;
-    c->loops[id].b_end = bound_b.end;
-    advance_token(c);
     if (!ident_token_is(c, peek_token(c), "with")) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with`",
-                 "a loop names its accumulator", "write `for i in a..b with s: T = start { step }`", 1);
+        if (size_operator(peek_kind(c))) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with` and the loop's accumulator",
+                     "found an operator", COMPUTED_BOUND_NOTE, 1);
+        } else {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with`",
+                     "a loop names its accumulator", "write `for i in a..b with s: T = start { step }`", 1);
+        }
         return 0;
     }
     advance_token(c);
@@ -3177,16 +3445,93 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                 return 0;
             }
             advance_token(c);
+            {
+                uint32_t size0 = 0;
+                uint8_t nsize = 0;
+                int child_height = 0;
+                if (peek_kind(c) == TK_LBRACKET) {
+                    if (!enter_nest(c, module_name.start, module_name.end)) {
+                        return 0;
+                    }
+                    if (!parse_call_sizes(c, &size0, &nsize, &child_height)) {
+                        leave_nest(c);
+                        return 0;
+                    }
+                    leave_nest(c);
+                    if (peek_kind(c) != TK_LPAREN) {
+                        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(` after the sizes",
+                                 "expected `(`", SIZED_CALL_NOTE, 1);
+                        return 0;
+                    }
+                } else if (peek_kind(c) != TK_LPAREN) {
+                    add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                             "expected `(` after the qualified function name", "expected `(`",
+                             "a name qualified by its module is always called, as in `sha256::initial()`", 1);
+                    return 0;
+                }
+                advance_token(c);
+                if (!enter_nest(c, module_name.start, module_name.end)) {
+                    return 0;
+                }
+                if (!parse_args(c, &arg0, &argc)) {
+                    leave_nest(c);
+                    return 0;
+                }
+                leave_nest(c);
+                close = peek_token(c);
+                if (close.kind != TK_RPAREN) {
+                    add_diag(c, "ORC0101", close.start, close.end, "expected `)`", "unclosed argument list", NULL, 1);
+                    return 0;
+                }
+                advance_token(c);
+                if (!new_expr(c, out)) {
+                    return 0;
+                }
+                c->exprs[*out].kind = EX_CALL;
+                c->exprs[*out].start = module_name.start;
+                c->exprs[*out].end = close.end;
+                c->exprs[*out].left = module_name.start;
+                c->exprs[*out].right = module_name.end;
+                c->exprs[*out].name_start = func_name.start;
+                c->exprs[*out].name_end = func_name.end;
+                c->exprs[*out].arg0 = arg0;
+                c->exprs[*out].argc = argc;
+                c->exprs[*out].size0 = size0;
+                c->exprs[*out].nsize = nsize;
+                c->exprs[*out].height = 1 + child_height;
+                for (uint16_t index = 0; index < argc; index++) {
+                    int child = height_of(c, c->args[arg0 + index]);
+                    if (1 + child > c->exprs[*out].height) {
+                        c->exprs[*out].height = 1 + child;
+                    }
+                }
+                if (!note_height(c, *out)) {
+                    return 0;
+                }
+                return parse_suffix(c, *out, out);
+            }
+        }
+        if (peek_kind(c) == TK_LBRACKET && starts_sized_call(c)) {
+            uint32_t arg0 = 0;
+            uint16_t argc = 0;
+            uint32_t size0 = 0;
+            uint8_t nsize = 0;
+            int child_height = 0;
+            Token close;
+            if (!enter_nest(c, name.start, name.end)) {
+                return 0;
+            }
+            if (!parse_call_sizes(c, &size0, &nsize, &child_height)) {
+                leave_nest(c);
+                return 0;
+            }
             if (peek_kind(c) != TK_LPAREN) {
-                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                         "expected `(` after the qualified function name", "expected `(`",
-                         "a name qualified by its module is always called, as in `sha256::initial()`", 1);
+                leave_nest(c);
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(` after the sizes",
+                         "expected `(`", SIZED_CALL_NOTE, 1);
                 return 0;
             }
             advance_token(c);
-            if (!enter_nest(c, module_name.start, module_name.end)) {
-                return 0;
-            }
             if (!parse_args(c, &arg0, &argc)) {
                 leave_nest(c);
                 return 0;
@@ -3202,15 +3547,15 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                 return 0;
             }
             c->exprs[*out].kind = EX_CALL;
-            c->exprs[*out].start = module_name.start;
+            c->exprs[*out].start = name.start;
             c->exprs[*out].end = close.end;
-            c->exprs[*out].left = module_name.start;
-            c->exprs[*out].right = module_name.end;
-            c->exprs[*out].name_start = func_name.start;
-            c->exprs[*out].name_end = func_name.end;
+            c->exprs[*out].name_start = name.start;
+            c->exprs[*out].name_end = name.end;
             c->exprs[*out].arg0 = arg0;
             c->exprs[*out].argc = argc;
-            c->exprs[*out].height = 1;
+            c->exprs[*out].size0 = size0;
+            c->exprs[*out].nsize = nsize;
+            c->exprs[*out].height = 1 + child_height;
             for (uint16_t index = 0; index < argc; index++) {
                 int child = height_of(c, c->args[arg0 + index]);
                 if (1 + child > c->exprs[*out].height) {
@@ -3796,6 +4141,78 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
     return 1;
 }
 
+static int parse_size_params(Compiler *c, Func *func) {
+    advance_token(c);
+    if (peek_kind(c) == TK_RBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a size parameter", "expected a name",
+                 SIZE_PARAMETER_NOTE, 1);
+        return 0;
+    }
+    for (;;) {
+        Token name;
+        Token first;
+        Token second;
+        if (peek_kind(c) != TK_IDENT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a size parameter",
+                     "expected a name", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        name = peek_token(c);
+        advance_token(c);
+        if (!span_is(c, peek_token(c).start, peek_token(c).end, "in")) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `in` after the size's name",
+                     "expected `in`", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        advance_token(c);
+        if (peek_kind(c) != TK_INT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's first bound",
+                     "expected an integer bound", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        first = peek_token(c);
+        advance_token(c);
+        if (peek_kind(c) != TK_DOTDOT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..` between the size's bounds",
+                     "expected `..`", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        advance_token(c);
+        if (peek_kind(c) != TK_INT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's second bound",
+                     "expected an integer bound", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        second = peek_token(c);
+        advance_token(c);
+        if (func->nsizes >= MAX_SIZES) {
+            add_diag(c, "ORC0101", name.start, second.end, "a function has at most 4 size parameters",
+                     "one size parameter too many", SIZE_PARAMETER_NOTE, 1);
+            return 0;
+        }
+        func->sz_name0[func->nsizes] = name.start;
+        func->sz_name1[func->nsizes] = name.end;
+        func->sz_span0[func->nsizes] = name.start;
+        func->sz_span1[func->nsizes] = second.end;
+        func->sz_a0[func->nsizes] = first.start;
+        func->sz_a1[func->nsizes] = first.end;
+        func->sz_b0[func->nsizes] = second.start;
+        func->sz_b1[func->nsizes] = second.end;
+        func->nsizes++;
+        if (peek_kind(c) == TK_COMMA) {
+            advance_token(c);
+            continue;
+        }
+        if (peek_kind(c) == TK_RBRACKET) {
+            advance_token(c);
+            return 1;
+        }
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` or `]` after the size parameter",
+                 "expected `,` or `]`", SIZE_PARAMETER_NOTE, 1);
+        return 0;
+    }
+}
+
 static int parse_function(Compiler *c) {
     Token kind = peek_token(c);
     Token name;
@@ -3824,6 +4241,20 @@ static int parse_function(Compiler *c) {
     func->name_start = name.start;
     func->name_end = name.end;
     advance_token(c);
+    if (peek_kind(c) == TK_LBRACKET) {
+        if (is_impl) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "`impl` functions have no size parameters",
+                     "expected `(`", SIZE_PARAMETER_NOTE, 1);
+            skip_function_body(c, 0);
+            c->nfuncs++;
+            return 1;
+        }
+        if (!parse_size_params(c, func)) {
+            skip_function_body(c, 0);
+            c->nfuncs++;
+            return 1;
+        }
+    }
     if (peek_kind(c) != TK_LPAREN) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(`", "expected a parameter list", NULL,
                  1);
@@ -3863,6 +4294,13 @@ static int parse_function(Compiler *c) {
     if (peek_kind(c) == TK_RPAREN) {
         advance_token(c);
         if (peek_kind(c) == TK_LBRACE) {
+            if (func->nsizes > 0) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                         "a `spec` with size parameters needs a result type", "expected `->`", SIZE_PARAMETER_NOTE, 1);
+                skip_function_body(c, 0);
+                c->nfuncs++;
+                return 1;
+            }
             advance_token(c);
             if (peek_kind(c) != TK_RBRACE) {
                 add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}`", "expected an empty body",
@@ -4137,7 +4575,13 @@ static void reject_declared(Compiler *c, TypeKind type, int length_bad, uint32_t
 static int signature_is_usable(const Compiler *c, uint32_t func_index) {
     const Func *func = &c->funcs[func_index];
     uint16_t param;
-    if (!func->typed || !func->result_ok) {
+    if (!func->typed) {
+        return 0;
+    }
+    if (func->nsizes > 0) {
+        return func->sizes_ok && func->ninst > 0;
+    }
+    if (!func->result_ok) {
         return 0;
     }
     for (param = 0; param < func->nparams; param++) {
@@ -4247,6 +4691,8 @@ static void resolve_callee(Compiler *c, const Expr *expr, Callee *out) {
     }
 }
 
+static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, uint32_t end, uint8_t *slot);
+
 static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end,
                          NameRes *res, uint16_t *slot, TypeKind *type, uint32_t *length, int *type_ok,
                          uint32_t *abs_index) {
@@ -4261,6 +4707,17 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
     if (abs_index != NULL) {
         *abs_index = 0;
     }
+    {
+        uint8_t size_index = 0;
+        if (size_slot_of(c, func_index, start, end, &size_index)) {
+            *res = NAME_SIZE;
+            *slot = size_index;
+            *type = TY_INT;
+            *length = 0;
+            *type_ok = 1;
+            return;
+        }
+    }
     for (index = 0; index < func->nparams; index++) {
         const Param *param = &c->params[func->param0 + index];
         if (param->duplicate) {
@@ -4272,6 +4729,19 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
             *type = param->type;
             *length = param->length;
             *type_ok = param->type_ok;
+            /* The live parameter record is whatever the last checked instance
+               wrote. A call resolved while another instance is running needs
+               that instance's length. */
+            if (c->cur_func == func_index && c->cur_inst != UINT32_MAX && c->cur_inst < c->ninstances) {
+                const Instance *inst = &c->instances[c->cur_inst];
+                if (inst->func == func_index && inst->param0 + index < c->niparams) {
+                    const InstParam *shape = &c->iparams[inst->param0 + index];
+                    *type = shape->type;
+                    *length = shape->length;
+                    *type_ok = shape->type_ok;
+                    *res = shape->type_ok ? NAME_PARAM : NAME_BAD;
+                }
+            }
             return;
         }
     }
@@ -4423,6 +4893,9 @@ static int adopt_modulus(Compiler *c, const Compiler *owner, uint16_t foreign, u
     return intern_modulus(c, value, local);
 }
 
+static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
+                      uint32_t locals, uint32_t *inst_id);
+
 static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -4440,6 +4913,11 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         uint32_t abs_index = 0;
         resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
                      &type_ok, &abs_index);
+        if (res == NAME_SIZE) {
+            *type = TY_INT;
+            *length = 0;
+            return 1;
+        }
         if (res == NAME_BAD) {
             *silent = 1;
             return -1;
@@ -4500,6 +4978,37 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         if (!signature_is_usable(callee.mod, callee.func)) {
             *silent = 1;
             return -1;
+        }
+        if (callee.mod->funcs[callee.func].ninst > 0) {
+            uint32_t id = UINT32_MAX;
+            const Instance *inst;
+            Expr *mutable_expr = &c->exprs[index];
+            if (!lookup_call(c, mutable_expr, callee.mod, callee.func, 0, func_index, locals_in_scope, &id) ||
+                id >= callee.mod->ninstances) {
+                *silent = 1;
+                return -1;
+            }
+            inst = &callee.mod->instances[id];
+            if (!inst->result_ok) {
+                *silent = 1;
+                return -1;
+            }
+            *type = inst->result;
+            *length = inst->result_len;
+            if (*type == TY_MOD) {
+                uint16_t local = 0;
+                if (!adopt_modulus(c, callee.mod, inst->result_mod, &local)) {
+                    *silent = 1;
+                    return -1;
+                }
+                c->leaf_mod = local;
+            }
+            if (*type == TY_TUPLE) {
+                c->leaf_owner = callee.mod;
+                c->leaf_tup0 = inst->tup0;
+                c->leaf_tup_n = inst->tup_n;
+            }
+            return 1;
         }
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
@@ -4981,6 +5490,196 @@ static int affine_range(const Compiler *c, const AffineForm *form, int64_t *low,
 }
 
 /* Affine form of an Int bound. NOT_STATIC and PRODUCT set the offending span. */
+static const char SIZE_NOTE[] =
+    "a size is fixed in each instance of its function: it is built from integer literals and the function's size parameters with `+`, `-`, `*`, `/`, `%`, and parentheses";
+static const char SIZE_RANGE_NOTE[] =
+    "a size parameter `n in a..b` takes each value from a up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances";
+
+typedef struct Sz {
+    int kind; /* 0 value, 1 not static, 2 too large */
+    int64_t value;
+    uint32_t start;
+    uint32_t end;
+} Sz;
+
+static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, uint32_t end, uint8_t *slot) {
+    const Func *func;
+    uint8_t index;
+    if (func_index >= c->nfuncs) {
+        return 0;
+    }
+    func = &c->funcs[func_index];
+    for (index = 0; index < func->nsizes; index++) {
+        if (same_span(c, func->sz_name0[index], func->sz_name1[index], start, end)) {
+            if (slot != NULL) {
+                *slot = index;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Euclidean quotient and remainder. x / 0 is 0 and x % 0 is x. */
+static int i64_euclid(int64_t left, int64_t right, int64_t *quot, int64_t *rem) {
+    int64_t q;
+    int64_t r;
+    if (right == 0) {
+        *quot = 0;
+        *rem = left;
+        return 1;
+    }
+    if (left == INT64_MIN && right == -1) {
+        return 0;
+    }
+    q = left / right;
+    r = left % right;
+    if (r < 0) {
+        if (right > 0) {
+            q -= 1;
+            r += right;
+        } else {
+            q += 1;
+            r -= right;
+        }
+    }
+    *quot = q;
+    *rem = r;
+    return 1;
+}
+
+static Sz sz_value(int64_t value) {
+    Sz out;
+    memset(&out, 0, sizeof out);
+    out.value = value;
+    return out;
+}
+
+static Sz sz_fault(int kind, uint32_t start, uint32_t end) {
+    Sz out;
+    memset(&out, 0, sizeof out);
+    out.kind = kind;
+    out.start = start;
+    out.end = end;
+    return out;
+}
+
+static Sz eval_size(Compiler *c, uint32_t index) {
+    const Expr *expr;
+    if (index == UINT32_MAX || index >= c->nexprs) {
+        return sz_fault(1, 0, 0);
+    }
+    expr = &c->exprs[index];
+    if (expr->kind == EX_GROUP) {
+        return eval_size(c, expr->left);
+    }
+    if (expr->kind == EX_LIT) {
+        Big magnitude = big_zero();
+        int64_t value = 0;
+        if (!decode_literal(c, expr, &magnitude) || !big_as_i64(&magnitude, &value)) {
+            return sz_fault(2, expr->start, expr->end);
+        }
+        return sz_value(value);
+    }
+    if (expr->kind == EX_NAME) {
+        uint8_t slot = 0;
+        if (c->cur_func < c->nfuncs && size_slot_of(c, c->cur_func, expr->name_start, expr->name_end, &slot) &&
+            slot < c->ncur) {
+            return sz_value(c->cur_sz[slot]);
+        }
+        return sz_fault(1, expr->start, expr->end);
+    }
+    if (expr->kind == EX_UNARY && expr->op == TK_MINUS) {
+        Sz inner = eval_size(c, expr->left);
+        int64_t negated;
+        if (inner.kind != 0) {
+            return inner;
+        }
+        if (inner.value == INT64_MIN) {
+            return sz_fault(2, expr->start, expr->end);
+        }
+        negated = -inner.value;
+        return sz_value(negated);
+    }
+    if (expr->kind == EX_BINARY && size_operator(expr->op)) {
+        Sz left = eval_size(c, expr->left);
+        Sz right = eval_size(c, expr->right);
+        int64_t value = 0;
+        int64_t quot = 0;
+        int64_t rem = 0;
+        if (left.kind != 0 && right.kind != 0) {
+            if (left.kind == 2 && right.kind == 1) {
+                return right;
+            }
+            return left;
+        }
+        if (left.kind != 0) {
+            return left;
+        }
+        if (right.kind != 0) {
+            return right;
+        }
+        if (expr->op == TK_PLUS) {
+            if (!i64_add(left.value, right.value, &value)) {
+                return sz_fault(2, expr->start, expr->end);
+            }
+        } else if (expr->op == TK_MINUS) {
+            if (right.value == INT64_MIN) {
+                if (!i64_add(left.value, INT64_MAX, &value) || !i64_add(value, 1, &value)) {
+                    return sz_fault(2, expr->start, expr->end);
+                }
+            } else if (!i64_add(left.value, -right.value, &value)) {
+                return sz_fault(2, expr->start, expr->end);
+            }
+        } else if (expr->op == TK_STAR) {
+            if (!i64_mul(left.value, right.value, &value)) {
+                return sz_fault(2, expr->start, expr->end);
+            }
+        } else if (!i64_euclid(left.value, right.value, &quot, &rem)) {
+            return sz_fault(2, expr->start, expr->end);
+        } else {
+            value = expr->op == TK_SLASH ? quot : rem;
+        }
+        return sz_value(value);
+    }
+    return sz_fault(1, expr->start, expr->end);
+}
+
+static void report_size_fault(Compiler *c, Sz fault) {
+    if (fault.kind == 2) {
+        add_diag(c, "ORC0205", fault.start, fault.end, "integer magnitude exceeds the 16384-significant-bit limit",
+                 "this part of the size is too large", "the value is rejected rather than truncated or approximated", 2);
+        return;
+    }
+    add_diag(c, "ORC0237", fault.start, fault.end, "a size may use only integer literals and size parameters",
+             "this is neither", SIZE_NOTE, 2);
+}
+
+static int size_length(Compiler *c, uint32_t index, int report, uint32_t *length) {
+    Sz value = eval_size(c, index);
+    if (value.kind != 0) {
+        if (report) {
+            report_size_fault(c, value);
+        }
+        return 0;
+    }
+    if (value.value < 1 || value.value > (int64_t)MAX_ARRAY_LENGTH) {
+        if (report) {
+            char message[160];
+            snprintf(message, sizeof message, "this array length is %lld, but an array has 1 through %u elements",
+                     (long long)value.value, MAX_ARRAY_LENGTH);
+            add_diag(c, "ORC0221", c->exprs[index].start, c->exprs[index].end, message,
+                     "unsupported array length in this instance",
+                     "a length written with sizes is computed in each instance of its function, and every instance's "
+                     "lengths are from 1 through 256",
+                     2);
+        }
+        return 0;
+    }
+    *length = (uint32_t)value.value;
+    return 1;
+}
+
 static int affine_form(Compiler *c, uint32_t index, AffineForm *form, uint32_t *bad_start, uint32_t *bad_end) {
     const Expr *expr = &c->exprs[index];
     form->constant = 0;
@@ -5026,6 +5725,17 @@ static int affine_form(Compiler *c, uint32_t index, AffineForm *form, uint32_t *
             return AFF_OVERSIZED;
         }
         return AFF_OK;
+    case EX_NAME: {
+        uint8_t slot = 0;
+        if (c->cur_func < c->nfuncs && size_slot_of(c, c->cur_func, expr->name_start, expr->name_end, &slot) &&
+            slot < c->ncur) {
+            form->constant = c->cur_sz[slot];
+            return AFF_OK;
+        }
+        *bad_start = expr->start;
+        *bad_end = expr->end;
+        return AFF_NOT_STATIC;
+    }
     case EX_BINARY:
         if (expr->op == TK_PLUS || expr->op == TK_MINUS || expr->op == TK_STAR) {
             AffineForm left_form;
@@ -5133,7 +5843,13 @@ static void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32
         *len = expr->argc;
         return;
     case EX_FILL:
-        if (canonical_array_length(c->text, expr->lit_start, expr->lit_end, len)) {
+        if (expr->size_expr != UINT32_MAX) {
+            uint32_t sized = 0;
+            if (size_length(c, expr->size_expr, 0, &sized)) {
+                *have_len = 1;
+                *len = sized;
+            }
+        } else if (canonical_array_length(c->text, expr->lit_start, expr->lit_end, len)) {
             *have_len = 1;
         }
         return;
@@ -5228,6 +5944,9 @@ static void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32
     }
 }
 
+static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
+                      uint32_t locals, uint32_t *inst_id);
+
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -5304,6 +6023,11 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         int type_ok = 0;
         resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
                      &type_ok, &abs_index);
+        if (res == NAME_SIZE) {
+            *type = TY_INT;
+            *length = 0;
+            return 1;
+        }
         if (res == NAME_BAD) {
             *silent = 1;
             return -1;
@@ -5346,6 +6070,37 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         if (!signature_is_usable(callee.mod, callee.func)) {
             *silent = 1;
             return -1;
+        }
+        if (callee.mod->funcs[callee.func].ninst > 0) {
+            uint32_t id = UINT32_MAX;
+            const Instance *inst;
+            Expr *mutable_expr = &c->exprs[index];
+            if (!lookup_call(c, mutable_expr, callee.mod, callee.func, 0, func_index, locals_in_scope, &id) ||
+                id >= callee.mod->ninstances) {
+                *silent = 1;
+                return -1;
+            }
+            inst = &callee.mod->instances[id];
+            if (!inst->result_ok) {
+                *silent = 1;
+                return -1;
+            }
+            *type = inst->result;
+            *length = inst->result_len;
+            if (*type == TY_MOD) {
+                uint16_t local = 0;
+                if (!adopt_modulus(c, callee.mod, inst->result_mod, &local)) {
+                    *silent = 1;
+                    return -1;
+                }
+                c->leaf_mod = local;
+            }
+            if (*type == TY_TUPLE) {
+                c->leaf_owner = callee.mod;
+                c->leaf_tup0 = inst->tup0;
+                c->leaf_tup_n = inst->tup_n;
+            }
+            return 1;
         }
         *type = callee.mod->funcs[callee.func].result;
         *length = callee.mod->funcs[callee.func].result_len;
@@ -5542,7 +6297,8 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
              "a bare name refers to a parameter or a binding in scope", 2);
 }
 
-static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32_t start, uint32_t end) {
+static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32_t callee_inst, uint32_t start,
+                       uint32_t end) {
     Func *func = &c->funcs[func_index];
     if (func->nedges == 0) {
         func->edge0 = c->nedges;
@@ -5554,6 +6310,8 @@ static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32
     c->edges[c->nedges].callee = callee;
     c->edges[c->nedges].start = start;
     c->edges[c->nedges].end = end;
+    c->edges[c->nedges].caller_inst = c->cur_inst;
+    c->edges[c->nedges].callee_inst = callee_inst;
     c->nedges++;
     func->nedges++;
     return 1;
@@ -5583,7 +6341,13 @@ static int report_duplicate_loop_name(Compiler *c, uint32_t func_index, uint32_t
                                       uint32_t end) {
     const Func *func = &c->funcs[func_index];
     uint16_t index;
-    int duplicate = name_is_active_loop(c, start, end);
+    int duplicate;
+    if (size_slot_of(c, func_index, start, end, NULL)) {
+        add_diag(c, "ORC0219", start, end, "duplicate name", "this name is already in scope",
+                 "a loop index and accumulator are new names", 2);
+        return 1;
+    }
+    duplicate = name_is_active_loop(c, start, end);
     for (index = 0; index < func->nparams && !duplicate; index++) {
         const Param *param = &c->params[func->param0 + index];
         if (!param->duplicate && same_span(c, param->name_start, param->name_end, start, end)) {
@@ -5896,6 +6660,12 @@ static int static_index(Compiler *c, uint32_t index, uint32_t func_index, uint32
     case EX_LIT:
     case EX_LOOP_INDEX:
         return 1;
+    case EX_NAME:
+        if (c->cur_func < c->nfuncs && size_slot_of(c, c->cur_func, expr->name_start, expr->name_end, NULL)) {
+            return 1;
+        }
+        *bad = index;
+        return 0;
     case EX_GROUP:
         return static_index(c, expr->left, func_index, locals_in_scope, bad);
     case EX_UNARY:
@@ -6138,6 +6908,25 @@ static int range_of(Compiler *c, uint32_t index, uint32_t func_index, uint32_t l
         *hi = *lo;
         return 1;
     }
+    if (expr->kind == EX_NAME) {
+        uint8_t slot = 0;
+        int64_t value;
+        uint64_t magnitude;
+        if (c->cur_func >= c->nfuncs || !size_slot_of(c, c->cur_func, expr->name_start, expr->name_end, &slot) ||
+            slot >= c->ncur) {
+            return 0;
+        }
+        value = c->cur_sz[slot];
+        if (value >= 0) {
+            return big_from_u64(&c->arena, (uint64_t)value, lo) && big_from_u64(&c->arena, (uint64_t)value, hi);
+        }
+        magnitude = value == INT64_MIN ? (uint64_t)INT64_MAX + 1u : (uint64_t)(-value);
+        if (!big_from_u64(&c->arena, magnitude, lo) || !big_neg(lo, lo) || !big_from_u64(&c->arena, magnitude, hi) ||
+            !big_neg(hi, hi)) {
+            return 0;
+        }
+        return 1;
+    }
     if (expr->kind == EX_GROUP) {
         return range_of(c, expr->left, func_index, locals_in_scope, lo, hi);
     }
@@ -6335,6 +7124,9 @@ static int block_name_taken(Compiler *c, uint32_t func_index, uint32_t locals_in
     const Func *func = &c->funcs[func_index];
     uint16_t index;
     int frame;
+    if (size_slot_of(c, func_index, start, end, NULL)) {
+        return 1;
+    }
     for (index = 0; index < func->nparams; index++) {
         const Param *param = &c->params[func->param0 + index];
         if (!param->duplicate && same_span(c, param->name_start, param->name_end, start, end)) {
@@ -6498,9 +7290,77 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     int bounds_decoded;
     /* Magnitude is checked before the range, and the lower bound first, so
        70000..(a literal over 16384 bits) is ORC0205 on the upper bound rather than
-       ORC0225 on 70000. */
-    bounds_decoded = decode_loop_bound(c, loop->a_start, loop->a_end, &a_above, &a_value) &&
-                     decode_loop_bound(c, loop->b_start, loop->b_end, &b_above, &b_value);
+       ORC0225 on 70000. A bound written with sizes uses Euclidean arithmetic. */
+    if (loop->a_sized || loop->b_sized) {
+        int a_ok = 0;
+        int b_ok = 0;
+        int64_t a_size = 0;
+        int64_t b_size = 0;
+        bounds_decoded = 0;
+        if (loop->a_sized) {
+            Sz bound = eval_size(c, loop->a_expr);
+            if (bound.kind != 0) {
+                report_size_fault(c, bound);
+            } else if (bound.value < 0) {
+                add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at least 0", "loop bound",
+                         "a loop runs over a nonempty range within 0 through 65536", 2);
+            } else if (bound.value > (int64_t)MAX_LOOP_BOUND) {
+                add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
+                         "a loop runs over a nonempty range within 0 through 65536", 2);
+            } else {
+                a_size = bound.value;
+                a_ok = 1;
+            }
+        } else {
+            a_ok = decode_loop_bound(c, loop->a_start, loop->a_end, &a_above, &a_value);
+            if (a_ok && !a_above) {
+                a_size = (int64_t)a_value;
+            } else if (a_ok && a_above) {
+                add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
+                         "a loop runs over a nonempty range within 0 through 65536", 2);
+                a_ok = 0;
+            }
+        }
+        if (a_ok && loop->b_sized) {
+            Sz bound = eval_size(c, loop->b_expr);
+            if (bound.kind != 0) {
+                report_size_fault(c, bound);
+            } else if (bound.value < 0) {
+                add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop bound must be at least 0", "loop bound",
+                         "a loop runs over a nonempty range within 0 through 65536", 2);
+            } else if (bound.value > (int64_t)MAX_LOOP_BOUND) {
+                add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop bound must be at most 65536", "loop bound",
+                         "a loop runs over a nonempty range within 0 through 65536", 2);
+            } else {
+                b_size = bound.value;
+                b_ok = 1;
+            }
+        } else if (a_ok) {
+            b_ok = decode_loop_bound(c, loop->b_start, loop->b_end, &b_above, &b_value);
+            if (b_ok && !b_above) {
+                b_size = (int64_t)b_value;
+            } else if (b_ok && b_above) {
+                b_ok = 0;
+                b_above = 1;
+            }
+        }
+        if (a_ok && b_ok && a_size < b_size) {
+            loop->bounds_ok = 1;
+            loop->bound_a = (uint32_t)a_size;
+            loop->bound_b = (uint32_t)b_size;
+        } else if (a_ok && b_ok) {
+            add_diag(c, "ORC0225", loop->b_start, loop->b_end,
+                     "a loop range must be nonempty and within 0 through 65536", "loop bounds",
+                     "write a..b with 0 <= a < b <= 65536", 2);
+        } else if (a_ok && !loop->b_sized && b_above) {
+            add_diag(c, "ORC0225", loop->b_start, loop->b_end,
+                     "a loop range must be nonempty and within 0 through 65536", "loop bounds",
+                     "write a..b with 0 <= a < b <= 65536", 2);
+        }
+    } else {
+        bounds_decoded = decode_loop_bound(c, loop->a_start, loop->a_end, &a_above, &a_value) &&
+                         decode_loop_bound(c, loop->b_start, loop->b_end, &b_above, &b_value);
+    }
     if (bounds_decoded && a_above) {
         add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
                  "a loop runs over a nonempty range within 0 through 65536", 2);
@@ -7211,6 +8071,222 @@ static int check_slice_update(Compiler *c, uint32_t index, TypeKind expected, ui
     return check_expr(c, expr->callee, expected, slice_len, func_index, locals_in_scope);
 }
 
+static void copy_func_name(const Compiler *c, const Func *func, char *name, size_t cap) {
+    span_copy(name, cap, c->text, func->name_start, func->name_end);
+}
+
+static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
+                      uint32_t locals, uint32_t *inst_id) {
+    Func *func = &target->funcs[callee];
+    char name[64];
+    uint8_t index;
+    copy_func_name(target, func, name, sizeof name);
+    /* A call that writes no sizes selects the instance whose array
+       parameters match the argument lengths. A nonzero count that does
+       not match is ORC0239, including sizes given to a function that
+       has none. */
+    if (expr->nsize != 0 && expr->nsize != func->nsizes) {
+        if (report) {
+            char message[192];
+            if (func->nsizes == 0) {
+                snprintf(message, sizeof message, "`%s` has no size parameters, but this call gives %u size%s", name,
+                         expr->nsize, expr->nsize == 1 ? "" : "s");
+            } else if (expr->nsize == 0) {
+                snprintf(message, sizeof message, "`%s` takes %u size%s, but this call gives none", name, func->nsizes,
+                         func->nsizes == 1 ? "" : "s");
+            } else {
+                snprintf(message, sizeof message, "`%s` takes %u size%s, but this call gives %u", name, func->nsizes,
+                         func->nsizes == 1 ? "" : "s", expr->nsize);
+            }
+            add_diag(c, "ORC0239", expr->start, expr->end, message, "wrong number of sizes",
+                     "a sized function is called with one value for each of its sizes, in brackets before its "
+                     "arguments, as in `sha256[2](m)`; a function without sizes is called without brackets",
+                     2);
+        }
+        return 0;
+    }
+    if (func->nsizes == 0) {
+        if (func->ninst == 0) {
+            return 0;
+        }
+        *inst_id = func->inst0;
+        expr->inst_id = func->inst0;
+        return 1;
+    }
+    if (expr->nsize > 0) {
+        int64_t values[MAX_SIZES];
+        for (index = 0; index < expr->nsize; index++) {
+            uint32_t size_index = c->args[expr->size0 + index];
+            Sz value = eval_size(c, size_index);
+            if (value.kind != 0) {
+                if (report) {
+                    report_size_fault(c, value);
+                }
+                return 0;
+            }
+            if (value.value < func->sz_lo[index] || value.value >= func->sz_hi[index]) {
+                if (report) {
+                    char message[192];
+                    char size_name[64];
+                    span_copy(size_name, sizeof size_name, target->text, func->sz_name0[index], func->sz_name1[index]);
+                    snprintf(message, sizeof message, "`%s` is defined for `%s` in %lld..%lld", name, size_name,
+                             (long long)func->sz_lo[index], (long long)func->sz_hi[index]);
+                    {
+                        char label[64];
+                        snprintf(label, sizeof label, "this size is %lld", (long long)value.value);
+                        add_diag(c, "ORC0238", c->exprs[size_index].start, c->exprs[size_index].end, message, label,
+                                 SIZE_RANGE_NOTE, 2);
+                    }
+                }
+                return 0;
+            }
+            values[index] = value.value;
+        }
+        {
+            uint32_t cursor;
+            for (cursor = 0; cursor < func->ninst; cursor++) {
+                Instance *inst = &target->instances[func->inst0 + cursor];
+                int match = 1;
+                for (index = 0; index < func->nsizes; index++) {
+                    if (inst->sz[index] != values[index]) {
+                        match = 0;
+                        break;
+                    }
+                }
+                if (match) {
+                    *inst_id = func->inst0 + cursor;
+                    expr->inst_id = *inst_id;
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+    {
+        uint32_t found[2];
+        int nfound = 0;
+        uint32_t cursor;
+        uint32_t arg_len[MAX_PARAMS];
+        int have_arg[MAX_PARAMS];
+        uint16_t param;
+        Instance *first = &target->instances[func->inst0];
+        for (param = 0; param < func->nparams && param < MAX_PARAMS; param++) {
+            InstParam *shape = &target->iparams[first->param0 + param];
+            int have_len = 0;
+            int have_elem = 0;
+            uint32_t len = 0;
+            TypeKind elem = TY_NONE;
+            have_arg[param] = 0;
+            arg_len[param] = 0;
+            if (shape->length == 0 || param >= expr->argc) {
+                continue;
+            }
+            array_parts(c, c->args[expr->arg0 + param], caller_func, locals, &have_len, &len, &have_elem, &elem);
+            if (have_len) {
+                have_arg[param] = 1;
+                arg_len[param] = len;
+            }
+        }
+        for (cursor = 0; cursor < func->ninst; cursor++) {
+            Instance *inst = &target->instances[func->inst0 + cursor];
+            int fits = 1;
+            for (param = 0; param < func->nparams && param < MAX_PARAMS && fits; param++) {
+                if (!have_arg[param]) {
+                    continue;
+                }
+                if (target->iparams[inst->param0 + param].length != arg_len[param]) {
+                    fits = 0;
+                }
+            }
+            if (!fits) {
+                continue;
+            }
+            if (nfound < 2) {
+                found[nfound] = func->inst0 + cursor;
+            }
+            nfound++;
+            if (nfound > 1) {
+                break;
+            }
+        }
+        if (nfound == 1) {
+            *inst_id = found[0];
+            expr->inst_id = found[0];
+            return 1;
+        }
+        if (!report) {
+            return 0;
+        }
+        if (nfound >= 2) {
+            char message[512];
+            char first_name[160];
+            char second_name[160];
+            Instance *a = &target->instances[found[0]];
+            Instance *b = &target->instances[found[1]];
+            char a_vals[64];
+            char b_vals[64];
+            size_t used = 0;
+            uint8_t slot;
+            a_vals[0] = '\0';
+            b_vals[0] = '\0';
+            for (slot = 0; slot < func->nsizes; slot++) {
+                int wrote = snprintf(a_vals + used, sizeof a_vals - used, slot == 0 ? "%lld" : ", %lld",
+                                     (long long)a->sz[slot]);
+                if (wrote > 0 && (size_t)wrote < sizeof a_vals - used) {
+                    used += (size_t)wrote;
+                }
+            }
+            used = 0;
+            for (slot = 0; slot < func->nsizes; slot++) {
+                int wrote = snprintf(b_vals + used, sizeof b_vals - used, slot == 0 ? "%lld" : ", %lld",
+                                     (long long)b->sz[slot]);
+                if (wrote > 0 && (size_t)wrote < sizeof b_vals - used) {
+                    used += (size_t)wrote;
+                }
+            }
+            snprintf(first_name, sizeof first_name, "%s[%s]", name, a_vals);
+            snprintf(second_name, sizeof second_name, "%s[%s]", name, b_vals);
+            snprintf(message, sizeof message, "this call fits more than one instance of `%s`, among them `%s` and `%s`",
+                     name, first_name, second_name);
+            add_diag(c, "ORC0239", expr->start, expr->end, message, "write the sizes in brackets",
+                     "a call that writes no sizes calls the one instance of its function whose array parameters have "
+                     "the lengths of its arguments; any other call writes its sizes in brackets, as in `absorb[2](p)`",
+                     2);
+        } else {
+            char message[192];
+            char label[128];
+            char domain[192];
+            size_t used = 0;
+            uint8_t slot;
+            domain[0] = '\0';
+            snprintf(message, sizeof message, "no instance of `%s` takes arguments of these lengths", name);
+            if (func->nparams == 1 && have_arg[0]) {
+                snprintf(label, sizeof label, "an array of length %u is given", arg_len[0]);
+            } else {
+                copy_text(label, sizeof label, "no instance fits these arguments");
+            }
+            for (slot = 0; slot < func->nsizes; slot++) {
+                char piece[64];
+                char size_name[32];
+                int wrote;
+                span_copy(size_name, sizeof size_name, target->text, func->sz_name0[slot], func->sz_name1[slot]);
+                snprintf(piece, sizeof piece, "`%s` in %lld..%lld", size_name, (long long)func->sz_lo[slot],
+                         (long long)func->sz_hi[slot]);
+                wrote = snprintf(domain + used, sizeof domain - used, slot == 0 ? "%s" : ", %s", piece);
+                if (wrote > 0 && (size_t)wrote < sizeof domain - used) {
+                    used += (size_t)wrote;
+                }
+            }
+            {
+                char note[320];
+                snprintf(note, sizeof note, "`%s` is defined for %s", name, domain);
+                add_diag(c, "ORC0238", expr->start, expr->end, message, label, note, 2);
+            }
+        }
+        return 0;
+    }
+}
+
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr;
@@ -7411,6 +8487,17 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (res == NAME_BAD) {
             return 1;
         }
+        if (res == NAME_SIZE) {
+            if (expected != TY_INT || expected_len != 0) {
+                char message[192];
+                char expected_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                snprintf(message, sizeof message, "expected %s, found Int", expected_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "a size parameter is an Int constant in each instance of its function", 2);
+            }
+            return 1;
+        }
         if (res == NAME_BLOCK) {
             uint16_t found_mod = type == TY_MOD ? c->block_locals[abs_index].mod_index : 0;
             if (c->block_locals[abs_index].pat_len > 0 || c->block_locals[abs_index].pat_i > 0) {
@@ -7582,8 +8669,6 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         expr->callee = callee.func;
         if (callee.qualified) {
             expr->name_index = callee.mod_index;
-        } else if (!record_edge(c, func_index, callee.func, expr->start, expr->end)) {
-            return 0;
         }
         if (!signature_is_usable(target, callee.func)) {
             return 1;
@@ -7598,54 +8683,102 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         {
+            Func *callee_func = &target->funcs[callee.func];
+            Instance *inst = NULL;
+            uint32_t inst_id = UINT32_MAX;
+            TypeKind found_result;
+            uint32_t found_len;
+            uint16_t found_mod;
+            uint32_t found_tup0;
+            uint16_t found_tup_n;
             int mod_differs = 0;
-            if (target->funcs[callee.func].result == TY_MOD && expected == TY_MOD) {
+            if (callee_func->ninst > 0) {
+                if (!lookup_call(c, expr, target, callee.func, 1, func_index, locals_in_scope, &inst_id) ||
+                    inst_id >= target->ninstances) {
+                    return 1;
+                }
+                inst = &target->instances[inst_id];
+                if (!inst->result_ok || !inst->signature_ok) {
+                    return 1;
+                }
+                found_result = inst->result;
+                found_len = inst->result_len;
+                found_mod = inst->result_mod;
+                found_tup0 = inst->tup0;
+                found_tup_n = inst->tup_n;
+            } else {
+                found_result = callee_func->result;
+                found_len = callee_func->result_len;
+                found_mod = callee_func->result_mod;
+                found_tup0 = callee_func->tup0;
+                found_tup_n = callee_func->tup_n;
+            }
+            if (!callee.qualified && !record_edge(c, func_index, callee.func, inst_id, expr->start, expr->end)) {
+                return 0;
+            }
+            if (found_result == TY_MOD && expected == TY_MOD) {
                 uint16_t local = 0;
                 /* result_mod is an index in the callee. expect_mod is an index
                    in the caller. Compare the modulus values. */
-                if (!adopt_modulus(c, target, target->funcs[callee.func].result_mod, &local)) {
+                if (!adopt_modulus(c, target, found_mod, &local)) {
                     return 0;
                 }
                 mod_differs = local != c->expect_mod;
             }
-            if (target->funcs[callee.func].result == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 &&
-                target->funcs[callee.func].tup_n > 0) {
-                mod_differs = !same_tuple(c, c->expect_tup0, c->expect_tup_n, target, target->funcs[callee.func].tup0,
-                                          target->funcs[callee.func].tup_n);
+            if (found_result == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && found_tup_n > 0) {
+                mod_differs = !same_tuple(c, c->expect_tup0, c->expect_tup_n, target, found_tup0, found_tup_n);
             }
-            if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len ||
-                mod_differs) {
+            if (found_result != expected || found_len != expected_len || mod_differs) {
                 char message[192];
                 char expected_text[64];
                 char found_text[64];
                 write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, target->funcs[callee.func].result,
-                           target->funcs[callee.func].result_len);
+                write_type(found_text, sizeof found_text, found_result, found_len);
                 snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
                 add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
                          "Orange does not convert between types implicitly", 2);
             }
-        }
-        for (uint16_t arg = 0; arg < expr->argc; arg++) {
-            Param *param = &target->params[target->funcs[callee.func].param0 + arg];
-            uint16_t arg_mod = param->mod_index;
-            if (!param->type_ok) {
-                continue;
-            }
-            if (param->type == TY_MOD && !adopt_modulus(c, target, param->mod_index, &arg_mod)) {
-                return 0;
-            }
-            if (param->type == TY_TUPLE) {
-                uint32_t shape = param->tup0;
-                if (!adopt_tuple_shape(c, target, param->tup0, param->tup_n, &shape)) {
+            for (uint16_t arg = 0; arg < expr->argc; arg++) {
+                TypeKind arg_type;
+                uint32_t arg_len;
+                uint16_t arg_mod;
+                int arg_ok;
+                uint32_t arg_tup0;
+                uint16_t arg_tup_n;
+                if (inst != NULL) {
+                    InstParam *shape = &target->iparams[inst->param0 + arg];
+                    arg_type = shape->type;
+                    arg_len = shape->length;
+                    arg_mod = shape->mod_index;
+                    arg_ok = shape->type_ok;
+                    arg_tup0 = shape->tup0;
+                    arg_tup_n = shape->tup_n;
+                } else {
+                    Param *param = &target->params[callee_func->param0 + arg];
+                    arg_type = param->type;
+                    arg_len = param->length;
+                    arg_mod = param->mod_index;
+                    arg_ok = param->type_ok;
+                    arg_tup0 = param->tup0;
+                    arg_tup_n = param->tup_n;
+                }
+                if (!arg_ok) {
+                    continue;
+                }
+                if (arg_type == TY_MOD && !adopt_modulus(c, target, arg_mod, &arg_mod)) {
                     return 0;
                 }
-                c->expect_tup0 = shape;
-                c->expect_tup_n = param->tup_n;
-            }
-            if (!check_at(c, c->args[expr->arg0 + arg], param->type, param->length, arg_mod, func_index,
-                          locals_in_scope)) {
-                return 0;
+                if (arg_type == TY_TUPLE) {
+                    uint32_t shape = arg_tup0;
+                    if (!adopt_tuple_shape(c, target, arg_tup0, arg_tup_n, &shape)) {
+                        return 0;
+                    }
+                    c->expect_tup0 = shape;
+                    c->expect_tup_n = arg_tup_n;
+                }
+                if (!check_at(c, c->args[expr->arg0 + arg], arg_type, arg_len, arg_mod, func_index, locals_in_scope)) {
+                    return 0;
+                }
             }
         }
         return 1;
@@ -8025,7 +9158,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "a fill literal is written where an array type is required", 2);
             return 1;
         }
-        admitted = canonical_array_length(c->text, expr->lit_start, expr->lit_end, &length);
+        if (expr->size_expr != UINT32_MAX) {
+            admitted = size_length(c, expr->size_expr, 1, &length);
+            if (!admitted) {
+                return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
+            }
+        } else {
+            admitted = canonical_array_length(c->text, expr->lit_start, expr->lit_end, &length);
+        }
         if (!admitted) {
             char message[128];
             snprintf(message, sizeof message, "array length must be a decimal integer from 1 through %u",
@@ -8732,9 +9872,435 @@ static void prepare_types(Compiler *c) {
     }
 }
 
+typedef struct Applied {
+    TypeKind kind;
+    uint32_t length;
+    int ok;
+    uint16_t mod_index;
+    int reported;
+    uint32_t tup0;
+    uint16_t tup_n;
+} Applied;
+
+static int site_uses_size(const Compiler *c, uint32_t site_index) {
+    const TypeSite *site;
+    uint16_t index;
+    if (site_index == UINT32_MAX || site_index >= c->nsites) {
+        return 0;
+    }
+    site = &c->sites[site_index];
+    if (site->has_size_expr) {
+        return 1;
+    }
+    if (site->kind == TY_TUPLE || site->is_tuple) {
+        for (index = 0; index < site->elem_n; index++) {
+            if (site_uses_size(c, site->elem0 + index)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Lengths written with sizes are computed for the current instance. A failure
+   is reported only when `report` is set; signature capture stays silent. */
+static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out) {
+    TypeSite *site;
+    memset(out, 0, sizeof *out);
+    if (site_index == UINT32_MAX || site_index >= c->nsites) {
+        return 1;
+    }
+    site = &c->sites[site_index];
+    out->kind = site->kind;
+    out->ok = site->ok;
+    out->mod_index = site->mod_index;
+    out->reported = site->reported;
+    out->length = site->rank <= 0 ? 0u : site->length;
+    out->tup0 = site->tup0;
+    out->tup_n = site->tup_n;
+    if (site->kind == TY_TUPLE || site->is_tuple) {
+        int all_ok = site->ok;
+        int rebuild = site_uses_size(c, site_index);
+        uint32_t start = 0;
+        uint16_t index;
+        out->kind = TY_TUPLE;
+        out->length = 0;
+        for (index = 0; index < site->elem_n; index++) {
+            Applied elem;
+            uint32_t at = 0;
+            if (!apply_site(c, site->elem0 + index, report, &elem)) {
+                return 0;
+            }
+            if (!elem.ok) {
+                all_ok = 0;
+            }
+            if (rebuild && !append_telem(c, elem.kind, elem.length, elem.mod_index, elem.ok, &at)) {
+                return 0;
+            }
+            if (index == 0) {
+                start = at;
+            }
+        }
+        out->ok = all_ok;
+        if (rebuild && all_ok) {
+            out->tup0 = start;
+            out->tup_n = site->elem_n;
+            site->tup0 = start;
+            site->tup_n = site->elem_n;
+        }
+        return 1;
+    }
+    if (site->has_size_expr && site->ok) {
+        uint32_t length = 0;
+        if (!size_length(c, site->length_expr, report, &length)) {
+            out->ok = 0;
+            out->length = 0;
+            if (report) {
+                out->reported = 1;
+            }
+            return 1;
+        }
+        site->length = length;
+        site->rank = 1;
+        out->length = length;
+        out->ok = 1;
+    }
+    return 1;
+}
+
+static int push_instance(Compiler *c, const Instance *inst) {
+    if (!ensure_cap((void **)&c->instances, &c->instance_cap, c->ninstances + 1, sizeof(Instance), MAX_EXPRS)) {
+        resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain function instances");
+        return 0;
+    }
+    c->instances[c->ninstances++] = *inst;
+    return 1;
+}
+
+static int push_iparam(Compiler *c, const InstParam *param) {
+    if (!ensure_cap((void **)&c->iparams, &c->iparam_cap, c->niparams + 1, sizeof(InstParam), MAX_EXPRS)) {
+        resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain function instances");
+        return 0;
+    }
+    c->iparams[c->niparams++] = *param;
+    return 1;
+}
+
+static int decode_size_bound(Compiler *c, uint32_t start, uint32_t end, int64_t *out, int *too_big) {
+    Big magnitude = big_zero();
+    *too_big = 0;
+    *out = 0;
+    if (!big_from_digits(&c->arena, c->text + start, (size_t)(end - start), 0, &magnitude)) {
+        add_diag(c, "ORC0205", start, end, "integer magnitude exceeds the 16384-significant-bit limit",
+                 "this part of the size is too large", "the value is rejected rather than truncated or approximated", 2);
+        return 0;
+    }
+    if (magnitude.negative || magnitude.nlimbs > 1 ||
+        (magnitude.nlimbs == 1 && magnitude.limbs[0] > MAX_LOOP_BOUND)) {
+        *too_big = 1;
+        return 1;
+    }
+    if (magnitude.nlimbs == 1) {
+        *out = (int64_t)magnitude.limbs[0];
+    }
+    return 1;
+}
+
+static void report_repeated_size(Compiler *c, uint32_t start, uint32_t end) {
+    char name[64];
+    char message[160];
+    span_copy(name, sizeof name, c->text, start, end);
+    snprintf(message, sizeof message, "duplicate size parameter `%s`", name);
+    add_diag(c, "ORC0218", start, end, message, "this name is already a size parameter",
+             "size parameters and value parameters of one function have distinct names", 2);
+}
+
+/* Ranges, distinct names, and the 256-instance cap. A function in error here
+   has no instances, so its body is not checked. */
+static void admit_sizes(Compiler *c, Func *func) {
+    uint8_t slot;
+    uint64_t instances = 1;
+    int valid = 1;
+    if (func->nsizes == 0) {
+        func->sizes_ok = 1;
+        return;
+    }
+    for (slot = 0; slot < func->nsizes; slot++) {
+        int lo_big = 0;
+        int hi_big = 0;
+        int lo_ok = decode_size_bound(c, func->sz_a0[slot], func->sz_a1[slot], &func->sz_lo[slot], &lo_big);
+        int hi_ok = decode_size_bound(c, func->sz_b0[slot], func->sz_b1[slot], &func->sz_hi[slot], &hi_big);
+        uint8_t earlier;
+        if (!lo_ok || !hi_ok) {
+            valid = 0;
+        } else if (lo_big) {
+            valid = 0;
+            add_diag(c, "ORC0238", func->sz_a0[slot], func->sz_a1[slot], "a size's bound must be at most 65536",
+                     "bound too large", SIZE_RANGE_NOTE, 2);
+        } else if (hi_big) {
+            valid = 0;
+            add_diag(c, "ORC0238", func->sz_b0[slot], func->sz_b1[slot], "a size's bound must be at most 65536",
+                     "bound too large", SIZE_RANGE_NOTE, 2);
+        } else if (func->sz_lo[slot] >= func->sz_hi[slot]) {
+            char message[160];
+            valid = 0;
+            snprintf(message, sizeof message, "the size range %lld..%lld is empty", (long long)func->sz_lo[slot],
+                     (long long)func->sz_hi[slot]);
+            add_diag(c, "ORC0238", func->sz_b0[slot], func->sz_b1[slot], message, "a size takes at least one value",
+                     SIZE_RANGE_NOTE, 2);
+        } else {
+            uint64_t width = (uint64_t)(func->sz_hi[slot] - func->sz_lo[slot]);
+            if (width != 0 && instances > UINT64_MAX / width) {
+                instances = UINT64_MAX;
+            } else {
+                instances *= width;
+            }
+        }
+        for (earlier = 0; earlier < slot; earlier++) {
+            if (same_span(c, func->sz_name0[earlier], func->sz_name1[earlier], func->sz_name0[slot],
+                          func->sz_name1[slot])) {
+                valid = 0;
+                report_repeated_size(c, func->sz_name0[slot], func->sz_name1[slot]);
+                break;
+            }
+        }
+    }
+    for (slot = 0; slot < func->nparams; slot++) {
+        Param *param = &c->params[func->param0 + slot];
+        uint8_t size_slot;
+        if (size_slot_of(c, (uint32_t)(func - c->funcs), param->name_start, param->name_end, &size_slot)) {
+            char name[64];
+            char message[160];
+            valid = 0;
+            span_copy(name, sizeof name, c->text, param->name_start, param->name_end);
+            snprintf(message, sizeof message, "duplicate parameter `%s`", name);
+            add_diag(c, "ORC0218", param->name_start, param->name_end, message, "this name is already a size parameter",
+                     "the size parameter is here", 2);
+        }
+    }
+    if (valid && instances > MAX_INSTANCES) {
+        char name[64];
+        char message[192];
+        valid = 0;
+        copy_func_name(c, func, name, sizeof name);
+        if (instances == UINT64_MAX) {
+            snprintf(message, sizeof message, "`%s` has more than %u instances", name, MAX_INSTANCES);
+        } else {
+            snprintf(message, sizeof message, "`%s` has %llu instances, but a function has at most %u", name,
+                     (unsigned long long)instances, MAX_INSTANCES);
+        }
+        add_diag(c, "ORC0238", func->sz_span0[0], func->sz_span1[func->nsizes - 1], message, "too many instances",
+                 SIZE_RANGE_NOTE, 2);
+    }
+    func->sizes_ok = valid;
+}
+
+static void instance_values(const Func *func, uint32_t ordinal, int64_t *out) {
+    uint32_t rest = ordinal;
+    int slot;
+    for (slot = (int)func->nsizes - 1; slot >= 0; slot--) {
+        uint32_t width = (uint32_t)(func->sz_hi[slot] - func->sz_lo[slot]);
+        uint32_t offset = width == 0 ? 0u : rest % width;
+        rest = width == 0 ? 0u : rest / width;
+        out[slot] = func->sz_lo[slot] + (int64_t)offset;
+    }
+}
+
+static int capture_instance(Compiler *c, uint32_t func_index, Instance *inst) {
+    Func *func = &c->funcs[func_index];
+    Applied result;
+    uint16_t param;
+    memset(inst, 0, sizeof *inst);
+    inst->func = func_index;
+    memcpy(inst->sz, c->cur_sz, sizeof inst->sz);
+    if (!apply_site(c, func->result_site, 0, &result)) {
+        return 0;
+    }
+    inst->result = result.kind;
+    inst->result_len = result.length;
+    inst->result_mod = result.mod_index;
+    inst->result_ok = result.ok;
+    inst->tup0 = result.tup0;
+    inst->tup_n = result.tup_n;
+    inst->param0 = c->niparams;
+    inst->signature_ok = result.ok;
+    for (param = 0; param < func->nparams; param++) {
+        Applied applied;
+        InstParam shape;
+        memset(&shape, 0, sizeof shape);
+        if (!apply_site(c, c->params[func->param0 + param].site, 0, &applied)) {
+            return 0;
+        }
+        shape.type = applied.kind;
+        shape.length = applied.length;
+        shape.mod_index = applied.mod_index;
+        shape.type_ok = applied.ok;
+        shape.tup0 = applied.tup0;
+        shape.tup_n = applied.tup_n;
+        if (!applied.ok) {
+            inst->signature_ok = 0;
+        }
+        if (!push_iparam(c, &shape)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int live_apply(Compiler *c, uint32_t func_index) {
+    Func *func = &c->funcs[func_index];
+    Applied applied;
+    uint16_t param;
+    uint16_t local;
+    uint32_t index;
+    if (func->result_site != UINT32_MAX && func->result_site < c->nsites) {
+        if (!apply_site(c, func->result_site, 1, &applied)) {
+            return 0;
+        }
+        func->result = applied.kind;
+        func->result_len = applied.length;
+        func->result_ok = applied.ok;
+        func->result_mod = applied.mod_index;
+        func->result_reported = applied.reported;
+        func->tup0 = applied.tup0;
+        func->tup_n = applied.tup_n;
+    }
+    for (param = 0; param < func->nparams; param++) {
+        Param *item = &c->params[func->param0 + param];
+        if (item->site == UINT32_MAX || item->site >= c->nsites) {
+            continue;
+        }
+        if (!apply_site(c, item->site, 1, &applied)) {
+            return 0;
+        }
+        item->type = applied.kind;
+        item->length = applied.length;
+        item->type_ok = applied.ok;
+        item->mod_index = applied.mod_index;
+        item->type_reported = applied.reported;
+        item->tup0 = applied.tup0;
+        item->tup_n = applied.tup_n;
+    }
+    for (local = 0; local < func->nlocals; local++) {
+        Local *item = &c->locals[func->local0 + local];
+        if (item->site == UINT32_MAX || item->site >= c->nsites) {
+            continue;
+        }
+        if (!apply_site(c, item->site, 1, &applied)) {
+            return 0;
+        }
+        item->type = applied.kind;
+        item->length = applied.length;
+        item->type_ok = applied.ok;
+        item->mod_index = applied.mod_index;
+        item->type_reported = applied.reported;
+        item->tup0 = applied.tup0;
+        item->tup_n = applied.tup_n;
+    }
+    if (func->nlocals > 0) {
+        seal_patterns(c, &c->locals[func->local0], func->nlocals);
+    }
+    for (index = 0; index < c->nblock_locals; index++) {
+        Local *item = &c->block_locals[index];
+        if (item->site == UINT32_MAX || item->site >= c->nsites || c->sites[item->site].owner_func != func_index) {
+            continue;
+        }
+        if (!apply_site(c, item->site, 1, &applied)) {
+            return 0;
+        }
+        item->type = applied.kind;
+        item->length = applied.length;
+        item->type_ok = applied.ok;
+        item->mod_index = applied.mod_index;
+        item->type_reported = applied.reported;
+        item->tup0 = applied.tup0;
+        item->tup_n = applied.tup_n;
+    }
+    for (index = 0; index < c->nloops; index++) {
+        LoopDesc *loop = &c->loops[index];
+        if (loop->site == UINT32_MAX || loop->site >= c->nsites || c->sites[loop->site].owner_func != func_index) {
+            continue;
+        }
+        if (!apply_site(c, loop->site, 1, &applied)) {
+            return 0;
+        }
+        loop->acc_type = applied.kind;
+        loop->acc_len = applied.length;
+        loop->acc_ok = applied.ok;
+        loop->acc_mod = applied.mod_index;
+        loop->acc_reported = applied.reported;
+        loop->tup0 = applied.tup0;
+        loop->tup_n = applied.tup_n;
+    }
+    return 1;
+}
+
+static int build_instances(Compiler *c, uint32_t func_index) {
+    Func *func = &c->funcs[func_index];
+    uint32_t count = 1;
+    uint32_t ordinal;
+    if (!func->typed) {
+        return 1;
+    }
+    admit_sizes(c, func);
+    if (func->nsizes > 0 && !func->sizes_ok) {
+        func->ninst = 0;
+        return 1;
+    }
+    if (func->nsizes > 0) {
+        uint64_t product = 1;
+        uint8_t slot;
+        for (slot = 0; slot < func->nsizes; slot++) {
+            product *= (uint64_t)(func->sz_hi[slot] - func->sz_lo[slot]);
+        }
+        if (product == 0 || product > MAX_INSTANCES) {
+            func->ninst = 0;
+            func->sizes_ok = 0;
+            return 1;
+        }
+        count = (uint32_t)product;
+    }
+    func->inst0 = c->ninstances;
+    func->ninst = (uint16_t)count;
+    c->cur_func = func_index;
+    for (ordinal = 0; ordinal < count; ordinal++) {
+        Instance inst;
+        memset(c->cur_sz, 0, sizeof c->cur_sz);
+        if (func->nsizes > 0) {
+            instance_values(func, ordinal, c->cur_sz);
+        }
+        c->ncur = func->nsizes;
+        if (!capture_instance(c, func_index, &inst) || !push_instance(c, &inst)) {
+            return 0;
+        }
+    }
+    c->ncur = 0;
+    c->cur_func = UINT32_MAX;
+    return 1;
+}
+
+static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) {
+    uint32_t index;
+    for (index = 0; index < c->ndiags; index++) {
+        if (strcmp(c->diags[index].code, "ORC0217") == 0 && c->diags[index].start == start &&
+            c->diags[index].end == end) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void analyze(Compiler *c) {
     uint32_t index;
     prepare_types(c);
+    for (index = 0; index < c->nfuncs; index++) {
+        if (!build_instances(c, index)) {
+            return;
+        }
+    }
+    c->cur_func = UINT32_MAX;
+    c->cur_inst = UINT32_MAX;
+    c->ncur = 0;
     for (index = 0; index < c->nfuncs; index++) {
         Func *func = &c->funcs[index];
         uint16_t param_index;
@@ -8763,9 +10329,30 @@ static void analyze(Compiler *c) {
         if (!func->typed) {
             continue;
         }
+        if (func->nsizes > 0 && !func->sizes_ok) {
+            continue;
+        }
+        {
+        uint32_t passes = func->ninst > 0 ? func->ninst : 1u;
+        uint32_t pass;
+        for (pass = 0; pass < passes; pass++) {
+        uint32_t diags_before = c->ndiags;
+        c->cur_func = index;
+        if (func->ninst > 0) {
+            c->cur_inst = func->inst0 + pass;
+            memcpy(c->cur_sz, c->instances[c->cur_inst].sz, sizeof c->cur_sz);
+            c->ncur = func->nsizes;
+            if (!live_apply(c, index)) {
+                return;
+            }
+        } else {
+            c->cur_inst = UINT32_MAX;
+            c->ncur = 0;
+        }
         func->signature_ok = func->result_ok;
         for (param_index = 0; param_index < func->nparams; param_index++) {
             Param *param = &c->params[func->param0 + param_index];
+            if (pass == 0) {
             for (uint16_t earlier = 0; earlier < param_index; earlier++) {
                 Param *before = &c->params[func->param0 + earlier];
                 if (!before->duplicate &&
@@ -8786,6 +10373,7 @@ static void analyze(Compiler *c) {
                     break;
                 }
             }
+            }
             if (!param->type_ok && !param->type_reported) {
                 reject_declared(c, param->type, param->length_bad, param->type_start, param->type_end,
                                 param->length_start, param->length_end);
@@ -8801,7 +10389,7 @@ static void analyze(Compiler *c) {
                                 func->result_length_start, func->result_length_end);
             }
             func->signature_ok = 0;
-            continue;
+            break;
         }
         for (local_index = 0; local_index < func->nlocals; local_index++) {
             Local *local = &c->locals[func->local0 + local_index];
@@ -8838,7 +10426,10 @@ static void analyze(Compiler *c) {
                             taken = 1;
                         }
                     }
-                    if (taken) {
+                    if (!taken && size_slot_of(c, index, name->name_start, name->name_end, NULL)) {
+                        taken = 1;
+                    }
+                    if (pass == 0 && taken) {
                         char message[128];
                         char pname[64];
                         size_t length = name->name_end - name->name_start;
@@ -8887,7 +10478,10 @@ static void analyze(Compiler *c) {
                     hidden = 1;
                 }
             }
-            if (hidden) {
+            if (!hidden && size_slot_of(c, index, local->name_start, local->name_end, NULL)) {
+                hidden = 1;
+            }
+            if (pass == 0 && hidden) {
                 char message[128];
                 char name[64];
                 size_t length = local->name_end - local->name_start;
@@ -8923,26 +10517,36 @@ static void analyze(Compiler *c) {
                 check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
             }
         }
+        if (c->ndiags > diags_before) {
+            func->signature_ok = 0;
+            break;
+        }
+        }
+        }
+        c->cur_func = UINT32_MAX;
+        c->cur_inst = UINT32_MAX;
+        c->ncur = 0;
     }
     {
-        uint8_t *color = calloc(c->nfuncs ? c->nfuncs : 1, 1);
-        uint32_t *stack = calloc(c->nfuncs ? c->nfuncs : 1, sizeof(uint32_t));
+        uint32_t nodes = c->ninstances;
+        uint8_t *color = calloc(nodes ? nodes : 1, 1);
+        uint32_t *stack = calloc(nodes ? nodes : 1, sizeof(uint32_t));
         if (color == NULL || stack == NULL) {
             resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain the call graph");
             free(color);
             free(stack);
             return;
         }
-        for (index = 0; index < c->nfuncs; index++) {
+        for (index = 0; index < nodes; index++) {
             uint32_t top = 0;
-            uint32_t *edge_at = calloc(c->nfuncs ? c->nfuncs : 1, sizeof(uint32_t));
+            uint32_t *edge_at = calloc(nodes ? nodes : 1, sizeof(uint32_t));
             if (edge_at == NULL) {
                 free(color);
                 free(stack);
                 resource_diag(c, "ORC0209", 0, 0, "semantic analysis could not retain the call graph");
                 return;
             }
-            if (!c->funcs[index].typed || color[index] != 0) {
+            if (color[index] != 0) {
                 free(edge_at);
                 continue;
             }
@@ -8951,19 +10555,34 @@ static void analyze(Compiler *c) {
             edge_at[index] = 0;
             while (top != UINT32_MAX) {
                 uint32_t current = stack[top];
-                Func *func = &c->funcs[current];
-                if (edge_at[current] < func->nedges) {
-                    Edge edge = c->edges[func->edge0 + edge_at[current]];
-                    edge_at[current]++;
-                    if (color[edge.callee] == 1) {
-                        add_diag(c, "ORC0217", edge.start, edge.end, "call cycle", "this call closes a cycle",
-                                 "specifications are acyclic, so every accepted program terminates", 2);
-                    } else if (color[edge.callee] == 0) {
-                        color[edge.callee] = 1;
-                        edge_at[edge.callee] = 0;
-                        stack[++top] = edge.callee;
+                Func *func = &c->funcs[c->instances[current].func];
+                uint32_t seen = 0;
+                uint32_t edge_index;
+                int advanced = 0;
+                for (edge_index = 0; edge_index < func->nedges; edge_index++) {
+                    Edge edge = c->edges[func->edge0 + edge_index];
+                    if (edge.caller_inst != current || edge.callee_inst >= nodes) {
+                        continue;
                     }
-                } else {
+                    if (seen < edge_at[current]) {
+                        seen++;
+                        continue;
+                    }
+                    edge_at[current]++;
+                    advanced = 1;
+                    if (color[edge.callee_inst] == 1) {
+                        if (!cycle_span_reported(c, edge.start, edge.end)) {
+                            add_diag(c, "ORC0217", edge.start, edge.end, "call cycle", "this call closes a cycle",
+                                     "specifications are acyclic, so every accepted program terminates", 2);
+                        }
+                    } else if (color[edge.callee_inst] == 0) {
+                        color[edge.callee_inst] = 1;
+                        edge_at[edge.callee_inst] = 0;
+                        stack[++top] = edge.callee_inst;
+                    }
+                    break;
+                }
+                if (!advanced) {
                     color[current] = 2;
                     if (top == 0) {
                         break;
@@ -9501,6 +11120,31 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             out->big = big_zero();
             return 1;
         }
+        if (expr->name_res == NAME_SIZE) {
+            int64_t value;
+            uint64_t magnitude;
+            if (expr->name_index >= c->ncur) {
+                c->failed = 1;
+                return 0;
+            }
+            value = c->cur_sz[expr->name_index];
+            if (value >= 0) {
+                if (!big_from_u64(&c->arena, (uint64_t)value, &out->big)) {
+                    c->failed = 1;
+                    return 0;
+                }
+            } else {
+                magnitude = value == INT64_MIN ? (uint64_t)INT64_MAX + 1u : (uint64_t)(-value);
+                if (!big_from_u64(&c->arena, magnitude, &out->big) || !big_neg(&out->big, &out->big)) {
+                    c->failed = 1;
+                    return 0;
+                }
+            }
+            out->type = TY_INT;
+            out->word = 0;
+            out->length = 0;
+            return 1;
+        }
         return value_clone(c, out,
                            expr->name_res == NAME_LOCAL ? &locals[expr->name_index] : &params[expr->name_index],
                            expr->start, expr->end);
@@ -9509,6 +11153,32 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         uint16_t arg;
         uint16_t count;
         int ok;
+        uint32_t resolved = expr->inst_id;
+        /* Checking stores the instance chosen for the last value of the
+           caller's sizes. Resolve again for the instance now running, so a
+           call inside a sized function follows this instance. */
+        if (c->cur_func < c->nfuncs && expr->callee != UINT32_MAX) {
+            Compiler *lookup_target = c;
+            uint32_t callee_index = expr->callee;
+            int can_lookup = 1;
+            if (expr->left != UINT32_MAX) {
+                if (c->program == NULL || expr->name_index >= c->program->nmods) {
+                    can_lookup = 0;
+                } else {
+                    lookup_target = c->program->mods[expr->name_index];
+                }
+            }
+            if (can_lookup && callee_index < lookup_target->nfuncs &&
+                lookup_target->funcs[callee_index].ninst > 0) {
+                uint32_t fresh = UINT32_MAX;
+                if (!lookup_call(c, &c->exprs[index], lookup_target, callee_index, 0, c->cur_func,
+                                 c->funcs[c->cur_func].nlocals, &fresh)) {
+                    c->failed = 1;
+                    return 0;
+                }
+                resolved = fresh;
+            }
+        }
         count = expr->argc == 0 ? 1u : expr->argc;
         arguments = calloc(count, sizeof(Value));
         if (arguments == NULL) {
@@ -9544,28 +11214,72 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             callee = &target->funcs[expr->callee];
             for (arg = 0; arg < expr->argc; arg++) {
-                Param *param = &target->params[callee->param0 + arg];
-                if (param->type == TY_MOD) {
-                    retag_modulus(&arguments[arg], param->mod_index);
+                uint16_t mod_index = target->params[callee->param0 + arg].mod_index;
+                TypeKind arg_type = target->params[callee->param0 + arg].type;
+                if (resolved != UINT32_MAX && resolved < target->ninstances) {
+                    const Instance *called = &target->instances[resolved];
+                    if (arg < callee->nparams) {
+                        mod_index = target->iparams[called->param0 + arg].mod_index;
+                        arg_type = target->iparams[called->param0 + arg].type;
+                    }
+                }
+                if (arg_type == TY_MOD) {
+                    retag_modulus(&arguments[arg], mod_index);
                 }
             }
             /* One step budget and one failure flag for the whole program.
                Copy them across the call so a nested module spends the same
-               counter, then copy the result back. */
-            target->steps = c->steps;
-            target->failed = c->failed;
-            ok = eval_function(target, expr->callee, arguments, depth + 1, out);
-            c->steps = target->steps;
-            if (target->failed) {
-                c->failed = 1;
+               counter, then copy the result back. The callee's size environment
+               is the instance this call resolved, then the caller's is restored. */
+            {
+                int64_t saved_sz[MAX_SIZES];
+                uint8_t saved_ncur = target->ncur;
+                uint32_t saved_func = target->cur_func;
+                uint32_t saved_inst = target->cur_inst;
+                memcpy(saved_sz, target->cur_sz, sizeof saved_sz);
+                if (resolved != UINT32_MAX && resolved < target->ninstances) {
+                    memcpy(target->cur_sz, target->instances[resolved].sz, sizeof target->cur_sz);
+                    target->ncur = callee->nsizes;
+                    target->cur_func = expr->callee;
+                    target->cur_inst = resolved;
+                }
+                target->steps = c->steps;
+                target->failed = c->failed;
+                ok = eval_function(target, expr->callee, arguments, depth + 1, out);
+                c->steps = target->steps;
+                if (target->failed) {
+                    c->failed = 1;
+                }
+                memcpy(target->cur_sz, saved_sz, sizeof target->cur_sz);
+                target->ncur = saved_ncur;
+                target->cur_func = saved_func;
+                target->cur_inst = saved_inst;
             }
         } else {
+            int64_t saved_sz[MAX_SIZES];
+            uint8_t saved_ncur;
+            uint32_t saved_func;
+            uint32_t saved_inst;
             if (expr->callee >= c->nfuncs) {
                 c->failed = 1;
                 value_list_clear(arguments, count);
                 return 0;
             }
+            saved_ncur = c->ncur;
+            saved_func = c->cur_func;
+            saved_inst = c->cur_inst;
+            memcpy(saved_sz, c->cur_sz, sizeof saved_sz);
+            if (resolved != UINT32_MAX && resolved < c->ninstances) {
+                memcpy(c->cur_sz, c->instances[resolved].sz, sizeof c->cur_sz);
+                c->ncur = c->funcs[expr->callee].nsizes;
+                c->cur_func = expr->callee;
+                c->cur_inst = resolved;
+            }
             ok = eval_function(c, expr->callee, arguments, depth + 1, out);
+            memcpy(c->cur_sz, saved_sz, sizeof c->cur_sz);
+            c->ncur = saved_ncur;
+            c->cur_func = saved_func;
+            c->cur_inst = saved_inst;
         }
         if (ok && expr->ty == TY_MOD) {
             retag_modulus(out, expr->ty_mod);
@@ -10214,6 +11928,14 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         uint64_t cost;
         TypeKind element_type;
         memset(&element, 0, sizeof element);
+        if (expr->size_expr != UINT32_MAX) {
+            uint32_t sized = 0;
+            if (!size_length(c, expr->size_expr, 0, &sized)) {
+                c->failed = 1;
+                return 0;
+            }
+            count = sized;
+        }
         if (count == 0 || !eval_expr(c, expr->left, params, locals, depth, &element)) {
             if (count == 0) {
                 c->failed = 1;
@@ -10248,7 +11970,37 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         const LoopDesc *loop = &c->loops[expr->arg0];
         Value acc;
         uint32_t step_index;
+        uint32_t bound_a;
+        uint32_t bound_b;
         memset(&acc, 0, sizeof acc);
+        bound_a = loop->bound_a;
+        bound_b = loop->bound_b;
+        if (loop->a_sized || loop->b_sized) {
+            int64_t a_size = (int64_t)loop->bound_a;
+            int64_t b_size = (int64_t)loop->bound_b;
+            if (loop->a_sized) {
+                Sz bound = eval_size(c, loop->a_expr);
+                if (bound.kind != 0 || bound.value < 0 || bound.value > (int64_t)MAX_LOOP_BOUND) {
+                    c->failed = 1;
+                    return 0;
+                }
+                a_size = bound.value;
+            }
+            if (loop->b_sized) {
+                Sz bound = eval_size(c, loop->b_expr);
+                if (bound.kind != 0 || bound.value < 0 || bound.value > (int64_t)MAX_LOOP_BOUND) {
+                    c->failed = 1;
+                    return 0;
+                }
+                b_size = bound.value;
+            }
+            if (a_size >= b_size) {
+                c->failed = 1;
+                return 0;
+            }
+            bound_a = (uint32_t)a_size;
+            bound_b = (uint32_t)b_size;
+        }
         if (!loop->bounds_ok || c->loop_k == NULL || c->loop_acc == NULL || loop->init_expr == UINT32_MAX ||
             loop->step_expr == UINT32_MAX) {
             c->failed = 1;
@@ -10259,7 +12011,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&acc);
             return 0;
         }
-        for (step_index = loop->bound_a; step_index < loop->bound_b; step_index++) {
+        for (step_index = bound_a; step_index < bound_b; step_index++) {
             if (!charge(c, expr->start, expr->end, 1)) {
                 value_clear(&acc);
                 value_clear(&c->loop_acc[expr->arg0]);
@@ -10895,6 +12647,101 @@ static int evaluate_source(Compiler *c, FILE *out) {
         if (!func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
             continue;
         }
+        if (func->nsizes > 0) {
+            uint32_t ordinal;
+            for (ordinal = 0; ordinal < func->ninst && !c->failed; ordinal++) {
+                Instance *inst = &c->instances[func->inst0 + ordinal];
+                char sizes_text[160];
+                size_t used = 0;
+                uint8_t slot;
+                TypeKind saved_kind = func->result;
+                uint32_t saved_len = func->result_len;
+                uint16_t saved_mod = func->result_mod;
+                uint32_t saved_tup0 = func->tup0;
+                uint16_t saved_tup_n = func->tup_n;
+                sizes_text[0] = '\0';
+                c->cur_func = index;
+                c->cur_inst = func->inst0 + ordinal;
+                c->ncur = func->nsizes;
+                memcpy(c->cur_sz, inst->sz, sizeof c->cur_sz);
+                func->result = inst->result;
+                func->result_len = inst->result_len;
+                func->result_mod = inst->result_mod;
+                func->tup0 = inst->tup0;
+                func->tup_n = inst->tup_n;
+                for (slot = 0; slot < func->nsizes; slot++) {
+                    int wrote = snprintf(sizes_text + used, sizeof sizes_text - used, slot == 0 ? "%lld" : ", %lld",
+                                         (long long)inst->sz[slot]);
+                    if (wrote > 0 && (size_t)wrote < sizeof sizes_text - used) {
+                        used += (size_t)wrote;
+                    }
+                }
+                memset(&result, 0, sizeof result);
+                if (!eval_function(c, index, NULL, 1, &result)) {
+                    value_clear(&result);
+                    func->result = saved_kind;
+                    func->result_len = saved_len;
+                    func->result_mod = saved_mod;
+                    func->tup0 = saved_tup0;
+                    func->tup_n = saved_tup_n;
+                    stop = 1;
+                    break;
+                }
+                if (func->result != TY_TUPLE && func->result_len == 0 && func->result != TY_INT &&
+                    func->result != TY_BOOL && func->result != TY_MOD) {
+                    result.type = func->result;
+                    if (result.elems == NULL) {
+                        result.length = 0;
+                    }
+                    result.word &= word_mask_of(type_width(func->result));
+                }
+                if (func->result == TY_MOD && result.length == 0) {
+                    result.type = TY_MOD;
+                    result.mod_index = func->result_mod;
+                }
+                if (func->result == TY_TUPLE
+                        ? !format_tuple_type(c, type_text, sizeof type_text, func->tup0, func->tup_n)
+                        : !format_type(c, type_text, sizeof type_text, func->result, func->result_len,
+                                       func->result_mod)) {
+                    c->failed = 1;
+                    add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a type",
+                             "resource limit reached", NULL, 2);
+                    stop = 1;
+                } else if (!format_value(&result, &value) ||
+                           !text_append(&program, c->text + c->module_start,
+                                        (size_t)(c->module_end - c->module_start)) ||
+                           !text_append(&program, "::", 2) ||
+                           !text_append(&program, c->text + func->name_start,
+                                        (size_t)(func->name_end - func->name_start)) ||
+                           !text_append(&program, "[", 1) ||
+                           !text_append(&program, sizes_text, strlen(sizes_text)) || !text_append(&program, "]: ", 3) ||
+                           !text_append(&program, type_text, strlen(type_text)) || !text_append(&program, " = ", 3) ||
+                           !text_append(&program, value.data == NULL ? "" : value.data, value.length) ||
+                           !text_append(&program, "\n", 1)) {
+                    c->failed = 1;
+                    add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a value",
+                             "resource limit reached", NULL, 2);
+                    stop = 1;
+                }
+                free(value.data);
+                value.data = NULL;
+                value.length = 0;
+                value.cap = 0;
+                value_clear(&result);
+                func->result = saved_kind;
+                func->result_len = saved_len;
+                func->result_mod = saved_mod;
+                func->tup0 = saved_tup0;
+                func->tup_n = saved_tup_n;
+                if (stop) {
+                    break;
+                }
+            }
+            if (stop) {
+                break;
+            }
+            continue;
+        }
         memset(&result, 0, sizeof result);
         if (!eval_function(c, index, NULL, 1, &result)) {
             value_clear(&result);
@@ -10960,6 +12807,8 @@ static Compiler *compiler_new(char *text, size_t length, const char *filename, i
     compiler->filename = filename;
     compiler->own_text = own_text;
     compiler->own_filename = own_filename;
+    compiler->cur_func = UINT32_MAX;
+    compiler->cur_inst = UINT32_MAX;
     if (!arena_init(&compiler->arena, ARENA_BYTES)) {
         free(compiler);
         return NULL;
@@ -10991,6 +12840,8 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->telems);
     free(compiler->moduli);
     free(compiler->finished);
+    free(compiler->instances);
+    free(compiler->iparams);
     if (compiler->own_text) {
         free(compiler->text);
     }
@@ -11585,7 +13436,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, conditional, lookup, module, residue, block, tuple, and byte fragment.\n"
+        "conversion, array, loop, conditional, lookup, module, residue, block, tuple, byte, and size fragment.\n"
         "It does not use the Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -11612,7 +13463,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3l\n", stdout);
+            fputs("orangec (standalone C) slice S3m\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
