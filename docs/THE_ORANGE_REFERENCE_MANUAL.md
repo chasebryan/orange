@@ -2137,39 +2137,266 @@ module chacha20_spec {
 
 ### §51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)
 
+X25519 as RFC 7748 (2016) section 5 writes it, with the Diffie-Hellman
+functions of section 6.1. The field is the integers modulo
+
+$$p = 2^{255} - 19,$$
+
+and $a_{24} = (A - 2) / 4 = 121665$ for $A = 486662$. The listing uses exact
+`Int` and reduces a product with `%` at once. It is accepted by `orangec
+test` on the first vector of section 5.2. One evaluation costs about 568,000
+of the 1,048,576 steps of a file, so this listing holds that one vector. The
+same algorithm with the second vector, the section 6.1 Diffie-Hellman run,
+and a Wycheproof case is `algorithms/x25519/`.
+
+#### 1. Decoding (section 5)
+
+`decode_little_endian` is the RFC's little-endian integer of 32 bytes.
+`decode_u_coordinate` clears the most significant bit of the last byte before
+that decoding: every implementation masks that bit. `decode_scalar_25519`
+clears the three low bits of byte 0 (`byte & 248`), clears bit 255
+(`byte 31 & 127`), and sets bit 254 (`| 64`). The ladder reads the clamped
+scalar one bit at a time. Bit $t$ is bit $t \bmod 8$ of byte $\lfloor t / 8 \rfloor$.
+
+#### 2. The Ladder Step (section 5)
+
+With $s = (x_2, z_2, x_3, z_3)$ and $x_1$ the u-coordinate, the RFC's names
+in lowercase are:
+
+$$A = x_2 + z_2,\ AA = A^2,\ B = x_2 - z_2,\ BB = B^2,\ E = AA - BB,$$
+
+$$C = x_3 + z_3,\ D = x_3 - z_3,\ DA = D \cdot A,\ CB = C \cdot B,$$
+
+$$x_2' = AA \cdot BB,\quad z_2' = E \cdot (AA + a_{24} \cdot E),$$
+
+$$x_3' = (DA + CB)^2,\quad z_3' = x_1 \cdot (DA - CB)^2.$$
+
+Each product is reduced modulo $p$. `ladder_step` returns $(x_2', z_2', x_3', z_3')$.
+
+The RFC swaps with a constant-time mask. A specification has no timing, so
+`cswap` is the conditional that exchanges $(x_2, z_2)$ with $(x_3, z_3)$. The
+permutation is the RFC's. The arithmetic mask is not what this listing
+executes. `rung` applies that swap around the step when scalar bit $k_t$ is
+set, which is the RFC's `swap ^= k_t` before the step and `swap = k_t` after
+it, together with the final swap.
+
+#### 3. The Inverse and the Output
+
+The RFC writes the output as $x_2 \cdot z_2^{(p - 2)}$ and leaves the power
+open. `invert` is Bernstein's curve25519 addition chain (2006): 254 squarings
+and 11 multiplications. The names record the power. $z_{2^{10}-1}$ is the
+binding `z_2_10_0`. The chain reaches $p - 2 = 2^{255} - 21$.
+
+`x25519` decodes the scalar and the u-coordinate, runs the ladder from bit
+254 down to bit 0 starting at $(x_2 : z_2) = (1 : 0)$ and $(x_3 : z_3) = (x_1 : 1)$,
+and encodes $x_2 \cdot z_2^{(p-2)}$ as 32 little-endian bytes.
+`encode_u_coordinate` is those base-256 digits. `public_key` and
+`shared_secret` are section 6.1: $K_A = \mathrm{X25519}(a, 9)$ and
+$K = \mathrm{X25519}(a, K_B)$. The base point is the byte 9 followed by 31
+zero bytes. `all_zero` is the optional all-zero check of section 6.1. The
+test does not evaluate it on a computed shared secret, because that would be
+a second X25519 evaluation in the same file.
+
+#### 4. Section 5.2, First Vector
+
+The input scalar, the input u-coordinate, and the output u-coordinate, each
+as the RFC prints the 32 bytes:
+
+| Role | Bytes |
+| :--- | :--- |
+| Scalar | `a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4` |
+| u-coordinate | `e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c` |
+| Output | `c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552` |
+
+#### 5. Compiler-Checked Transcription
+
 ```orange
+// X25519 of RFC 7748, 'Elliptic Curves for Security' (2016), section 5,
+// with the Diffie-Hellman functions of section 6.1. The field is the
+// integers modulo p = 2^255 - 19, written with exact `Int` arithmetic and
+// `%` after every product; the scalar's bits are read through indices that
+// divide a loop index; each rung of the Montgomery ladder is a conditional
+// swap around the RFC's formulas; and the inverse z_2^(p - 2) is computed
+// by the addition chain of Bernstein's curve25519 reference.
+// https://www.rfc-editor.org/rfc/rfc7748
+//
+// This file reproduces the first test vector of section 5.2.
+// One X25519 evaluation costs about 568,000 of the 1,048,576 steps of a file,
+// so each vector file holds one vector. The algorithm part of x25519.or,
+// x25519-second-vector.or, x25519-diffie-hellman.or and
+// x25519-wycheproof.or is the same text; only the vector specs differ.
 edition 2026;
+module x25519_spec {
+  // Section 4.1: p = 2^255 - 19 and A = 486662; section 5: a24 = (A - 2) / 4.
+  spec prime() -> Int {
+    57896044618658097711785492504343953926634992332820282019728792003956564819949
+  }
 
-module curve25519_spec {
-    // Prime Field of Curve25519: 2^255 - 19
-    type Fe = Mod[(1 << 255) - 19];
+  spec a24() -> Int { 121665 }
 
-    spec fe_add(a: Fe, b: Fe) -> Fe { a + b }
-    spec fe_sub(a: Fe, b: Fe) -> Fe { a - b }
-    spec fe_mul(a: Fe, b: Fe) -> Fe { a * b }
-    spec fe_sq(a: Fe)  -> Fe { a * a }
-    spec fe_inv(a: Fe) -> Fe { 1 / a }
+  // The field GF(p). A product is reduced by `%` at once, so every field
+  // element stays below p between the steps of the ladder.
+  spec multiply(x: Int, y: Int) -> Int { (x * y) % prime() }
 
-    // Differential Point Addition and Doubling (RFC 7748 Section 5)
-    spec montgomery_ladder_step(
-        x1: Fe,
-        x2: Fe,
-        z2: Fe,
-        x3: Fe,
-        z3: Fe
-    ) -> (Fe, Fe, Fe, Fe) {
-        let da = (x3 - z3) * (x2 + z2);
-        let cb = (x3 + z3) * (x2 - z2);
-        let next_x3 = (da + cb) * (da + cb);
-        let next_z3 = x1 * ((da - cb) * (da - cb));
-        let aa = (x2 + z2) * (x2 + z2);
-        let bb = (x2 - z2) * (x2 - z2);
-        let e = aa - bb;
-        let a24 = 121665 as Fe;
-        let next_x2 = aa * bb;
-        let next_z2 = e * (aa + (a24 * e));
-        (next_x2, next_z2, next_x3, next_z3)
-    }
+  spec square(x: Int) -> Int { (x * x) % prime() }
+
+  // Section 5: decodeLittleEndian(b, 255).
+  spec decode_little_endian(b: Word[8]^32) -> Int {
+    for i in 0..32 with n: Int = 0 { n * 256 + (b[31 - i] as Int) }
+  }
+
+  // Section 5: decodeUCoordinate. The most significant bit of the final
+  // byte is masked, as the RFC requires of every implementation.
+  spec decode_u_coordinate(u: Word[8]^32) -> Int {
+    decode_little_endian(u with [31] = u[31] & 127)
+  }
+
+  // Section 5: decodeScalar25519, the clamping. The three low bits are
+  // cleared, bit 255 is cleared, and bit 254 is set. The clamped bytes are
+  // kept as bytes, because the ladder reads the scalar one bit at a time.
+  spec decode_scalar_25519(k: Word[8]^32) -> Word[8]^32 {
+    (k with [0] = k[0] & 248) with [31] = (k[31] & 127) | 64
+  }
+
+  // Section 5: encodeUCoordinate, the 32 little-endian bytes of u mod p.
+  // The bytes are the base-256 digits of u, least significant first; the
+  // accumulator carries the value still to be split at index 0 and the
+  // digits found so far after it, all as `Int`, and a second loop makes
+  // them bytes.
+  spec encode_u_coordinate(u: Int) -> Word[8]^32 {
+    let digits: Int^33 = for i in 0..32 with d: Int^33 = [0; 33] with [0] = u % prime() {
+      (d with [1 + i] = d[0] % 256) with [0] = d[0] / 256
+    };
+    for i in 0..32 with b: Word[8]^32 = [0; 32] { b with [i] = digits[1 + i] as Word[8] }
+  }
+
+  // Section 5: the body of the ladder's loop, with s = [x_2, z_2, x_3, z_3]
+  // and the RFC's names A, AA, B, BB, E, C, D, DA, CB in lowercase. It
+  // doubles (x_2 : z_2) and adds it to (x_3 : z_3), whose difference is
+  // (x_1 : 1).
+  spec ladder_step(x_1: Int, s: Int^4) -> Int^4 {
+    let a: Int = s[0] + s[1];
+    let aa: Int = square(a);
+    let b: Int = s[0] - s[1];
+    let bb: Int = square(b);
+    let e: Int = aa - bb;
+    let c: Int = s[2] + s[3];
+    let d: Int = s[2] - s[3];
+    let da: Int = multiply(d, a);
+    let cb: Int = multiply(c, b);
+    [
+      multiply(aa, bb),
+      multiply(e, aa + a24() * e),
+      square(da + cb),
+      multiply(x_1, square(da - cb)),
+    ]
+  }
+
+  // Section 5: cswap(swap, x_2, x_3) and cswap(swap, z_2, z_3) together.
+  // The RFC swaps in constant time through a mask; a specification has no
+  // timing, so the swap is a conditional between the two arrangements.
+  spec cswap(swap: Bool, s: Int^4) -> Int^4 {
+    if swap { [s[2], s[3], s[0], s[1]] } else { s }
+  }
+
+  // Section 5: one iteration of the ladder for the scalar bit k_t. The
+  // RFC's `swap ^= k_t` before the step and `swap = k_t` after it, with the
+  // final cswap after the loop, amount to swapping the two points around
+  // the step whenever k_t is set.
+  spec rung(x_1: Int, s: Int^4, k_t: Bool) -> Int^4 {
+    cswap(k_t, ladder_step(x_1, cswap(k_t, s)))
+  }
+
+  // x^(2^n) modulo p for 0 <= n <= 100: n successive squarings.
+  spec square_times(x: Int, n: Int) -> Int {
+    for i in 0..100 with y: Int = x { if i < n { square(y) } else { y } }
+  }
+
+  // Section 5: z_2^(p - 2), the inverse of z_2 by Fermat's little theorem.
+  // The RFC writes the power and leaves its computation open; this is the
+  // addition chain of Bernstein's curve25519 reference implementation
+  // (2006), 254 squarings and 11 multiplications, which reaches
+  // p - 2 = 2^255 - 21 at about half the cost of square-and-multiply over
+  // the 255 bits of p - 2 (59,000 steps against 107,000). Each name says
+  // which power of z it holds: z_2_10_0 is z^(2^10 - 2^0).
+  spec invert(z: Int) -> Int {
+    let z_2: Int = square(z);
+    let z_9: Int = multiply(square_times(z_2, 2), z);
+    let z_11: Int = multiply(z_9, z_2);
+    let z_2_5_0: Int = multiply(square(z_11), z_9);
+    let z_2_10_0: Int = multiply(square_times(z_2_5_0, 5), z_2_5_0);
+    let z_2_20_0: Int = multiply(square_times(z_2_10_0, 10), z_2_10_0);
+    let z_2_40_0: Int = multiply(square_times(z_2_20_0, 20), z_2_20_0);
+    let z_2_50_0: Int = multiply(square_times(z_2_40_0, 10), z_2_10_0);
+    let z_2_100_0: Int = multiply(square_times(z_2_50_0, 50), z_2_50_0);
+    let z_2_200_0: Int = multiply(square_times(z_2_100_0, 100), z_2_100_0);
+    let z_2_250_0: Int = multiply(square_times(z_2_200_0, 50), z_2_50_0);
+    multiply(square_times(z_2_250_0, 5), z_11)
+  }
+
+  // Section 5: X25519(k, u). The clamped scalar's bits k_t, for t = 254
+  // down to 0, drive the ladder from (x_2 : z_2) = (1 : 0) and
+  // (x_3 : z_3) = (x_1 : 1); the result is x_2 * z_2^(p - 2), encoded.
+  // Bit t of the scalar is bit t % 8 of byte t / 8.
+  spec x25519(k: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+    let scalar: Word[8]^32 = decode_scalar_25519(k);
+    let bit: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+    let x_1: Int = decode_u_coordinate(u);
+    let s: Int^4 = for i in 0..255 with s: Int^4 = [1, 0, x_1, 1] {
+      rung(x_1, s, (scalar[(254 - i) / 8] & bit[(254 - i) % 8]) != 0)
+    };
+    encode_u_coordinate(multiply(s[0], invert(s[1])))
+  }
+
+  // Section 6.1: the base point, u = 9, as the 32-byte string the RFC
+  // gives, 9 followed by all zeros.
+  spec base_point() -> Word[8]^32 {
+    [
+      0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // Section 6.1: Alice's public key K_A = X25519(a, 9) from her secret key
+  // a, 32 random bytes; Bob's K_B = X25519(b, 9) likewise.
+  spec public_key(a: Word[8]^32) -> Word[8]^32 { x25519(a, base_point()) }
+
+  // Section 6.1: the shared secret K = X25519(a, K_B) = X25519(b, K_A).
+  spec shared_secret(a: Word[8]^32, k_b: Word[8]^32) -> Word[8]^32 { x25519(a, k_b) }
+
+  // Section 6.1: both parties MAY check whether K is the all-zero value and
+  // abort if so, which rejects a public key of small order. The check is a
+  // Bool over the 32 bytes; none of the vector files evaluates it on a
+  // computed K, because that would cost a second X25519 evaluation.
+  spec all_zero(k: Word[8]^32) -> Bool {
+    for i in 0..32 with zero: Bool = true { zero && (k[i] == 0) }
+  }
+
+  // RFC 7748 section 5.2, the first test vector: input scalar, input
+  // u-coordinate, output u-coordinate.
+  spec rfc7748_5_2_vector_1() -> Word[8]^32 {
+    x25519(
+      [
+        0xa5, 0x46, 0xe3, 0x6b, 0xf0, 0x52, 0x7c, 0x9d, 0x3b, 0x16, 0x15, 0x4b, 0x82, 0x46, 0x5e, 0xdd,
+        0x62, 0x14, 0x4c, 0x0a, 0xc1, 0xfc, 0x5a, 0x18, 0x50, 0x6a, 0x22, 0x44, 0xba, 0x44, 0x9a, 0xc4,
+      ],
+      [
+        0xe6, 0xdb, 0x68, 0x67, 0x58, 0x30, 0x30, 0xdb, 0x35, 0x94, 0xc1, 0xa4, 0x24, 0xb1, 0x5f, 0x7c,
+        0x72, 0x66, 0x24, 0xec, 0x26, 0xb3, 0x35, 0x3b, 0x10, 0xa9, 0x03, 0xa6, 0xd0, 0xab, 0x1c, 0x4c,
+      ],
+    )
+  }
+
+  spec rfc7748_5_2_vector_1_expected() -> Word[8]^32 {
+    [
+      0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f,
+      0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52,
+    ]
+  }
+
+  test "RFC 7748 section 5.2 first vector" {
+    rfc7748_5_2_vector_1() == rfc7748_5_2_vector_1_expected()
+  }
 }
 ```
 
