@@ -93,7 +93,7 @@ Edition: `2026`
   - [§50. Complete Reference Specification: RFC 8439 ChaCha20](#50-complete-reference-specification-rfc-8439-chacha20)
   - [§51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)](#51-complete-reference-specification-curve25519--x25519-rfc-7748)
   - [§52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-complete-reference-specification-poly1305-field-mac-rfc-8439)
-  - [AES, FIPS 197](#aes-fips-197)
+  - [§52A. Complete Reference Specification: FIPS 197 AES](#52a-complete-reference-specification-fips-197-aes)
   - [HMAC, FIPS 198-1](#hmac-fips-198-1)
   - [HKDF, RFC 5869](#hkdf-rfc-5869)
   - [AEAD, RFC 8439](#aead-rfc-8439)
@@ -2903,84 +2903,243 @@ module poly1305_spec {
 }
 ```
 
-### AES, FIPS 197
+### §52A. Complete Reference Specification: FIPS 197 AES
 
-AES as FIPS 197 (2001; update 1, 2023, DOI 10.6028/NIST.FIPS.197-upd1) writes
-it: the column-major state of section 3.4, the four transformations of
-section 5.1 and their inverses in section 5.3, Key Expansion of section 5.2
-for $N_k \in \{4, 6, 8\}$, and Cipher and InvCipher. The listing is accepted
-by `orangec test` on Appendix B and on Appendix C.1, C.2, and C.3, each
-cipher and its inverse. The state in this listing is `Word[8]^16` in column
-order, index $4c + r$ for row $r$ and column $c$. A rank-2 spelling of the
-same state is what this compiler admits; this transcription is the
-column-major vector `algorithms/aes/aes.or` checks. The modes of SP 800-38A
-are `algorithms/aes/aes-modes.or` and are not restated here.
+AES-128, AES-192, and AES-256 as NIST FIPS 197-upd1 writes them. The cited
+edition is Federal Information Processing Standards Publication 197, published
+November 26, 2001, updated May 9, 2023, DOI 10.6028/NIST.FIPS.197-upd1. The
+algorithm text below is that update: section 3.4, section 4, section 5,
+Algorithms 1 through 3, and Appendices A and B. Appendix C of the 2001
+edition, which printed the three cipher examples, is not in the 2023 update.
+Appendix D, item 23, of the update says those examples were removed in favor
+of a reference to the NIST examples site. The three ciphertexts are cited
+from the November 26, 2001 text, Appendix C.1, C.2, and C.3.
 
-#### 1. Parameters (sections 2 and 3)
+#### Status
 
-$N_b = 4$ is the number of columns. The round count $N_r$ is the standard's
-table:
+**Current** for the listing in this section, on the five tests named below.
+`orangec --version` on this tree prints `orangec 0.0.1 (Orange edition 2026;
+implemented slice S3t)`.
 
-| $N_k$ | Key bits | $N_r$ |
+| Text | Status | What is missing |
 | :--- | :--- | :--- |
-| 4 | 128 | 10 |
-| 6 | 192 | 12 |
-| 8 | 256 | 14 |
+| The listing, Appendix B, and the 2001 Appendix C.1, C.2, and C.3 blocks, each cipher and its inverse | Current | Checked, as recorded after the listing |
+| `algorithms/aes/aes.or`, module `aes` | Same algorithm, eval pairs | No `test` member. `orangec eval --spec` of the C.1 and Appendix B pairs is recorded below. The manual listing renames the module `aes_spec` and compares the same bytes with `test` |
+| Equivalent inverse cipher, Algorithms 4 and 5, section 5.3.5 | Not transcribed | A different arrangement of the same inverse. No listing in this section |
+| SP 800-38A modes | Not this section | `algorithms/aes/aes-modes.or` is a separate file. This section does not transcribe it and does not accept it |
+| A key length other than 128, 192, or 256 bits | Outside the standard | Section 5: no other Rijndael configuration conforms |
+| A claim of constant time, CMVP conformance, or a security reduction | Not claimed | The reference evaluator is not a timing model. Section 6.4 of the standard discusses implementation attacks and puts them outside the algorithm |
 
-#### 2. The Round (section 5.1)
+#### 1. Parameters (section 5, Table 3, equation 5.1)
 
-SubBytes is the S-box of section 5.1.1. The listing packs that table eight
-entries to a `Word[64]`, because the lookup index is the data byte: `lookup`
-selects the word whose index is $x \gg 3$ and then the byte $x \land 7$. The
-entries are the FIPS table. Entry $x$ is the affine map of section 5.1.1
-applied to the inverse of $x$ in $\mathrm{GF}(2^8)$ modulo
-$x^8 + x^4 + x^3 + x + 1$, and the inverse of 0 is 0.
+$N_b = 4$ in this standard. Table 3:
 
-ShiftRows moves row $r$ left by $r$ places: $s'[r, c] = s[r, (c + r) \bmod 4]$.
-`shift_rows` is that reindexing on the column-major vector.
+| Algorithm | $N_k$ | Key bits | $N_b$ | Block bits | $N_r$ |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| AES-128 | 4 | 128 | 4 | 128 | 10 |
+| AES-192 | 6 | 192 | 4 | 128 | 12 |
+| AES-256 | 8 | 256 | 4 | 128 | 14 |
 
-MixColumns multiplies each column by $a(x) = \{03\}x^3 + \{01\}x^2 + \{01\}x + \{02\}$
-in $\mathrm{GF}(2^8)$. `xtime` is multiplication by $x$: a left shift, then
-XOR with $\mathtt{0x1b}$ when the high bit was set. $\{03\}b = \mathrm{xtime}(b) + b$.
+Equation (5.1):
 
-AddRoundKey XORs the four words of the round key into the state.
-`rot_word` is a left rotation by one byte. `rcon` is the ten round constants
-of section 5.2, from `0x01000000` through `0x36000000`. Key expansion follows
-Algorithm 2: period $N_k$, RotWord and SubWord and Rcon when the index is a
-multiple of $N_k$, and the extra SubWord when $N_k = 8$ and the index modulo
-$N_k$ is 4. The expanded key is stored in a `Word[32]^60` buffer. AES-128
-uses the first 44 words, AES-192 the first 52, AES-256 all 60. Words past
-$N_b(N_r + 1)$ are unused.
+$$\mathrm{AES\text{-}128}(\mathit{in}, \mathit{key}) = \mathrm{CIPHER}(\mathit{in}, 10, \mathrm{KEYEXPANSION}(\mathit{key}))$$
 
-Cipher is the standard's loop: AddRoundKey, then $N_r - 1$ rounds of
-SubBytes, ShiftRows, MixColumns, AddRoundKey, then a final round without
-MixColumns. InvCipher is section 5.3 in the matching order.
+and the same with $(12)$ and $(14)$ for AES-192 and AES-256. The inverse
+replaces $\mathrm{CIPHER}$ with $\mathrm{INVCIPHER}$. `aes128`, `aes192`,
+and `aes256` are those three calls. `aes128_inverse`, `aes192_inverse`, and
+`aes256_inverse` are the inverse calls under the same schedules.
 
-#### 3. Known Answers
+#### 2. The State (section 3.4)
 
-Plaintext `00112233445566778899aabbccddeeff` under the Appendix C keys, and
-the Appendix B example. Each inverse test returns that plaintext.
+Section 3.4 copies the input into the state by $s_{r,c} = \mathit{in}[r + 4c]$
+for $0 \le r < 4$ and $0 \le c < 4$, and copies the final state out by the
+same index. The listing stores that order in `Word[8]^16`. Index $4c + r$ is
+byte $s_{r,c}$. A rank-2 spelling is admitted: a row `Word[8]^4`, then a
+sheet of four rows. A third dimension is `ORC0203`. The checked text is the
+length-16 vector, which is also what `algorithms/aes/aes.or` evaluates.
 
-| Example | Ciphertext |
-| :--- | :--- |
-| C.1, AES-128, key `000102030405060708090a0b0c0d0e0f` | `69c4e0d86a7b0430d8cdb78070b4c55a` |
-| C.2, AES-192, key `000102030405060708090a0b0c0d0e0f1011121314151617` | `dda97ca4864cdfe06eaf70a0ec0d7191` |
-| C.3, AES-256, key through `1f` | `8ea2b7ca516745bfeafc49904b496089` |
-| B, key `2b7e151628aed2a6abf7158809cf4f3c`, input `3243f6a8885a308d313198a2e0370734` | `3925841d02dc09fbdc118597196a0b32` |
+#### 3. Cipher (Algorithm 1, section 5.1)
 
-#### 4. Compiler-Checked Transcription
+Algorithm 1, in the order the update prints it:
+
+| Line | FIPS 197-upd1 | Orange |
+| :--- | :--- | :--- |
+| 2 | $\mathit{state} \leftarrow \mathit{in}$ | the argument `input`, already in section 3.4 order |
+| 3 | $\mathrm{ADDROUNDKEY}(\mathit{state}, w[0..3])$ | `start` in `cipher` |
+| 4–9 | for $\mathit{round}$ from 1 to $N_r - 1$: $\mathrm{SUBBYTES}$, $\mathrm{SHIFTROWS}$, $\mathrm{MIXCOLUMNS}$, $\mathrm{ADDROUNDKEY}(w[4\cdot\mathit{round}..4\cdot\mathit{round}+3])$ | the `round < nr` branch |
+| 10–12 | final round: $\mathrm{SUBBYTES}$, $\mathrm{SHIFTROWS}$, $\mathrm{ADDROUNDKEY}(w[4\cdot N_r..4\cdot N_r+3])$, no $\mathrm{MIXCOLUMNS}$ | the `round == nr` branch |
+| 13 | return $\mathit{state}$ | the value of the `for` |
+
+`4 * nr` with `nr` a parameter is not a loop index. `orangec check` rejects
+it as `ORC0226`, recorded below. `cipher` therefore loops `for round in 1..15`
+and, on `round > nr`, returns the state unchanged. Rounds 11 through 14 of an
+AES-128 call, and rounds 13 and 14 of an AES-192 call, are that identity.
+The round-key index `4 * round` is the loop index, which the checker admits.
+
+#### 4. The Four Transformations (sections 4 and 5.1.1 through 5.1.4)
+
+Section 5.1.1. For a byte $b$ and $c = \{01100011\}$, the intermediate
+$\tilde b$ is $\{00\}$ when $b = \{00\}$ and $b^{-1}$ otherwise, the inverse
+taken in $\mathrm{GF}(2^8)$ as section 4.4 defines it. Equation (5.3):
+
+$$b'_i = \tilde b_i \oplus \tilde b_{(i+4) \bmod 8} \oplus \tilde b_{(i+5) \bmod 8} \oplus \tilde b_{(i+6) \bmod 8} \oplus \tilde b_{(i+7) \bmod 8} \oplus c_i.$$
+
+Table 4 is that map. The update's worked cell is $s_{r,c} = \{53\}$, whose
+substitution is $\{ed\}$. The listing does not apply the affine map at
+evaluation time. `sbox` is Table 4 packed eight entries to a `Word[64]`,
+left to right. The word at index 10 is `0x53d100ed20fcb15b`: bytes
+`53 d1 00 ed 20 fc b1 5b` are the entries for $x = \mathtt{0x50}$ through
+$\mathtt{0x57}$, so byte 3 is the $\{53\} \mapsto \{ed\}$ cell. In the 2001
+edition that table is Figure 7. The 2023 edition numbers it Table 4; Figure 2
+of the update is only the illustration of $\mathrm{SUBBYTES}$.
+
+A data byte indexes 256 entries. A `Word[8]` index of a `Word[8]^256` table
+is in range, and `orangec check` of that spelling exits 0. The packed table
+is `Word[64]^32`. A `Word[8]` index of that array runs from 0 through 255,
+and the array ends at 31, so the same spelling is `ORC0223`. `lookup` therefore
+walks `for i in 0..32` and keeps `t[i]` when `x >> 3` equals `i`, then
+`byte_at` selects the byte `x & 7` by a chain of eight comparisons. `sub_bytes`
+applies that to all sixteen state bytes. `sub_word` applies it to the four
+bytes of a schedule word.
+
+Section 5.1.2, equation (5.5): $s'_{r,c} = s_{r,(c+r) \bmod 4}$. `shift_rows`
+is that permutation on the length-16 vector. Row 0 stays. Row 1 takes indices
+1, 5, 9, 13 to 5, 9, 13, 1, which is the vector
+`s[0], s[5], s[10], s[15], s[4], s[9], s[14], s[3], ...` as written.
+
+Section 4.2 defines multiplication by $x$ in $\mathrm{GF}(2^8)$ with the
+reduction polynomial $x^8 + x^4 + x^3 + x + 1$. `xtime` is that map: `a << 1`,
+then XOR with `0x1b` when bit 7 of `a` was set. The literal amount 1 is in
+range for `Word[8]`. The amount 8 is `ORC0216`.
+
+Section 5.1.3, equation (5.6), takes the matrix from the word
+$[\{02\}, \{01\}, \{01\}, \{03\}]$. Equation (5.8):
+
+$$s'_{0,c} = (\{02\} \bullet s_{0,c}) \oplus (\{03\} \bullet s_{1,c}) \oplus s_{2,c} \oplus s_{3,c}$$
+
+and the three rotations of that row. $\{02\}b$ is `xtime`. $\{03\}b$ is
+`xtime(b) ^ b`. `mix_column` is those four bytes. `mix_columns` applies it
+to the four columns.
+
+Section 5.1.4, equation (5.9): each column is XORed with the round-key word
+$w[4 \cdot \mathit{round} + c]$. `add_round_key` splits each `Word[32]` into
+four bytes, most significant byte first, and XORs them into the column. That
+byte order is section 3.5's reading of a word.
+
+#### 5. Key Expansion (Algorithm 2, section 5.2)
+
+$\mathrm{KEYEXPANSION}$ returns $4(N_r + 1)$ words: 44, 52, or 60. The
+listing stores every schedule in `Word[32]^60`. AES-128 writes indices 0
+through 43 and leaves 44 through 59 at zero. AES-192 writes through 51.
+AES-256 writes all 60. Words past $4(N_r + 1) - 1$ are not read by `cipher`
+or `inv_cipher`.
+
+Table 5 gives $\mathrm{Rcon}[j]$ for $1 \le j \le 10$, as the words
+`[01,00,00,00]` through `[36,00,00,00]`, the left byte being $x^{j-1}$.
+`rcon` stores them at index $j - 1$, so `r[(i / Nk) - 1]` is $\mathrm{Rcon}[i/N_k]$.
+The ten words are `0x01000000`, `0x02000000`, `0x04000000`, `0x08000000`,
+`0x10000000`, `0x20000000`, `0x40000000`, `0x80000000`, `0x1b000000`,
+`0x36000000`.
+
+Equation (5.10): $\mathrm{ROTWORD}([a_0,a_1,a_2,a_3]) = [a_1,a_2,a_3,a_0]$.
+`rot_word` is `w <<< 8` on the big-endian word. Equation (5.11):
+$\mathrm{SUBWORD}$ is $\mathrm{SBOX}$ on each byte. `sub_word` is that.
+
+Algorithm 2:
+
+| Lines | FIPS 197-upd1 | Orange |
+| :--- | :--- | :--- |
+| 3–6 | $w[i] \leftarrow \mathit{key}[4i..4i+3]$ for $i < N_k$ | the loop `for i in 0..Nk` and `load_be32` |
+| 8 | $\mathit{temp} \leftarrow w[i-1]$ | the right-hand side before the branch |
+| 9–10 | if $i \bmod N_k = 0$, then $\mathit{temp} \leftarrow \mathrm{SUBWORD}(\mathrm{ROTWORD}(\mathit{temp})) \oplus \mathrm{Rcon}[i/N_k]$ | the `(i % Nk) == 0` branch |
+| 11–12 | else if $N_k > 6$ and $i \bmod N_k = 4$, then $\mathit{temp} \leftarrow \mathrm{SUBWORD}(\mathit{temp})$ | the `(i % 8) == 4` branch of `key_expansion_256`. For $N_k \in \{4, 6\}$ the test $N_k > 6$ is false, so the 128-bit and 192-bit schedules omit it |
+| 14 | $w[i] \leftarrow w[i - N_k] \oplus \mathit{temp}$ | `w[i - Nk] ^ (...)` |
+
+$N_k$ is not one size parameter. `w[i - nk]` with `nk` a parameter is the
+same `ORC0226` as `w[4 * nr]`. The recurrence is written three times:
+`key_expansion_128` with period 4 and limit 44, `key_expansion_192` with
+period 6 and limit 52, `key_expansion_256` with period 8 and limit 60.
+
+Appendix A.1 expands the key
+
+`2b7e151628aed2a6abf7158809cf4f3c`
+
+and prints $w_0 = \mathtt{2b7e1516}$, $w_1 = \mathtt{28aed2a6}$,
+$w_2 = \mathtt{abf71588}$, $w_3 = \mathtt{09cf4f3c}$, and, at $i = 4$,
+$w_4 = \mathtt{a0fafe17}$. The listing does not test $w_4$ by itself. The
+Appendix B ciphertext depends on that schedule.
+
+#### 6. Inverse Cipher (Algorithm 3, section 5.3)
+
+Algorithm 3 applies the inverse transformations from $N_r$ down to 1, then
+the first round key. `inv_cipher` counts `j` from 0 through 13 and takes
+$\mathit{round} = 14 - j$, so the loop index can select the round key.
+
+| Lines | FIPS 197-upd1 | Orange |
+| :--- | :--- | :--- |
+| 3 | $\mathrm{ADDROUNDKEY}(w[4 N_r..4 N_r+3])$ | the `(14 - j) == nr` branch, on the input state |
+| 4–9 | for $\mathit{round}$ from $N_r - 1$ down to 1: $\mathrm{INVSHIFTROWS}$, $\mathrm{INVSUBBYTES}$, $\mathrm{ADDROUNDKEY}$, $\mathrm{INVMIXCOLUMNS}$ | the `(14 - j) < nr` branch |
+| 10–12 | $\mathrm{INVSHIFTROWS}$, $\mathrm{INVSUBBYTES}$, $\mathrm{ADDROUNDKEY}(w[0..3])$ | the expression after the loop |
+
+Section 5.3.1, equation (5.12): $s'_{r,c} = s_{r,(c-r) \bmod 4}$.
+`inv_shift_rows` is that permutation. Section 5.3.2: $\mathrm{INVSBOX}$ is
+Table 4 with inputs and outputs exchanged, printed as Table 6. In the 2001
+edition that table is Figure 14. `inv_sbox` is Table 6 in the same packing,
+and `inv_sub_bytes` is `sub_bytes` on that table.
+
+Section 5.3.3, equation (5.13), takes the matrix from
+$[\{0e\}, \{09\}, \{0d\}, \{0b\}]$. Equation (5.15) is the four output bytes.
+`inv_mix_column` builds $\{02\}$, $\{04\}$, and $\{08\}$ by three calls to
+`xtime`, then $\{09\} = \{08\} \oplus \mathrm{id}$, $\{0b\} = \{09\} \oplus \{02\}$,
+$\{0d\} = \{09\} \oplus \{04\}$, and $\{0e\} = \{08\} \oplus \{04\} \oplus \{02\}$.
+Section 5.3.4: $\mathrm{ADDROUNDKEY}$ is its own inverse, so the listing uses
+`add_round_key` in both directions.
+
+Algorithms 4 and 5, $\mathrm{EQINVCIPHER}$ and $\mathrm{KEYEXPANSIONEIC}$, are not
+in the listing.
+
+#### 7. Known Answers
+
+Appendix B of the 2023 update. Input
+`3243f6a8885a308d313198a2e0370734`, key
+`2b7e151628aed2a6abf7158809cf4f3c`. The state at the start of round 1, which
+is the input after line 3 of Algorithm 1, is printed as the matrix whose
+rows are `19 a0 9a e9`, `3d f4 c6 f8`, `e3 e2 8d 48`, `be 2b 2a 08`. In the
+section 3.4 byte order that is `193de3bea0f4e22b9ac68d2ae9f84808`. The
+output block, read the same way from the printed output matrix, is
+`3925841d02dc09fbdc118597196a0b32`. The test
+`FIPS 197 Appendix B round-by-round example` checks that output. It does not
+check the intermediate state.
+
+Appendix C of the November 26, 2001 edition. Each row is one block. The
+plaintext in all three is `00112233445566778899aabbccddeeff`. The 2023
+Appendix C does not print these rows.
+
+| 2001 section | Key | `round[Nr].output` |
+| :--- | :--- | :--- |
+| C.1, AES-128, $N_k = 4$, $N_r = 10$ | `000102030405060708090a0b0c0d0e0f` | `69c4e0d86a7b0430d8cdb78070b4c55a` |
+| C.2, AES-192, $N_k = 6$, $N_r = 12$ | `000102030405060708090a0b0c0d0e0f1011121314151617` | `dda97ca4864cdfe06eaf70a0ec0d7191` |
+| C.3, AES-256, $N_k = 8$, $N_r = 14$ | the C.2 key followed by `18191a1b1c1d1e1f` | `8ea2b7ca516745bfeafc49904b496089` |
+
+C.1 also prints `round[1].s_box` =
+`63cab7040953d051cd60e0e7ba70e18c` and `round[10].output` as above. The
+listing checks the output and the inverse, which the 2001 text labels
+INVERSE CIPHER and which returns that plaintext. It does not check
+`round[1].s_box`.
+
+#### 8. Compiler-Checked Transcription
 
 ```orange
-// AES, the Advanced Encryption Standard of FIPS 197 (2001; update 1, 2023),
-// https://doi.org/10.6028/NIST.FIPS.197-upd1, written as the standard writes
-// it: the state is the 4 x 4 byte array of section 3.4 kept column by column,
-// the four transformations of section 5.1 and their inverses of section 5.3
-// act on it, KeyExpansion of section 5.2 makes the round keys for Nk = 4, 6
-// and 8, and Cipher and InvCipher take the number of rounds Nr as the
-// standard's algorithms do. The S-boxes are packed eight entries to a word.
-// The file reproduces the cipher examples of Appendix C.1, C.2 and C.3 and
-// their inverses, and the round-by-round example of Appendix B. The modes of
-// operation of SP 800-38A are in aes-modes.or.
+// AES-128, AES-192, and AES-256 as NIST FIPS 197-upd1 (November 26, 2001;
+// updated May 9, 2023; https://doi.org/10.6028/NIST.FIPS.197-upd1) writes
+// them: the state is the section 3.4 array kept column by column, the four
+// transformations of section 5.1 and their inverses of section 5.3 act on it,
+// KEYEXPANSION of section 5.2 makes the round keys for Nk = 4, 6, and 8, and
+// CIPHER and INVCIPHER take Nr as Algorithms 1 and 3 do. The S-boxes are
+// Table 4 and Table 6, packed eight entries to a word (Figure 7 and Figure 14
+// of the 2001 edition). Appendix B is the 2023 text. The C.1, C.2, and C.3
+// blocks and their inverses are Appendix C of the November 26, 2001 edition;
+// the 2023 Appendix C does not print them. SP 800-38A is not this listing.
 edition 2026;
 module aes_spec {
   // Section 5.1.1: SubBytes is a table. Indices in Orange are static, so a
@@ -3424,9 +3583,9 @@ module aes_spec {
     ]
   }
 
-  // FIPS 197, Appendix B: the round-by-round example, input 3243f6a8... under
-  // the key 2b7e1516...; the output 3925841d... is the value the Python
-  // cryptography package gives for it, since the vector file omits this case.
+  // FIPS 197-upd1, Appendix B: input 3243f6a8... under the key 2b7e1516....
+  // The output 3925841d... is the output matrix of that appendix, read in
+  // section 3.4 byte order.
   spec fips197_b_aes128() -> Word[8]^16 {
     aes128(
       [
@@ -3467,6 +3626,117 @@ module aes_spec {
   }
 }
 ```
+
+#### 9. What This Binary Printed
+
+`orangec test --stats` on the listing, `orangec` 0.0.1, slice S3t, default
+budget 1,048,576:
+
+```text
+test "FIPS 197 Appendix C.1 AES-128" ... ok
+test "FIPS 197 Appendix C.1 inverse returns the plaintext" ... ok
+test "FIPS 197 Appendix B round-by-round example" ... ok
+test "FIPS 197 Appendix C.2 AES-192" ... ok
+test "FIPS 197 Appendix C.3 AES-256" ... ok
+5 tests: 5 passed, 0 failed
+```
+
+The step counts on stderr were 67,955, 75,235, 67,933, 162,458, and 198,792.
+The total was 572,373 of 1,048,576.
+
+`orangec eval --spec fips197_c1_aes128 --spec fips197_c1_aes128_expected
+--spec fips197_b_aes128 --spec fips197_b_aes128_expected` on
+`algorithms/aes/aes.or` printed four lines and exited 0. The two C.1 lines
+were both
+
+`Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]`.
+
+The two Appendix B lines were both
+
+`Word[8]^16 = [0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]`.
+
+Those are the C.1 and Appendix B ciphertexts above. The repository file has
+no `test` member, so `orangec test` on it is not the check this section uses.
+
+#### 10. Rejections
+
+Each program was passed to `orangec check` on this binary. The diagnostic is
+the first line the compiler printed.
+
+A round-key index built from a parameter, which is why `cipher` loops:
+
+```orange
+edition 2026;
+module neg_round {
+  spec bad(w: Word[32]^60, nr: Int) -> Word[32] { w[4 * nr] }
+}
+```
+
+`` error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``
+
+The packed S-box indexed by the data byte. The byte runs from 0 through 255;
+the array ends at 31:
+
+```orange
+edition 2026;
+module neg_sbox {
+  spec bad(row: Word[64]^32, x: Word[8]) -> Word[64] { row[x] }
+}
+```
+
+`` error[ORC0223]: this index runs from 0 through 255, out of range for `Word[64]^32` ``
+
+A third state dimension. A row and a sheet are admitted; the sheet has two
+dimensions already:
+
+```orange
+edition 2026;
+module neg_rank3 {
+  type row = Word[8]^4;
+  type sheet = row^4;
+  spec bad(state: sheet^4, i: Int) -> sheet { state[0] }
+}
+```
+
+`` error[ORC0203]: `sheet` already has two array dimensions ``
+
+`xtime` shifts by the literal 1. The literal 8 is not an amount for `Word[8]`:
+
+```orange
+edition 2026;
+module neg_shift8 {
+  spec bad(a: Word[8]) -> Word[8] { a << 8 }
+}
+```
+
+`` error[ORC0216]: `<<` on `Word[8]` needs an amount from 0 through 7 ``
+
+An array length of 0, which a block is not:
+
+```orange
+edition 2026;
+module neg_len {
+  spec bad() -> Word[8]^0 { [0; 0] }
+}
+```
+
+`` error[ORC0221]: an array length must be a decimal integer from 1 through 65536 ``
+
+A `Word[8]` index of `Word[8]^256` is not one of these rejections. `orangec
+check` of that spelling exits 0 and prints nothing. The listing still packs
+Table 4, so the literal reads as rows of the table.
+
+#### 11. Non-Claims
+
+The five tests show that this listing returns the cited output blocks and
+the three inverse plaintexts. They do not show the Appendix B intermediate
+state, the C.1 `round[1].s_box`, or $w_4$ of Appendix A.1. They do not show
+Algorithms 4 and 5. They do not show a mode of operation. They are not a
+timing measurement, a CMVP certificate, or a proof that the S-box literal
+matches Table 4 at every cell: the $\{53\} \mapsto \{ed\}$ cell is a reading
+of one packed word, and the other cells are the same literal, unchecked here
+one by one. Nothing in this section is a claim of constant time or of
+deployment.
 
 ### HMAC, FIPS 198-1
 
