@@ -106,9 +106,10 @@ the key schedule is four shifts and two ors on a pair of 64-bit words, one
 spec per amount because a shift amount is a literal.
 
 Two shapes in the file answer limits of the language rather than the RFC.
-The round-key schedule is a `Word[64]^34` (seventeen pairs of words) because
-seventeen 16-byte keys would be 272 bytes and an array holds at most 256
-elements; a round converts its pair back to bytes with `bytes_of`. And the
+The round-key schedule is a `Word[64]^34` (seventeen pairs of words).
+Seventeen 16-byte keys are 272 bytes, which fit in one array: the length
+bound is 65,536, not 256. The source keeps the pairs it was written with,
+and a round converts its pair back to bytes with `bytes_of`. And the
 number of rounds is not a loop bound, since bounds are literals: the
 `data_randomizing` loop runs sixteen times for every key size and compares
 the round index with `n`, and `decryption_round_key` selects `ek(n+1-i)` by
@@ -176,7 +177,8 @@ and it is not a corpus entry in the sense of The Orange Book chapter 12.
 None that prevented any planned vector. The language limits met, and their
 cost, are the ones described above: no data-dependent index, so each S-box
 lookup is a selection of about 300 steps and a block costs 87,000 to 131,000
-steps; arrays of at most 256 elements, so the 17 round keys travel as
-`Word[64]^34` and are converted to bytes per round; literal loop bounds, so
-the round count is a comparison inside a 16-iteration loop and the
-decryption round keys are selected rather than indexed.
+steps; the 17 round keys travel as `Word[64]^34` and are converted to bytes
+per round, even though 272 bytes fit in one array (the bound is 65,536);
+literal loop bounds, so the round count is a comparison inside a
+16-iteration loop and the decryption round keys are selected rather than
+indexed.

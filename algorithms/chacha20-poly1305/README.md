@@ -96,7 +96,8 @@ message, the `0x01` when its position equals the length, and nothing
 beyond; a whole block starts the fold from 1 so that the `0x01` lands above
 byte 15, a partial one from 0. That is the RFC's `le_bytes_to_num(msg[...] | [0x01])`
 for both the whole and the final block in one expression. The 375-byte text
-of appendix A.3 exceeds an array, so `poly1305_mac_long` absorbs a 256-byte
+of appendix A.3 fits in one array. The fixed 256-byte segment shape was
+retained from the old bound, so `poly1305_mac_long` absorbs a 256-byte
 head and a second segment starting at byte 256 with the same loop.
 
 The AEAD's MAC input is never laid out as one array. Every block of it is
@@ -414,11 +415,12 @@ Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the 375-byte text of A.3 vectors 2
-  and 3 is authenticated in two segments (`poly1305_mac_long`), and the
-  265-byte ciphertext and plaintext of A.5 are a 256-byte head and a
-  9-byte tail, the tail's block counter (5) set by hand; the RFC's single
-  call over the whole message is not one spec.
+- The 375-byte text of A.3 vectors 2 and 3 is authenticated in two segments
+  (`poly1305_mac_long`), and the 265-byte ciphertext and plaintext of A.5
+  are a 256-byte head and a 9-byte tail, the tail's block counter (5) set
+  by hand. An array holds 1 through 65,536 elements, so those lengths fit
+  in one array; the sources keep the split written when the bound was 256,
+  and the RFC's single call over the whole message is not one spec.
 - No length polymorphism: the message length of the Poly1305 MAC is a
   value beside a fixed buffer, but the AEAD's encryption, ciphertext
   absorption, tag and seal are written once per size the vectors need
