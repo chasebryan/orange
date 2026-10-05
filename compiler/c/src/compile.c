@@ -2017,7 +2017,17 @@ static int starts_let_binding(const Compiler *c) {
         return 0;
     }
     next = c->tokens[c->at + 1].kind;
-    return next == TK_IDENT || next == TK_LPAREN;
+    if (next == TK_IDENT) {
+        return 1;
+    }
+    /* `let(x)` calls a function named `let`. A tuple pattern is
+       `let (name: Type, ...)` or the rejected form `let (name, ...)`. */
+    if (next == TK_LPAREN && c->at + 3 < c->ntokens) {
+        TokenKind name = c->tokens[c->at + 2].kind;
+        TokenKind after = c->tokens[c->at + 3].kind;
+        return name == TK_IDENT && (after == TK_COLON || after == TK_COMMA);
+    }
+    return 0;
 }
 
 static int parse_pattern_name(Compiler *c, Local *local) {
