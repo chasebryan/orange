@@ -6219,7 +6219,7 @@ static void report_cycle(Program *program, const uint16_t *path_mod, int path_le
     Compiler *mod = program->mods[node];
     UseDecl *use = &mod->uses[use_index];
     char route[384];
-    char message[512];
+    char message[640];
     char name[128];
     size_t used = 0;
     int start = 0;
