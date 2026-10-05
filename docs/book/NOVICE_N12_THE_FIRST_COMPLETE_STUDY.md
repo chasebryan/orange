@@ -24,7 +24,7 @@ RFC 8439.
 
 > “I speculate that ChaCha has similar resistance to “ChaCha” against the attack, but of course this has to be checked carefully.”
 >
-> — Daniel J. Bernstein, *ChaCha, a variant of Salsa20* (2008.01.28), §2.2. [S9]
+> — Daniel J. Bernstein, *ChaCha, a variant of Salsa20* (2008.01.28), §2.2. [S10]
 
 The sentence is a speculation, and the clause after the comma is the
 author refusing to let the speculation stand in for a check. This lesson
@@ -2094,7 +2094,7 @@ establish the claims §N12.18 places outside the study.
 The quotations and the copied vectors are the only borrowed words. The
 derivations are the lesson's.
 
-**[S9] Daniel J. Bernstein.** “ChaCha, a variant of Salsa20.” Document
+**[S10] Daniel J. Bernstein.** “ChaCha, a variant of Salsa20.” Document
 date 2008.01.28. Permanent ID `4027b5256e17b9796842e6d0f68b0b5e`. The
 epigraph is one sentence of §2.2, “The ChaCha quarter-round,” on page 3
 of the six-page paper hosted by the author. The sentence follows his
@@ -2106,6 +2106,7 @@ the epigraph sentence does not contain that ligature. The double quotes
 around the inner ChaCha are U+201C and U+201D, as printed. No translation
 is involved. The sentence is not a claim that the check in this lesson is
 the check Bernstein required, and it is not an endorsement of Orange.
+This record's tag is [S10].
 
 Source: <https://cr.yp.to/chacha/chacha-20080128.pdf>
 

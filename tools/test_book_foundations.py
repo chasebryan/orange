@@ -913,6 +913,78 @@ class N11Protect(unittest.TestCase):
             self.assertEqual(posterior, expected_posterior)
 
 
+class N12CompleteStudy(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md').read_text(
+            encoding='utf-8'
+        )
+        cls.index = INDEX.read_text(encoding='utf-8')
+        cls.protect = (ROOT / 'docs' / 'book' / 'NOVICE_PROTECT.md').read_text(encoding='utf-8')
+
+    def test_n12_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (N12\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(N12\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'N12.{n}' for n in range(1, 13)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ Chapter (?:7|8|9|10|11|12)\b')
+        self.assertRegex(self.text, r'(?m)^## N12: The First Complete Study$')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'I speculate that ChaCha has similar resistance to “ChaCha” against the attack, '
+            'but of course this has to be checked carefully.'
+        ])
+        self.assertIn('https://cr.yp.to/chacha/chacha-20080128.pdf', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439', self.text)
+        self.assertIn('**N12.**', self.index)
+        self.assertIn(
+            'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md#n12-the-first-complete-study',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n12-the-first-complete-study', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(r'NOVICE_N12_THE_FIRST_COMPLETE_STUDY\.md#([^)\s]+)', self.index):
+            self.assertIn(fragment, anchors)
+        self.assertIn('[S10]', self.text)
+        self.assertNotIn('[S9]', self.text)
+        self.assertIn('**[S10] Daniel J. Bernstein.**', self.text)
+        self.assertIn('**[S9] Claude E. Shannon.**', self.protect)
+
+    def test_n12_ledger_matches_the_word_arithmetic(self):
+        block = re.search(r'^```text\nn12-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        modulus = 2 ** 32
+        expected = {
+            'sample-sum': 0x77777777 + 0x01234567,
+            'quarter-wrap-sum': 0xecff8273 + 0x5881c4bb,
+            'quarter-wrap-residue': (0xecff8273 + 0x5881c4bb) % modulus,
+            'state-wrap-sum': 0x53372767 + 0xc47446a0,
+            'state-wrap-residue': (0x53372767 + 0xc47446a0) % modulus,
+            'column-wrap-sum': 0x8c767582 + 0xdec62ed2,
+            'column-wrap-residue': (0x8c767582 + 0xdec62ed2) % modulus,
+            'feed0': 0x837778ab + 0x61707865,
+            'feed1-sum': 0xe238d763 + 0x3320646e,
+            'feed1-residue': (0xe238d763 + 0x3320646e) % modulus,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['quarter-wrap-residue'], 0x4581472e)
+        self.assertEqual(expected['state-wrap-residue'], 0x17ab6e07)
+        self.assertEqual(expected['column-wrap-residue'], 0x6b3ca454)
+        self.assertEqual(expected['feed0'], 0xe4e7f110)
+        self.assertEqual(expected['feed1-residue'], 0x15593bd1)
+        self.assertLess(expected['feed0'], modulus)
+        self.assertGreaterEqual(expected['feed1-sum'], modulus)
+        self.assertLess(expected['feed1-sum'], 2 * modulus)
+        self.assertEqual((0xfc62bb2f + 0x07060504) % modulus, 0x0368c033)
+        self.assertEqual(0xd19c12b4 + 1, 0xd19c12b5)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right

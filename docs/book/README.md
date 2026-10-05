@@ -330,7 +330,8 @@ python3 tools/test_book_foundations.py
 
 These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
-answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, and document structure. Python test
+answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
+answers and the N12 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -349,8 +350,10 @@ Orange listings in N8 and checks the printed values, the printed
 diagnostics, the failing and passing tests, and the `--spec` and `--steps`
 commands the lesson names. The same test reads the Orange listings in
 N11 and checks their printed values, their printed diagnostics, and the
-passing known-answer tests. Run it in a build-capable
-checkout:
+passing known-answer tests. The same test reads the six Orange listings in
+N12 and checks the five printed evaluations, the four printed test
+reports, and the `ORC0223` diagnostic of the shifted index. Run it in a
+build-capable checkout:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --locked --offline

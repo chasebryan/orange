@@ -613,3 +613,124 @@ fn n11_known_answer_tests_pass() {
         assert_eq!(first.stderr, second.stderr);
     }
 }
+
+const N12: &str = include_str!("../../../../docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md");
+
+fn n12_sources() -> Vec<&'static str> {
+    fences(N12, "orange")
+}
+
+fn n12_text() -> Vec<&'static str> {
+    fences(N12, "text")
+}
+
+fn n12_source(name: &str) -> &'static str {
+    n12_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N12 listing {name}"))
+}
+
+fn n12_one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n12_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn n12_eval_fence(name: &str) -> &'static str {
+    let prefix = format!("{name}::");
+    n12_one_text(
+        |text| text.starts_with(&prefix) && text.contains(" = "),
+        name,
+    )
+}
+
+fn n12_test_fence(title: &str) -> &'static str {
+    let prefix = format!("test \"{title}");
+    n12_one_text(
+        |text| {
+            text.starts_with(&prefix) && (text.contains("... ok") || text.contains("... FAILED"))
+        },
+        title,
+    )
+}
+
+#[test]
+fn n12_listings_check_and_evaluate_repeatably() {
+    let sources = n12_sources();
+    assert_eq!(sources.len(), 6, "update coverage when adding N12 listings");
+    assert!(!N12.contains("\n## Chapter "));
+    for name in [
+        "sample_line",
+        "quarter_vector",
+        "state_quarter",
+        "opened_column",
+        "chacha_block",
+    ] {
+        let source = n12_source(name);
+        assert_silent_check(name, source);
+        let expected = format!("{}\n", n12_eval_fence(name));
+        let first = run("eval", source);
+        assert!(
+            first.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        assert!(first.stderr.is_empty(), "{name}: eval diagnostics");
+        let second = run("eval", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+    }
+}
+
+#[test]
+fn n12_shifted_sum_matches_the_printed_diagnostic() {
+    let source = n12_source("shifted_sum");
+    let expected = format!(
+        "{}\n",
+        n12_one_text(
+            |text| text.starts_with("error[ORC0223]") && text.contains("original[i + 1]"),
+            "shifted sum diagnostic"
+        )
+    );
+    for command in ["check", "eval", "test"] {
+        let result = run(command, source);
+        assert_eq!(result.status.code(), Some(1), "{command}");
+        assert!(result.stdout.is_empty(), "{command} printed a value");
+        assert_eq!(
+            String::from_utf8(result.stderr).expect("UTF-8 diagnostic"),
+            expected,
+            "{command}"
+        );
+    }
+    assert!(source.contains("original[i + 1]"));
+    let repaired = n12_source("chacha_block");
+    assert!(repaired.contains("worked[i] + original[i]"));
+    assert!(!repaired.contains("original[i + 1]"));
+}
+
+#[test]
+fn n12_known_answer_tests_match_the_printed_reports() {
+    for (module, title) in [
+        ("quarter_vector", "RFC 8439 2.1.1"),
+        ("state_quarter", "RFC 8439 2.2.1"),
+        ("opened_column", "first column of RFC 8439 2.3.2"),
+        ("chacha_block", "RFC 8439 2.3.2 words"),
+    ] {
+        let source = n12_source(module);
+        let expected = format!("{}\n", n12_test_fence(title));
+        let first = run("test", source);
+        assert_eq!(first.status.code(), Some(0), "{module}");
+        assert!(first.stderr.is_empty(), "{module}: {}", String::from_utf8_lossy(&first.stderr));
+        assert_eq!(first.stdout, expected.as_bytes(), "{module}");
+        let second = run("test", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+    }
+}
