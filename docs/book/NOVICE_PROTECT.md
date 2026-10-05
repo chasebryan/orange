@@ -19,9 +19,10 @@ advantage over a carrier who knows the method. You have, from §1.3, the
 separation of a public method and a selected key, and from §1.6 the
 separation of confidentiality, integrity, and authenticity. Chapter 3 gives
 XOR and its cancellation identity. Chapter 6 gives congruence and the unique
-remainder. N9 gives sets, functions, inverses, and quantifiers. N10 gives
-finite probability, conditional probability, and independence. This lesson
-uses those results. It does not teach them again.
+remainder. N9 gives sets, functions, inverses, quantifiers, and
+Assumption N9.4. N10 gives finite probability, conditional probability,
+and independence. This lesson uses those results. It does not teach them
+again.
 
 **Mathematical claim.** A result below is a claim about a stated finite
 alphabet, a stated function, or a stated finite probability space. The
@@ -106,8 +107,13 @@ set is fixed by its members. A function sends each element of its domain
 to one element of its codomain. Injective, surjective, and bijective keep
 Definitions N9.12 through N9.14. A universal or existential claim names
 its domain, as Definition N9.17 requires. Proof by cases is Definition
-N9.18. Negating a quantifier is Proposition N9.11. When this lesson says
-“every letter,” the set of letters has already been named.
+N9.18. Negating a quantifier is Proposition N9.11. Induction by a
+successor step is Assumption N9.4: the base `P(0)`, and the step
+`P(n) ⇒ P(n + 1)` with hypothesis `P(n)` alone. When that step is proved
+for an arbitrary nonnegative integer and the proof never depends on a
+particular bound, the second paragraph of Assumption N9.4 gives `P(n)`
+for every nonnegative integer `n`. When this lesson says “every letter,”
+the set of letters has already been named.
 
 **Assumption N11.4 — Probability keeps its N10 meanings.** A finite
 probability space is Definition N10.4. An event's probability is the sum
@@ -889,17 +895,33 @@ every positive integer `m`, there exist integers `x` and `y` such that
 a · x + m · y = gcd(a, m).
 ```
 
-**Proof.** Induct on the positive integer `m`, using Assumption N9.4.
-If `m = 1`, then `gcd(a, 1) = 1`, because `1` divides `a` and no positive
-divisor is greater than `1`. Take `x = 0` and `y = 1`.
+**Proof.** Let `Q(n)` say, for a nonnegative integer `n`: for every
+integer `a` and every positive integer `m` with `m ≤ n + 1`, there exist
+integers `x` and `y` such that `a · x + m · y = gcd(a, m)`.
 
-Fix `m > 1`, and assume the claim is already proved for every positive
-modulus strictly less than `m`, and for every integer in the role of `a`.
-Write `a = q · m + r` with `0 ≤ r < m`. If `r = 0`, Proposition N11.7
-says `gcd(a, m) = m`. Take `x = 0` and `y = 1`. If `r > 0`, then `r` is
-a positive integer less than `m`, so the inductive hypothesis applies to
-the pair whose integer is `m` and whose modulus is `r`: there exist
-integers `x'` and `y'` with
+Base case. `Q(0)` asks only for the modulus `m = 1`. Then
+`gcd(a, 1) = 1`, because `1` divides `a` and no positive divisor is
+greater than `1`. Take `x = 0` and `y = 1`. So `Q(0)`.
+
+Inductive step. Fix a nonnegative integer `n` and assume `Q(n)`. Let
+`S` be the set of pairs `(a, m)` in which `a` is an integer and `m` is
+a positive integer with `m ≤ n + 2`. The statement `Q(n + 1)` says that
+every pair in `S` has integers `x` and `y` with
+`a · x + m · y = gcd(a, m)`.
+
+Let `S1` be the pairs in `S` with `m ≤ n + 1`, and let `S2` be the
+pairs in `S` with `m = n + 2`. Every pair in `S` lies in exactly one of
+`S1` and `S2`.
+
+On `S1`, the hypothesis `Q(n)` supplies `x` and `y`.
+
+On `S2`, take a pair `(a, m)`. Write `a = q · m + r` with `0 ≤ r < m`,
+as §6.3 provides.
+Exactly one of `r = 0` and `r > 0` holds. If `r = 0`, Proposition N11.7
+says `gcd(a, m) = m`. Take `x = 0` and `y = 1`. If `r > 0`, then `r`
+is a positive integer and `r ≤ m - 1 = n + 1`. The hypothesis `Q(n)`
+applies to the integer `m` and the modulus `r`: there exist integers
+`x'` and `y'` with
 
 ```text
 m · x' + r · y' = gcd(m, r).
@@ -915,11 +937,16 @@ m · x' + (a - q · m) · y' = a · y' + m · (x' - q · y').
 Take `x = y'` and `y = x' - q · y'`. The linear combination equals
 `gcd(a, m)`.
 
-The induction is on the modulus, not on `a`. The inductive step calls
-the claim for a smaller positive modulus, which is the remainder. Each
-remainder is a nonnegative integer strictly below the previous modulus,
-so the descent cannot continue forever. That is what the induction is
-for. You do not need a separate termination argument beside it.
+Both subsets satisfy the claim, so Definition N9.18 gives it on `S`.
+Definition N9.17 gives `Q(n + 1)`. The step is `Q(n) ⇒ Q(n + 1)`. The
+hypothesis was `Q(n)` only. The step did not assume `Q(k)` for any `k`
+other than `n`, and it did not use a particular bound. The second
+paragraph of Assumption N9.4 therefore yields `Q(n)` for every
+nonnegative integer `n`.
+
+Given a positive integer `m` and an integer `a`, set `n = m - 1`. Then
+`n` is a nonnegative integer and `m ≤ n + 1`, so `Q(n)` supplies the
+integers `x` and `y` the proposition asks for.
 
 **Proposition N11.9 — Invertible multipliers are the multipliers coprime
 to the modulus.** Let `m` be positive and let `a` be an integer. There
@@ -967,9 +994,10 @@ residue is `13` alone. The residues that remain are the odds other than
 
 There are twelve of them. For a witness, `gcd(5, 26)`: `26 = 5 · 5 + 1`,
 and `5 = 1 · 5 + 0`, so the positive remainder `1` is the greatest common
-divisor, by two uses of Proposition N11.7. Bézout from that division:
-`1 = 26 - 5 · 5`, so `5 · (-5) + 26 · 1 = 1`. The representative of `-5`
-modulo `26` is `21`, because `-5 = (-1) · 26 + 21`. And `5 · 21 = 105`,
+divisor, by two uses of Proposition N11.7. The step of Proposition N11.8
+substitutes `1 = 26 - 5 · 5`, so `5 · (-5) + 26 · 1 = 1`. The
+representative of `-5` modulo `26` is `21`, because
+`-5 = (-1) · 26 + 21`. And `5 · 21 = 105`,
 `105 = 4 · 26 + 1`, so `5 · 21 ≡ 1 (mod 26)`. The inverse of `5` is `21`.
 
 For a failure, `gcd(2, 26) = 2`, not `1`. There is no inverse. The same
@@ -2535,6 +2563,8 @@ that this binary accepts. Implementation of those slices is not
 acceptance of the proposals, and it adds no cryptographic claim.
 
 The lesson was drafted with Grok 4.7 in Cursor on 2026-10-05 at the
-owner's direction. It is stacked after N10 on
-`book/novice-journeyman-master-opening`. Owner review is pending. No
-deployment claim is made.
+owner's direction, and it is stacked after N10 on
+`book/novice-journeyman-master-opening`. Proposition N11.8 cites
+Assumption N9.4 only as the successor step `Q(n) ⇒ Q(n + 1)`, with
+hypothesis `Q(n)` alone. Owner review is pending. No deployment claim
+is made.
