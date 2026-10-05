@@ -89,8 +89,10 @@ understand each operation rather than memorize its notation.
   sets, membership, subsets, relations, functions and inverses, quantifiers,
   implication, equivalence, negation, cases, contradiction, contrapositive,
   induction, invariants, and finite exhaustive arguments. Twenty exercises
-  with worked answers. The label is lesson N9. It is not a manuscript
-  chapter numeral. [Worked answers](NOVICE_LOGIC.md#worked-answers-n9).
+  with worked answers. One Orange listing writes the successor step of
+  Assumption N9.4 as a bounded `for` inside a `test`. The label is lesson N9.
+  It is not a manuscript chapter numeral.
+  [Worked answers](NOVICE_LOGIC.md#worked-answers-n9).
 - **N10.** [Count What You Do Not Know](NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know):
   fractions, ratios, finite probability spaces, conditional knowledge,
   independence, an elementary birthday bound, expected value, and base-two
@@ -357,7 +359,9 @@ reads the Orange listings in N11 and checks their printed values, their
 printed diagnostics, and the passing known-answer tests. The same test
 reads the six Orange listings in N12 and checks the five printed
 evaluations, the four printed test reports, and the `ORC0223` diagnostic
-of the shifted index. Run it in a
+of the shifted index. The same test
+reads the one Orange listing in N9 and checks its printed evaluation and
+its passing test. Run it in a
 build-capable checkout:
 
 ```sh

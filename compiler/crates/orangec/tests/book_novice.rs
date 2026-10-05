@@ -735,7 +735,10 @@ fn n11_known_answer_tests_pass() {
         let expected = format!("{}\n", n11_test_fence(title));
         let first = run("test", source);
         assert_eq!(first.status.code(), Some(0), "{name}");
-        assert!(first.stderr.is_empty(), "{name}: a test report is not a diagnostic");
+        assert!(
+            first.stderr.is_empty(),
+            "{name}: a test report is not a diagnostic"
+        );
         assert_eq!(first.stdout, expected.as_bytes(), "{name}");
         let second = run("test", source);
         assert_eq!(first.stdout, second.stdout);
@@ -855,11 +858,90 @@ fn n12_known_answer_tests_match_the_printed_reports() {
         let expected = format!("{}\n", n12_test_fence(title));
         let first = run("test", source);
         assert_eq!(first.status.code(), Some(0), "{module}");
-        assert!(first.stderr.is_empty(), "{module}: {}", String::from_utf8_lossy(&first.stderr));
+        assert!(
+            first.stderr.is_empty(),
+            "{module}: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
         assert_eq!(first.stdout, expected.as_bytes(), "{module}");
         let second = run("test", source);
         assert_eq!(first.status.code(), second.status.code());
         assert_eq!(first.stdout, second.stdout);
         assert_eq!(first.stderr, second.stderr);
     }
+}
+
+const N9: &str = include_str!("../../../../docs/book/NOVICE_LOGIC.md");
+
+fn n9_sources() -> Vec<&'static str> {
+    fences(N9, "orange")
+}
+
+fn n9_text() -> Vec<&'static str> {
+    fences(N9, "text")
+}
+
+#[test]
+fn n9_successor_listing_checks_evaluates_and_passes() {
+    let sources = n9_sources();
+    assert_eq!(sources.len(), 1, "Listing N9.1 is the only Orange fence");
+    assert!(!N9.contains("\n## Chapter "));
+    assert!(!N9.to_ascii_lowercase().contains("complete induction"));
+    let source = sources[0];
+    assert_eq!(module_name(source), "length_count");
+    assert!(source.contains("test \"successor step through length 8\""));
+    let test_body = source
+        .split_once("test \"successor step through length 8\"")
+        .expect("test declaration")
+        .1;
+    assert!(
+        test_body.contains("for i in 0..8"),
+        "the test walks a bounded for"
+    );
+    assert!(source.contains("row with [i + 1] = row[i] * 2"));
+
+    let check = run("check", source);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(check.stdout.is_empty(), "check printed a value");
+    assert!(check.stderr.is_empty(), "check diagnostics");
+
+    let expected_eval = n9_text()
+        .into_iter()
+        .find(|text| text.starts_with("length_count::") && text.contains(" = "))
+        .expect("printed evaluation");
+    let first = run("eval", source);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, format!("{expected_eval}\n").as_bytes());
+    assert!(first.stderr.is_empty(), "eval diagnostics");
+    let second = run("eval", source);
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+
+    let expected_test = n9_text()
+        .into_iter()
+        .find(|text| {
+            text.starts_with("test \"successor step through length 8\"") && text.contains("... ok")
+        })
+        .expect("printed test report");
+    let first_test = run("test", source);
+    assert_eq!(first_test.status.code(), Some(0));
+    assert!(
+        first_test.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&first_test.stderr)
+    );
+    assert_eq!(first_test.stdout, format!("{expected_test}\n").as_bytes());
+    let second_test = run("test", source);
+    assert_eq!(first_test.status.code(), second_test.status.code());
+    assert_eq!(first_test.stdout, second_test.stdout);
+    assert_eq!(first_test.stderr, second_test.stderr);
 }

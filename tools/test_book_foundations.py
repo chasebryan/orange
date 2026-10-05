@@ -524,6 +524,13 @@ class LessonN9Reference(unittest.TestCase):
             self.assertNotEqual(value + 1, 0)
         self.assertEqual(2 ** 0, 1)
         self.assertEqual(2 ** 3, 8)
+        powers = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+        self.assertEqual([2 ** n for n in range(9)], powers)
+        self.assertEqual(powers[0], 1)
+        for index in range(8):
+            self.assertEqual(powers[index + 1], powers[index] * 2)
+        self.assertEqual(powers[8], 256)
+        self.assertIn('[1, 2, 4, 8, 16, 32, 64, 128, 256]', self.text)
         self.assertEqual(f'{0x81:08b}', '10000001')
         self.assertEqual(f'{rotate_left_byte(0x81):08b}', '00000011')
         self.assertEqual(f'{(0x81 << 1) & 255:08b}', '00000010')
@@ -616,7 +623,17 @@ class LessonN9Reference(unittest.TestCase):
         self.assertEqual([len(quote.split()) for quote in quotes], [11])
         self.assertIn('**[S7]', self.text)
         self.assertIn('pp. 644–654', self.text)
-        self.assertNotIn('```orange', self.text)
+        self.assertEqual(self.text.count('```orange'), 1)
+        self.assertIn('test "successor step through length 8"', self.text)
+        self.assertIn('for i in 0..8', self.text)
+        self.assertIn('**Assumption N9.4 — Induction by a successor step.**', self.text)
+        self.assertIn('**Proposition N9.16 — Eight successor steps.**', self.text)
+        self.assertIn('**Listing N9.1 — `length_count.or`**', self.text)
+        self.assertIn('proof by contradiction in §N9.18', self.text)
+        self.assertNotIn('proof by contradiction in §N9.20', self.text)
+        self.assertNotIn('will eventually', self.text)
+        self.assertNotIn('unwritten', self.text)
+        self.assertNotIn('complete induction', self.text.lower())
         anchors = {github_anchor(heading) for heading in headings}
         for fragment in re.findall(r'NOVICE_LOGIC\.md#([^)]+)', self.index):
             self.assertIn(fragment, anchors)

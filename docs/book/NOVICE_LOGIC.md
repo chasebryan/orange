@@ -9,8 +9,9 @@ Lesson N9. Draft 2026-10-05.
 Read this after [Chapter 6](NOVICE_PROGRAMMING.md#chapter-6-words-have-edges).
 Chapters 1–6 of the novice sequence are the prerequisite. Lesson N7, Name
 the Intermediate Step, and lesson N8, Read and Repair a Program, are earlier
-in the teaching order and are not in this file. Nothing proved below uses
-their unwritten material.
+in the teaching order and are not in this file. The arguments below do not
+depend on a program, except Listing N9.1, which uses the bounded `for` of
+N7 and the `test` of N8 to record one successor count.
 
 The label **N9** is the locked novice-lesson label. It is not manuscript
 Chapter 9, and it is not Chapter 7, Chapter 8, or any other numeral already
@@ -56,13 +57,21 @@ strings, and the existence and uniqueness of the Euclidean quotient and
 remainder in §6.3, are already established. Their internal write-ups are
 not repeated. Citing them is not a new proof of them.
 
-**Assumption N9.4 — Induction on the nonnegative integers.** The
-nonnegative integers are `0, 1, 2,` and so on: the integers that are not
-negative, including zero. To prove a statement `P(n)` for every
-nonnegative integer `n`, it is enough to prove `P(0)`, and to prove that
-for an arbitrary nonnegative integer `n`, if `P(n)` is true then
-`P(n + 1)` is true. This is a proof rule adopted here. It is not derived
-in this lesson from a list of axioms.
+**Assumption N9.4 — Induction by a successor step.** The nonnegative
+integers are `0, 1, 2,` and so on: the integers that are not negative,
+including zero. Let `P(n)` be a statement about a nonnegative integer
+`n`, and let `N` be a stated nonnegative integer. To prove `P(k)` for
+every integer `k` with `0 ≤ k ≤ N`, prove `P(0)`, and prove that for
+each integer `n` with `0 ≤ n < N`, `P(n)` implies `P(n + 1)`. That
+second proof is one successor step. It may use `P(n)`. It may not use
+`P(m)` for every `m ≤ n`.
+
+If the successor step is proved for an arbitrary nonnegative integer,
+and the proof never depends on a particular `N`, the same two
+obligations prove `P(n)` for every nonnegative integer `n`. The
+hypothesis at that step remains `P(n)` alone. Listing N9.1 is the finite
+walk for `N = 8`. The rule is not derived in this lesson from a list of
+axioms.
 
 A **proof**, as Chapter 1 used the word, is an argument establishing a
 stated conclusion from the stated rules and assumptions. A **test**
@@ -71,9 +80,10 @@ are patterns a proof can have, and they do not widen a conclusion past the
 sets the proof mentions.
 
 One boundary is easy to miss because it is syntactic. This lesson does not
-introduce Orange bindings, arrays, conditions, tuples, or bounded
-iteration. Those belong to N7. When an Orange expression appears below, it
-uses only forms already written in Chapters 5 and 6.
+introduce Orange bindings, arrays, conditions, tuples, bounded iteration,
+or `test`. Those forms are already in N7 and N8. Listing N9.1 uses a
+bounded `for` and a `test`, and no other new form. Every other Orange
+expression below uses only forms already written in Chapters 5 and 6.
 
 ### N9.2 A set is fixed by its members
 
@@ -458,8 +468,8 @@ not exist. Every member of `T` is a member of `S`. Combined with
 
 The second paragraph assumed a missing element, derived that the
 cardinalities cannot agree, and rejected the assumption. That shape will
-be named proof by contradiction in §N9.20. The reasoning here does not
-depend on the later name.
+be named proof by contradiction in §N9.18. The definition there is
+Definition N9.19. The reasoning here does not depend on the later name.
 
 **Proposition N9.10 — Finite sets of equal size.** Let `S` and `T` be
 finite, with `|S| = |T|`, and let `f` be a function from `S` to `T`. The
@@ -547,10 +557,11 @@ reading in §6.4 and Example N9.8. Only the XOR body is bijective for each
 fixed `k`. The doubling body is `d`. A checker that accepts the file has
 not been asked to test injectivity.
 
-This lesson adds no Orange listing and reports no new compiler run. The
-distinction just made is about the functions already defined. It is not
-evidence that a particular binary accepted a particular file on a
-particular day.
+Listing N9.1, in §N9.20, is the one program this lesson adds. It records
+the successor count through length 8. It does not ask the checker to test
+injectivity of XOR or of doubling. A passing `test` there is one `Bool`
+on one run, in the sense N8 gave that word. It is not Proposition N9.5,
+and it is not evidence about a different file.
 
 ### N9.13 Statements, predicates, and implication
 
@@ -815,13 +826,16 @@ remains the witness.
 
 ### N9.20 Induction
 
-Assumption N9.4 is the whole rule. A proof that uses it has two
-obligations and one announcement. The **base case** is `P(0)`. The
-**inductive step** proves `P(n) ⇒ P(n + 1)` for an arbitrary nonnegative
-integer `n`. Inside that step, `P(n)` is the **inductive hypothesis**.
-You may use it only after saying that you are proving the step, and only
-as a hypothesis of that implication. You may not treat `P(n)` as something
-already proved for every `n` while you are still proving the step.
+Assumption N9.4 is the whole rule. A proof that uses the finite form has
+two obligations. The **base case** is `P(0)`. The **inductive step**
+proves `P(n) ⇒ P(n + 1)` for each integer `n` with `0 ≤ n < N`, where
+`N` is the stated bound. Inside that step, `P(n)` is the **inductive
+hypothesis**. You may use it only as the hypothesis of that one
+implication. You may not treat `P(n)` as something already proved for
+every `n` while you are still proving the step, and you may not assume
+`P(m)` for every `m ≤ n`. The second paragraph of Assumption N9.4 is the
+same step with no bound in the proof. It is how Proposition N9.15 reaches
+every nonnegative integer. Listing N9.1 is the finite form at `N = 8`.
 
 **Proposition N9.15 — How many bit strings.** Let `C(n)` be the set of bit
 strings of length `n`, for each nonnegative integer `n`. Then
@@ -837,7 +851,10 @@ every longer string falls into one of them. Each family is in one-to-one
 correspondence with `C(n)`. Therefore
 `|C(n + 1)| = 2ⁿ + 2ⁿ = 2ⁿ · 2 = 2ⁿ⁺¹`.
 
-Assumption N9.4 yields the claim for every nonnegative integer `n`.
+The hypothesis was `|C(n)|` only. The step did not assume the count at
+every shorter length, and it did not use a particular bound. The second
+paragraph of Assumption N9.4 therefore yields the claim for every
+nonnegative integer `n`.
 
 Exercise 2.9 asked for the successor construction in words. The argument
 above is that construction organized as a base case and a step. The count
@@ -846,6 +863,111 @@ strings is this case, not a rival theorem.
 
 Induction does not say: the claim held for the first few values I tried,
 so it holds in general. That is a sample.
+
+**Proposition N9.16 — Eight successor steps.** Let `C(n)` be as in
+Proposition N9.15. Define `a(0) = 1` and `a(n + 1) = 2 · a(n)` for each
+integer `n` with `0 ≤ n < 8`. Then, for every integer `n` with
+`0 ≤ n ≤ 8`, `a(n) = |C(n)| = 2ⁿ`. In particular,
+`a(8) = |C(8)| = 256`.
+
+**Proof.** Let `P(n)` say `a(n) = |C(n)| = 2ⁿ`.
+
+Base case. `a(0) = 1` by the definition just given. The base case of
+Proposition N9.15 gives `|C(0)| = 1 = 2⁰`. So `P(0)`.
+
+Inductive step. Fix an integer `n` with `0 ≤ n < 8`, and assume `P(n)`.
+By the definition of `a`, `a(n + 1) = 2 · a(n)`. The hypothesis says
+`a(n) = 2ⁿ`, so `a(n + 1) = 2 · 2ⁿ`. Proposition N9.15 writes that
+product as `2ⁿ⁺¹`. The same proposition’s step, using only `|C(n)|`,
+gives `|C(n + 1)| = 2 · |C(n)|`. The hypothesis says `|C(n)| = 2ⁿ`, so
+`|C(n + 1)| = 2ⁿ⁺¹`. Thus `P(n) ⇒ P(n + 1)`. The step did not assume
+`P(m)` for any `m < n`.
+
+The bound in Assumption N9.4 is `N = 8`. The finite form yields `P(k)`
+for every integer `k` with `0 ≤ k ≤ 8`. From the base `1`, the later
+values are `2, 4, 8, 16, 32, 64, 128, 256`. Each is twice the value
+before it. The case `k = 8` is `256`.
+
+Listing N9.1 writes `a` in Orange. Index `0` holds `1`. For each `i`
+from `0` through `7`, the loop writes twice the value at `i` into index
+`i + 1`. Those indices stay inside the array: `i` is one of `0` through
+`7`, so `i + 1` is one of `1` through `8`, and the length is `9`. The
+zeros that begin at indices `1` through `8` are not read. Iteration `i`
+reads index `i`. Index `0` was set to `1` before the loop. Each later
+index is written by the previous iteration, at position `i + 1`, before
+the next iteration reads it. The test’s bounded
+`for` is the same walk. Its base conjunct is `built[0] == expected[0]`.
+At each `i` it requires both `built[i + 1] == built[i] * 2` and
+`built[i + 1] == expected[i + 1]`. The array `expected` is `2⁰` through
+`2⁸`, written out.
+
+**Listing N9.1 — `length_count.or`**
+
+```orange
+edition 2026;
+module length_count {
+  spec by_successor() -> Int^9 {
+    let zeros: Int^9 = [0; 9];
+    let start: Int^9 = zeros with [0] = 1;
+    for i in 0..8 with row: Int^9 = start {
+      row with [i + 1] = row[i] * 2
+    }
+  }
+
+  test "successor step through length 8" {
+    let built: Int^9 = by_successor();
+    let expected: Int^9 = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+    for i in 0..8 with ok: Bool = (built[0] == expected[0]) {
+      ok && ((built[i + 1] == (built[i] * 2)) && (built[i + 1] == expected[i + 1]))
+    }
+  }
+}
+```
+
+```sh
+./compiler/target/debug/orangec check -
+./compiler/target/debug/orangec eval -
+./compiler/target/debug/orangec test -
+```
+
+Check is silent. The status is `0`. There is no diagnostic. That silence
+means the source was accepted. It is not the test, and it is not
+Proposition N9.16.
+
+**Expected evaluation output:**
+
+```text
+length_count::by_successor: Int^9 = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+```
+
+**Test report:**
+
+```text
+test "successor step through length 8" ... ok
+1 test: 1 passed, 0 failed
+```
+
+| `i` | value read at `i` | value written at `i + 1` |
+| --- | --- | --- |
+| `0` | `1` | `2` |
+| `1` | `2` | `4` |
+| `2` | `4` | `8` |
+| `3` | `8` | `16` |
+| `4` | `16` | `32` |
+| `5` | `32` | `64` |
+| `6` | `64` | `128` |
+| `7` | `128` | `256` |
+
+Index `0` is not written by the loop. It stays `1`. After `i = 7` the
+array is the evaluation line above.
+
+The passing test means that one `Bool` was true on this run of this
+evaluator. It takes every successor from `0` through `7`. It is not the
+sample refused above: a sample omits a step, and this `for` does not.
+It is not Proposition N9.16. The proposition is the proof. It is not
+Proposition N9.15. The bound `8` is written in the source, and a larger
+bound is a different source. The test’s step reads index `i` and index
+`i + 1` only. It does not assume the claim at every smaller index.
 
 **Example N9.14 — Where a fake induction breaks.** Let `P(n)` say: for
 every byte value `v`, a left shift by `n` positions returns `v`. The
@@ -918,14 +1040,15 @@ to quote if the question was whether ones, or injectivity, survive.
 “The result is still a byte” restates the codomain. It does not state an
 invariant that implies a two-sided inverse.
 
-N7 will eventually have a syntax for repetition in Orange. This section
-does not use it. The invariant is a statement about a function on a set.
+N7 already writes repetition as a bounded `for`. This section does not
+use that syntax. The invariant is a statement about a function on a set.
 It does not become true or false according to which syntax a program
-uses to iterate.
+uses to iterate. Listing N9.1 uses a bounded `for` for a count. That
+listing does not decide Definition N9.21.
 
 ### N9.22 Finite exhaustive arguments
 
-**Proposition N9.16 — A complete finite check.** Let `S` be finite, and
+**Proposition N9.17 — A complete finite check.** Let `S` be finite, and
 let `P(x)` be a predicate on `S`. Suppose a list contains each element of
 `S` at least once, and suppose that for each listed element the
 corresponding statement `P(a)` has been established. Then
@@ -961,7 +1084,7 @@ counting relation to every length. Exhaustion is the pattern that scales
 only as far as the set you actually cover.
 
 A sample of `1000` byte pairs is a test. If those pairs were computed
-correctly, you have `1000` truths. You do not have Proposition N9.16’s
+correctly, you have `1000` truths. You do not have Proposition N9.17’s
 hypothesis, because `1000` is not `|B × B|`.
 
 ### N9.23 The edge of the claim
@@ -972,8 +1095,12 @@ the lemma or the collision that decides the matter. You can negate
 You can match a proof pattern to the set: cases or a full table when the
 set is small and listed, contradiction when a supposition collides with a
 cited fact, contrapositive when the swapped form is the one the algebra
-computes, induction when the set is the nonnegative integers, an invariant
-when a step preserves a predicate you still need later.
+computes, induction when each step uses only the preceding case, as
+Assumption N9.4 states it, an invariant when a step preserves a predicate
+you still need later. Listing N9.1 is that induction on the bound `8`:
+a `test` whose body is a bounded `for`. The hand proof of the same count
+is Proposition N9.16. The test is not the proposition. The proposition
+does not assume the claim at every shorter length.
 
 You may not say that XOR is invertible and stop. Section N9.11 fixed the
 function that is bijective and the function that is not. You may not say
@@ -1231,9 +1358,17 @@ exercises are original drafting for this book.
 ## Evidence boundary
 
 Lesson N9 adds definitions, propositions, twenty exercises, and worked
-answers. It adds no Orange listing. The nine listings and the Rust
-integration test attached to Chapters 4–6 are unchanged. No new compiler
-run is reported.
+answers. It adds one Orange listing, Listing N9.1. The nine listings in
+Chapters 4–6 are unchanged.
+`compiler/crates/orangec/tests/book_novice.rs` runs Listing N9.1’s check,
+evaluation, and test. A passing test is one run of that source. It does
+not establish a cryptographic security claim.
+
+The compiler used to produce the printed value and the test report
+identifies itself as `orangec 0.0.1 (Orange edition 2026; implemented
+slice S3t)`. The listing uses a bounded `for` and a `test` that this
+binary accepts. Implementation of those slices is not acceptance of the
+proposals, and it adds no cryptographic claim.
 
 The Python checks that accompany this lesson recompute the finite counts,
 truth tables, doubling image, rotation and shift examples, and exercise
@@ -1244,5 +1379,5 @@ The drafting of this lesson is AI-assisted with Grok 4.7 in Cursor, at
 Chase Bryan’s direction, 2026-10-05. Owner review of the lesson is
 pending. The project’s Current, Directed, Proposed, and Future
 distinctions, the license boundary, and the manuscript’s existing source
-disclosures remain in force. N7 and N8 are not written here. Manuscript
-Chapters 1–17 are not renumbered here.
+disclosures remain in force. N7 and N8 are earlier lessons and are not
+rewritten here. Manuscript Chapters 1–17 are not renumbered here.
