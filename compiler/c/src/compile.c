@@ -79,19 +79,22 @@
    is checked once for each combination, at most 256 instances, and the
    first size changes slowest. An empty range, a bound past 65536, and
    a product past the cap (`many` has 361) are ORC0238, and the body is
-   not checked. Checking stops at the first instance in error: `last`
-   fails at n = 1, and `none` fails at n = 0. A size is an Int constant
-   in that instance, built from integer literals and the function's size
-   parameters with +, -, *, /, %, and parentheses. / and % are Euclidean,
-   the same rules as for Int, so `blocks[1]` is 3. Anything else in a
-   size is ORC0237. A computed length or bound is parenthesized:
+   not checked. Instances of one function are checked from the first
+   value upward. The first diagnostic ends that walk, and the text kept
+   is the diagnostic that check recorded. A sized length outside 1
+   through 256 is ORC0221, and its note states that cap. A size is an
+   Int constant in that instance, built from integer literals and the
+   function's size parameters with +, -, *, /, %, and parentheses. / and
+   % are Euclidean, the same rules as for Int, so `blocks[1]` is 3.
+   Anything else in a size is ORC0237. A computed length or bound is
+   parenthesized:
    `^n + 1`, `[0; 2 * n]`, and `0..n - 1` are ORC0101. A call writes one
    size per parameter, `f[2](x)` or `sha256::sha256[n](...)`, or writes
    none and fits the one instance whose array lengths match. An
    out-of-range size is ORC0238. The wrong number of sizes, including a
    size on a function that has none, is ORC0239. No matching instance is
    ORC0238, and more than one match is ORC0239. Instances may call one
-   another. A cycle such as `swap` at 1 calling 2 calling 1 is ORC0217.
+   another. A cycle among them is ORC0217, with the message `call cycle`.
    `for`, `in`, `with`, `if`, and `else` are names outside those
    positions. `true` and `false` are Bool values where no parameter or
    binding of that spelling is in scope. Empty spec and impl
@@ -5059,10 +5062,12 @@ static int parse_source(Compiler *c) {
    and an out-of-range step is ORC0223. A non-printable or non-ASCII byte
    is ORC0235, an empty string is ORC0221, and a join past 256 bytes is
    ORC0222. A sized function is instantiated for each value in range, at
-   most 256 instances, and checked until the first instance reports an
-   error. Size `/` and `%` are Euclidean. A call resolves one instance:
-   an out-of-range or unmatched size is ORC0238, and a wrong count or an
-   ambiguous fit is ORC0239. A cycle among instances is ORC0217. */
+   most 256 instances. Instances are checked from the first value, and
+   the first diagnostic ends that walk. A sized length outside 1 through
+   256 is ORC0221, and its note states that cap. Size `/` and `%` are
+   Euclidean. A call resolves one instance: an out-of-range or unmatched
+   size is ORC0238, and a wrong count or an ambiguous fit is ORC0239. A
+   cycle among instances is ORC0217, message `call cycle`. */
 
 static const char *type_spelling(TypeKind type) {
     switch (type) {

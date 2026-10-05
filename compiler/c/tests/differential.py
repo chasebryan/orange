@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the standalone C compiler with the Rust frontend.
-
-The lists below are the S3a through S3m fixtures this frontend admits or
-rejects, including s3k/valid-ascon.or, s3k/valid-chacha20.or,
-s3k/valid-sha256.or, s3k/valid-tuples.or, the tuple names, types, and
-syntax invalids, s3l/valid-aead.or, s3l/valid-hmac.or, s3l/valid-bytes.or,
-the byte lexical, syntax, and type invalids, s3m/valid-poly1305.or,
-s3m/valid-hmac.or, s3m/valid-sizes.or, s3m/sha256.or, and the size
-invalids. Inline cases still cover a chained scalar index, loop-step
-recovery, and a rejected `as` target whose operand is still checked.
-Valid sources must match eval stdout. Invalid sources must match
-diagnostic codes. One S3b source must also match the lex stream. Later
-slices are not in these lists.
-"""
+"""Compare the standalone C compiler with the Rust frontend on the S3a–S3m fixtures."""
 
 import re
 import subprocess
@@ -84,8 +71,8 @@ VALID = [
     "s3m/sha256.or",
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
-# large-int-array: Int^2 of 2^16384-1 must print. The spelling grows with the value.
-# array-slots: 1025 arrays of 256 words must be released with the values that own them.
+# large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
+# array-slots: 1025 arrays of 256 words overflow a store that is never released.
 EXTRA = {
     "large-int-array.or": """\
 edition 2026;
