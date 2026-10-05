@@ -306,7 +306,8 @@ corpus entry in the sense of The Orange Book chapter 12.
   count in use (fifteen distinct across the two files) and one HKDF-Expand
   spec per
   output length. Inputs above 183 bytes, or info above 150 bytes, would
-  need a buffer larger than 256 bytes, which a `Word[32]` array cannot be.
+  need a buffer larger than the 256-byte `Word[32]^64` used here. A
+  `Word[32]` array may hold 65,536 elements; this entry has not been widened.
 - A shift amount must be a literal, so placing one byte at a computed
   position (`put_byte`) is a four-way conditional over `p % 4` and a walk
   over the 64 words; about 830 steps each, twice per hash.
