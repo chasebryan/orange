@@ -41,6 +41,9 @@ int big_mul(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_neg(const Big *value, Big *out);
 int big_cmp(const Big *left, const Big *right);
 
+/* Euclidean quotient and remainder: 0 <= rem < |divisor|, or 0 if divisor is 0. */
+int big_div_euclid(Arena *arena, const Big *dividend, const Big *divisor, Big *quot, Big *rem);
+
 /* Mathematical residue of value modulo 2^width, for width in 1..=64. */
 int big_mod_pow2(const Big *value, uint32_t width, uint64_t *out);
 

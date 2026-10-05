@@ -9,8 +9,9 @@ boundary, diagnostic codes, and deterministic token stream are permanent
 interfaces to extend rather than a disposable prototype.
 
 A standalone C frontend in [`c/`](c/README.md) checks and reference-evaluates
-the expression, binding, conversion, fixed-length array, and bounded-loop
-fragment without the Rust toolchain. The Rust frontend in this workspace
+the expression, binding, conversion, fixed-length array, bounded-loop, and
+conditional fragment (`Bool`, comparisons, Euclidean division, and `if` /
+`else`) without the Rust toolchain. The Rust frontend in this workspace
 remains the implementation through the later slices.
 
 Nothing here makes a verification, correctness, constant-time, or production

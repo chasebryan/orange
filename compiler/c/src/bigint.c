@@ -283,6 +283,172 @@ int big_neg(const Big *value, Big *out) {
     return 1;
 }
 
+static int mag_cmp(const uint32_t *left, uint32_t left_count, const uint32_t *right, uint32_t right_count) {
+    if (left_count != right_count) {
+        return left_count < right_count ? -1 : 1;
+    }
+    while (left_count > 0) {
+        left_count--;
+        if (left[left_count] != right[left_count]) {
+            return left[left_count] < right[left_count] ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
+static int mag_sub(uint32_t *value, uint32_t *count, const uint32_t *other, uint32_t other_count) {
+    uint32_t index;
+    uint32_t borrow = 0;
+    for (index = 0; index < *count; index++) {
+        uint32_t right = index < other_count ? other[index] : 0;
+        uint32_t left = value[index];
+        uint32_t result = left - right - borrow;
+        borrow = (left < right) || (borrow && left == right);
+        value[index] = result;
+    }
+    if (borrow) {
+        return 0;
+    }
+    while (*count > 0 && value[*count - 1] == 0) {
+        (*count)--;
+    }
+    return 1;
+}
+
+static int mag_shl1(uint32_t *limbs, uint32_t *count, int low_bit) {
+    uint32_t carry = low_bit ? 1u : 0u;
+    uint32_t index;
+    for (index = 0; index < *count; index++) {
+        uint32_t next = limbs[index] >> 31;
+        limbs[index] = (limbs[index] << 1) | carry;
+        carry = next;
+    }
+    if (carry != 0) {
+        if (*count >= ORANGE_MAX_LIMBS) {
+            return 0;
+        }
+        limbs[*count] = carry;
+        (*count)++;
+    }
+    return 1;
+}
+
+static int publish_mag(Arena *arena, const uint32_t *limbs, uint32_t count, int negative, Big *out) {
+    uint32_t *stored;
+    while (count > 0 && limbs[count - 1] == 0) {
+        count--;
+    }
+    if (count == 0) {
+        *out = big_zero();
+        return 1;
+    }
+    stored = alloc_limbs(arena, count);
+    if (stored == NULL) {
+        return 0;
+    }
+    memcpy(stored, limbs, (size_t)count * sizeof(uint32_t));
+    *out = big_publish(stored, count, negative);
+    return fits_bits(out);
+}
+
+/* Unsigned long division by shifting. Both magnitudes are nonzero. */
+static int mag_divmod(const uint32_t *dividend, uint32_t dividend_count, const uint32_t *divisor,
+                      uint32_t divisor_count, uint32_t *quot, uint32_t *quot_count, uint32_t *rem,
+                      uint32_t *rem_count) {
+    uint32_t top;
+    uint32_t bit;
+    uint32_t index;
+    if (divisor_count == 0 || dividend_count == 0 || dividend_count > ORANGE_MAX_LIMBS ||
+        divisor_count > ORANGE_MAX_LIMBS) {
+        return 0;
+    }
+    memset(quot, 0, (size_t)dividend_count * sizeof(uint32_t));
+    *quot_count = dividend_count;
+    *rem_count = 0;
+    top = dividend[dividend_count - 1];
+    bit = (dividend_count - 1u) * 32u;
+    while (top > 1u) {
+        top >>= 1;
+        bit++;
+    }
+    for (index = bit + 1u; index > 0; index--) {
+        uint32_t which = index - 1u;
+        uint32_t limb = which / 32u;
+        uint32_t low = (dividend[limb] >> (which % 32u)) & 1u;
+        if (!mag_shl1(rem, rem_count, low)) {
+            return 0;
+        }
+        if (mag_cmp(rem, *rem_count, divisor, divisor_count) >= 0) {
+            if (!mag_sub(rem, rem_count, divisor, divisor_count)) {
+                return 0;
+            }
+            quot[limb] |= 1u << (which % 32u);
+        }
+    }
+    while (*quot_count > 0 && quot[*quot_count - 1] == 0) {
+        (*quot_count)--;
+    }
+    return 1;
+}
+
+int big_div_euclid(Arena *arena, const Big *dividend, const Big *divisor, Big *quot, Big *rem) {
+    uint32_t quot_limbs[ORANGE_MAX_LIMBS];
+    uint32_t rem_limbs[ORANGE_MAX_LIMBS];
+    uint32_t quot_count = 0;
+    uint32_t rem_count = 0;
+    int quotient_negative;
+    if (divisor->nlimbs == 0) {
+        return 0;
+    }
+    if (dividend->nlimbs == 0) {
+        *quot = big_zero();
+        *rem = big_zero();
+        return 1;
+    }
+    if (mag_cmp(dividend->limbs, dividend->nlimbs, divisor->limbs, divisor->nlimbs) < 0) {
+        quot_count = 0;
+        memcpy(rem_limbs, dividend->limbs, (size_t)dividend->nlimbs * sizeof(uint32_t));
+        rem_count = dividend->nlimbs;
+    } else if (!mag_divmod(dividend->limbs, dividend->nlimbs, divisor->limbs, divisor->nlimbs, quot_limbs,
+                           &quot_count, rem_limbs, &rem_count)) {
+        return 0;
+    }
+    if (!dividend->negative || rem_count == 0) {
+        quotient_negative = dividend->negative != divisor->negative;
+        return publish_mag(arena, quot_limbs, quot_count, quotient_negative, quot) &&
+               publish_mag(arena, rem_limbs, rem_count, 0, rem);
+    }
+    /* self = -(q |d| + r) with r > 0, so self = -(q + 1) |d| + (|d| - r). */
+    {
+        uint64_t carry = 1;
+        uint32_t index;
+        uint32_t adjusted[ORANGE_MAX_LIMBS];
+        for (index = 0; index < quot_count; index++) {
+            uint64_t sum = (uint64_t)quot_limbs[index] + carry;
+            adjusted[index] = (uint32_t)sum;
+            carry = sum >> 32;
+        }
+        if (carry != 0) {
+            if (quot_count >= ORANGE_MAX_LIMBS) {
+                return 0;
+            }
+            adjusted[quot_count] = (uint32_t)carry;
+            quot_count++;
+        }
+        memcpy(quot_limbs, adjusted, (size_t)quot_count * sizeof(uint32_t));
+        memcpy(adjusted, divisor->limbs, (size_t)divisor->nlimbs * sizeof(uint32_t));
+        {
+            uint32_t difference_count = divisor->nlimbs;
+            if (!mag_sub(adjusted, &difference_count, rem_limbs, rem_count)) {
+                return 0;
+            }
+            quotient_negative = !divisor->negative;
+            return publish_mag(arena, quot_limbs, quot_count, quotient_negative, quot) &&
+                   publish_mag(arena, adjusted, difference_count, 0, rem);
+        }
+    }
+}
+
 int big_cmp(const Big *left, const Big *right) {
     int magnitude;
     if (left->negative != right->negative) {
@@ -511,6 +677,61 @@ int bigint_self_test(void) {
         strcmp(text, "340282366920938463426481119284349108225") != 0) {
         arena_dispose(&arena);
         return 0;
+    }
+    {
+        struct {
+            uint64_t dividend;
+            int dividend_negative;
+            uint64_t divisor;
+            int divisor_negative;
+            int64_t quotient;
+            uint64_t remainder;
+        } cases[6] = {
+            {7, 0, 2, 0, 3, 1},
+            {7, 1, 2, 0, -4, 1},
+            {7, 0, 2, 1, -3, 1},
+            {7, 1, 2, 1, 4, 1},
+            {8, 1, 2, 0, -4, 0},
+            {3, 1, 5, 0, -1, 2},
+        };
+        int sample;
+        for (sample = 0; sample < 6; sample++) {
+            Big left;
+            Big right;
+            Big quotient;
+            Big remainder;
+            if (!big_from_u64(&arena, cases[sample].dividend, &left) ||
+                !big_from_u64(&arena, cases[sample].divisor, &right)) {
+                arena_dispose(&arena);
+                return 0;
+            }
+            left.negative = cases[sample].dividend_negative;
+            right.negative = cases[sample].divisor_negative;
+            if (!big_div_euclid(&arena, &left, &right, &quotient, &remainder) || remainder.negative) {
+                arena_dispose(&arena);
+                return 0;
+            }
+            if (cases[sample].remainder == 0) {
+                if (remainder.nlimbs != 0) {
+                    arena_dispose(&arena);
+                    return 0;
+                }
+            } else if (remainder.nlimbs != 1 || remainder.limbs[0] != cases[sample].remainder) {
+                arena_dispose(&arena);
+                return 0;
+            }
+            if (cases[sample].quotient < 0) {
+                if (!quotient.negative || quotient.nlimbs != 1 ||
+                    quotient.limbs[0] != (uint32_t)(-cases[sample].quotient)) {
+                    arena_dispose(&arena);
+                    return 0;
+                }
+            } else if (quotient.negative || quotient.nlimbs != 1 ||
+                       quotient.limbs[0] != (uint32_t)cases[sample].quotient) {
+                arena_dispose(&arena);
+                return 0;
+            }
+        }
     }
     if (!limit_literal_self_test(&arena)) {
         arena_dispose(&arena);

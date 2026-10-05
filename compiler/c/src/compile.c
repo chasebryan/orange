@@ -134,7 +134,7 @@ static const char *TOKEN_NAMES[] = {
     "QUESTION",
 };
 
-typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_W8, TY_W16, TY_W32, TY_W64 } TypeKind;
+typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64 } TypeKind;
 
 typedef enum ExprKind {
     EX_NONE = 0,
@@ -153,7 +153,8 @@ typedef enum ExprKind {
     EX_FILL,
     EX_LOOP,
     EX_LOOP_INDEX,
-    EX_ACCUM
+    EX_ACCUM,
+    EX_COND
 } ExprKind;
 
 typedef struct DeclaredType {
@@ -167,7 +168,7 @@ typedef struct DeclaredType {
     uint32_t length_end;
 } DeclaredType;
 
-typedef enum NameRes { NAME_NONE = 0, NAME_PARAM, NAME_LOCAL, NAME_MISSING, NAME_EARLY, NAME_BAD } NameRes;
+typedef enum NameRes { NAME_NONE = 0, NAME_PARAM, NAME_LOCAL, NAME_MISSING, NAME_EARLY, NAME_BAD, NAME_BOOL } NameRes;
 
 typedef struct Token {
     TokenKind kind;
@@ -272,6 +273,11 @@ typedef struct OpenLoop {
     uint32_t acc_end;
 } OpenLoop;
 
+typedef struct CondArm {
+    uint32_t cond;
+    uint32_t value;
+} CondArm;
+
 typedef struct Func {
     int is_impl;
     int typed;
@@ -364,6 +370,9 @@ typedef struct Compiler {
     int nactive;
     uint32_t *loop_k;
     Value *loop_acc;
+    CondArm *cond_arms;
+    uint32_t ncond_arms;
+    size_t cond_arm_cap;
     uint64_t steps;
     int failed;
 } Compiler;
@@ -937,7 +946,7 @@ static void lex_source(Compiler *c) {
 static int enter_nest(Compiler *c, uint32_t start, uint32_t end) {
     if (c->nesting >= MAX_NESTING) {
         resource_diag(c, "ORC0106", start, end,
-                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, indices, loops, updates, and prefix operators");
+                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, indices, loops, conditionals, updates, and prefix operators");
         return 0;
     }
     c->nesting++;
@@ -997,9 +1006,15 @@ static int is_with_update(const Compiler *c) {
     return c->at + 1 < c->ntokens && c->tokens[c->at + 1].kind == TK_LBRACKET;
 }
 
+static int is_compare_op(TokenKind kind) {
+    return kind == TK_EQEQ || kind == TK_BANGEQ || kind == TK_LESS || kind == TK_GREATER || kind == TK_LESSEQ ||
+           kind == TK_GREATEREQ;
+}
+
 static int is_binary_kind(TokenKind kind) {
     return kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR || kind == TK_AMP || kind == TK_PIPE ||
-           kind == TK_CARET || kind == TK_LSHIFT || kind == TK_RSHIFT || kind == TK_ROL || kind == TK_ROR;
+           kind == TK_CARET || kind == TK_LSHIFT || kind == TK_RSHIFT || kind == TK_ROL || kind == TK_ROR ||
+           is_compare_op(kind) || kind == TK_AMPAMP || kind == TK_PIPEPIPE || kind == TK_SLASH || kind == TK_PERCENT;
 }
 
 static int trailing_joiner(const Compiler *c) {
@@ -1021,6 +1036,18 @@ static int group_of(TokenKind kind) {
     }
     if (kind == TK_LSHIFT || kind == TK_RSHIFT || kind == TK_ROL || kind == TK_ROR) {
         return 5;
+    }
+    if (is_compare_op(kind)) {
+        return 6;
+    }
+    if (kind == TK_AMPAMP) {
+        return 7;
+    }
+    if (kind == TK_PIPEPIPE) {
+        return 8;
+    }
+    if (kind == TK_SLASH || kind == TK_PERCENT) {
+        return 9;
     }
     return 0;
 }
@@ -1048,6 +1075,20 @@ static void skip_expr_tail(Compiler *c) {
             brace++;
         } else if (kind == TK_RBRACE && brace > 0) {
             brace--;
+        }
+    }
+}
+
+/* Consume `depth` braces that this parse has already opened, so the caller's
+   function-body skip still sees the function's own closing brace. */
+static void skip_open_braces(Compiler *c, int depth) {
+    while (peek_kind(c) != TK_EOF && depth > 0) {
+        TokenKind kind = peek_kind(c);
+        advance_token(c);
+        if (kind == TK_LBRACE) {
+            depth++;
+        } else if (kind == TK_RBRACE) {
+            depth--;
         }
     }
 }
@@ -1145,6 +1186,9 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
         }
     } else if (span_is(c, name.start, name.end, "Int")) {
         type->kind = TY_INT;
+        type->ok = 1;
+    } else if (span_is(c, name.start, name.end, "Bool")) {
+        type->kind = TY_BOOL;
         type->ok = 1;
     }
     if (allow_array && peek_kind(c) == TK_CARET) {
@@ -1682,6 +1726,197 @@ static int parse_args(Compiler *c, uint32_t *arg0, uint16_t *argc) {
     return 1;
 }
 
+static int token_at_is_word(const Compiler *c, uint32_t index, const char *word) {
+    Token token;
+    if (index >= c->ntokens) {
+        return 0;
+    }
+    token = c->tokens[index];
+    return token.kind == TK_IDENT && span_is(c, token.start, token.end, word);
+}
+
+static int else_follows(const Compiler *c, uint32_t start) {
+    int depth = 0;
+    uint32_t position = start;
+    for (;;) {
+        TokenKind kind;
+        if (position >= c->ntokens) {
+            return 0;
+        }
+        kind = c->tokens[position].kind;
+        if (kind == TK_EOF) {
+            return 0;
+        }
+        if (kind == TK_LPAREN || kind == TK_LBRACKET || kind == TK_LBRACE) {
+            depth++;
+        } else if (kind == TK_RPAREN || kind == TK_RBRACKET || kind == TK_RBRACE) {
+            if (depth == 0) {
+                return 0;
+            }
+            depth--;
+            if (depth == 0 && kind == TK_RBRACE && token_at_is_word(c, position + 1u, "else")) {
+                return 1;
+            }
+        } else if ((kind == TK_SEMI || kind == TK_COMMA) && depth == 0) {
+            return 0;
+        }
+        position++;
+    }
+}
+
+static int starts_conditional(const Compiler *c) {
+    uint32_t next = c->at + 1u;
+    TokenKind kind;
+    int continues;
+    if (next >= c->ntokens) {
+        return 0;
+    }
+    kind = c->tokens[next].kind;
+    if (kind == TK_IDENT) {
+        continues = token_at_is_word(c, next, "as") ||
+                    (token_at_is_word(c, next, "with") && next + 1u < c->ntokens &&
+                     c->tokens[next + 1u].kind == TK_LBRACKET);
+        return !continues || else_follows(c, next);
+    }
+    if (kind == TK_INT || kind == TK_BANG || kind == TK_TILDE) {
+        return 1;
+    }
+    if (kind == TK_LPAREN || kind == TK_MINUS || kind == TK_LBRACKET) {
+        return else_follows(c, next);
+    }
+    return 0;
+}
+
+static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
+    CondArm *local = NULL;
+    uint32_t count = 0;
+    uint32_t cap = 0;
+    uint32_t otherwise = UINT32_MAX;
+    int height = 0;
+    Token close = if_token;
+    if (!enter_nest(c, if_token.start, if_token.end)) {
+        return 0;
+    }
+    for (;;) {
+        uint32_t condition = UINT32_MAX;
+        uint32_t value = UINT32_MAX;
+        CondArm *grown;
+        advance_token(c);
+        if (!parse_expr(c, &condition)) {
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        if (peek_kind(c) != TK_LBRACE) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` after the condition",
+                     "expected a conditional value", "a conditional is `if c { a } else { b }`", 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_expr(c, &value)) {
+            skip_open_braces(c, 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        if (peek_kind(c) != TK_RBRACE) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
+                     "a conditional value is one expression", NULL, 1);
+            skip_open_braces(c, 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        if (!ident_token_is(c, peek_token(c), "else")) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "expected `else` and the value when the condition is false", "missing else",
+                     "every `if` has an `else`, so that a conditional always has a value", 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        if (count == cap) {
+            uint32_t next = cap == 0 ? 4u : cap * 2u;
+            grown = realloc(local, (size_t)next * sizeof(CondArm));
+            if (grown == NULL) {
+                resource_diag(c, "ORC0106", if_token.start, if_token.end, "parser could not retain a conditional");
+                free(local);
+                leave_nest(c);
+                return 0;
+            }
+            local = grown;
+            cap = next;
+        }
+        local[count].cond = condition;
+        local[count].value = value;
+        count++;
+        if (height_of(c, condition) > height) {
+            height = height_of(c, condition);
+        }
+        if (height_of(c, value) > height) {
+            height = height_of(c, value);
+        }
+        if (ident_token_is(c, peek_token(c), "if")) {
+            continue;
+        }
+        if (peek_kind(c) != TK_LBRACE) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` or `if` after `else`",
+                     "expected the other value", "after `else`, `{` begins the last value and `if` begins another arm",
+                     1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_expr(c, &otherwise)) {
+            skip_open_braces(c, 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        if (peek_kind(c) != TK_RBRACE) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
+                     "a conditional value is one expression", NULL, 1);
+            skip_open_braces(c, 1);
+            free(local);
+            leave_nest(c);
+            return 0;
+        }
+        close = peek_token(c);
+        advance_token(c);
+        break;
+    }
+    leave_nest(c);
+    if (height_of(c, otherwise) > height) {
+        height = height_of(c, otherwise);
+    }
+    if (c->ncond_arms > MAX_EXPRS - count ||
+        !ensure_cap((void **)&c->cond_arms, &c->cond_arm_cap, c->ncond_arms + count, sizeof(CondArm), MAX_EXPRS)) {
+        resource_diag(c, "ORC0106", if_token.start, close.end, "parser could not retain a conditional");
+        free(local);
+        return 0;
+    }
+    if (!new_expr(c, out)) {
+        free(local);
+        return 0;
+    }
+    memcpy(c->cond_arms + c->ncond_arms, local, (size_t)count * sizeof(CondArm));
+    free(local);
+    c->exprs[*out].kind = EX_COND;
+    c->exprs[*out].arg0 = c->ncond_arms;
+    c->exprs[*out].argc = (uint16_t)count;
+    c->exprs[*out].right = otherwise;
+    c->exprs[*out].start = if_token.start;
+    c->exprs[*out].end = close.end;
+    c->exprs[*out].height = 1 + height;
+    c->ncond_arms += count;
+    return note_height(c, *out);
+}
+
 static int parse_prefixed(Compiler *c, uint32_t *out) {
     Token token = peek_token(c);
     if (c->resource) {
@@ -1720,6 +1955,30 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             return note_height(c, *out);
         }
     }
+    if (token.kind == TK_BANG) {
+        uint32_t operand;
+        advance_token(c);
+        if (!enter_nest(c, token.start, token.end)) {
+            return 0;
+        }
+        if (!parse_prefixed(c, &operand)) {
+            leave_nest(c);
+            return 0;
+        }
+        leave_nest(c);
+        if (!new_expr(c, out)) {
+            return 0;
+        }
+        c->exprs[*out].kind = EX_UNARY;
+        c->exprs[*out].op = TK_BANG;
+        c->exprs[*out].left = operand;
+        c->exprs[*out].start = token.start;
+        c->exprs[*out].end = c->exprs[operand].end;
+        c->exprs[*out].op_start = token.start;
+        c->exprs[*out].op_end = token.end;
+        c->exprs[*out].height = 1 + height_of(c, operand);
+        return note_height(c, *out);
+    }
     if (token.kind == TK_TILDE) {
         uint32_t operand;
         advance_token(c);
@@ -1754,6 +2013,9 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
         if (span_is(c, token.start, token.end, "for") && c->at + 1 < c->ntokens &&
             c->tokens[c->at + 1].kind == TK_IDENT) {
             return parse_loop(c, token, out);
+        }
+        if (span_is(c, token.start, token.end, "if") && starts_conditional(c)) {
+            return parse_conditional(c, token, out);
         }
         advance_token(c);
         if (peek_kind(c) != TK_LPAREN) {
@@ -1932,6 +2194,18 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         c->exprs[*out].height =
             1 + (height_of(c, left) > height_of(c, amount) ? height_of(c, left) : height_of(c, amount));
         return note_height(c, *out);
+    }
+    if (group == 6 || group == 9) {
+        Token op = first_op;
+        uint32_t right;
+        advance_token(c);
+        if (!parse_prefixed(c, &right)) {
+            return 0;
+        }
+        if (trailing_joiner(c)) {
+            ungrouped(c, peek_token(c), op);
+        }
+        return finish_binary(c, left, right, op.kind, op.start, op.end, out);
     }
     if (group == 1) {
         if (!continue_product(c, left, &left)) {
@@ -2307,6 +2581,7 @@ static int parse_source(Compiler *c) {
 static const char *type_spelling(TypeKind type) {
     switch (type) {
     case TY_INT: return "Int";
+    case TY_BOOL: return "Bool";
     case TY_W8: return "Word[8]";
     case TY_W16: return "Word[16]";
     case TY_W32: return "Word[32]";
@@ -2459,6 +2734,11 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected) {
     if (expected == TY_INT) {
         return;
     }
+    if (expected == TY_BOOL) {
+        add_diag(c, "ORC0214", expr->start, expr->end, "an integer literal cannot have type `Bool`", "type mismatch",
+                 "the `Bool` values are written `true` and `false`", 2);
+        return;
+    }
     if (expr->negative) {
         add_diag(c, "ORC0206", expr->start, expr->end, "a word literal cannot be negative",
                  "write the residue in range instead", "word literals are canonical residues, never a sign", 2);
@@ -2548,11 +2828,27 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     case EX_SHIFT:
         return find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
     case EX_BINARY:
+        if (is_compare_op(expr->op)) {
+            *type = TY_BOOL;
+            *length = 0;
+            return 1;
+        }
         left_state = find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
         if (left_state != 0) {
             return left_state;
         }
         return find_leaf(c, expr->right, func_index, locals_in_scope, type, length, leaf, silent);
+    case EX_COND: {
+        uint16_t arm;
+        for (arm = 0; arm < expr->argc; arm++) {
+            int state = find_leaf(c, c->cond_arms[expr->arg0 + arm].value, func_index, locals_in_scope, type, length,
+                                  leaf, silent);
+            if (state != 0) {
+                return state;
+            }
+        }
+        return find_leaf(c, expr->right, func_index, locals_in_scope, type, length, leaf, silent);
+    }
     case EX_NAME: {
         NameRes res;
         uint16_t slot;
@@ -2564,6 +2860,12 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         if (res == NAME_PARAM || res == NAME_LOCAL) {
+            return 1;
+        }
+        if (span_is(c, expr->name_start, expr->name_end, "true") ||
+            span_is(c, expr->name_start, expr->name_end, "false")) {
+            *type = TY_BOOL;
+            *length = 0;
             return 1;
         }
         return -1;
@@ -2754,7 +3056,8 @@ static int static_index(Compiler *c, uint32_t index, uint32_t *bad) {
         }
         return static_index(c, expr->left, bad);
     case EX_BINARY:
-        if (expr->op != TK_PLUS && expr->op != TK_MINUS && expr->op != TK_STAR) {
+        if (expr->op != TK_PLUS && expr->op != TK_MINUS && expr->op != TK_STAR && expr->op != TK_SLASH &&
+            expr->op != TK_PERCENT) {
             *bad = index;
             return 0;
         }
@@ -2804,6 +3107,147 @@ static int range_combine(Compiler *c, TokenKind op, const Big *left_lo, const Bi
     return 0;
 }
 
+static int euclid_quot(Compiler *c, const Big *value, const Big *divisor, Big *quot) {
+    Big rem = big_zero();
+    if (divisor->nlimbs == 0) {
+        return big_from_u64(&c->arena, 0, quot);
+    }
+    return big_div_euclid(&c->arena, value, divisor, quot, &rem);
+}
+
+static int positive_divisor_range(Compiler *c, TokenKind op, const Big *low, const Big *high, const Big *divisor_low,
+                                  const Big *divisor_high, Big *out_lo, Big *out_hi) {
+    if (op == TK_SLASH) {
+        Big corners[4];
+        const Big *xs[2] = {low, high};
+        const Big *ds[2] = {divisor_low, divisor_high};
+        int i;
+        int j;
+        int first = 1;
+        for (i = 0; i < 2; i++) {
+            for (j = 0; j < 2; j++) {
+                if (!euclid_quot(c, xs[i], ds[j], &corners[i * 2 + j])) {
+                    return 0;
+                }
+                if (first || big_cmp(&corners[i * 2 + j], out_lo) < 0) {
+                    *out_lo = corners[i * 2 + j];
+                }
+                if (first || big_cmp(&corners[i * 2 + j], out_hi) > 0) {
+                    *out_hi = corners[i * 2 + j];
+                }
+                first = 0;
+            }
+        }
+        return 1;
+    }
+    if (big_cmp(divisor_low, divisor_high) == 0) {
+        Big low_q = big_zero();
+        Big high_q = big_zero();
+        Big low_r = big_zero();
+        Big high_r = big_zero();
+        if (!big_div_euclid(&c->arena, low, divisor_low, &low_q, &low_r) ||
+            !big_div_euclid(&c->arena, high, divisor_low, &high_q, &high_r)) {
+            return 0;
+        }
+        if (big_cmp(&low_q, &high_q) == 0) {
+            *out_lo = low_r;
+            *out_hi = high_r;
+            return 1;
+        }
+    }
+    {
+        Big one = big_zero();
+        Big largest = big_zero();
+        if (!big_from_u64(&c->arena, 1, &one) || !big_sub(&c->arena, divisor_high, &one, &largest) ||
+            !big_from_u64(&c->arena, 0, out_lo)) {
+            return 0;
+        }
+        if (!(low->negative && low->nlimbs != 0) && big_cmp(high, &largest) < 0) {
+            *out_hi = *high;
+        } else {
+            *out_hi = largest;
+        }
+    }
+    return 1;
+}
+
+static int divide_ranges(Compiler *c, TokenKind op, const Big *left_lo, const Big *left_hi, const Big *divisor_lo,
+                         const Big *divisor_hi, Big *lo, Big *hi) {
+    Big one = big_zero();
+    Big minus_one = big_zero();
+    Big zero = big_zero();
+    int have = 0;
+    Big part_lo = big_zero();
+    Big part_hi = big_zero();
+    if (!big_from_u64(&c->arena, 1, &one) || !big_neg(&one, &minus_one) || !big_from_u64(&c->arena, 0, &zero)) {
+        return 0;
+    }
+    if (big_cmp(divisor_hi, &one) >= 0) {
+        Big lowest = big_zero();
+        if (big_cmp(divisor_lo, &one) < 0) {
+            lowest = one;
+        } else {
+            lowest = *divisor_lo;
+        }
+        if (!positive_divisor_range(c, op, left_lo, left_hi, &lowest, divisor_hi, &part_lo, &part_hi)) {
+            return 0;
+        }
+        *lo = part_lo;
+        *hi = part_hi;
+        have = 1;
+    }
+    if (big_cmp(divisor_lo, &zero) <= 0 && big_cmp(divisor_hi, &zero) >= 0) {
+        Big zero_lo = big_zero();
+        Big zero_hi = big_zero();
+        if (op == TK_SLASH) {
+            zero_lo = zero;
+            zero_hi = zero;
+        } else {
+            zero_lo = *left_lo;
+            zero_hi = *left_hi;
+        }
+        if (!have || big_cmp(&zero_lo, lo) < 0) {
+            *lo = zero_lo;
+        }
+        if (!have || big_cmp(&zero_hi, hi) > 0) {
+            *hi = zero_hi;
+        }
+        have = 1;
+    }
+    if (big_cmp(divisor_lo, &minus_one) <= 0) {
+        Big nearest = big_zero();
+        Big farthest = big_zero();
+        Big neg_hi = big_zero();
+        Big neg_lo = big_zero();
+        if (big_cmp(divisor_hi, &minus_one) > 0) {
+            nearest = one;
+        } else if (!big_neg(divisor_hi, &nearest)) {
+            return 0;
+        }
+        if (!big_neg(divisor_lo, &farthest) ||
+            !positive_divisor_range(c, op, left_lo, left_hi, &nearest, &farthest, &neg_lo, &neg_hi)) {
+            return 0;
+        }
+        if (op == TK_SLASH) {
+            Big flipped_lo = big_zero();
+            Big flipped_hi = big_zero();
+            if (!big_neg(&neg_hi, &flipped_lo) || !big_neg(&neg_lo, &flipped_hi)) {
+                return 0;
+            }
+            neg_lo = flipped_lo;
+            neg_hi = flipped_hi;
+        }
+        if (!have || big_cmp(&neg_lo, lo) < 0) {
+            *lo = neg_lo;
+        }
+        if (!have || big_cmp(&neg_hi, hi) > 0) {
+            *hi = neg_hi;
+        }
+        have = 1;
+    }
+    return have;
+}
+
 static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
     const Expr *expr = &c->exprs[index];
     if (expr->kind == EX_LIT) {
@@ -2831,14 +3275,17 @@ static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
         }
         return big_neg(&inner_hi, lo) && big_neg(&inner_lo, hi);
     }
-    if (expr->kind == EX_BINARY &&
-        (expr->op == TK_PLUS || expr->op == TK_MINUS || expr->op == TK_STAR)) {
+    if (expr->kind == EX_BINARY && (expr->op == TK_PLUS || expr->op == TK_MINUS || expr->op == TK_STAR ||
+                                    expr->op == TK_SLASH || expr->op == TK_PERCENT)) {
         Big left_lo = big_zero();
         Big left_hi = big_zero();
         Big right_lo = big_zero();
         Big right_hi = big_zero();
         if (!range_of(c, expr->left, &left_lo, &left_hi) || !range_of(c, expr->right, &right_lo, &right_hi)) {
             return 0;
+        }
+        if (expr->op == TK_SLASH || expr->op == TK_PERCENT) {
+            return divide_ranges(c, expr->op, &left_lo, &left_hi, &right_lo, &right_hi, lo, hi);
         }
         return range_combine(c, expr->op, &left_lo, &left_hi, &right_lo, &right_hi, lo, hi);
     }
@@ -2870,7 +3317,7 @@ static int check_index_expr(Compiler *c, uint32_t index_expr, uint32_t length, u
     if (!static_index(c, index_expr, &bad)) {
         add_diag(c, "ORC0226", c->exprs[bad].start, c->exprs[bad].end,
                  "an index may use only integer literals and loop indices", "index is not static",
-                 "build the index from literals and enclosing loop indices with +, -, and *", 2);
+                 "build the index from literals and enclosing loop indices with +, -, *, /, and %", 2);
         return 1;
     }
     if (!range_of(c, index_expr, &lo, &hi) || (lo.negative && lo.nlimbs != 0) || !big_below_u32(&hi, length)) {
@@ -2945,6 +3392,100 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         c->nactive--;
     }
     return 1;
+}
+
+static int is_number_type(TypeKind type) {
+    return type == TY_INT || type == TY_W8 || type == TY_W16 || type == TY_W32 || type == TY_W64;
+}
+
+static int is_scalar_type(TypeKind type) {
+    return is_number_type(type) || type == TY_BOOL;
+}
+
+static const char *op_spelling(TokenKind op) {
+    switch (op) {
+    case TK_PLUS: return "+";
+    case TK_MINUS: return "-";
+    case TK_STAR: return "*";
+    case TK_SLASH: return "/";
+    case TK_PERCENT: return "%";
+    case TK_AMP: return "&";
+    case TK_PIPE: return "|";
+    case TK_CARET: return "^";
+    case TK_EQEQ: return "==";
+    case TK_BANGEQ: return "!=";
+    case TK_LESS: return "<";
+    case TK_GREATER: return ">";
+    case TK_LESSEQ: return "<=";
+    case TK_GREATEREQ: return ">=";
+    case TK_AMPAMP: return "&&";
+    case TK_PIPEPIPE: return "||";
+    default: return "operator";
+    }
+}
+
+static int bool_word(const Compiler *c, uint32_t start, uint32_t end, int *value) {
+    if (span_is(c, start, end, "true")) {
+        *value = 1;
+        return 1;
+    }
+    if (span_is(c, start, end, "false")) {
+        *value = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
+                         uint32_t locals_in_scope) {
+    Expr *expr = &c->exprs[index];
+    TypeKind operand = TY_NONE;
+    uint32_t operand_len = 0;
+    uint32_t leaf = index;
+    int silent = 0;
+    int state;
+    int order = expr->op != TK_EQEQ && expr->op != TK_BANGEQ;
+    if (expected != TY_BOOL || expected_len != 0) {
+        char message[192];
+        char expected_text[64];
+        write_type(expected_text, sizeof expected_text, expected, expected_len);
+        snprintf(message, sizeof message, "a comparison gives `Bool`, but %s is required here", expected_text);
+        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                 "a conditional `if c { a } else { b }` chooses a value by a `Bool`", 2);
+    }
+    state = find_leaf(c, expr->left, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
+    if (state == 0) {
+        state = find_leaf(c, expr->right, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
+    }
+    if (state == 0) {
+        add_diag(c, "ORC0227", expr->op_start, expr->op_end, "the operands of a comparison have no type of their own",
+                 "untyped comparison", "compare with a typed operand, such as a name, or give the literal a type with a `let` binding",
+                 2);
+        return 1;
+    }
+    if (state < 0) {
+        if (!silent) {
+            return check_expr(c, leaf, operand == TY_NONE ? TY_INT : operand, 0, func_index, locals_in_scope);
+        }
+        return 1;
+    }
+    if (operand_len != 0 || !is_scalar_type(operand) || (order && operand == TY_BOOL)) {
+        char message[160];
+        char found[64];
+        write_type(found, sizeof found, operand, operand_len);
+        snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op), found);
+        if (operand == TY_BOOL) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                     "`Bool` values are compared with `==` and `!=`; they have no order", 2);
+        } else {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                     "compare elements, such as `x[0] == y[0]`", 2);
+        }
+    }
+    if (!check_expr(c, expr->left, operand, operand_len, func_index, locals_in_scope)) {
+        return 0;
+    }
+    return check_expr(c, expr->right, operand, operand_len, func_index, locals_in_scope);
 }
 
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
@@ -3053,6 +3594,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (res != NAME_PARAM && res != NAME_LOCAL) {
+            int bool_value = 0;
+            if (res != NAME_BAD && bool_word(c, expr->name_start, expr->name_end, &bool_value)) {
+                expr->name_res = NAME_BOOL;
+                expr->name_index = (uint16_t)bool_value;
+                expr->name_ty = TY_BOOL;
+                expr->name_len = 0;
+                if (expected != TY_BOOL || expected_len != 0) {
+                    char message[192];
+                    char expected_text[64];
+                    write_type(expected_text, sizeof expected_text, expected, expected_len);
+                    snprintf(message, sizeof message, "expected %s, found Bool", expected_text);
+                    add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                             "Orange does not convert between types implicitly", 2);
+                }
+                return 1;
+            }
             report_unknown_name(c, expr, func_index, res);
             return 1;
         }
@@ -3140,26 +3697,74 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "operators apply to elements", "index the array and apply the operator to one element", 2);
             return 1;
         }
+        if (expr->op == TK_BANG) {
+            if (expected != TY_BOOL) {
+                char message[128];
+                snprintf(message, sizeof message, "prefix `!` is not defined for `%s`", type_spelling(expected));
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                         "`!` negates a `Bool`; `~` is the bitwise complement of a word", 2);
+            }
+            return check_expr(c, expr->left, expected == TY_BOOL ? TY_BOOL : expected, 0, func_index, locals_in_scope);
+        }
         if (expr->op == TK_MINUS && expected != TY_INT) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "negation is not defined for this type",
-                     "write `0 - a` for a word", "prefix `-` is exact integer negation", 2);
+            if (expected == TY_BOOL) {
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, "prefix `-` is not defined for `Bool`",
+                         "operator not defined", "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
+            } else {
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, "negation is not defined for this type",
+                         "write `0 - a` for a word", "prefix `-` is exact integer negation", 2);
+            }
             return 1;
         }
-        if (expr->op == TK_TILDE && expected == TY_INT) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "complement is not defined for `Int`",
-                     "bitwise complement needs a word", NULL, 2);
+        if (expr->op == TK_TILDE && (expected == TY_INT || expected == TY_BOOL)) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end,
+                     expected == TY_BOOL ? "prefix `~` is not defined for `Bool`" : "complement is not defined for `Int`",
+                     "bitwise complement needs a word",
+                     expected == TY_BOOL ? "`Bool` has `!`, `&&`, `||`, `==`, and `!=`" : NULL, 2);
             return 1;
         }
         return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
     case EX_BINARY:
+        if (is_compare_op(expr->op)) {
+            return check_compare(c, index, expected, expected_len, func_index, locals_in_scope);
+        }
+        if (expr->op == TK_AMPAMP || expr->op == TK_PIPEPIPE) {
+            if (expected != TY_BOOL || expected_len != 0) {
+                char message[128];
+                snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op),
+                         type_spelling(expected));
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                         "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words", 2);
+            }
+            if (!check_expr(c, expr->left, expected_len == 0 && expected == TY_BOOL ? TY_BOOL : expected, expected_len,
+                            func_index, locals_in_scope)) {
+                return 0;
+            }
+            return check_expr(c, expr->right, expected_len == 0 && expected == TY_BOOL ? TY_BOOL : expected,
+                              expected_len, func_index, locals_in_scope);
+        }
         if (expected_len != 0) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
                      "operators apply to elements", "index the array and apply the operator to one element", 2);
             return 1;
         }
+        if (expected == TY_BOOL) {
+            char message[128];
+            snprintf(message, sizeof message, "`%s` is not defined for `Bool`", op_spelling(expr->op));
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                     "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
+            return 1;
+        }
         if ((expr->op == TK_AMP || expr->op == TK_PIPE || expr->op == TK_CARET) && expected == TY_INT) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "bitwise operators are not defined for `Int`",
                      "this operator needs a word", NULL, 2);
+            return 1;
+        }
+        if (!is_number_type(expected) && expected != TY_NONE) {
+            char message[128];
+            snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op),
+                     type_spelling(expected));
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined", NULL, 2);
             return 1;
         }
         if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
@@ -3170,6 +3775,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (expected_len != 0) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
                      "operators apply to elements", "index the array and apply the operator to one element", 2);
+            return 1;
+        }
+        if (expected == TY_BOOL) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for `Bool`",
+                     "operator not defined", "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
             return 1;
         }
         if (expected == TY_INT) {
@@ -3241,7 +3851,29 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             return 1;
         }
+        if (leaf_type == TY_BOOL || expr->conv_ty == TY_BOOL) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "`as` does not convert to or from `Bool`",
+                     "`as` converts one `Int` or word value",
+                     "choose a number with a conditional, such as `if b { 1 } else { 0 }`, or compare a number, such as `x != 0`",
+                     2);
+            return 1;
+        }
         return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
+    }
+    case EX_COND: {
+        uint32_t arg0 = expr->arg0;
+        uint16_t arms = expr->argc;
+        uint32_t otherwise = expr->right;
+        uint16_t arm;
+        for (arm = 0; arm < arms; arm++) {
+            uint32_t condition = c->cond_arms[arg0 + arm].cond;
+            uint32_t value = c->cond_arms[arg0 + arm].value;
+            if (!check_expr(c, condition, TY_BOOL, 0, func_index, locals_in_scope) ||
+                !check_expr(c, value, expected, expected_len, func_index, locals_in_scope)) {
+                return 0;
+            }
+        }
+        return check_expr(c, otherwise, expected, expected_len, func_index, locals_in_scope);
     }
     case EX_LOOP:
         return check_loop(c, index, expected, expected_len, func_index, locals_in_scope);
@@ -3588,6 +4220,28 @@ static uint64_t word_mask_of(int width) {
     return width >= 64 ? UINT64_MAX : (UINT64_C(1) << width) - 1;
 }
 
+static int relation_holds(TokenKind op, int ordering) {
+    switch (op) {
+    case TK_EQEQ: return ordering == 0;
+    case TK_BANGEQ: return ordering != 0;
+    case TK_LESS: return ordering < 0;
+    case TK_GREATER: return ordering > 0;
+    case TK_LESSEQ: return ordering <= 0;
+    case TK_GREATEREQ: return ordering >= 0;
+    default: return 0;
+    }
+}
+
+static int word_ordering(uint64_t left, uint64_t right) {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
 static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, uint64_t *out) {
     uint64_t mask = word_mask_of(width);
     uint64_t a0;
@@ -3672,6 +4326,13 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         if (!charge(c, expr->start, expr->end, 1)) {
             return 0;
         }
+        if (expr->name_res == NAME_BOOL) {
+            out->type = TY_BOOL;
+            out->word = expr->name_index;
+            out->length = 0;
+            out->big = big_zero();
+            return 1;
+        }
         *out = expr->name_res == NAME_LOCAL ? locals[expr->name_index] : params[expr->name_index];
         return 1;
     case EX_CALL: {
@@ -3707,6 +4368,16 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         if (!eval_expr(c, expr->left, params, locals, depth, &operand)) {
             return 0;
         }
+        if (expr->op == TK_BANG) {
+            if (!charge(c, expr->start, expr->end, 1)) {
+                return 0;
+            }
+            out->type = TY_BOOL;
+            out->word = operand.word == 0 ? 1u : 0u;
+            out->length = 0;
+            out->big = big_zero();
+            return 1;
+        }
         if (expr->op == TK_MINUS) {
             uint64_t cost = 1 + big_limbs(&operand.big);
             Big negated;
@@ -3732,6 +4403,97 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         if (!eval_expr(c, expr->left, params, locals, depth, &left) ||
             !eval_expr(c, expr->right, params, locals, depth, &right)) {
             return 0;
+        }
+        if (is_compare_op(expr->op)) {
+            int ordering = 0;
+            uint64_t cost = 1;
+            if (left.type != right.type || left.length != 0 || right.length != 0) {
+                c->failed = 1;
+                return 0;
+            }
+            if (left.type == TY_INT) {
+                uint32_t left_limbs = big_limbs(&left.big);
+                uint32_t right_limbs = big_limbs(&right.big);
+                cost = 1 + (left_limbs > right_limbs ? left_limbs : right_limbs);
+                ordering = big_cmp(&left.big, &right.big);
+            } else if (left.type == TY_BOOL || type_width(left.type) != 0) {
+                ordering = word_ordering(left.word, right.word);
+            } else {
+                c->failed = 1;
+                return 0;
+            }
+            if (!charge(c, expr->op_start, expr->op_end, cost)) {
+                return 0;
+            }
+            out->type = TY_BOOL;
+            out->word = relation_holds(expr->op, ordering) ? 1u : 0u;
+            out->length = 0;
+            out->big = big_zero();
+            return 1;
+        }
+        if (expr->op == TK_AMPAMP || expr->op == TK_PIPEPIPE) {
+            int left_true;
+            int right_true;
+            if (left.type != TY_BOOL || right.type != TY_BOOL) {
+                c->failed = 1;
+                return 0;
+            }
+            if (!charge(c, expr->op_start, expr->op_end, 1)) {
+                return 0;
+            }
+            left_true = left.word != 0;
+            right_true = right.word != 0;
+            out->type = TY_BOOL;
+            out->word = (uint64_t)(expr->op == TK_AMPAMP ? (left_true && right_true) : (left_true || right_true));
+            out->length = 0;
+            out->big = big_zero();
+            return 1;
+        }
+        if (expr->op == TK_SLASH || expr->op == TK_PERCENT) {
+            if (left.type == TY_INT) {
+                uint32_t dividend_limbs = big_limbs(&left.big);
+                uint32_t divisor_limbs = big_limbs(&right.big);
+                uint64_t divisor_cost = divisor_limbs == 0 ? 1u : divisor_limbs;
+                Big quotient = big_zero();
+                Big remainder = big_zero();
+                if (!charge(c, expr->op_start, expr->op_end, 1 + (uint64_t)dividend_limbs * divisor_cost)) {
+                    return 0;
+                }
+                if (right.big.nlimbs == 0) {
+                    remainder = left.big;
+                } else if (!big_div_euclid(&c->arena, &left.big, &right.big, &quotient, &remainder)) {
+                    c->failed = 1;
+                    add_diag(c, "ORC0301", expr->op_start, expr->op_end,
+                             "integer result exceeds 16384 significant bits", "magnitude limit reached", NULL, 2);
+                    return 0;
+                }
+                out->type = TY_INT;
+                out->word = 0;
+                out->length = 0;
+                out->big = expr->op == TK_SLASH ? quotient : remainder;
+                return 1;
+            }
+            {
+                int width = type_width(left.type);
+                uint64_t mask = word_mask_of(width);
+                uint64_t dividend = left.word & mask;
+                uint64_t divisor = right.word & mask;
+                if (width == 0 || !charge(c, expr->op_start, expr->op_end, 1)) {
+                    c->failed = 1;
+                    return 0;
+                }
+                if (divisor == 0) {
+                    out->word = expr->op == TK_SLASH ? 0 : dividend;
+                } else if (expr->op == TK_SLASH) {
+                    out->word = dividend / divisor;
+                } else {
+                    out->word = dividend % divisor;
+                }
+                out->type = left.type;
+                out->length = 0;
+                out->big = big_zero();
+                return 1;
+            }
         }
         if (left.type == TY_INT) {
             Big result = big_zero();
@@ -4032,6 +4794,30 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         *out = c->loop_acc[expr->arg0];
         return 1;
     }
+    case EX_COND: {
+        uint32_t arg0 = expr->arg0;
+        uint16_t arms = expr->argc;
+        uint32_t otherwise = expr->right;
+        uint32_t span_start = expr->start;
+        uint32_t span_end = expr->end;
+        uint16_t arm;
+        for (arm = 0; arm < arms; arm++) {
+            Value condition;
+            uint32_t condition_expr = c->cond_arms[arg0 + arm].cond;
+            uint32_t value_expr = c->cond_arms[arg0 + arm].value;
+            if (!eval_expr(c, condition_expr, params, locals, depth, &condition)) {
+                return 0;
+            }
+            if (condition.type != TY_BOOL || condition.length != 0 || !charge(c, span_start, span_end, 1)) {
+                c->failed = 1;
+                return 0;
+            }
+            if (condition.word != 0) {
+                return eval_expr(c, value_expr, params, locals, depth, out);
+            }
+        }
+        return eval_expr(c, otherwise, params, locals, depth, out);
+    }
     default:
         c->failed = 1;
         return 0;
@@ -4072,6 +4858,15 @@ static int format_value(const Compiler *c, const Value *value, char *buffer, siz
         }
         buffer[used++] = ']';
         buffer[used] = '\0';
+        return 1;
+    }
+    if (value->type == TY_BOOL) {
+        const char *spelling = value->word != 0 ? "true" : "false";
+        size_t spelling_len = strlen(spelling);
+        if (spelling_len + 1 > cap) {
+            return 0;
+        }
+        memcpy(buffer, spelling, spelling_len + 1);
         return 1;
     }
     if (value->type == TY_INT) {
@@ -4212,7 +5007,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
         if (!eval_function(c, index, NULL, 1, &result)) {
             break;
         }
-        if (func->result_len == 0 && func->result != TY_INT) {
+        if (func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL) {
             result.type = func->result;
             result.length = 0;
             result.word &= word_mask_of(type_width(func->result));
@@ -4279,6 +5074,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.edges);
         free(compiler.elems);
         free(compiler.loops);
+        free(compiler.cond_arms);
         free(compiler.loop_k);
         free(compiler.loop_acc);
         return status;
@@ -4295,6 +5091,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.edges);
         free(compiler.elems);
         free(compiler.loops);
+        free(compiler.cond_arms);
         free(compiler.loop_k);
         free(compiler.loop_acc);
         return 1;
@@ -4327,6 +5124,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     free(compiler.edges);
     free(compiler.elems);
     free(compiler.loops);
+    free(compiler.cond_arms);
     free(compiler.loop_k);
     free(compiler.loop_acc);
     return status;
@@ -4431,7 +5229,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, and bounded-loop fragment. It does not use the\n"
+        "conversion, array, loop, and conditional fragment. It does not use the\n"
         "Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -4458,7 +5256,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3e\n", stdout);
+            fputs("orangec (standalone C) slice S3f\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
