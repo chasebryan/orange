@@ -96,7 +96,7 @@ Edition: `2026`
   - [§52A. Complete Reference Specification: FIPS 197 AES](#52a-complete-reference-specification-fips-197-aes)
   - [§52B. Complete Reference Specification: FIPS 198-1 HMAC](#52b-complete-reference-specification-fips-198-1-hmac)
   - [§52C. Complete Reference Specification: RFC 5869 HKDF](#52c-complete-reference-specification-rfc-5869-hkdf)
-  - [AEAD, RFC 8439](#aead-rfc-8439)
+  - [§52D. Complete Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD](#52d-complete-reference-specification-rfc-8439-chacha20-poly1305-aead)
   - [SHA-3 and SHAKE, FIPS 202](#sha-3-and-shake-fips-202)
 
 - [Part VIII: Implementation Stratum (`impl`) & Memory Model](#part-viii-implementation-stratum-impl--memory-model)
@@ -4934,79 +4934,151 @@ longer than 32 octets, info longer than 150 bytes, or a salt or IKM longer
 than 247 bytes. Section 3 is not transcribed. Nothing here is a timing
 measurement or a proof of the construction.
 
-### AEAD, RFC 8439
+### §52D. Complete Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD
 
-AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. ChaCha20 is §50
-and Poly1305 is §52. The listing restates both, because a module has no
-imports. Poly1305 here is arithmetic on `Int` modulo $2^{130} - 5$, with
-`%` after the product: the field of §52. `orangec test` accepts six tests:
-the one-time keys of sections 2.6.2 and 2.8.2, the section 2.8.2 seal, its
-opening, a tag whose last bit is flipped, and appendix A.5.
+AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. The cited text is
+RFC 8439, June 2018, category Informational, Nir and Langley, which
+obsoletes RFC 7539: section 2.6 (the one-time key), section 2.8 (the AEAD),
+section 2.8.1 (the pseudocode), section 2.8.2 (the example), and appendix
+A.5 (decryption). ChaCha20 is §50. Poly1305 is §52. The listing restates
+both, because a module has no imports. The field is `Int` modulo
+$2^{130}-5$, with `%` after the product, as §52 writes it.
+`algorithms/chacha20-poly1305/chacha20-poly1305.or` is the same AEAD,
+module `chacha20_poly1305`, with no `test` member. That file continues
+past this construction. This section stops at AEAD_CHACHA20_POLY1305.
 
-#### 1. The One-Time Key (section 2.6)
+#### Status
 
-`poly1305_key_gen` keeps the first 32 bytes of ChaCha20 block 0 and discards
-the rest. The ciphertext uses the key stream from counter 1 upward. Block 0
-is not mixed into the ciphertext.
+**Current** for the listing in this section, on the six tests named below.
+The binary is the S3t compiler of §52A.
 
-Section 2.6.2 uses the section 2.8.2 key and the nonce
-`000000000001020304050607`. Its one-time key is
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing: the one-time keys of 2.6.2 and 2.8.2, the 2.8.2 seal, its opening, a tag with the low bit of the last byte cleared, and appendix A.5 | Current | Checked, as recorded after the listing |
+| `algorithms/chacha20-poly1305/chacha20-poly1305.or` for those same names | Same algorithm, eval pairs | No `test` member. The pairs under `orangec eval --spec` are recorded below |
+| `chacha20_aead_encrypt_8_47` and `aead_tag_8_47` | In the listing, not called | Eight bytes of additional data and 47 bytes of plaintext. None of the six tests calls them |
+| A plaintext length other than 114, 47, or 265 | Same section 2.8 rule, another array length | An array length is part of its type |
+| The RFC 5116 limits printed in section 2.8 | Not enforced here | $K\_LEN = 32$ octets, $N\_MIN = N\_MAX = 12$ octets, $P\_MAX = 274{,}877{,}906{,}880$ bytes, $A\_MAX = 2^{64}-1$ octets, $C\_MAX = P\_MAX + 16$ |
+| AEAD_XCHACHA20_POLY1305 | Not this section | The repository file attributes that construction to draft-irtf-cfrg-xchacha. The draft is not section 2.8 |
+| A nonce-uniqueness check, section 3's constant-time advice, or the analysis section 2.8 cites as Procter | Not claimed | This listing does not measure time and does not prove the composition |
+
+#### 1. Parameters (section 2.8)
+
+The inputs section 2.8 names are a 256-bit key, a 96-bit nonce, a
+plaintext, and additional authenticated data. The output is a ciphertext
+of the plaintext's length and a 128-bit tag. Section 2.8 then lists the
+RFC 5116 names in the status table. The listing's key is `Word[8]^32` and
+its nonce is `Word[8]^12`. It names three plaintext lengths. It does not
+reject a longer message, because it has no function for one.
+
+The pseudocode of section 2.8.1 takes `iv` and `constant` apart and sets
+`nonce = constant | iv`. `chacha20_aead_encrypt` takes the 12-byte nonce
+already joined. Section 2.8.2 prints the 32-bit fixed-common part
+`07000000` and the IV `4041424344454647`. `rfc8439_2_8_2_nonce` is those
+twelve bytes in that order.
+
+#### 2. The One-Time Key (section 2.6, then the first step of 2.8)
+
+Section 2.6 runs ChaCha20 with the block counter at zero and keeps the
+first 256 bits of the serialized state. The other 256 bits are discarded.
+The first 128 bits are clamped and become $r$. The next 128 bits are $s$.
+Clamping is `poly1305_r` of §52, applied when the tag is computed.
+Section 2.6.1 prints
+
+```text
+poly1305_key_gen(key,nonce):
+   counter = 0
+   block = chacha20_block(key,counter,nonce)
+   return block[0..31]
+```
+
+`poly1305_key_gen` is that function: `chacha20_block(key, 0, nonce)`, then
+the first 32 bytes.
+
+Section 2.6.2 uses the section 2.8.2 key, `80` through `9f`, and the nonce
+`000000000001020304050607`. The output bytes it prints, which it also calls
+the 32-byte one-time key, are
 `8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646`.
 
-Section 2.8.2 uses the nonce `070000004041424344454647`. Its one-time key is
+Section 2.8.2's own one-time key, under nonce
+`070000004041424344454647`, is
 `7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff`.
+The RFC also prints $r = \mathtt{455e9a4057ab6080f47b42c052bac7b}$ and
+$s = \mathtt{ff53d53e7875932aebd9751073d6e10a}$. Those two integers are not
+a separate test. The one-time key bytes are.
 
-#### 2. The MAC Input (section 2.8)
+#### 3. Encryption (section 2.8.1)
 
-$\mathrm{pad16}$ appends zeros until the length is a multiple of 16. The
-MAC input is
+| Pseudocode | Orange |
+| :--- | :--- |
+| `otk = poly1305_key_gen(key, nonce)` | `poly1305_key_gen` |
+| `ciphertext = chacha20_encrypt(key, 1, nonce, plaintext)` | `chacha20_encrypt` with the counter `1`. Block 0 is the one-time key and is not mixed into the ciphertext |
+| `mac_data = aad \| pad16(aad) \| ciphertext \| pad16(ciphertext) \| num_to_8_le_bytes(aad.length) \| num_to_8_le_bytes(ciphertext.length)` | `absorb_aad_12`, then `absorb_ciphertext_114` or `absorb_ciphertext_265`, then `absorb_lengths` |
+| `tag = poly1305_mac(mac_data, otk)` | `aead_tag` or `aead_tag_12_265`: the accumulator plus $s$, as 16 little-endian bytes |
+| `return (ciphertext, tag)` | `chacha20_aead_encrypt` writes the 114 ciphertext bytes and then the 16 tag bytes, a `Word[8]^130` |
 
-$$\mathrm{aad} \parallel \mathrm{pad16}(\mathrm{aad}) \parallel C \parallel \mathrm{pad16}(C) \parallel \mathrm{le64}(|\mathrm{aad}|) \parallel \mathrm{le64}(|C|).$$
+`pad16`, as section 2.8.1 prints it, returns no bytes when the length is a
+multiple of 16, and otherwise `16 - (len % 16)` zero bytes. Twelve bytes of
+additional data take four zeros. That is the block section 2.8.2 prints as
+`50515253c0c1c2c3c4c5c6c7` followed by `00000000`. One hundred fourteen
+bytes of ciphertext are seven blocks of 16 and a last block of two bytes
+plus fourteen zeros. The RFC's note under the construction is those
+fourteen zeros. Appendix A.5 is 265 bytes: sixteen blocks from the 256-byte
+head, then nine bytes of the tail and seven zeros. `absorb_lengths` writes
+the two little-endian 64-bit lengths in one block. For section 2.8.2 that
+block is `0c000000000000007200000000000000`, twelve and one hundred
+fourteen. For appendix A.5 it ends `0901000000000000`, which is 265.
 
-The tag is Poly1305 of that string under the one-time key. The listing
-absorbs each 16-byte block as it is formed, rather than allocating one array
-for the whole padded string. The lengths it writes are 12 bytes of
-additional data with 114 bytes of ciphertext (section 2.8.2), 12 bytes with
-265 bytes (appendix A.5: a 256-byte head under counters 1 through 4, then a
-9-byte tail under counter 5), and 8 bytes with 47 bytes. The 47-byte
-function is the length a Wycheproof vector uses. That vector is not a test
-in this section.
+The listing absorbs each of those blocks as it is formed. It does not
+allocate one array for the whole padded string. An index `sealed[n]` with
+`n` a parameter is `ORC0226`, recorded below, so each length is its own
+function and the tag starts at the literal offset 114.
 
-#### 3. Seal and Open
+#### 4. Decryption (section 2.8)
 
-The seal is the ciphertext followed by the 16-byte tag. Opening recomputes
-the tag and compares it with the received tag, one byte at a time. The
-plaintext is released only when every byte matches. Otherwise the result is
-zeros of the plaintext's length. The comparison is a `Bool` fold. The spec
-stratum has no timing, so the fold is the accept-or-reject check the tests
-run, and it is not a claim about a constant-time comparison.
+Section 2.8 reverses ciphertext and plaintext, runs Poly1305 on the
+additional data and the ciphertext, and says the message is authenticated
+if and only if the calculated tag matches the received tag.
+`chacha20_aead_verify` recomputes the tag and folds sixteen byte
+comparisons with `&&`. `chacha20_aead_decrypt` returns
+`chacha20_encrypt` of the ciphertext only when that fold is true. Otherwise
+it returns 114 zero bytes. Appendix A.5 is the same rule on a 256-byte head
+and a 9-byte tail, with the tag passed beside them. The RFC does not print
+a plaintext for a tag that fails. The zeros are the listing's result for
+that case.
 
-#### 4. Known Answers
+The comparison is a `Bool` fold. A specification has no timing. The fold is
+the check the tests run.
 
-Section 2.8.2 encrypts the 114-byte sentence that begins "Ladies and
-Gentlemen of the class of '99", under key `80818283` through `9f` and
-additional data `50515253c0c1c2c3c4c5c6c7`. The ciphertext begins
-`d31a8d34648e60db7b86afbc53ef7ec2`. The tag is
-`1ae10b594f09e26a7e902ecbd0600691`. Replacing the last tag byte `0x91` by
-`0x90` makes verification false, and the opened result is 114 zero bytes.
+#### 5. Known Answers
 
-Appendix A.5 uses key `1c9240a5` through `75c0`, nonce
-`000000000102030405060708`, and additional data
-`f33388860000000000004e91`. The tag is
-`eead9d67890cbb22392336fea1851f38`. The plaintext begins "Internet-Drafts
-are draft documents". Its last nine bytes are `726573732e2fe2809d`.
+Section 2.8.2. Plaintext, 114 bytes, the sentence that begins "Ladies and
+Gentlemen of the class of '99" and ends "it." Key `80` through `9f`.
+Additional data `50515253c0c1c2c3c4c5c6c7`. Nonce
+`070000004041424344454647`. The
+ciphertext the RFC prints begins `d31a8d34648e60db7b86afbc53ef7ec2` and
+ends `6116`. The tag it prints is `1ae10b594f09e26a7e902ecbd0600691`.
 
-#### 5. Compiler-Checked Transcription
+The test that replaces the last tag byte `91` with `90` clears one bit.
+The RFC does not print that ciphertext. The listing's comment says the
+check is of the comparison. Verification is false, and the opened result is
+114 zero bytes.
 
-AEAD_XCHACHA20_POLY1305 is in
-`algorithms/chacha20-poly1305/chacha20-poly1305.or`. This listing is
-AEAD_CHACHA20_POLY1305.
+Appendix A.5, "ChaCha20-Poly1305 AEAD Decryption". Key
+`1c9240a5eb55d38af333888604f6b5f0473917c1402b80099dca5cbc207075c0`.
+Nonce `000000000102030405060708`. Additional data
+`f33388860000000000004e91`. The received tag is
+`eead9d67890cbb22392336fea1851f38`. The plaintext the RFC prints after the
+tag matches begins "Internet-Drafts are draft documents". Its last nine
+bytes are `726573732e2fe2809d`.
+
+#### 6. Compiler-Checked Transcription
 
 ```orange
 // AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. ChaCha20
 // (sections 2.1 through 2.4) and Poly1305 (section 2.5) are restated because
-// a module has no imports. The tests are the section 2.6.2 one-time key, the
-// section 2.8.2 seal, open, and rejected tag, and appendix A.5.
+// a module has no imports. The tests are the one-time keys of sections 2.6.2
+// and 2.8.2, the section 2.8.2 seal, open, and rejected tag, and appendix A.5.
 edition 2026;
 module aead_spec {
   // Section 2.1: the quarter round on four 32-bit words a, b, c, d.
@@ -5761,6 +5833,68 @@ module aead_spec {
   }
 }
 ```
+
+#### 7. What This Binary Printed
+
+`orangec test --stats` on the listing, the S3t binary of §52A, default
+budget 1,048,576:
+
+```text
+test "RFC 8439 section 2.6.2 one-time key" ... ok
+test "RFC 8439 section 2.8.2 one-time key" ... ok
+test "RFC 8439 section 2.8.2 seal" ... ok
+test "RFC 8439 section 2.8.2 open" ... ok
+test "RFC 8439 section 2.8.2 rejects a flipped tag bit" ... ok
+test "RFC 8439 appendix A.5" ... ok
+6 tests: 6 passed, 0 failed
+```
+
+The step counts on stderr were 5,796, 5,797, 26,484, 41,108, 28,544, and
+86,764. The total was 194,493 of 1,048,576.
+
+`orangec eval --spec rfc8439_2_6_2 --spec rfc8439_2_6_2_expected` on
+`algorithms/chacha20-poly1305/chacha20-poly1305.or` printed two lines and
+exited 0. Both were
+
+`Word[8]^32 = [0x8a, 0xd5, 0xa0, 0x8b, 0x90, 0x5f, 0x81, 0xcc, 0x81, 0x50, 0x40, 0x27, 0x4a, 0xb2, 0x94, 0x71, 0xa8, 0x33, 0xb6, 0x37, 0xe3, 0xfd, 0x0d, 0xa5, 0x08, 0xdb, 0xb8, 0xe2, 0xfd, 0xd1, 0xa6, 0x46]`.
+
+That is section 2.6.2. The same command on `rfc8439_2_8_2` and
+`rfc8439_2_8_2_expected` printed two identical `Word[8]^130` lines and
+exited 0. Each begins `0xd3, 0x1a, 0x8d, 0x34` and ends `0x06, 0x91`, the
+ciphertext and the tag of section 2.8.2.
+`rfc8439_a5_verify` and `rfc8439_a5_verify_expected` were both `Bool = true`.
+`rfc8439_a5_tail` and `rfc8439_a5_tail_expected` were both
+
+`Word[8]^9 = [0x72, 0x65, 0x73, 0x73, 0x2e, 0x2f, 0xe2, 0x80, 0x9d]`.
+
+The repository module is `chacha20_poly1305`. The manual listing is
+`aead_spec`.
+
+#### 8. Rejections
+
+The tag's place in the sealed string is a literal offset. An `Int`
+parameter is not an index the checker accepts:
+
+```orange
+edition 2026;
+module neg_seal {
+  spec bad(sealed: Word[8]^130, n: Int) -> Word[8] { sealed[n] }
+}
+```
+
+`` error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``
+
+#### 9. Non-Claims
+
+The six tests show the one-time keys of sections 2.6.2 and 2.8.2, the seal
+and the opening of section 2.8.2, one tag failure the RFC does not print,
+and the decryption of appendix A.5. They do not call the 8-byte and
+47-byte functions. They do not show a plaintext of any other length, a
+nonce that is not 12 bytes, or the limits section 2.8 lists for RFC 5116.
+AEAD_XCHACHA20_POLY1305 is not this section. Section 2.7 declines to
+specify a PRF, and this listing does not add one. Nothing here is a timing
+measurement, the Procter analysis section 2.8 cites, or a proof of the
+composition.
 
 ### SHA-3 and SHAKE, FIPS 202
 
