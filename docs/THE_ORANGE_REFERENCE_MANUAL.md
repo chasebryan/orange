@@ -1383,14 +1383,35 @@ constructs:
 ### §49. Complete Reference Specification: FIPS 180-4 SHA-256
 
 SHA-256 as FIPS 180-4 (NIST, August 2015, DOI 10.6028/NIST.FIPS.180-4) writes
-it: the functions of section 4.1.2, the constants of section 4.2.2, the padding
-of section 5.1.1, the parsing of section 5.2.1, the initial hash value of
-section 5.3.3, and the hash computation of section 6.2.2. SHA-224, SHA-384,
-SHA-512, and SHA-512/t are that computation on other widths and initial values;
-this section does not restate them. The listing below is accepted by `orangec
-test` on this edition: six tests, covering the two NIST examples, the empty
-message, round 0 of "abc", schedule word $W_{17}$ of "abc", and $H^{(1)}$ of
-the two-block example.
+it: the word operations of section 3.2, the functions of section 4.1.2, the
+constants of section 4.2.2, the padding of section 5.1.1, the parsing of
+section 5.2.1, the initial hash value of section 5.3.3, and the hash
+computation of section 6.2.2. SHA-224 (sections 5.3.2 and 6.2.1), SHA-384,
+SHA-512, SHA-512/224, and SHA-512/256 (sections 4.1.3, 4.2.3, 5.1.2, 5.2.2,
+5.3.4 through 5.3.7, and 6.3 through 6.7) are other widths, rotation
+distances, constant tables, and initial values. This section does not
+restate them. `algorithms/sha2/sha2.or` writes that family and declares no
+`test` member; `orangec test` on that file reports zero tests. The checked
+text is the listing in this section.
+
+#### Status
+
+**Current.** Built `orangec` 0.0.1 from this tree reports `implemented slice
+S3t` (`IMPLEMENTED_SLICE` in `compiler/crates/orangec/src/main.rs`).
+`orangec test` on the listing accepts it: six tests, zero failures. The
+listing uses `Word[32]`, fixed arrays, typed `let`, `for`/`with`, tuples,
+byte strings, `hex"..."`, size parameters, and `as big`. Those are slices
+S3b through S3n and S3q. It does not use rank-3 or rank-4 arrays. The
+manual banner's "slice S3u" names OEP-0025, which is not a file in this
+checkout and is not the slice this binary reports. Acceptance below is the
+S3t compiler that was run.
+
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing in this section, messages of 1 through 119 bytes, the empty message, and the worked words of section 6 | Current | Checked, as above |
+| A message whose bit length is not a multiple of 8 | Not transcribed | FIPS 180-4 section 5.1.1 allows any $l < 2^{64}$. The listing's input type is `Word[8]^len`, so $l = 8 \cdot \mathrm{len}$. No compiler feature is missing; the domain is bytes |
+| `len` of 120 bytes or more | Same algorithm, outside this size domain | `len in 1..120` is 119 instances. A size parameter has at most 256 instances (`ORC0238`, §30). A larger finite range is the same `pad` and `absorb` |
+| SHA-224, SHA-384, SHA-512, SHA-512/224, SHA-512/256 | Not this section | Other FIPS sections, listed above. Not labeled Current here |
 
 #### 1. Parameters (FIPS 180-4, sections 1 and 6.2)
 
@@ -1403,9 +1424,20 @@ the two-block example.
 | Length field | 64 bits, big-endian, and $l < 2^{64}$ |
 | Round count | 64 |
 
-#### 2. Logical Functions (section 4.1.2)
+#### 2. Logical Functions (sections 3.2 and 4.1.2)
 
-For $x, y, z \in \mathbb{Z}/2^{32}\mathbb{Z}$:
+Section 3.2, for a word $x$ of $w = 32$ bits and an integer $n$ with
+$0 \le n < w$:
+
+$$\mathrm{ROTR}^{n}(x) = (x \gg n) \lor (x \ll (w - n))$$
+
+$$\mathrm{SHR}^{n}(x) = x \gg n$$
+
+`>>>` is $\mathrm{ROTR}$ and `>>` is $\mathrm{SHR}$ (§48). The amounts in
+section 4.1.2 are constants in that range, so they are the constant shifts
+of slice S3b. Section 4.1.2, for $x, y, z \in \mathbb{Z}/2^{32}\mathbb{Z}$,
+with $\land$ bitwise AND, $\lor$ bitwise OR, $\oplus$ exclusive-or, and
+$\lnot$ bitwise complement:
 
 $$\mathrm{Ch}(x, y, z) = (x \land y) \oplus (\lnot x \land z)$$
 
@@ -1419,9 +1451,18 @@ $$\sigma_0^{\{256\}}(x) = \mathrm{ROTR}^{7}(x) \oplus \mathrm{ROTR}^{18}(x) \opl
 
 $$\sigma_1^{\{256\}}(x) = \mathrm{ROTR}^{17}(x) \oplus \mathrm{ROTR}^{19}(x) \oplus \mathrm{SHR}^{10}(x)$$
 
-`>>>` is $\mathrm{ROTR}$ and `>>` is $\mathrm{SHR}$ (§48). Addition in the
-schedule and in the round is addition in `Word[32]`, the standard's
-$\bmod 2^{32}$.
+| FIPS name | Orange | Amounts |
+| :--- | :--- | :--- |
+| $\mathrm{Ch}$ | `ch` | — |
+| $\mathrm{Maj}$ | `maj` | — |
+| $\Sigma_0^{\{256\}}$ | `big_sigma0` | 2, 13, 22 |
+| $\Sigma_1^{\{256\}}$ | `big_sigma1` | 6, 11, 25 |
+| $\sigma_0^{\{256\}}$ | `small_sigma0` | 7, 18, and a shift of 3 |
+| $\sigma_1^{\{256\}}$ | `small_sigma1` | 17, 19, and a shift of 10 |
+
+Addition in the schedule and in the round is addition in `Word[32]`, the
+standard's $\bmod 2^{32}$. `+` on `Word[32]` is that operation. There is no
+separate modulo in the listing.
 
 #### 3. Constants and the Initial Hash Value (sections 4.2.2 and 5.3.3)
 
@@ -1442,30 +1483,68 @@ the first eight primes. `initial_hash` is that sequence:
 | 6 | `0x1f83d9ab` |
 | 7 | `0x5be0cd19` |
 
-#### 4. Padding and Parsing (sections 5.1.1 and 5.2.1)
+Section 4.2.2 prints $K_t^{\{256\}}$ for $t = 0$ through $t = 63$ in that
+order. `round_constants()[t]` is $K_t^{\{256\}}$. The words are the first 32
+bits of the fractional parts of the cube roots of the first sixty-four
+primes, which the standard lists as these values:
 
-For a message of $l$ bits, $l < 2^{64}$, append a single 1 bit, then the least
-$k \ge 0$ zero bits such that
+| $t$ | $K_t^{\{256\}}$ | $t$ | $K_t^{\{256\}}$ | $t$ | $K_t^{\{256\}}$ | $t$ | $K_t^{\{256\}}$ |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 0 | `0x428a2f98` | 1 | `0x71374491` | 2 | `0xb5c0fbcf` | 3 | `0xe9b5dba5` |
+| 4 | `0x3956c25b` | 5 | `0x59f111f1` | 6 | `0x923f82a4` | 7 | `0xab1c5ed5` |
+| 8 | `0xd807aa98` | 9 | `0x12835b01` | 10 | `0x243185be` | 11 | `0x550c7dc3` |
+| 12 | `0x72be5d74` | 13 | `0x80deb1fe` | 14 | `0x9bdc06a7` | 15 | `0xc19bf174` |
+| 16 | `0xe49b69c1` | 17 | `0xefbe4786` | 18 | `0x0fc19dc6` | 19 | `0x240ca1cc` |
+| 20 | `0x2de92c6f` | 21 | `0x4a7484aa` | 22 | `0x5cb0a9dc` | 23 | `0x76f988da` |
+| 24 | `0x983e5152` | 25 | `0xa831c66d` | 26 | `0xb00327c8` | 27 | `0xbf597fc7` |
+| 28 | `0xc6e00bf3` | 29 | `0xd5a79147` | 30 | `0x06ca6351` | 31 | `0x14292967` |
+| 32 | `0x27b70a85` | 33 | `0x2e1b2138` | 34 | `0x4d2c6dfc` | 35 | `0x53380d13` |
+| 36 | `0x650a7354` | 37 | `0x766a0abb` | 38 | `0x81c2c92e` | 39 | `0x92722c85` |
+| 40 | `0xa2bfe8a1` | 41 | `0xa81a664b` | 42 | `0xc24b8b70` | 43 | `0xc76c51a3` |
+| 44 | `0xd192e819` | 45 | `0xd6990624` | 46 | `0xf40e3585` | 47 | `0x106aa070` |
+| 48 | `0x19a4c116` | 49 | `0x1e376c08` | 50 | `0x2748774c` | 51 | `0x34b0bcb5` |
+| 52 | `0x391c0cb3` | 53 | `0x4ed8aa4a` | 54 | `0x5b9cca4f` | 55 | `0x682e6ff3` |
+| 56 | `0x748f82ee` | 57 | `0x78a5636f` | 58 | `0x84c87814` | 59 | `0x8cc70208` |
+| 60 | `0x90befffa` | 61 | `0xa4506ceb` | 62 | `0xbef9a3f7` | 63 | `0xc67178f2` |
+
+#### 4. Padding, Parsing, and Byte Order (sections 3.1, 5.1.1, and 5.2.1)
+
+Section 3.1 reads a hex digit as four bits, most significant bit first, and a
+word as the integer whose rightmost hex digit is the least significant four
+bits. Section 5.2.1 then splits each 512-bit block into sixteen 32-bit words.
+The first 32 bits of block $i$ are $M_0^{(i)}$ and the last 32 bits are
+$M_{15}^{(i)}$. That is big-endian packing (§29):
+
+$$M_t^{(i)} = \sum_{j=0}^{3} B[64(i-1) + 4t + j] \cdot 2^{8(3-j)}$$
+
+where $B$ is the padded message as bytes and block numbers in the standard
+start at 1. `block as big Word[32]^16` is those sixteen words. The digest
+uses the same map in the other direction: `hash as big Word[8]^32` is
+$H_0^{(N)} \mathbin{\Vert} \cdots \mathbin{\Vert} H_7^{(N)}$.
+
+For a message of $l$ bits, $l < 2^{64}$, section 5.1.1 appends a single 1
+bit, then the least $k \ge 0$ zero bits such that
 
 $$l + 1 + k \equiv 448 \pmod{512},$$
 
-then the 64-bit big-endian encoding of $l$. The padded length is a multiple of
-512. Parsing reads each block as sixteen big-endian 32-bit words, $M_0^{(i)}$
-the leftmost.
+then the 64-bit big-endian encoding of $l$. The padded length is a multiple
+of 512. The listing takes whole bytes, $l = 8 \cdot \mathrm{len}$. The bit 1
+is then the byte `0x80`, because the first bit of a byte is its most
+significant bit. The 64-bit length is `(8 * len) as big Word[8]^8`, eight
+bytes, most significant byte first. `length_bytes` is the same map written
+as shifts, used for the empty message where there is no `len` to cast.
 
-The listing takes whole bytes, $l = 8 \cdot \mathrm{len}$. The bit 1 is then
-the byte `0x80`. For every $\mathrm{len}$ from 0 through 119, the FIPS block
-count equals $((\mathrm{len} + 8) / 64) + 1$ under truncating integer division,
-and `pad` returns that many blocks. `len in 1..120` is the half-open range of
-§30, so the instances are lengths 1 through 119. Length 0 is `sha256_empty`:
-an array type `Word[8]^n` requires $n \ge 1$, so there is no `Word[8]^0` to
-pass to `pad`. The empty block is the byte `0x80`, 55 zero bytes, and a 64-bit
-length of zero.
-
-A message whose length is not a multiple of 8 bits has no listing here.
-Messages of 120 bytes and longer are the same `pad` and `absorb` on a larger
-finite range. One `spec` does not cover every $l < 2^{64}$: a size parameter
-has at most 256 instances (§30).
+For every $\mathrm{len}$ from 0 through 119, the FIPS block count equals
+$((\mathrm{len} + 8) / 64) + 1$ under truncating integer division, and `pad`
+returns that many blocks. `len in 1..120` is the half-open range of §30, so
+the instances are lengths 1 through 119. Those lengths use one block for
+$\mathrm{len} \le 55$ and two blocks for $56 \le \mathrm{len} \le 119$.
+`absorb`'s parameter `blocks in 1..4` is the three instances 1, 2, and 3, which
+covers both. Length 0 is `sha256_empty`: an array type `Word[8]^n` requires
+$n \ge 1$, so there is no `Word[8]^0` to pass to `pad`. The empty block is
+the byte `0x80`, 55 zero bytes, and a 64-bit length of zero. A message whose
+length is not a multiple of 8 bits, and a message of 120 bytes or more, are
+outside this listing, as the status table records.
 
 #### 5. The Hash Computation (section 6.2.2)
 
@@ -1491,7 +1570,29 @@ big-endian.
 
 `schedule` is step 1, in that addend order. `round` is step 3. `compress` is
 steps 2 through 4. `absorb` is the loop "for $i = 1$ to $N$" and the final
-big-endian bytes.
+big-endian bytes. The standard's step 3 assigns the eight working variables
+one after another, each right-hand side using the values from before the
+round. The listing returns those eight values at once. The correspondence
+is:
+
+| FIPS 180-4 section 6.2.2 | Orange |
+| :--- | :--- |
+| "For $i = 1$ to $N$" | `absorb`: `for b in 0..blocks`, and block $i$ is `p[64*(i-1) .. 64*(i-1)+64]` |
+| Step 1, $0 \le t \le 15$, $W_t = M_t^{(i)}$ | `schedule`: `let head = block as big Word[32]^16`, then `head ++ [0; 48]` |
+| Step 1, $16 \le t \le 63$ | the loop `for t in 16..64`, index `t`, sum `small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]` |
+| Step 2, $a = H_0^{(i-1)}, \ldots, h = H_7^{(i-1)}$ | the `with` tuple of `compress`, `(hash[0], ..., hash[7])` |
+| Step 3, $T_1 = h + \Sigma_1^{\{256\}}(e) + \mathrm{Ch}(e, f, g) + K_t^{\{256\}} + W_t$ | `t1` in `round`, addend order unchanged, `k` is `round_constants()[t]`, `w` is `schedule(block)[t]` |
+| Step 3, $T_2 = \Sigma_0^{\{256\}}(a) + \mathrm{Maj}(a, b, c)$ | `t2` |
+| Step 3, $a \leftarrow T_1 + T_2$ | result component 0 |
+| Step 3, $b \leftarrow a$, $c \leftarrow b$, $d \leftarrow c$ | result components 1, 2, 3, the values from before the round |
+| Step 3, $e \leftarrow d + T_1$ | result component 4 |
+| Step 3, $f \leftarrow e$, $g \leftarrow f$, $h \leftarrow g$ | result components 5, 6, 7 |
+| Step 3, $t = 0$ to $63$ | `for t in 0..64` |
+| Step 4, $H_j^{(i)} = a_j + H_j^{(i-1)}$ | `[a + hash[0], ..., h + hash[7]]`, where `hash` is $H^{(i-1)}$ and was not updated inside the round loop |
+| The digest $H_0^{(N)} \mathbin{\Vert} \cdots \mathbin{\Vert} H_7^{(N)}$ | `absorb`'s `hash as big Word[8]^32` |
+
+The range `0..64` is half-open (§30), so the body runs for $t = 0, 1, \ldots, 63$.
+The range `16..64` is $t = 16, \ldots, 63$.
 
 #### 6. Worked Values for the NIST Examples
 
