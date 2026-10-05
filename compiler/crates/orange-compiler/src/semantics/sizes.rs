@@ -141,17 +141,34 @@ fn literal_length(
     }
 }
 
+/// The types a bracket parameter lists. A size lists none. A braced type
+/// parameter lists what it writes, and `K in Fields` lists what that
+/// `types` declaration writes. An unknown name lists none.
+pub(super) fn parameter_type_syntax<'a>(
+    module: &'a crate::parser::ModuleDeclaration,
+    parameter: &'a SizeParameter,
+) -> &'a [TypeSyntax] {
+    match &parameter.list {
+        Some(name) => module
+            .type_lists
+            .iter()
+            .find(|list| list.name.text == name.text)
+            .map_or(&[], |list| list.types.as_slice()),
+        None => &parameter.types,
+    }
+}
+
 /// Returns each listed type of `parameters` as written, with every run of
 /// whitespace written as one space, or an empty list for a size parameter.
 pub(super) fn type_spellings(
     source: &SourceFile,
+    module: &crate::parser::ModuleDeclaration,
     parameters: &[SizeParameter],
 ) -> Vec<Vec<String>> {
     parameters
         .iter()
         .map(|parameter| {
-            parameter
-                .types
+            parameter_type_syntax(module, parameter)
                 .iter()
                 .map(|ty| {
                     source.slice(ty.span).map_or_else(String::new, |text| {
@@ -213,8 +230,13 @@ impl SizeRanges {
     /// Returns the ranges of `function`'s size parameters when each is a
     /// nonempty range within 0 through 65536 and together they give at
     /// most [`MAX_INSTANCES_PER_FUNCTION`] instances. A function without
-    /// size parameters has one instance.
-    pub(super) fn of(source: &SourceFile, function: &FunctionDeclaration) -> Option<Self> {
+    /// size parameters has one instance. A named type list contributes as
+    /// many types as its declaration writes.
+    pub(super) fn of(
+        source: &SourceFile,
+        module: &crate::parser::ModuleDeclaration,
+        function: &FunctionDeclaration,
+    ) -> Option<Self> {
         let mut ranges = [(0, 0); MAX_SIZES_PER_FUNCTION];
         if function.sizes.len() > MAX_SIZES_PER_FUNCTION {
             return None;
@@ -222,7 +244,10 @@ impl SizeRanges {
         let mut instances = 1_usize;
         for (slot, size) in ranges.iter_mut().zip(&function.sizes) {
             let (start, end) = if size.is_type() {
-                (0, u32::try_from(size.types.len()).ok()?)
+                (
+                    0,
+                    u32::try_from(parameter_type_syntax(module, size).len()).ok()?,
+                )
             } else {
                 (
                     size_bound(source, size.start_span)?,
@@ -302,10 +327,14 @@ impl SizeRanges {
 /// The number of Core function identities a function takes: one for each
 /// instance of a typed `spec`, none for a function without a typed body or
 /// for a `spec` whose size parameters are malformed.
-pub(super) fn instance_count(source: &SourceFile, function: &FunctionDeclaration) -> usize {
+pub(super) fn instance_count(
+    source: &SourceFile,
+    module: &crate::parser::ModuleDeclaration,
+    function: &FunctionDeclaration,
+) -> usize {
     match (&function.body, function.kind) {
         (FunctionBody::Typed(_), FunctionKind::Spec) => {
-            SizeRanges::of(source, function).map_or(0, |ranges| ranges.instances())
+            SizeRanges::of(source, module, function).map_or(0, |ranges| ranges.instances())
         }
         _ => 0,
     }
@@ -606,7 +635,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 if self.halted {
                     return false;
                 }
-                instances = instances.saturating_mul(size.types.len());
+                instances =
+                    instances.saturating_mul(parameter_type_syntax(&self.ast.module, size).len());
                 if let Some(earlier) = earlier {
                     valid = false;
                     self.report_repeated_bracket(&size.name, earlier.name.span);
@@ -709,6 +739,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             valid = false;
             self.report_type_parameter_name(&parameter.name, declared);
         }
+        if let Some(list) = self.lists.iter().find(|list| list.name == name) {
+            valid = false;
+            self.report_parameter_named_list(&parameter.name, list.span);
+        }
+        if parameter.list.is_some() {
+            let named = self.check_named_type_list(parameter);
+            return valid && named;
+        }
         let mut resolved: Vec<Option<CoreType>> = Vec::new();
         if resolved.try_reserve_exact(parameter.types.len()).is_err() {
             self.resource_limit(parameter.span, "type parameter storage allocation failed");
@@ -734,6 +772,80 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             resolved.push(checked);
         }
         valid
+    }
+
+    /// Checks `K in Fields`. The list's own entries were checked at its
+    /// declaration. An unknown name, or a type used as a list, is reported
+    /// here; a list that already failed contributes no second diagnostic.
+    fn check_named_type_list(&mut self, parameter: &SizeParameter) -> bool {
+        let Some(written) = parameter.list.as_ref() else {
+            return false;
+        };
+        if !self.event(written.span) {
+            return false;
+        }
+        if let Some(list) = self.lists.iter().find(|list| list.name == written.text) {
+            return list.valid;
+        }
+        self.report_type_list_reference(written);
+        false
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_parameter_named_list(&mut self, name: &Identifier, declared: Span) {
+        if !self.begin_report(name.span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(&name.text);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("`{spelling}` names a list of types"),
+                name.span,
+            )
+            .with_label("a type parameter cannot take a type list's name")
+            .with_secondary_span(declared, "the `types` declaration is here")
+            .with_note(
+                "a type parameter names one type in each instance, and a `types` declaration \
+                 names several types for several functions",
+            ),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_reference(&mut self, name: &Identifier) {
+        if !self.begin_report(name.span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(&name.text);
+        let names_type = BUILT_IN_TYPE_NAMES.contains(&name.text.as_str())
+            || self.types.name(name.text.as_str()).is_some();
+        let diagnostic = if names_type {
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("`{spelling}` names a type, not a list of types"),
+                name.span,
+            )
+            .with_label("write the type in braces, or name a `types` declaration")
+            .with_note(
+                "a type parameter is written `K in {F, L}` or `K in Fields`, and `Fields` is a \
+                 `types` declaration of this module",
+            )
+        } else {
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("no type list named `{spelling}`"),
+                name.span,
+            )
+            .with_label("unknown type list")
+            .with_note(
+                "a type parameter is written `K in {F, L}` or `K in Fields`, and `Fields` is a \
+                 `types` declaration of this module",
+            )
+        };
+        self.diagnostics.push(diagnostic);
     }
 
     /// Explains each size rejected in a listed type since `reported`
@@ -895,7 +1007,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let label = instance.label(
             &function.name.text,
-            &type_spellings(self.source, &function.sizes),
+            &type_spellings(self.source, &self.ast.module, &function.sizes),
         );
         let name = identifier_spelling_for_diagnostic(&function.name.text);
         let typed = function.sizes.iter().any(SizeParameter::is_type);

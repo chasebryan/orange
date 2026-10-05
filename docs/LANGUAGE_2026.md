@@ -155,6 +155,13 @@ unresolved.
 > dimensions, each a `type` declaration over the one before it, and update
 > targets of two to four indices, as `x with [i][j][k] = v`. It adds no token
 > or reserved word; repeated `^` type syntax remains rejected.
+>
+> The S3x slice proposed in [`TYPE_LISTS_2026.md`](TYPE_LISTS_2026.md) under
+> OEP-0028, also in review, builds on S3u with a list of types named once:
+> `types Fields = {F, L};` and `spec pow[K in Fields]`. Each function is
+> checked once for each listed type. It adds no token or reserved word:
+> `types` is a name except where a `type` declaration could begin, and a
+> name after `in` is a list unless `..` follows.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

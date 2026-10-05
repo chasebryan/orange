@@ -54,10 +54,10 @@ pub use parser::{
     IndexExpression, IntegerLiteral, LoopExpression, MAX_ARGUMENTS_PER_CALL, MAX_ARRAY_ELEMENTS,
     MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING,
     MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,
-    MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, MAX_TYPES_PER_MODULE,
-    MAX_USES_PER_MODULE, ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TestDeclaration,
-    TestTitle, TypeDeclaration, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
-    UpdateExpression, UseDeclaration, parse,
+    MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, MAX_TYPE_LISTS_PER_MODULE,
+    MAX_TYPES_PER_MODULE, MAX_USES_PER_MODULE, ModuleDeclaration, Parameter, ParseResult,
+    SyntaxTree, TestDeclaration, TestTitle, TypeDeclaration, TypeListDeclaration, TypeSyntax,
+    TypedBody, UnaryExpression, UnaryOperator, UpdateExpression, UseDeclaration, parse,
 };
 pub use semantics::{
     AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS, MAX_MODULES_PER_PROGRAM,

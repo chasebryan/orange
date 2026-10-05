@@ -329,7 +329,7 @@ pub(super) fn typed_spec_count(source: &SourceFile, ast: &SyntaxTree) -> usize {
     ast.module
         .functions
         .iter()
-        .map(|function| instance_count(source, function))
+        .map(|function| instance_count(source, &ast.module, function))
         .fold(0, usize::saturating_add)
 }
 

@@ -71,6 +71,15 @@ pub(super) struct DeclaredType<'ast> {
     pub(super) ty: Option<CoreType>,
 }
 
+/// One `types` declaration after its entries have been checked.
+pub(super) struct ResolvedTypeList<'ast> {
+    pub(super) name: &'ast str,
+    pub(super) span: Span,
+    /// Every entry resolved, the entries are distinct, and there are at
+    /// most [`MAX_INSTANCES_PER_FUNCTION`] of them.
+    pub(super) valid: bool,
+}
+
 impl TypeTable<'_> {
     pub(super) const fn new() -> Self {
         Self {
@@ -401,6 +410,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let module = &self.ast.module;
         for declaration in &module.types {
             self.resolve_modulus(&declaration.ty);
+        }
+        for declaration in &module.type_lists {
+            for ty in &declaration.types {
+                self.resolve_modulus(ty);
+            }
         }
         for function in &module.functions {
             let (FunctionBody::Typed(body), FunctionKind::Spec) = (&function.body, function.kind)
@@ -736,16 +750,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
-    /// Resolves the module's `type` declarations in order. Each names a type
-    /// for the whole module, written with the built-in types and the names
-    /// declared before it.
+    /// Resolves the module's `type` and `types` declarations in source order.
+    /// Each `type` names a type for the whole module, written with the
+    /// built-in types and the names declared before it. Each `types` names
+    /// a list of those types for several functions.
     pub(super) fn analyze_type_declarations(&mut self) {
-        let declarations = &self.ast.module.types;
-        if self
-            .types
-            .names
-            .try_reserve_exact(declarations.len())
-            .is_err()
+        let aliases = self.ast.module.types.len();
+        let lists = self.ast.module.type_lists.len();
+        if self.types.names.try_reserve_exact(aliases).is_err()
+            || self.lists.try_reserve_exact(lists).is_err()
         {
             self.resource_limit(
                 self.ast.module.span,
@@ -753,49 +766,243 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             );
             return;
         }
-        for declaration in declarations {
-            // One event for the name's lookup.
-            if !self.event(declaration.name.span) {
-                return;
-            }
-            let name = declaration.name.text.as_str();
-            let span = declaration.name.span;
-            let earlier = self.types.name(name).map(|declared| declared.span);
-            if BUILT_IN_TYPE_NAMES.contains(&name) {
-                if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::DuplicateTypeName,
-                            format!("`{name}` is a built-in type"),
-                            span,
-                        )
-                        .with_label("a `type` declaration cannot name a built-in type")
-                        .with_note("the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"),
-                    );
+        let mut alias_index = 0;
+        let mut list_index = 0;
+        while !self.halted {
+            let alias = self.ast.module.types.get(alias_index);
+            let list = self.ast.module.type_lists.get(list_index);
+            match (alias, list) {
+                (Some(alias), Some(list)) if alias.span.start() <= list.span.start() => {
+                    self.analyze_one_type_declaration(alias);
+                    alias_index = alias_index.saturating_add(1);
                 }
-            } else if let Some(first) = earlier
-                && self.begin_report(span)
-            {
-                let name = identifier_spelling_for_diagnostic(name);
+                (Some(alias), None) => {
+                    self.analyze_one_type_declaration(alias);
+                    alias_index = alias_index.saturating_add(1);
+                }
+                (_, Some(list)) => {
+                    self.analyze_one_type_list(list);
+                    list_index = list_index.saturating_add(1);
+                }
+                (None, None) => break,
+            }
+        }
+    }
+
+    fn analyze_one_type_declaration(&mut self, declaration: &'ast crate::parser::TypeDeclaration) {
+        // One event for the name's lookup.
+        if !self.event(declaration.name.span) {
+            return;
+        }
+        let name = declaration.name.text.as_str();
+        let span = declaration.name.span;
+        let earlier_type = self.types.name(name).map(|declared| declared.span);
+        let earlier_list = self
+            .lists
+            .iter()
+            .find(|list| list.name == name)
+            .map(|list| list.span);
+        if BUILT_IN_TYPE_NAMES.contains(&name) {
+            if self.begin_report(span) {
                 self.diagnostics.push(
                     Diagnostic::error(
                         DiagnosticCode::DuplicateTypeName,
-                        format!("duplicate type name `{name}`"),
+                        format!("`{name}` is a built-in type"),
                         span,
                     )
-                    .with_label("this declaration repeats a type name")
-                    .with_secondary_span(first, "first declaration is here")
-                    .with_note("each `type` declaration of a module names a different type"),
+                    .with_label("a `type` declaration cannot name a built-in type")
+                    .with_note("the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"),
                 );
             }
-            let ty = self.analyze_type(&declaration.ty, "declared type");
+        } else if let Some(first) = earlier_type.or(earlier_list)
+            && self.begin_report(span)
+        {
+            let name = identifier_spelling_for_diagnostic(name);
+            let (code, note) = if earlier_type.is_some() {
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "each `type` declaration of a module names a different type",
+                )
+            } else {
+                (
+                    DiagnosticCode::TypeList,
+                    "each `type` or `types` declaration of a module has a name of its own",
+                )
+            };
+            self.diagnostics.push(
+                Diagnostic::error(code, format!("duplicate type name `{name}`"), span)
+                    .with_label("this declaration repeats a type name")
+                    .with_secondary_span(first, "first declaration is here")
+                    .with_note(note),
+            );
+        }
+        let ty = self.analyze_type(&declaration.ty, "declared type");
+        if self.halted {
+            return;
+        }
+        if earlier_type.is_none() && earlier_list.is_none() && !BUILT_IN_TYPE_NAMES.contains(&name)
+        {
+            self.types.names.push(DeclaredType { name, span, ty });
+        }
+    }
+
+    fn analyze_one_type_list(&mut self, declaration: &'ast crate::parser::TypeListDeclaration) {
+        if !self.event(declaration.name.span) {
+            return;
+        }
+        let name = declaration.name.text.as_str();
+        let span = declaration.name.span;
+        let earlier_type = self.types.name(name).map(|declared| declared.span);
+        let earlier_list = self
+            .lists
+            .iter()
+            .find(|list| list.name == name)
+            .map(|list| list.span);
+        let name_ok = if BUILT_IN_TYPE_NAMES.contains(&name) {
+            self.report_type_list_builtin(span, name);
+            false
+        } else if let Some(first) = earlier_type.or(earlier_list) {
+            self.report_type_list_duplicate_name(span, name, first);
+            false
+        } else {
+            true
+        };
+        let mut resolved: Vec<Option<CoreType>> = Vec::new();
+        if resolved.try_reserve_exact(declaration.types.len()).is_err() {
+            self.resource_limit(declaration.span, "type list storage allocation failed");
+            return;
+        }
+        for ty in &declaration.types {
+            let checked = self.analyze_type(ty, "listed type");
             if self.halted {
                 return;
             }
-            if earlier.is_none() && !BUILT_IN_TYPE_NAMES.contains(&name) {
-                self.types.names.push(DeclaredType { name, span, ty });
+            if let Some(checked) = &checked
+                && let Some(first) = resolved
+                    .iter()
+                    .position(|earlier| earlier.as_ref() == Some(checked))
+                    .and_then(|position| declaration.types.get(position))
+            {
+                self.report_type_list_duplicate(name, first.span, ty.span, checked);
             }
+            resolved.push(checked);
         }
+        let distinct = distinct_types(&resolved);
+        let length_ok = declaration.types.len() <= MAX_INSTANCES_PER_FUNCTION;
+        if name_ok && distinct && !length_ok {
+            self.report_type_list_length(declaration);
+        }
+        if name_ok {
+            self.lists.push(ResolvedTypeList {
+                name,
+                span,
+                valid: distinct && length_ok,
+            });
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_builtin(&mut self, span: Span, name: &str) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(name);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("`{spelling}` is a built-in type"),
+                span,
+            )
+            .with_label("a `types` declaration cannot name a built-in type")
+            .with_note("the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_duplicate_name(&mut self, span: Span, name: &str, earlier: Span) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(name);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("duplicate type name `{spelling}`"),
+                span,
+            )
+            .with_label("this declaration repeats a type name")
+            .with_secondary_span(earlier, "first declaration is here")
+            .with_note("each `type` or `types` declaration of a module has a name of its own"),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_duplicate(&mut self, name: &str, first: Span, again: Span, ty: &CoreType) {
+        if !self.begin_report(again) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(name);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeParameter,
+                format!("`{spelling}` lists the type `{ty}` twice"),
+                again,
+            )
+            .with_label("this is the same type as an earlier one")
+            .with_secondary_span(first, "first listed here")
+            .with_note(
+                "a type list names each type once, so that each instance has a type of its own",
+            ),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_length(&mut self, declaration: &crate::parser::TypeListDeclaration) {
+        if !self.begin_report(declaration.span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(&declaration.name.text);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!(
+                    "`{spelling}` lists {} types, but a type list has at most \
+                     {MAX_INSTANCES_PER_FUNCTION}",
+                    declaration.types.len()
+                ),
+                declaration.span,
+            )
+            .with_label("too many types")
+            .with_note(
+                "a function has at most 256 instances, and a type parameter has one instance for \
+                 each type its list names",
+            ),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_type_list_used_as_type(&mut self, syntax: &TypeSyntax) {
+        if !self.begin_report(syntax.span) {
+            return;
+        }
+        let name = identifier_spelling_for_diagnostic(&syntax.name.text);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeList,
+                format!("`{name}` names a list of types, not a type"),
+                syntax.span,
+            )
+            .with_label("a `types` declaration is not a type")
+            .with_note(
+                "name one type the list contains, or a type parameter that stands for one of \
+                 them",
+            ),
+        );
     }
 
     pub(super) fn analyze_type(&mut self, syntax: &TypeSyntax, role: &str) -> Option<CoreType> {
@@ -950,6 +1157,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 None
             }
             TypeClass::Unsupported => {
+                if self
+                    .ast
+                    .module
+                    .type_lists
+                    .iter()
+                    .any(|list| list.name.text == syntax.name.text)
+                {
+                    self.report_type_list_used_as_type(syntax);
+                    return None;
+                }
                 if self.begin_report(syntax.span) {
                     let declared_later = syntax.width_span.is_none()
                         && self

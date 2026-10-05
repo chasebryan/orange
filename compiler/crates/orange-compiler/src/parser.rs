@@ -55,6 +55,10 @@ pub const MAX_USES_PER_MODULE: usize = 64;
 /// Maximum `type` declarations in one module.
 pub const MAX_TYPES_PER_MODULE: usize = 64;
 
+/// Maximum `types` declarations in one module. A type list names types for
+/// several functions; it is not itself a type.
+pub const MAX_TYPE_LISTS_PER_MODULE: usize = 64;
+
 /// Maximum size parameters of one function, and so sizes of one call.
 pub const MAX_SIZES_PER_FUNCTION: usize = 4;
 
@@ -143,6 +147,9 @@ pub struct ModuleDeclaration {
     /// `type` declarations in source order, after the `use` declarations and
     /// before the functions.
     pub(crate) types: Vec<TypeDeclaration>,
+    /// `types` declarations in source order, among the `type` declarations
+    /// and before the functions.
+    pub(crate) type_lists: Vec<TypeListDeclaration>,
     /// Functions in source order.
     pub(crate) functions: Vec<FunctionDeclaration>,
     /// Known-answer tests in source order, which may stand among the
@@ -173,6 +180,12 @@ impl ModuleDeclaration {
     #[must_use]
     pub fn types(&self) -> &[TypeDeclaration] {
         &self.types
+    }
+
+    /// Returns the `types` declarations in source order.
+    #[must_use]
+    pub fn type_lists(&self) -> &[TypeListDeclaration] {
+        &self.type_lists
     }
 
     /// Returns functions in source order.
@@ -279,6 +292,54 @@ impl UseDeclaration {
     }
 }
 
+/// A `types NAME = {TYPE, ...};` declaration, which names one list of types
+/// for the type parameters of several functions. The name is not a type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeListDeclaration {
+    /// Full declaration extent, from `types` through the semicolon.
+    pub(crate) span: Span,
+    /// The declared name.
+    pub(crate) name: Identifier,
+    /// The listed types in source order.
+    pub(crate) types: Vec<TypeSyntax>,
+    /// Exact extent of `{`.
+    pub(crate) open_span: Span,
+    /// Exact extent of `}`.
+    pub(crate) close_span: Span,
+}
+
+impl TypeListDeclaration {
+    /// Returns the full declaration extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the declared name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the listed types in source order.
+    #[must_use]
+    pub fn types(&self) -> &[TypeSyntax] {
+        &self.types
+    }
+
+    /// Returns the exact extent of `{`.
+    #[must_use]
+    pub const fn open_span(&self) -> Span {
+        self.open_span
+    }
+
+    /// Returns the exact extent of `}`.
+    #[must_use]
+    pub const fn close_span(&self) -> Span {
+        self.close_span
+    }
+}
+
 /// A `type NAME = TYPE;` declaration, which names a type for the rest of its
 /// module.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -367,9 +428,10 @@ impl FunctionDeclaration {
 }
 
 /// One size parameter `n in a..b` of a sized `spec`, or one type
-/// parameter `K in {F, L}`. The function is checked once for each value of
-/// `n` from `a` up to, but not including, `b`, or once for each type the
-/// braces list, as if it were written out once for each.
+/// parameter `K in {F, L}` or `K in Fields`. The function is checked once
+/// for each value of `n` from `a` up to, but not including, `b`, or once
+/// for each type the braces or the named list give, as if it were written
+/// out once for each.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SizeParameter {
     /// Extent from the name through the second bound or the closing brace.
@@ -381,8 +443,11 @@ pub struct SizeParameter {
     /// Exact extent of the second bound's integer token, or of `}`.
     pub(crate) end_span: Span,
     /// The listed types in source order, nonempty only for a type
-    /// parameter.
+    /// parameter written with braces.
     pub(crate) types: Vec<TypeSyntax>,
+    /// The name of a `types` declaration, for a type parameter written
+    /// `K in Fields`.
+    pub(crate) list: Option<Identifier>,
 }
 
 impl SizeParameter {
@@ -413,16 +478,23 @@ impl SizeParameter {
     }
 
     /// Returns the listed types of a type parameter in source order, or an
-    /// empty slice for a size parameter.
+    /// empty slice for a size parameter or a parameter that names a type list.
     #[must_use]
     pub fn types(&self) -> &[TypeSyntax] {
         &self.types
     }
 
-    /// Returns whether this is a type parameter, `K in {F, L}`.
+    /// Returns the type list a type parameter names, as in `K in Fields`.
+    #[must_use]
+    pub const fn list(&self) -> Option<&Identifier> {
+        self.list.as_ref()
+    }
+
+    /// Returns whether this is a type parameter, `K in {F, L}` or
+    /// `K in Fields`.
     #[must_use]
     pub const fn is_type(&self) -> bool {
-        !self.types.is_empty()
+        self.list.is_some() || !self.types.is_empty()
     }
 }
 
@@ -2245,28 +2317,54 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
         let mut uses = Vec::new();
         let mut types = Vec::new();
-        // `use` and `type` are recognized by position, as `let` is: they
-        // start declarations only before the module's first function, where
-        // no other identifier may appear. The `use` declarations come first.
-        while !self.halted && (self.current_is_word("use") || self.current_is_word("type")) {
+        let mut type_lists = Vec::new();
+        // `use`, `type`, and `types` are recognized by position, as `let` is:
+        // they start declarations only before the module's first function,
+        // where no other identifier may appear. The `use` declarations come
+        // first. `type` and `types` may follow in either order.
+        while !self.halted
+            && (self.current_is_word("use")
+                || self.current_is_word("type")
+                || self.current_is_word("types"))
+        {
             let before = self.cursor;
-            if self.current_is_word("type") {
+            if self.current_is_word("types") {
+                if let Some(declaration) = self.parse_type_list_declaration() {
+                    self.push_type_list(&mut type_lists, declaration);
+                }
+            } else if self.current_is_word("type") {
                 if let Some(declaration) = self.parse_type_declaration() {
                     self.push_type(&mut types, declaration);
                 }
-            } else if types.is_empty() {
+            } else if types.is_empty() && type_lists.is_empty() {
                 if let Some(declaration) = self.parse_use_declaration() {
                     self.push_use(&mut uses, declaration);
                 }
             } else {
-                self.report(
-                    DiagnosticCode::ExpectedFunctionDeclaration,
-                    "expected a `type` declaration or a function",
-                    self.current_span(),
-                    "a `use` declaration cannot follow a `type` declaration",
-                    "a module's `use` declarations come first, then its `type` declarations, \
-                     then its functions",
-                );
+                let list_is_last = type_lists.last().is_some_and(|list| {
+                    types
+                        .last()
+                        .is_none_or(|alias| list.span.end() > alias.span.end())
+                });
+                if list_is_last {
+                    self.report(
+                        DiagnosticCode::ExpectedFunctionDeclaration,
+                        "expected a `type` declaration, a `types` declaration, or a function",
+                        self.current_span(),
+                        "a `use` declaration cannot follow a `types` declaration",
+                        "a module's `use` declarations come first, then its `type` and `types` \
+                         declarations, then its functions",
+                    );
+                } else {
+                    self.report(
+                        DiagnosticCode::ExpectedFunctionDeclaration,
+                        "expected a `type` declaration or a function",
+                        self.current_span(),
+                        "a `use` declaration cannot follow a `type` declaration",
+                        "a module's `use` declarations come first, then its `type` declarations, \
+                         then its functions",
+                    );
+                }
                 self.parse_use_declaration();
             }
             if !self.halted && self.cursor == before {
@@ -2316,6 +2414,21 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         self.current_span(),
                         "a `type` declaration cannot follow a function",
                         "`type` declarations come before a module's functions",
+                    );
+                    self.recover_to(&[
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::RightBrace,
+                        TokenKind::Eof,
+                    ]);
+                }
+                TokenKind::Identifier if self.current_is_word("types") => {
+                    self.report(
+                        DiagnosticCode::ExpectedFunctionDeclaration,
+                        "expected a `spec` or `impl` function declaration",
+                        self.current_span(),
+                        "a `types` declaration cannot follow a function",
+                        "`types` declarations come before a module's functions",
                     );
                     self.recover_to(&[
                         TokenKind::KwSpec,
@@ -2374,6 +2487,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     name,
                     uses,
                     types,
+                    type_lists,
                     functions,
                     tests,
                 })
@@ -2547,6 +2661,79 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         })
     }
 
+    /// Parses `types NAME = {TYPE, ...};`, with the current token the word
+    /// `types`.
+    fn parse_type_list_declaration(&mut self) -> Option<TypeListDeclaration> {
+        const SHAPE: &str = "a `types` declaration is written `types NAME = {TYPE, ...};` and names one list of \
+             types for several functions";
+        let recovery = [
+            TokenKind::Semicolon,
+            TokenKind::KwSpec,
+            TokenKind::KwImpl,
+            TokenKind::RightBrace,
+            TokenKind::Eof,
+        ];
+        let keyword = self.bump()?;
+        let Some(name) = self.parse_identifier("type list name") else {
+            self.recover_to(&recovery);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        };
+        if self
+            .expect(TokenKind::Equal, "`=` after the type list's name", SHAPE)
+            .is_none()
+        {
+            self.recover_to(&recovery);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        }
+        if self.current_kind() != TokenKind::LeftBrace {
+            self.expected("`{` before the listed types", SHAPE);
+            self.recover_to(&recovery);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        }
+        let Some((open, types, close)) = self.parse_braced_types(SHAPE) else {
+            self.recover_to(&[
+                TokenKind::RightBrace,
+                TokenKind::Semicolon,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+            ]);
+            if self.current_kind() == TokenKind::RightBrace {
+                self.bump();
+            }
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        };
+        let semicolon = self.consume_or_recover(
+            TokenKind::Semicolon,
+            "`;` after the type list",
+            SHAPE,
+            &[
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ],
+        )?;
+        self.record_node().then(|| TypeListDeclaration {
+            span: self.join(keyword.span, semicolon.span),
+            name,
+            types,
+            open_span: open,
+            close_span: close,
+        })
+    }
+
     #[inline(never)]
     fn push_type(&mut self, types: &mut Vec<TypeDeclaration>, declaration: TypeDeclaration) {
         if types.len() >= MAX_TYPES_PER_MODULE {
@@ -2561,6 +2748,29 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return;
         }
         types.push(declaration);
+    }
+
+    #[inline(never)]
+    fn push_type_list(
+        &mut self,
+        lists: &mut Vec<TypeListDeclaration>,
+        declaration: TypeListDeclaration,
+    ) {
+        if lists.len() >= MAX_TYPE_LISTS_PER_MODULE {
+            self.resource_limit_at(
+                format!("module has more than {MAX_TYPE_LISTS_PER_MODULE} `types` declarations"),
+                declaration.span,
+            );
+            return;
+        }
+        if lists.try_reserve(1).is_err() {
+            self.resource_limit_at(
+                "parser could not allocate `types` storage",
+                declaration.span,
+            );
+            return;
+        }
+        lists.push(declaration);
     }
 
     #[inline(never)]
@@ -2795,7 +3005,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 return None;
             }
             self.bump()?;
-            if self.current_kind() == TokenKind::LeftBrace {
+            // An identifier names a type list, `K in Fields`, unless `..`
+            // follows, which is a size bound that must be an integer.
+            let names_list = self.current_kind() == TokenKind::Identifier
+                && self
+                    .tokens
+                    .get(self.cursor.saturating_add(1))
+                    .is_none_or(|token| token.kind != TokenKind::DotDot);
+            if self.current_kind() == TokenKind::LeftBrace || names_list {
                 let parameter = self.parse_type_parameter(name)?;
                 if sizes.len() >= MAX_SIZES_PER_FUNCTION {
                     self.report(
@@ -2875,6 +3092,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 start_span,
                 end_span,
                 types: Vec::new(),
+                list: None,
             });
             if !self.record_node() {
                 return None;
@@ -2894,12 +3112,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         Some(sizes)
     }
 
-    /// Parses the braced list of a type parameter `K in {F, L}` at its `{`,
-    /// after the parameter's name and `in`: one or more types separated by
-    /// commas. After a syntax error in the list, parsing resumes after its
-    /// `}`, so that the function's `(` is found.
+    /// Parses a type parameter `K in {F, L}` or `K in Fields` after its
+    /// name and `in`. After a syntax error in a braced list, parsing resumes
+    /// after its `}`, so that the function's `(` is found.
     #[inline(never)]
     fn parse_type_parameter(&mut self, name: Identifier) -> Option<SizeParameter> {
+        if self.current_kind() == TokenKind::Identifier {
+            let list = self.parse_identifier("type list")?;
+            return self.record_node().then(|| SizeParameter {
+                span: self.join(name.span, list.span),
+                name,
+                start_span: list.span,
+                end_span: list.span,
+                types: Vec::new(),
+                list: Some(list),
+            });
+        }
         let parameter = self.parse_type_list(name);
         if parameter.is_none() {
             self.recover_to(&[
@@ -2916,6 +3144,23 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     }
 
     fn parse_type_list(&mut self, name: Identifier) -> Option<SizeParameter> {
+        let (open, types, close) = self.parse_braced_types(TYPE_PARAMETER_NOTE)?;
+        if !self.record_node() {
+            return None;
+        }
+        Some(SizeParameter {
+            span: self.join(name.span, close),
+            name,
+            start_span: open,
+            end_span: close,
+            types,
+            list: None,
+        })
+    }
+
+    /// Parses `{TYPE, ...}` at `{`: one or more types separated by commas.
+    /// `note` explains the declaration that contains the braces.
+    fn parse_braced_types(&mut self, note: &str) -> Option<(Span, Vec<TypeSyntax>, Span)> {
         let open = self.bump()?;
         let mut types = Vec::new();
         loop {
@@ -2926,7 +3171,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     } else {
                         "a listed type after `,`"
                     },
-                    TYPE_PARAMETER_NOTE,
+                    note,
                 );
                 return None;
             }
@@ -2942,22 +3187,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 }
                 TokenKind::RightBrace => break,
                 _ => {
-                    self.expected("`,` or `}` after the listed type", TYPE_PARAMETER_NOTE);
+                    self.expected("`,` or `}` after the listed type", note);
                     return None;
                 }
             }
         }
         let close = self.bump()?;
-        if !self.record_node() {
-            return None;
-        }
-        Some(SizeParameter {
-            span: self.join(name.span, close.span),
-            name,
-            start_span: open.span,
-            end_span: close.span,
-            types,
-        })
+        Some((open.span, types, close.span))
     }
 
     fn parse_parameter_list(&mut self) -> Option<Vec<Parameter>> {

@@ -33,6 +33,10 @@ pub struct DocumentationResult {
     diagnostics: DocumentationDiagnostics,
 }
 
+// `Syntax` holds a whole parse result. The tree gained a type-list vector in
+// S3x, so this variant exceeds clippy's size budget. Boxing it would allocate
+// on the diagnostic path.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 enum DocumentationDiagnostics {
     None,
@@ -185,6 +189,7 @@ enum Kind {
     Module,
     Import,
     Alias,
+    TypeList,
     Spec,
     Impl,
     Test,
@@ -196,6 +201,7 @@ impl Kind {
             Self::Module => "module",
             Self::Import => "use",
             Self::Alias => "type",
+            Self::TypeList => "types",
             Self::Spec => "spec",
             Self::Impl => "impl",
             Self::Test => "test",
@@ -207,6 +213,7 @@ impl Kind {
             Self::Module => "Module declaration.",
             Self::Import => "Import declaration; the imported module is not loaded.",
             Self::Alias => "Type alias declaration; the written type is not resolved.",
+            Self::TypeList => "Type list declaration; the written types are not resolved.",
             Self::Spec | Self::Impl if legacy => "Legacy empty body; syntax only.",
             Self::Spec => "Spec declaration; body omitted.",
             Self::Impl => "Impl declaration; body omitted.",
@@ -330,18 +337,44 @@ fn entries<'a>(
             budget,
         )?;
     }
-    for alias in &module.types {
-        add_entry(
-            &mut entries,
-            Entry {
-                kind: Kind::Alias,
-                name: alias.name.text(),
-                span: alias.span,
-                header: alias.span,
-                legacy: false,
-            },
-            budget,
-        )?;
+    let mut aliases = module.types.iter().peekable();
+    let mut lists = module.type_lists.iter().peekable();
+    loop {
+        let next_is_alias = match (aliases.peek(), lists.peek()) {
+            (Some(alias), Some(list)) => alias.span.start() <= list.span.start(),
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if next_is_alias {
+            let Some(alias) = aliases.next() else {
+                break;
+            };
+            add_entry(
+                &mut entries,
+                Entry {
+                    kind: Kind::Alias,
+                    name: alias.name.text(),
+                    span: alias.span,
+                    header: alias.span,
+                    legacy: false,
+                },
+                budget,
+            )?;
+        } else if let Some(list) = lists.next() {
+            add_entry(
+                &mut entries,
+                Entry {
+                    kind: Kind::TypeList,
+                    name: list.name.text(),
+                    span: list.span,
+                    header: list.span,
+                    legacy: false,
+                },
+                budget,
+            )?;
+        } else {
+            break;
+        }
     }
     let mut functions = module.functions.iter().peekable();
     let mut tests = module.tests.iter().peekable();

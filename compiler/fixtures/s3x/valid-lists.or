@@ -1,0 +1,89 @@
+// S3x: one list of types, named once, checked for every function that uses
+// it. Instances are the types as written. A call names one, or the arguments
+// and the place choose. An inline list keeps its meaning.
+edition 2026;
+module lists {
+  type P = Mod[65537];
+
+  type Q = Mod[3329];
+
+  types Fields = {P, Q};
+
+  types Widths = {Word[32], Word[64]};
+
+  spec add[K in Fields](x: K, y: K) -> K {
+    x + y
+  }
+
+  spec two[K in Fields]() -> K {
+    2
+  }
+
+  spec pair() -> (P, Q) {
+    (add(4000, 1), add(3, 1))
+  }
+
+  spec wide[K in Fields, n in 1..3](x: K) -> K^n {
+    [x; n]
+  }
+
+  spec row() -> P^2 {
+    wide[P, 2](7)
+  }
+
+  spec ch[W in Widths](x: W, y: W, z: W) -> W {
+    (x & y) ^ (~x & z)
+  }
+
+  spec maj[W in Widths](x: W, y: W, z: W) -> W {
+    (x & y) ^ (x & z) ^ (y & z)
+  }
+
+  spec ch32() -> Word[32] {
+    ch(0x00000000, 0x00000001, 0xffffffff)
+  }
+
+  spec ch64() -> Word[64] {
+    ch(0x00000000, 0x00000001, 0xffffffffffffffff)
+  }
+
+  spec maj32() -> Word[32] {
+    maj(0xffffffff, 0xffffffff, 0x00000000)
+  }
+
+  spec inline[K in {Int, Bool}](x: K) -> K {
+    x
+  }
+
+  spec kept() -> Int {
+    inline(6)
+  }
+
+  test "P adds to 1" {
+    add[P](65536, 2) == 1
+  }
+
+  test "Q adds to 1" {
+    add[Q](3328, 2) == 1
+  }
+
+  test "the place chooses Q" {
+    pair() == (4001, 4)
+  }
+
+  test "Ch is all ones on a 32-bit word" {
+    (ch32() as Int) == 0xffffffff
+  }
+
+  test "Ch is all ones on a 64-bit word" {
+    (ch64() as Int) == 0xffffffffffffffff
+  }
+
+  test "Maj keeps the shared bits" {
+    maj32() == 0xffffffff
+  }
+
+  test "an inline list is unchanged" {
+    kept() == 6
+  }
+}

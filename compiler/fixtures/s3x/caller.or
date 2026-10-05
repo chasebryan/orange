@@ -1,0 +1,22 @@
+// A call in another module fits the callee's list by the resolved type.
+// The list's name is not in scope here.
+edition 2026;
+module caller {
+  use ring;
+
+  spec go() -> Mod[7] {
+    ring::twice(3)
+  }
+
+  spec both() -> (Mod[7], Mod[11]) {
+    (ring::twice(3), ring::twice(4))
+  }
+
+  test "twice three in the first ring is six" {
+    go() == 6
+  }
+
+  test "four in the second ring is eight" {
+    both() == (6, 8)
+  }
+}
