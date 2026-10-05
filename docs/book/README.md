@@ -131,18 +131,30 @@ understand each operation rather than memorize its notation.
   outcomes in that section are the finish line. The label is lesson
   N13. It is not manuscript Chapter 13, *Interoperability and External
   Validation*.
+- **N14.** [Ready for Standards](NOVICE_N14_READY_FOR_STANDARDS.md#n14-ready-for-standards):
+  the gate after N13. One cut of the N13 pad seam, in two files, is
+  interpreted construct by construct; one byte is derived beside its
+  Orange name; one `test` is given its finite domain and its
+  non-claims; and the assumptions a Block A reader and a J5 reader
+  still carry are listed. The desk exam demands the same four acts
+  on the N12 sample line, which this lesson does not walk. Eight
+  exercises with worked answers. The five outcomes in that section
+  are the finish line. Failing them means the reader is not ready
+  for J2–J4. The label is lesson N14. It is not a manuscript
+  chapter numeral. The lesson does not transcribe the SHA-256
+  compression function or its message schedule.
 
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
-corrected source. Chapters 4–6, N7, N8, N9, N10, N11, N12, and N13, and the new executable checks remain
+corrected source. Chapters 4–6, N7, N8, N9, N10, N11, N12, N13, and N14, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
 worked answers. N7 adds twelve further exercises in its own file. N8 adds
 ten further exercises in its own file. N9 adds 20. N10 adds sixteen
 further exercises, numbered N10.1 onward. N11 adds sixteen further
 exercises, numbered N11.1 onward. N12 adds twelve further exercises,
 numbered N12.1 onward. N13 adds ten further exercises, numbered N13.1
-onward.
+onward. N14 adds eight further exercises, numbered N14.1 onward.
 
 ### Remaining teaching sequence
 
@@ -195,12 +207,21 @@ Item 6 is drafted as N12. Item 7 is drafted as N13. Extend the manuscript in the
    reader repairs. The five outcomes in N13 are the finish line.
    The locked label is N13. It does not use a manuscript chapter numeral.
    It is not manuscript Chapter 13.
+8. **Ready for Standards.** Drafted as
+   [N14](NOVICE_N14_READY_FOR_STANDARDS.md#n14-ready-for-standards).
+   A gate, not a new language slice and not Block A. The reader
+   interprets one program, derives one operation, explains one test's
+   finite domain, and locates the assumptions a later standard study
+   still carries. The five outcomes in N14 are the finish line.
+   The locked label is N14. It does not use a manuscript chapter numeral.
+   It does not transcribe FIPS 180-4 §6.2.2.
 
 The readiness check for Part 2 is demonstrated reasoning, not a certificate
 or an assertion that reading alone confers competence. The reader should be
 able to interpret a complete small Orange program, derive its elementary
 operations, explain the domain of a test, and locate each assumption in a
-claim.
+claim. That check is drafted as N14. A reader who cannot do it on a
+listing the lesson did not walk is not ready for J2–J4.
 
 ## Part 2, The Journeyman
 
@@ -356,7 +377,7 @@ These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
 answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
-integer ledger, and document structure. Python test
+integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -388,7 +409,11 @@ seam the same way. It checks the `ORC0229` diagnostic of a missing
 the `ORC1001` diagnostic of a missing module file. `check`, `eval`, and
 `test` of each rejected listing print that diagnostic and no value. The same test
 reads the one Orange listing in N9 and checks its printed evaluation and
-its passing test. Run it in a
+its passing test. The same test reads the three Orange listings in N14.
+It checks `pad.or` with `eval --spec case1_key`, and `pad_seam.or`
+beside that file with `eval --spec inner0` and its one test. It checks
+`sample_line.or` with its evaluation and the report of a root that
+declares no test. Run it in a
 build-capable checkout:
 
 ```sh
@@ -407,6 +432,8 @@ Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. Lesson N11 is AI-assis
 at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
 2026-10-05, at the owner's direction. Lesson N13, including its Orange
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the
-owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, and N13 review are
+owner's direction. Lesson N14, including its Orange listings, is
+AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
+direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, and N14 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
