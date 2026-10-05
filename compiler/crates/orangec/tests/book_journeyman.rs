@@ -4,9 +4,8 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-const J4: &str = include_str!(
-    "../../../../docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md"
-);
+const J4: &str =
+    include_str!("../../../../docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md");
 
 fn fences<'a>(text: &'a str, language: &str) -> Vec<&'a str> {
     let start = format!("```{language}\n");
@@ -74,7 +73,8 @@ fn j4_listings_match_the_compiler_on_this_tree() {
                 let result = run(command, source);
                 assert_eq!(result.status.code(), Some(1), "{name}: {command}");
                 assert!(result.stdout.is_empty(), "{name}: {command}");
-                assert_eq!(result.stderr, check.stderr, "{name}: {command}");
+                let again = String::from_utf8(result.stderr).expect("UTF-8 diagnostic");
+                assert_eq!(again, diagnostic, "{name}: {command}");
             }
             continue;
         }
@@ -102,7 +102,8 @@ fn j4_listings_match_the_compiler_on_this_tree() {
             assert_eq!(claimed.len(), 1, "{name}");
             assert_eq!(printed, format!("{}\n", claimed[0]), "{name}");
             let again = run("eval", source);
-            assert_eq!(evaluation.stdout, again.stdout, "{name}");
+            let again_printed = String::from_utf8(again.stdout).expect("UTF-8 value");
+            assert_eq!(printed, again_printed, "{name}");
             assert_eq!(evaluation.status.code(), again.status.code(), "{name}");
         }
         if !source.contains("test \"") {
@@ -117,7 +118,10 @@ fn j4_listings_match_the_compiler_on_this_tree() {
             continue;
         }
         let report = run("test", source);
-        assert!(report.stderr.is_empty(), "{name}: a test report is not a diagnostic");
+        assert!(
+            report.stderr.is_empty(),
+            "{name}: a test report is not a diagnostic"
+        );
         let body = String::from_utf8(report.stdout).expect("UTF-8 report");
         assert!(
             text_eq(&texts, &body),
@@ -126,7 +130,8 @@ fn j4_listings_match_the_compiler_on_this_tree() {
         let failed = body.contains("... FAILED");
         assert_eq!(report.status.success(), !failed, "{name}");
         let again = run("test", source);
-        assert_eq!(report.stdout, again.stdout, "{name}");
+        let again_body = String::from_utf8(again.stdout).expect("UTF-8 report");
+        assert_eq!(body, again_body, "{name}");
         assert_eq!(report.status.code(), again.status.code(), "{name}");
     }
 }
