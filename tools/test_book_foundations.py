@@ -1061,6 +1061,14 @@ class N12CompleteStudy(unittest.TestCase):
             'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md',
             'Orange tests.',
         ))
+        self.assertEqual(records['S11'], (
+            'NOVICE_N13_MODULES_AND_PROVENANCE.md',
+            'H. Krawczyk, M. Bellare, and R. Canetti.',
+        ))
+        self.assertEqual(records['T7'], (
+            'NOVICE_N13_MODULES_AND_PROVENANCE.md',
+            'Orange modules.',
+        ))
         n12_tags = {
             tag for tag, (name, _) in records.items()
             if name == 'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md'
@@ -1101,6 +1109,118 @@ class N12CompleteStudy(unittest.TestCase):
         self.assertLess(expected['feed1-sum'], 2 * modulus)
         self.assertEqual((0xfc62bb2f + 0x07060504) % modulus, 0x0368c033)
         self.assertEqual(0xd19c12b4 + 1, 0xd19c12b5)
+
+
+class N13ModulesProvenance(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_N13_MODULES_AND_PROVENANCE.md').read_text(
+            encoding='utf-8'
+        )
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_n13_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (N13\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(N13\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'N13.{n}' for n in range(1, 11)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter 13\b')
+        self.assertRegex(self.text, r'(?m)^## N13: Modules and Provenance$')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'The definition of HMAC requires a cryptographic hash function, which we denote by H, '
+            'and a secret key K.'
+        ])
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc2104', self.text)
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.180-4', self.text)
+        self.assertIn(
+            'https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/SHA256.pdf',
+            self.text,
+        )
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc4231', self.text)
+        self.assertIn('**N13.**', self.index)
+        self.assertIn(
+            'NOVICE_N13_MODULES_AND_PROVENANCE.md#n13-modules-and-provenance',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n13-modules-and-provenance', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(r'NOVICE_N13_MODULES_AND_PROVENANCE\.md#([^)\s]+)', self.index):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is N13.', self.text)
+        self.assertIn('The locked label is N13.', self.index)
+        self.assertIn('**[S11] H. Krawczyk, M. Bellare, and R. Canetti.**', self.text)
+        self.assertIn('**[T7] Orange modules.**', self.text)
+        self.assertNotIn('**[T6] Orange tests.**', self.text)
+        self.assertNotIn('complete induction', self.text.lower())
+        self.assertNotIn('provisional', self.text.lower())
+        self.assertNotIn('integration plan', self.text.lower())
+
+    def test_n13_modules_call_by_name_with_provenance(self):
+        """Separate files, a qualified call, a pinned vector, and one Match."""
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 6)
+        sha = [source for source in sources if '\nmodule sha256 {' in source]
+        hmac = [source for source in sources if '\nmodule hmac {' in source]
+        self.assertEqual(len(sha), 1)
+        self.assertEqual(len(hmac), 1)
+        self.assertNotEqual(sha[0], hmac[0])
+        self.assertNotIn('\n  use ', sha[0])
+        self.assertIn('\n  use sha256;\n', hmac[0])
+        self.assertIn('sha256::compress(', hmac[0])
+        self.assertNotIn('spec compress(', hmac[0])
+        self.assertNotIn('spec hash(', hmac[0])
+        folded = re.sub(r'\s+', ' ', self.text)
+        self.assertIn('FIPS PUB 180-4', self.text)
+        self.assertIn('August 2015', self.text)
+        self.assertIn('10.6028/NIST.FIPS.180-4', self.text)
+        self.assertIn('§5.1.1', self.text)
+        self.assertIn('one-block message sample', folded)
+        self.assertIn('RFC 4231', self.text)
+        self.assertIn('§4.2', self.text)
+        self.assertIn('test case 1', folded)
+        self.assertIn('test case 2', folded)
+        self.assertIn('does not', self.text)
+        self.assertIn('Do not call that Match verified.', self.text)
+        self.assertIn('A passing test is a Match on the inputs it writes.', folded)
+        self.assertIn('`Q(n) ⇒ Q(n + 1)`', self.text)
+        self.assertIn('The pad claim does not have that step.', folded)
+        self.assertIn('February 1997', self.text)
+        mac = hmac[0].split('spec mac(', 1)[1].split('spec case1_key', 1)[0]
+        self.assertEqual(mac.count('sha256::'), 10)
+
+    def test_n13_ledger_matches_the_pad_arithmetic(self):
+        block = re.search(r'^```text\nn13-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        expected = {
+            'block-bits': 512,
+            'block-bytes': 512 // 8,
+            'pad-xor': 0x36 ^ 0x5c,
+            'byte0-inner': 0x0b ^ 0x36,
+            'byte0-outer': 0x0b ^ 0x5c,
+            'case1-key-len': 20,
+            'case1-zero-bytes': 64 - 20,
+            'inner-total': 64 + 8,
+            'inner-bits': 8 * (64 + 8),
+            'outer-total': 64 + 32,
+            'outer-bits': 8 * (64 + 32),
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['pad-xor'], 106)
+        self.assertEqual(expected['byte0-inner'], 61)
+        self.assertEqual(expected['byte0-outer'], 87)
+        self.assertEqual(expected['case1-zero-bytes'], 44)
+        self.assertEqual(expected['inner-bits'], 576)
+        self.assertEqual(expected['outer-bits'], 768)
+        for byte in range(256):
+            self.assertEqual((byte ^ 0x36) ^ (byte ^ 0x5c), 0x6a)
+            self.assertNotEqual(byte ^ 0x36, byte ^ 0x5c)
 
 
 def math_gcd(left: int, right: int) -> int:

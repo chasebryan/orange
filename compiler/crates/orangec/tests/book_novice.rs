@@ -1,7 +1,9 @@
 //! Execute the Orange Book's actual fenced listings, not copied fixtures.
 //! Educational regression evidence only; not a compiler or security proof.
 
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 const CHAPTERS: &str = include_str!("../../../../docs/book/NOVICE_PROGRAMMING.md");
@@ -944,4 +946,251 @@ fn n9_successor_listing_checks_evaluates_and_passes() {
     assert_eq!(first_test.status.code(), second_test.status.code());
     assert_eq!(first_test.stdout, second_test.stdout);
     assert_eq!(first_test.stderr, second_test.stderr);
+}
+
+const N13: &str = include_str!("../../../../docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md");
+
+fn n13_sources() -> Vec<&'static str> {
+    fences(N13, "orange")
+}
+
+fn n13_text() -> Vec<&'static str> {
+    fences(N13, "text")
+}
+
+fn n13_source(name: &str) -> &'static str {
+    n13_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N13 listing {name}"))
+}
+
+fn n13_one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n13_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn n13_dir(label: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let dir =
+        std::env::temp_dir().join(format!("orange-n13-{}-{label}-{nanos}", std::process::id()));
+    fs::create_dir_all(&dir).expect("temp dir");
+    dir
+}
+
+fn write_or(dir: &Path, name: &str, source: &str) {
+    fs::write(dir.join(format!("{name}.or")), source.as_bytes()).expect("write module");
+}
+
+fn run_at(dir: &Path, arguments: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_orangec"))
+        .args(arguments)
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run orangec")
+}
+
+fn assert_silent_file(label: &str, dir: &Path, file: &str) {
+    let check = run_at(dir, &["check", file]);
+    assert!(
+        check.status.success(),
+        "{label}: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(check.stdout.is_empty(), "{label}: check printed a value");
+    assert!(check.stderr.is_empty(), "{label}: check diagnostics");
+}
+
+fn assert_eval_file(label: &str, dir: &Path, arguments: &[&str], expected: &str) {
+    let first = run_at(dir, arguments);
+    assert!(
+        first.status.success(),
+        "{label}: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, expected.as_bytes(), "{label}");
+    assert!(first.stderr.is_empty(), "{label}: eval diagnostics");
+    let second = run_at(dir, arguments);
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+}
+
+fn assert_test_file(label: &str, dir: &Path, file: &str, expected: &str) {
+    let arguments = ["test", file];
+    let first = run_at(dir, &arguments);
+    assert_eq!(first.status.code(), Some(0), "{label}");
+    assert!(
+        first.stderr.is_empty(),
+        "{label}: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, expected.as_bytes(), "{label}");
+    let second = run_at(dir, &arguments);
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+}
+
+#[test]
+fn n13_modules_check_evaluate_and_pass_from_separate_files() {
+    let sources = n13_sources();
+    assert_eq!(sources.len(), 6, "update coverage when adding N13 listings");
+    assert!(!N13.contains("\n## Chapter "));
+    assert!(!N13.to_ascii_lowercase().contains("complete induction"));
+    let sha = n13_source("sha256");
+    let hmac = n13_source("hmac");
+    assert!(!sha.contains("\n  use "));
+    assert!(hmac.contains("\n  use sha256;\n"));
+    assert!(hmac.contains("sha256::compress("));
+    assert_ne!(sha, hmac);
+    let mac = hmac
+        .split_once("spec mac(")
+        .expect("mac")
+        .1
+        .split_once("spec case1_key")
+        .expect("case1_key")
+        .0;
+    assert_eq!(mac.matches("sha256::").count(), 10);
+
+    let sha_dir = n13_dir("sha256");
+    write_or(&sha_dir, "sha256", sha);
+    assert_silent_file("sha256", &sha_dir, "sha256.or");
+    let abc = format!(
+        "{}\n",
+        n13_one_text(
+            |text| text.starts_with("sha256::abc:") && text.contains(" = "),
+            "sha256 abc"
+        )
+    );
+    assert_eval_file(
+        "sha256 abc",
+        &sha_dir,
+        &["eval", "--spec", "abc", "sha256.or"],
+        &abc,
+    );
+    let sha_test = format!(
+        "{}\n",
+        n13_one_text(
+            |text| {
+                text.starts_with("test \"FIPS 180-4 5.1.1 abc, NIST SHA-256 one-block sample\"")
+                    && text.contains("... ok")
+            },
+            "sha256 test"
+        )
+    );
+    assert_test_file("sha256", &sha_dir, "sha256.or", &sha_test);
+
+    let hmac_dir = n13_dir("hmac");
+    write_or(&hmac_dir, "sha256", sha);
+    write_or(&hmac_dir, "hmac", hmac);
+    assert_silent_file("hmac", &hmac_dir, "hmac.or");
+    let hmac_eval = format!(
+        "{}\n",
+        n13_one_text(
+            |text| text.starts_with("hmac::case1_key:") && text.contains("hmac::hi_there:"),
+            "hmac eval"
+        )
+    );
+    assert_eval_file("hmac", &hmac_dir, &["eval", "hmac.or"], &hmac_eval);
+    let hmac_test = format!(
+        "{}\n",
+        n13_one_text(
+            |text| {
+                text.starts_with("test \"RFC 2104 pads differ by 0x6a")
+                    && text.contains("4 tests: 4 passed, 0 failed")
+            },
+            "hmac tests"
+        )
+    );
+    assert_test_file("hmac", &hmac_dir, "hmac.or", &hmac_test);
+
+    let repaired = n13_source("seam_repaired");
+    assert!(repaired.contains("\n  use sha256;\n"));
+    assert!(repaired.contains("sha256::hash("));
+    let repaired_dir = n13_dir("seam-repaired");
+    write_or(&repaired_dir, "sha256", sha);
+    write_or(&repaired_dir, "seam_repaired", repaired);
+    assert_silent_file("seam_repaired", &repaired_dir, "seam_repaired.or");
+    let repaired_eval = format!(
+        "{}\n",
+        n13_one_text(
+            |text| text.starts_with("seam_repaired::abc:") && text.contains(" = "),
+            "seam_repaired eval"
+        )
+    );
+    assert_eval_file(
+        "seam_repaired",
+        &repaired_dir,
+        &["eval", "seam_repaired.or"],
+        &repaired_eval,
+    );
+    let repaired_test = format!(
+        "{}\n",
+        n13_one_text(
+            |text| text.starts_with("test \"FIPS 180-4 5.1.1 abc, called as sha256::hash\""),
+            "seam_repaired test"
+        )
+    );
+    assert_test_file(
+        "seam_repaired",
+        &repaired_dir,
+        "seam_repaired.or",
+        &repaired_test,
+    );
+
+    let _ = fs::remove_dir_all(sha_dir);
+    let _ = fs::remove_dir_all(hmac_dir);
+    let _ = fs::remove_dir_all(repaired_dir);
+}
+
+#[test]
+fn n13_seam_failures_match_the_printed_diagnostics() {
+    let sha = n13_source("sha256");
+    let cases = [
+        ("seam_gap", "error[ORC0229]", "<stdin>:4:5", true),
+        ("wrong_name", "error[ORC0212]", "wrong_name.or:6:13", false),
+        ("missing_file", "error[ORC1001]", "absent.or", false),
+    ];
+    for (name, code, locus, stdin) in cases {
+        let source = n13_source(name);
+        let expected = format!(
+            "{}\n",
+            n13_one_text(|text| text.starts_with(code) && text.contains(locus), name)
+        );
+        let dir = n13_dir(name);
+        if name != "missing_file" {
+            write_or(&dir, "sha256", sha);
+        }
+        if !stdin {
+            write_or(&dir, name, source);
+        }
+        for command in ["check", "eval", "test"] {
+            let result = if stdin {
+                run(command, source)
+            } else {
+                run_at(&dir, &[command, &format!("{name}.or")])
+            };
+            assert_eq!(result.status.code(), Some(1), "{name}: {command}");
+            assert!(
+                result.stdout.is_empty(),
+                "{name}: {command} printed a value"
+            );
+            assert_eq!(
+                String::from_utf8(result.stderr).expect("UTF-8 diagnostic"),
+                expected,
+                "{name}: {command}"
+            );
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
 }
