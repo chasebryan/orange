@@ -32,6 +32,7 @@
 #define MAX_TYPE_SITES 4096
 #define MAX_MODULI 256
 #define MAX_MODULUS_BITS 521
+#define MAX_TUPLE 16
 
 typedef enum TokenKind {
     TK_EOF,
@@ -141,7 +142,7 @@ static const char *TOKEN_NAMES[] = {
     "QUESTION",
 };
 
-typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64, TY_MOD } TypeKind;
+typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64, TY_MOD, TY_TUPLE } TypeKind;
 
 typedef enum ExprKind {
     EX_NONE = 0,
@@ -161,7 +162,9 @@ typedef enum ExprKind {
     EX_LOOP,
     EX_LOOP_INDEX,
     EX_ACCUM,
-    EX_COND
+    EX_COND,
+    EX_TUPLE,
+    EX_PROJECT
 } ExprKind;
 
 typedef struct DeclaredType {
@@ -180,6 +183,11 @@ typedef struct DeclaredType {
     int has_mod;
     int bare_mod;
     int named;
+    /* A tuple type. `elem0`/`elem_n` index the element type sites. */
+    int is_tuple;
+    int tuple_elem;
+    uint32_t elem0;
+    uint16_t elem_n;
 } DeclaredType;
 
 /* One written type. Moduli are filled before names are resolved. */
@@ -208,6 +216,14 @@ typedef struct TypeSite {
     int rank;
     uint32_t inner_len;
     const char *role;
+    int is_tuple;
+    int tuple_elem;
+    /* Element type sites, filled while parsing. */
+    uint32_t elem0;
+    uint16_t elem_n;
+    /* Resolved element types in `Compiler.telems`. */
+    uint32_t tup0;
+    uint16_t tup_n;
 } TypeSite;
 
 typedef struct TypeDecl {
@@ -270,6 +286,9 @@ typedef struct Expr {
     /* Bindings of a conditional's final else branch. */
     uint32_t else_bind0;
     uint16_t else_nbinds;
+    /* `.k` position, or the element of a projected accumulator. */
+    uint32_t proj_pos;
+    uint8_t is_proj;
 } Expr;
 
 typedef struct Param {
@@ -287,6 +306,8 @@ typedef struct Param {
     uint32_t site;
     uint16_t mod_index;
     int type_reported;
+    uint32_t tup0;
+    uint16_t tup_n;
 } Param;
 
 typedef struct Local {
@@ -309,6 +330,12 @@ typedef struct Local {
     int type_reported;
     /* 1 when the binding belongs to a loop step or a conditional branch. */
     int block;
+    /* A tuple pattern. `pat_len` is set on the first name; later names have `pat_i` > 0.
+       Every name's `type` is its element type. The shared value lives on the first name. */
+    uint16_t pat_i;
+    uint16_t pat_len;
+    uint32_t tup0;
+    uint16_t tup_n;
 } Local;
 
 typedef struct Edge {
@@ -344,6 +371,13 @@ typedef struct LoopDesc {
     uint32_t bound_b;
     uint32_t bind0;
     uint16_t nbinds;
+    /* 0 is one accumulator. 2..16 is a tuple pattern. */
+    uint8_t nacc;
+    uint32_t an_start[MAX_TUPLE];
+    uint32_t an_end[MAX_TUPLE];
+    uint32_t an_site[MAX_TUPLE];
+    uint32_t tup0;
+    uint16_t tup_n;
 } LoopDesc;
 
 typedef struct OpenLoop {
@@ -352,6 +386,9 @@ typedef struct OpenLoop {
     uint32_t index_end;
     uint32_t acc_start;
     uint32_t acc_end;
+    uint8_t nacc;
+    uint32_t acc_at[MAX_TUPLE];
+    uint32_t acc_to[MAX_TUPLE];
 } OpenLoop;
 
 typedef struct CondArm {
@@ -383,6 +420,8 @@ typedef struct Func {
     uint32_t result_site;
     uint16_t result_mod;
     int result_reported;
+    uint32_t tup0;
+    uint16_t tup_n;
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
@@ -407,6 +446,7 @@ typedef struct Value {
     uint64_t word;
     Big big;
     uint16_t mod_index;
+    uint8_t is_tuple;
 } Value;
 
 /* Bindings of the step or branch currently being checked or evaluated. */
@@ -423,6 +463,14 @@ typedef struct FinishedBlock {
 } FinishedBlock;
 
 typedef struct Program Program;
+
+/* One resolved element of a tuple type. A shape is a contiguous slice. */
+typedef struct TupleElem {
+    TypeKind kind;
+    uint32_t length;
+    uint16_t mod_index;
+    int ok;
+} TupleElem;
 
 typedef struct UseDecl {
     uint32_t span_start;
@@ -515,6 +563,16 @@ typedef struct Compiler {
     uint16_t leaf_mod;
     /* Modulus required by the expression currently being checked. */
     uint16_t expect_mod;
+    TupleElem *telems;
+    uint32_t ntelems;
+    size_t telem_cap;
+    /* Tuple shape required where a tuple is being checked. Indices into `telems`. */
+    uint32_t expect_tup0;
+    uint16_t expect_tup_n;
+    /* Shape of the typed leaf most recently found. Owned by `leaf_owner`. */
+    uint32_t leaf_tup0;
+    uint16_t leaf_tup_n;
+    const struct Compiler *leaf_owner;
 } Compiler;
 
 struct Program {
@@ -1303,12 +1361,18 @@ static int canonical_array_length(const char *text, uint32_t start, uint32_t end
     return 1;
 }
 
-static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
+static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int as_element) {
     Token name = peek_token(c);
     int admit_length = 0;
     memset(type, 0, sizeof *type);
     if (name.kind != TK_IDENT) {
-        add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected a type", NULL, 1);
+        if (as_element) {
+            add_diag(c, "ORC0101", name.start, name.end, "expected an element type", "expected an element type",
+                     "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of them; a tuple holds no tuple",
+                     1);
+        } else {
+            add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected a type", NULL, 1);
+        }
         type->start = name.start;
         type->end = name.end;
         return 0;
@@ -1425,6 +1489,128 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
     return 1;
 }
 
+static int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out);
+
+static const char TUPLE_TYPE_NOTE[] =
+    "a tuple type is written `(T, U)` with two through 16 element types, each `Int`, `Bool`, a word, a residue, or an array of one";
+static const char PATTERN_NOTE[] =
+    "a tuple pattern names two through 16 values, each with its type, as in `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`";
+static const char POSITION_NOTE[] =
+    "a tuple's element is selected by its position, counted from zero and written in decimal, as in `pair.0` or `pair.1`";
+
+/* After an error inside a tuple type, skip through that type's closing `)`. */
+static void recover_tuple_type(Compiler *c) {
+    int depth = 1;
+    while (peek_kind(c) != TK_EOF) {
+        Token token = peek_token(c);
+        TokenKind kind = token.kind;
+        if (kind == TK_LBRACE || kind == TK_RBRACE || kind == TK_SEMI || kind == TK_ARROW || kind == TK_EQUAL) {
+            return;
+        }
+        if (kind == TK_IDENT && (span_is(c, token.start, token.end, "spec") || span_is(c, token.start, token.end, "impl"))) {
+            return;
+        }
+        advance_token(c);
+        if (kind == TK_LPAREN) {
+            depth++;
+        } else if (kind == TK_RPAREN) {
+            depth--;
+            if (depth <= 0) {
+                return;
+            }
+        }
+    }
+}
+
+static int parse_tuple_type(Compiler *c, DeclaredType *type) {
+    Token open = peek_token(c);
+    uint32_t sites[MAX_TUPLE];
+    uint32_t count = 0;
+    Token close;
+    memset(type, 0, sizeof *type);
+    type->start = open.start;
+    type->kind = TY_TUPLE;
+    type->is_tuple = 1;
+    advance_token(c);
+    for (;;) {
+        DeclaredType element;
+        uint32_t site = UINT32_MAX;
+        Token comma;
+        if (count >= MAX_TUPLE) {
+            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end, "a tuple type has more than 16 elements");
+            recover_tuple_type(c);
+            return 0;
+        }
+        if (!parse_type_body(c, &element, 1, 1)) {
+            recover_tuple_type(c);
+            return 0;
+        }
+        element.tuple_elem = 1;
+        if (!push_site(c, &element, "element type", &site)) {
+            recover_tuple_type(c);
+            return 0;
+        }
+        c->sites[site].tuple_elem = 1;
+        sites[count++] = site;
+        if (peek_kind(c) == TK_COMMA) {
+            comma = peek_token(c);
+            advance_token(c);
+            if (peek_kind(c) == TK_RPAREN) {
+                if (count < 2) {
+                    add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an element type",
+                             "expected an element type", TUPLE_TYPE_NOTE, 1);
+                    advance_token(c);
+                    return 0;
+                }
+                (void)comma;
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+    close = peek_token(c);
+    if (count < 2) {
+        add_diag(c, "ORC0101", close.start, close.end, "expected `,` and another element type", "expected another element type",
+                 TUPLE_TYPE_NOTE, 1);
+        if (close.kind == TK_RPAREN) {
+            advance_token(c);
+        } else {
+            recover_tuple_type(c);
+        }
+        return 0;
+    }
+    if (close.kind != TK_RPAREN) {
+        add_diag(c, "ORC0101", close.start, close.end, "expected `,` or `)` after the element type", "unclosed tuple type",
+                 TUPLE_TYPE_NOTE, 1);
+        recover_tuple_type(c);
+        return 0;
+    }
+    type->end = close.end;
+    type->elem0 = sites[0];
+    type->elem_n = (uint16_t)count;
+    type->ok = 1;
+    advance_token(c);
+    return 1;
+}
+
+static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
+    if (peek_kind(c) == TK_LPAREN) {
+        if (!parse_tuple_type(c, type)) {
+            return 0;
+        }
+        if (allow_array && peek_kind(c) == TK_CARET) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the end of the type after the tuple",
+                     "an array cannot hold tuples",
+                     "an array's elements are `Int`, `Bool`, words, or residues; arrays of tuples are not part of Orange 2026",
+                     1);
+            return 0;
+        }
+        return 1;
+    }
+    return parse_type_body(c, type, allow_array, 0);
+}
+
 static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length, int *ok, int *length_bad,
                            uint32_t *start, uint32_t *end, uint32_t *length_start, uint32_t *length_end) {
     *kind = type->kind;
@@ -1463,6 +1649,10 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     site->has_mod = type->has_mod;
     site->bare_mod = type->bare_mod;
     site->named = type->named;
+    site->is_tuple = type->is_tuple;
+    site->tuple_elem = type->tuple_elem;
+    site->elem0 = type->elem0;
+    site->elem_n = type->elem_n;
     site->role = role;
     site->wrote_axis = type->length > 0 && !type->length_bad;
     if (!type->named && !type->bare_mod) {
@@ -1619,6 +1809,104 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
     }
 }
 
+static int canonical_position(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
+    uint64_t acc = 0;
+    uint32_t index;
+    int overflow = 0;
+    if (end <= start) {
+        return 0;
+    }
+    if (text[start] == '0' && end - start != 1) {
+        return 0;
+    }
+    for (index = start; index < end; index++) {
+        unsigned char digit = (unsigned char)text[index];
+        if (digit < '0' || digit > '9') {
+            return 0;
+        }
+        if (!overflow) {
+            if (acc > (uint64_t)UINT32_MAX / 10u) {
+                overflow = 1;
+            } else {
+                acc = acc * 10u + (uint64_t)(digit - '0');
+                if (acc > (uint64_t)UINT32_MAX) {
+                    overflow = 1;
+                }
+            }
+        }
+    }
+    *value = overflow ? UINT32_MAX : (uint32_t)acc;
+    return 1;
+}
+
+static int finish_project(Compiler *c, uint32_t base, uint32_t pos, uint32_t pos_start, uint32_t pos_end, uint32_t *out) {
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = EX_PROJECT;
+    c->exprs[*out].left = base;
+    c->exprs[*out].proj_pos = pos;
+    c->exprs[*out].lit_start = pos_start;
+    c->exprs[*out].lit_end = pos_end;
+    c->exprs[*out].start = c->exprs[base].start;
+    c->exprs[*out].end = pos_end;
+    c->exprs[*out].height = 1 + height_of(c, base);
+    return note_height(c, *out);
+}
+
+/* `.k` follows a name or a call, then at most one index. A second `.` or a
+   `.` after an index is one syntax error and is not parsed further. */
+static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
+    if (peek_kind(c) == TK_DOT) {
+        Token dot = peek_token(c);
+        Token position;
+        uint32_t pos = 0;
+        advance_token(c);
+        position = peek_token(c);
+        if (position.kind != TK_INT) {
+            add_diag(c, "ORC0101", position.start == dot.end ? dot.start : position.start, position.end,
+                     "expected an element's position after `.`", "expected a position", POSITION_NOTE, 1);
+            return 0;
+        }
+        if (!canonical_position(c->text, position.start, position.end, &pos)) {
+            add_diag(c, "ORC0101", position.start, position.end, "expected an element's position in decimal",
+                     "expected a decimal position", POSITION_NOTE, 1);
+            advance_token(c);
+            return 0;
+        }
+        advance_token(c);
+        if (!finish_project(c, base, pos, position.start, position.end, out)) {
+            return 0;
+        }
+        if (peek_kind(c) == TK_LBRACKET) {
+            if (!parse_index(c, *out, out)) {
+                return 0;
+            }
+        }
+        if (peek_kind(c) == TK_DOT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "expected an operator or the end of the expression", "an element is selected once",
+                     "a tuple's elements are not tuples, so an element is selected once", 1);
+            return 0;
+        }
+        return 1;
+    }
+    if (peek_kind(c) == TK_LBRACKET) {
+        if (!parse_index(c, base, out)) {
+            return 0;
+        }
+        if (peek_kind(c) == TK_DOT) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "expected an operator or the end of the expression", "an element has no `.k`",
+                     "an array's elements are not tuples, so an element has no `.k`", 1);
+            return 0;
+        }
+        return 1;
+    }
+    *out = base;
+    return 1;
+}
+
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
     uint32_t local_elems[MAX_ARRAY_ELEMENTS];
     uint32_t count = 0;
@@ -1723,6 +2011,99 @@ static const char STEP_BLOCK_NOTE[] =
 static const char BRANCH_BLOCK_NOTE[] =
     "each branch of a conditional holds `let` bindings, if any, and then its value";
 
+static int starts_let_binding(const Compiler *c) {
+    TokenKind next;
+    if (peek_kind(c) != TK_IDENT || !ident_token_is(c, peek_token(c), "let") || c->at + 1 >= c->ntokens) {
+        return 0;
+    }
+    next = c->tokens[c->at + 1].kind;
+    return next == TK_IDENT || next == TK_LPAREN;
+}
+
+static int parse_pattern_name(Compiler *c, Local *local) {
+    Token name = peek_token(c);
+    DeclaredType declared;
+    if (name.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", name.start, name.end, "expected a name for the pattern's next value", "expected a name",
+                 PATTERN_NOTE, 1);
+        return 0;
+    }
+    memset(local, 0, sizeof *local);
+    local->site = UINT32_MAX;
+    local->value = UINT32_MAX;
+    local->name_start = name.start;
+    local->name_end = name.end;
+    local->name_at = name.start;
+    local->name_end_at = name.end;
+    advance_token(c);
+    if (peek_kind(c) != TK_COLON) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the type of the name",
+                 "a pattern states each type", PATTERN_NOTE, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!parse_type(c, &declared, 1)) {
+        return 0;
+    }
+    store_declared(&declared, &local->type, &local->length, &local->type_ok, &local->length_bad, &local->type_start,
+                   &local->type_end, &local->length_start, &local->length_end);
+    return push_site(c, &declared, "binding type", &local->site);
+}
+
+/* Parse `(name: Type, ...)`. `dest[0].pat_len` is the count; later names have `pat_i` > 0. */
+static int parse_tuple_pattern(Compiler *c, Local *dest, uint16_t room, uint16_t *count) {
+    uint16_t n = 0;
+    *count = 0;
+    if (peek_kind(c) != TK_LPAREN) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(`", "expected a tuple pattern",
+                 PATTERN_NOTE, 1);
+        return 0;
+    }
+    advance_token(c);
+    for (;;) {
+        if (n >= MAX_TUPLE) {
+            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
+                          "a tuple pattern names more than 16 values");
+            return 0;
+        }
+        if (n >= room) {
+            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end, "function exceeds the 256-binding limit");
+            return 0;
+        }
+        if (!parse_pattern_name(c, &dest[n])) {
+            return 0;
+        }
+        dest[n].pat_i = n;
+        n++;
+        if (peek_kind(c) == TK_COMMA) {
+            advance_token(c);
+            if (peek_kind(c) == TK_RPAREN) {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+    if (n < 2) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` and another name in the pattern",
+                 "expected another name", PATTERN_NOTE, 1);
+        if (peek_kind(c) == TK_RPAREN) {
+            advance_token(c);
+        }
+        return 0;
+    }
+    if (peek_kind(c) != TK_RPAREN) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` or `)` after the pattern's element",
+                 "unclosed pattern", PATTERN_NOTE, 1);
+        return 0;
+    }
+    advance_token(c);
+    dest[0].pat_len = n;
+    dest[0].pat_i = 0;
+    *count = n;
+    return 1;
+}
+
 /* `let` bindings at the start of a step or a branch. They are not body bindings.
    Nested blocks append their bindings while a value is parsed, so this block's
    bindings are held aside and appended together once the block is complete. */
@@ -1731,8 +2112,7 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
     *bind0 = 0;
     *nbinds = 0;
     *height = 0;
-    while (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "let") && c->at + 1 < c->ntokens &&
-           c->tokens[c->at + 1].kind == TK_IDENT) {
+    while (starts_let_binding(c)) {
         Token let_token = peek_token(c);
         Token name;
         Local *local;
@@ -1753,6 +2133,47 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
             }
         }
         advance_token(c);
+        if (peek_kind(c) == TK_LPAREN) {
+            uint16_t npat = 0;
+            uint16_t pat;
+            uint32_t pattern_value = UINT32_MAX;
+            if (!parse_tuple_pattern(c, &pending[*nbinds], (uint16_t)(MAX_BINDINGS - *nbinds), &npat)) {
+                free(pending);
+                return 0;
+            }
+            for (pat = 0; pat < npat; pat++) {
+                pending[*nbinds + pat].block = 1;
+            }
+            if (c->parsing_func != NULL) {
+                c->parsing_func->has_blocks = 1;
+            }
+            if (peek_kind(c) != TK_EQUAL) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`",
+                         "expected the binding's value", note, 1);
+                free(pending);
+                return 0;
+            }
+            advance_token(c);
+            if (!parse_expr(c, &pattern_value)) {
+                free(pending);
+                return 0;
+            }
+            if (peek_kind(c) != TK_SEMI) {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression",
+                         "each binding ends with `;`", "each binding ends with `;`; the block's last item is its value",
+                         1);
+                free(pending);
+                return 0;
+            }
+            advance_token(c);
+            pending[*nbinds].value = pattern_value;
+            child = height_of(c, pattern_value);
+            if (child > *height) {
+                *height = child;
+            }
+            *nbinds = (uint16_t)(*nbinds + npat);
+            continue;
+        }
         name = peek_token(c);
         if (name.kind != TK_IDENT) {
             add_diag(c, "ORC0101", name.start, name.end, "expected a binding name", "expected a name after `let`", NULL,
@@ -1915,28 +2336,63 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     }
     advance_token(c);
     acc = peek_token(c);
-    if (acc.kind != TK_IDENT) {
-        add_diag(c, "ORC0101", acc.start, acc.end, "expected an accumulator name", "expected a name after `with`", NULL,
-                 1);
-        return 0;
-    }
-    c->loops[id].acc_start = acc.start;
-    c->loops[id].acc_end = acc.end;
-    advance_token(c);
-    if (peek_kind(c) != TK_COLON) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:`", "an accumulator states its type",
-                 NULL, 1);
-        return 0;
-    }
-    advance_token(c);
-    if (!parse_type(c, &declared, 1)) {
-        return 0;
-    }
-    store_declared(&declared, &c->loops[id].acc_type, &c->loops[id].acc_len, &c->loops[id].acc_ok,
-                   &c->loops[id].acc_length_bad, &c->loops[id].type_start, &c->loops[id].type_end,
-                   &c->loops[id].length_start, &c->loops[id].length_end);
-    if (!push_site(c, &declared, "accumulator type", &c->loops[id].site)) {
-        return 0;
+    if (acc.kind == TK_LPAREN) {
+        Local names[MAX_TUPLE];
+        uint16_t npat = 0;
+        uint16_t pat;
+        DeclaredType tuple_type;
+        if (!parse_tuple_pattern(c, names, MAX_TUPLE, &npat)) {
+            return 0;
+        }
+        c->loops[id].nacc = (uint8_t)npat;
+        c->loops[id].acc_start = names[0].name_start;
+        c->loops[id].acc_end = names[0].name_end;
+        for (pat = 0; pat < npat; pat++) {
+            c->loops[id].an_start[pat] = names[pat].name_start;
+            c->loops[id].an_end[pat] = names[pat].name_end;
+            c->loops[id].an_site[pat] = names[pat].site;
+        }
+        memset(&tuple_type, 0, sizeof tuple_type);
+        tuple_type.kind = TY_TUPLE;
+        tuple_type.ok = 1;
+        tuple_type.is_tuple = 1;
+        tuple_type.start = names[0].name_start;
+        tuple_type.end = names[npat - 1].type_end;
+        tuple_type.elem0 = names[0].site;
+        tuple_type.elem_n = npat;
+        /* Element sites are contiguous only when nothing else was pushed between them.
+           Record them explicitly; resolution walks `an_site`, and `elem0` is the first. */
+        if (!push_site(c, &tuple_type, "accumulator type", &c->loops[id].site)) {
+            return 0;
+        }
+        c->loops[id].acc_type = TY_TUPLE;
+        c->loops[id].acc_ok = 1;
+        c->loops[id].type_start = tuple_type.start;
+        c->loops[id].type_end = tuple_type.end;
+    } else {
+        if (acc.kind != TK_IDENT) {
+            add_diag(c, "ORC0101", acc.start, acc.end, "expected an accumulator name", "expected a name after `with`",
+                     NULL, 1);
+            return 0;
+        }
+        c->loops[id].acc_start = acc.start;
+        c->loops[id].acc_end = acc.end;
+        advance_token(c);
+        if (peek_kind(c) != TK_COLON) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:`",
+                     "an accumulator states its type", NULL, 1);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_type(c, &declared, 1)) {
+            return 0;
+        }
+        store_declared(&declared, &c->loops[id].acc_type, &c->loops[id].acc_len, &c->loops[id].acc_ok,
+                       &c->loops[id].acc_length_bad, &c->loops[id].type_start, &c->loops[id].type_end,
+                       &c->loops[id].length_start, &c->loops[id].length_end);
+        if (!push_site(c, &declared, "accumulator type", &c->loops[id].site)) {
+            return 0;
+        }
     }
     if (peek_kind(c) != TK_EQUAL) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the accumulator's start",
@@ -1965,11 +2421,20 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
         leave_nest(c);
         return 0;
     }
+    memset(&c->open_loops[c->nopen], 0, sizeof c->open_loops[c->nopen]);
     c->open_loops[c->nopen].id = id;
     c->open_loops[c->nopen].index_start = c->loops[id].index_start;
     c->open_loops[c->nopen].index_end = c->loops[id].index_end;
     c->open_loops[c->nopen].acc_start = c->loops[id].acc_start;
     c->open_loops[c->nopen].acc_end = c->loops[id].acc_end;
+    c->open_loops[c->nopen].nacc = c->loops[id].nacc;
+    if (c->loops[id].nacc > 0) {
+        uint8_t acc_index;
+        for (acc_index = 0; acc_index < c->loops[id].nacc; acc_index++) {
+            c->open_loops[c->nopen].acc_at[acc_index] = c->loops[id].an_start[acc_index];
+            c->open_loops[c->nopen].acc_to[acc_index] = c->loops[id].an_end[acc_index];
+        }
+    }
     c->nopen++;
     {
         uint32_t bind0 = 0;
@@ -2521,13 +2986,26 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             if (!note_height(c, *out)) {
                 return 0;
             }
-            return parse_index(c, *out, out);
+            return parse_suffix(c, *out, out);
         }
         if (peek_kind(c) != TK_LPAREN) {
             for (open_index = c->nopen - 1; open_index >= 0; open_index--) {
                 OpenLoop *open = &c->open_loops[open_index];
                 int is_index = same_span(c, open->index_start, open->index_end, name.start, name.end);
-                int is_acc = same_span(c, open->acc_start, open->acc_end, name.start, name.end);
+                int is_acc = 0;
+                uint16_t acc_elem = 0;
+                if (open->nacc == 0) {
+                    is_acc = same_span(c, open->acc_start, open->acc_end, name.start, name.end);
+                } else {
+                    uint8_t acc_index;
+                    for (acc_index = 0; acc_index < open->nacc; acc_index++) {
+                        if (same_span(c, open->acc_at[acc_index], open->acc_to[acc_index], name.start, name.end)) {
+                            is_acc = 1;
+                            acc_elem = acc_index;
+                            break;
+                        }
+                    }
+                }
                 if (!is_index && !is_acc) {
                     continue;
                 }
@@ -2541,7 +3019,12 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                 c->exprs[*out].name_start = name.start;
                 c->exprs[*out].name_end = name.end;
                 c->exprs[*out].height = 1;
-                return parse_index(c, *out, out);
+                if (!is_index && open->nacc > 0) {
+                    c->exprs[*out].is_proj = 1;
+                    c->exprs[*out].name_index = acc_elem;
+                    c->exprs[*out].proj_pos = acc_elem;
+                }
+                return parse_suffix(c, *out, out);
             }
         }
         if (peek_kind(c) == TK_LPAREN) {
@@ -2583,7 +3066,7 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             if (!note_height(c, *out)) {
                 return 0;
             }
-            return parse_index(c, *out, out);
+            return parse_suffix(c, *out, out);
         }
         if (!new_expr(c, out)) {
             return 0;
@@ -2594,38 +3077,102 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
         c->exprs[*out].name_start = name.start;
         c->exprs[*out].name_end = name.end;
         c->exprs[*out].height = 1;
-        return parse_index(c, *out, out);
+        return parse_suffix(c, *out, out);
     }
     if (token.kind == TK_LBRACKET) {
         advance_token(c);
         return parse_array(c, token, out);
     }
     if (token.kind == TK_LPAREN) {
-        uint32_t inner;
+        uint32_t elems[MAX_TUPLE];
+        uint32_t count = 0;
         Token close;
+        int height = 1;
+        uint32_t index;
         advance_token(c);
         if (!enter_nest(c, token.start, token.end)) {
             return 0;
         }
-        if (!parse_expr(c, &inner)) {
+        if (!parse_expr(c, &elems[0])) {
             leave_nest(c);
             return 0;
+        }
+        count = 1;
+        if (peek_kind(c) != TK_COMMA) {
+            leave_nest(c);
+            close = peek_token(c);
+            if (close.kind != TK_RPAREN) {
+                add_diag(c, "ORC0101", close.start, close.end, "expected `)`", "unclosed group", NULL, 1);
+                return 0;
+            }
+            advance_token(c);
+            if (!new_expr(c, out)) {
+                return 0;
+            }
+            c->exprs[*out].kind = EX_GROUP;
+            c->exprs[*out].left = elems[0];
+            c->exprs[*out].start = token.start;
+            c->exprs[*out].end = close.end;
+            c->exprs[*out].height = 1 + height_of(c, elems[0]);
+            return note_height(c, *out);
+        }
+        for (;;) {
+            advance_token(c);
+            if (peek_kind(c) == TK_RPAREN) {
+                if (count < 2) {
+                    add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected another element after `,`",
+                             "expected an element",
+                             "a tuple is written `(a, b)` with two through 16 elements; `(a)` without a comma is a group",
+                             1);
+                    leave_nest(c);
+                    return 0;
+                }
+                break;
+            }
+            if (count >= MAX_TUPLE) {
+                resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end, "a tuple has more than 16 elements");
+                leave_nest(c);
+                return 0;
+            }
+            if (!parse_expr(c, &elems[count])) {
+                leave_nest(c);
+                return 0;
+            }
+            count++;
+            if (peek_kind(c) != TK_COMMA) {
+                break;
+            }
         }
         leave_nest(c);
         close = peek_token(c);
         if (close.kind != TK_RPAREN) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `)`", "unclosed group", NULL, 1);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `,` or `)` after the tuple's element",
+                     "unclosed tuple",
+                     "a tuple is written `(a, b)` with two through 16 elements; `(a)` without a comma is a group", 1);
             return 0;
         }
         advance_token(c);
+        if (!ensure_cap((void **)&c->args, &c->arg_cap, c->nargs + count, sizeof(uint32_t), MAX_EXPRS)) {
+            resource_diag(c, "ORC0106", token.start, close.end, "parser could not allocate tuple storage");
+            return 0;
+        }
         if (!new_expr(c, out)) {
             return 0;
         }
-        c->exprs[*out].kind = EX_GROUP;
-        c->exprs[*out].left = inner;
+        c->exprs[*out].kind = EX_TUPLE;
         c->exprs[*out].start = token.start;
         c->exprs[*out].end = close.end;
-        c->exprs[*out].height = 1 + height_of(c, inner);
+        c->exprs[*out].arg0 = c->nargs;
+        c->exprs[*out].argc = (uint16_t)count;
+        memcpy(c->args + c->nargs, elems, (size_t)count * sizeof(uint32_t));
+        c->nargs += count;
+        for (index = 0; index < count; index++) {
+            int child = height_of(c, elems[index]);
+            if (1 + child > height) {
+                height = 1 + child;
+            }
+        }
+        c->exprs[*out].height = height;
         return note_height(c, *out);
     }
     add_diag(c, "ORC0101", token.start, token.end == token.start ? token.end + 0 : token.end,
@@ -2829,6 +3376,45 @@ static int parse_binding(Compiler *c, Func *func) {
         return 0;
     }
     advance_token(c);
+    if (peek_kind(c) == TK_LPAREN) {
+        Local names[MAX_TUPLE];
+        uint16_t npat = 0;
+        uint16_t pat;
+        if (!parse_tuple_pattern(c, names, MAX_TUPLE, &npat)) {
+            return 0;
+        }
+        if ((uint32_t)func->nlocals + npat > MAX_BINDINGS) {
+            resource_diag(c, "ORC0106", let_token.start, let_token.end, "function exceeds the 256-binding limit");
+            return 0;
+        }
+        if (!ensure_cap((void **)&c->locals, &c->local_cap, c->nlocals + npat, sizeof(Local), MAX_EXPRS)) {
+            resource_diag(c, "ORC0106", let_token.start, let_token.end, "parser could not retain bindings");
+            return 0;
+        }
+        if (peek_kind(c) != TK_EQUAL) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the binding's value",
+                     NULL, 1);
+            return 0;
+        }
+        advance_token(c);
+        if (!parse_expr(c, &value)) {
+            return 0;
+        }
+        if (peek_kind(c) != TK_SEMI) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;`", "a binding ends with `;`", NULL,
+                     1);
+            return 0;
+        }
+        advance_token(c);
+        names[0].value = value;
+        for (pat = 0; pat < npat; pat++) {
+            names[pat].block = 0;
+        }
+        memcpy(&c->locals[c->nlocals], names, (size_t)npat * sizeof(Local));
+        c->nlocals += npat;
+        func->nlocals = (uint16_t)(func->nlocals + npat);
+        return 1;
+    }
     name = peek_token(c);
     if (name.kind != TK_IDENT) {
         add_diag(c, "ORC0101", name.start, name.end, "expected a binding name", "expected a name after `let`", NULL, 1);
@@ -2919,8 +3505,7 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
     }
     advance_token(c);
     func->local0 = c->nlocals;
-    while (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "let") && c->at + 1 < c->ntokens &&
-           c->tokens[c->at + 1].kind == TK_IDENT) {
+    while (starts_let_binding(c)) {
         if (!parse_binding(c, func)) {
             skip_function_body(c, 1);
             return 1;
@@ -3501,6 +4086,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                       uint32_t locals_in_scope);
 static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
                     uint32_t func_index, uint32_t locals_in_scope);
+static int check_as_tuple(Compiler *c, uint32_t index, uint32_t tup0, uint16_t tup_n, uint32_t func_index,
+                          uint32_t locals_in_scope);
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent);
 
@@ -3578,6 +4165,9 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     *type = TY_NONE;
     *length = 0;
     c->leaf_mod = 0;
+    c->leaf_tup0 = 0;
+    c->leaf_tup_n = 0;
+    c->leaf_owner = c;
     if (expr->kind == EX_NAME) {
         NameRes res;
         uint16_t slot = 0;
@@ -3595,9 +4185,46 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
                                 : res == NAME_BLOCK ? c->block_locals[abs_index].mod_index
                                                     : c->locals[c->funcs[func_index].local0 + slot].mod_index;
             }
+            if (*type == TY_TUPLE) {
+                if (res == NAME_PARAM) {
+                    const Param *param = &c->params[c->funcs[func_index].param0 + slot];
+                    c->leaf_tup0 = param->tup0;
+                    c->leaf_tup_n = param->tup_n;
+                } else if (res == NAME_BLOCK) {
+                    c->leaf_tup0 = c->block_locals[abs_index].tup0;
+                    c->leaf_tup_n = c->block_locals[abs_index].tup_n;
+                } else {
+                    c->leaf_tup0 = c->locals[c->funcs[func_index].local0 + slot].tup0;
+                    c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
+                }
+            }
             return 1;
         }
         return 0;
+    }
+    if (expr->kind == EX_PROJECT) {
+        int state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        uint32_t tup0 = c->leaf_tup0;
+        uint16_t tup_n = c->leaf_tup_n;
+        const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
+        if (state != 1 || *type != TY_TUPLE || expr->proj_pos >= tup_n || owner->telems == NULL) {
+            return state < 0 ? state : 0;
+        }
+        {
+            const TupleElem *elem = &owner->telems[tup0 + expr->proj_pos];
+            uint16_t local_mod = elem->mod_index;
+            *type = elem->kind;
+            *length = elem->length;
+            c->leaf_tup0 = 0;
+            c->leaf_tup_n = 0;
+            c->leaf_owner = c;
+            if (*type == TY_MOD && !adopt_modulus(c, owner, elem->mod_index, &local_mod)) {
+                *silent = 1;
+                return -1;
+            }
+            c->leaf_mod = *type == TY_MOD ? local_mod : 0;
+        }
+        return 1;
     }
     if (expr->kind == EX_CALL) {
         Callee callee;
@@ -3619,6 +4246,26 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             }
             c->leaf_mod = local;
         }
+        if (*type == TY_TUPLE) {
+            c->leaf_owner = callee.mod;
+            c->leaf_tup0 = callee.mod->funcs[callee.func].tup0;
+            c->leaf_tup_n = callee.mod->funcs[callee.func].tup_n;
+        }
+        return 1;
+    }
+    if (expr->kind == EX_ACCUM && expr->is_proj) {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        const TupleElem *elem;
+        if (!loop->acc_ok || expr->name_index >= loop->tup_n || c->telems == NULL) {
+            *silent = 1;
+            return -1;
+        }
+        elem = &c->telems[loop->tup0 + expr->name_index];
+        *type = elem->kind;
+        *length = elem->length;
+        if (*type == TY_MOD) {
+            c->leaf_mod = elem->mod_index;
+        }
         return 1;
     }
     if (expr->kind == EX_ACCUM || expr->kind == EX_LOOP) {
@@ -3631,6 +4278,10 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         *length = loop->acc_len;
         if (*type == TY_MOD) {
             c->leaf_mod = loop->acc_mod;
+        }
+        if (*type == TY_TUPLE) {
+            c->leaf_tup0 = loop->tup0;
+            c->leaf_tup_n = loop->tup_n;
         }
         return 1;
     }
@@ -3653,7 +4304,7 @@ static int index_subject(Compiler *c, uint32_t index, uint32_t func_index, uint3
                          uint32_t *length, int *silent) {
     const Expr *expr = &c->exprs[index];
     uint32_t leaf = index;
-    if (expr->kind == EX_INDEX || expr->kind == EX_SELECT) {
+    if (expr->kind == EX_INDEX || expr->kind == EX_SELECT || expr->kind == EX_PROJECT) {
         return find_leaf(c, index, func_index, locals_in_scope, type, length, &leaf, silent);
     }
     return base_type(c, index, func_index, locals_in_scope, type, length, silent);
@@ -3666,7 +4317,7 @@ static int leaf_names_bindings(const Compiler *c, uint32_t leaf, uint32_t bind0,
         return 0;
     }
     expr = &c->exprs[leaf];
-    while (expr->kind == EX_INDEX || expr->kind == EX_SELECT || expr->kind == EX_GROUP) {
+    while (expr->kind == EX_INDEX || expr->kind == EX_SELECT || expr->kind == EX_GROUP || expr->kind == EX_PROJECT) {
         if (expr->left == UINT32_MAX) {
             break;
         }
@@ -3693,10 +4344,14 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     *type = TY_NONE;
     *length = 0;
     c->leaf_mod = 0;
+    c->leaf_tup0 = 0;
+    c->leaf_tup_n = 0;
+    c->leaf_owner = c;
     switch (expr->kind) {
     case EX_LIT:
         return 0;
     case EX_ARRAY:
+    case EX_TUPLE:
         return 2;
     case EX_GROUP:
     case EX_UNARY:
@@ -3748,6 +4403,19 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
                                 : res == NAME_BLOCK ? c->block_locals[abs_index].mod_index
                                                     : c->locals[c->funcs[func_index].local0 + slot].mod_index;
             }
+            if (*type == TY_TUPLE) {
+                if (res == NAME_PARAM) {
+                    const Param *param = &c->params[c->funcs[func_index].param0 + slot];
+                    c->leaf_tup0 = param->tup0;
+                    c->leaf_tup_n = param->tup_n;
+                } else if (res == NAME_BLOCK) {
+                    c->leaf_tup0 = c->block_locals[abs_index].tup0;
+                    c->leaf_tup_n = c->block_locals[abs_index].tup_n;
+                } else {
+                    c->leaf_tup0 = c->locals[c->funcs[func_index].local0 + slot].tup0;
+                    c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
+                }
+            }
             return 1;
         }
         if (span_is(c, expr->name_start, expr->name_end, "true") ||
@@ -3778,6 +4446,11 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             }
             c->leaf_mod = local;
         }
+        if (*type == TY_TUPLE) {
+            c->leaf_owner = callee.mod;
+            c->leaf_tup0 = callee.mod->funcs[callee.func].tup0;
+            c->leaf_tup_n = callee.mod->funcs[callee.func].tup_n;
+        }
         return 1;
     }
     case EX_LOOP_INDEX:
@@ -3790,10 +4463,28 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             *silent = 1;
             return -1;
         }
+        if (expr->is_proj) {
+            const TupleElem *elem;
+            if (expr->name_index >= loop->tup_n || c->telems == NULL) {
+                *silent = 1;
+                return -1;
+            }
+            elem = &c->telems[loop->tup0 + expr->name_index];
+            *type = elem->kind;
+            *length = elem->length;
+            if (*type == TY_MOD) {
+                c->leaf_mod = elem->mod_index;
+            }
+            return 1;
+        }
         *type = loop->acc_type;
         *length = loop->acc_len;
         if (*type == TY_MOD) {
             c->leaf_mod = loop->acc_mod;
+        }
+        if (*type == TY_TUPLE) {
+            c->leaf_tup0 = loop->tup0;
+            c->leaf_tup_n = loop->tup_n;
         }
         return 1;
     }
@@ -3808,7 +4499,15 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         if (*type == TY_MOD) {
             c->leaf_mod = loop->acc_mod;
         }
+        if (*type == TY_TUPLE) {
+            c->leaf_tup0 = loop->tup0;
+            c->leaf_tup_n = loop->tup_n;
+        }
         return 1;
+    }
+    case EX_PROJECT: {
+        int state = base_type(c, index, func_index, locals_in_scope, type, length, silent);
+        return state;
     }
     case EX_FILL:
     case EX_UPDATE:
@@ -3922,8 +4621,16 @@ static int name_is_active_loop(const Compiler *c, uint32_t start, uint32_t end) 
     for (index = 0; index < c->nactive; index++) {
         const LoopDesc *loop = &c->loops[c->active_loops[index]];
         if (same_span(c, loop->index_start, loop->index_end, start, end) ||
-            same_span(c, loop->acc_start, loop->acc_end, start, end)) {
+            (loop->nacc == 0 && same_span(c, loop->acc_start, loop->acc_end, start, end))) {
             return 1;
+        }
+        if (loop->nacc > 0) {
+            uint8_t acc;
+            for (acc = 0; acc < loop->nacc; acc++) {
+                if (same_span(c, loop->an_start[acc], loop->an_end[acc], start, end)) {
+                    return 1;
+                }
+            }
         }
     }
     return 0;
@@ -4747,6 +5454,56 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
     frame->slots = NULL;
     for (bind = 0; bind < nbinds; bind++) {
         Local *local = &c->block_locals[bind0 + bind];
+        if (local->pat_i > 0) {
+            continue;
+        }
+        if (local->pat_len > 0) {
+            int bad_type = 0;
+            uint16_t pat;
+            for (pat = 0; pat < local->pat_len && bind + pat < nbinds; pat++) {
+                Local *name = &c->block_locals[bind0 + bind + pat];
+                uint16_t prev;
+                int taken = block_name_taken(c, func_index, locals_in_scope, name->name_start, name->name_end);
+                for (prev = 0; prev < pat && !taken; prev++) {
+                    Local *before = &c->block_locals[bind0 + bind + prev];
+                    if (!before->duplicate &&
+                        same_span(c, before->name_start, before->name_end, name->name_start, name->name_end)) {
+                        taken = 1;
+                    }
+                }
+                if (taken) {
+                    name->duplicate = 1;
+                    add_diag(c, "ORC0219", name->name_start, name->name_end, "duplicate name",
+                             "this name is already in scope",
+                             "each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing",
+                             2);
+                }
+                if (!name->type_ok) {
+                    bad_type = 1;
+                }
+            }
+            if (bad_type) {
+                for (pat = 0; pat < local->pat_len && bind + pat < nbinds; pat++) {
+                    Local *name = &c->block_locals[bind0 + bind + pat];
+                    int unresolved = !name->type_ok;
+                    name->type_ok = 0;
+                    /* Only a name whose own type failed is diagnosed. A resolved
+                       neighbor stays silent; marking it reported keeps a later
+                       use of the whole pattern at NAME_BAD. */
+                    if (unresolved && !name->type_reported) {
+                        reject_declared(c, name->type, name->length_bad, name->type_start, name->type_end,
+                                        name->length_start, name->length_end);
+                    }
+                    name->type_reported = 1;
+                }
+            } else if (!check_as_tuple(c, local->value, local->tup0, local->tup_n, func_index, locals_in_scope)) {
+                c->nframes--;
+                return 0;
+            }
+            frame->visible = (uint16_t)(bind + local->pat_len);
+            bind = (uint16_t)(bind + local->pat_len - 1);
+            continue;
+        }
         if (block_name_taken(c, func_index, locals_in_scope, local->name_start, local->name_end)) {
             local->duplicate = 1;
             add_diag(c, "ORC0219", local->name_start, local->name_end, "duplicate name", "this name is already in scope",
@@ -4757,6 +5514,11 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
             if (!local->type_reported) {
                 reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
                                 local->length_start, local->length_end);
+            }
+        } else if (local->type == TY_TUPLE) {
+            if (!check_as_tuple(c, local->value, local->tup0, local->tup_n, func_index, locals_in_scope)) {
+                c->nframes--;
+                return 0;
             }
         } else if (!check_at(c, local->value, local->type, local->length, local->mod_index, func_index,
                              locals_in_scope)) {
@@ -4773,6 +5535,10 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
     return remember_block(c, bind0, nbinds, value == UINT32_MAX ? 0 : c->exprs[value].start,
                           value == UINT32_MAX ? 0 : c->exprs[value].end);
 }
+
+static int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
+                     uint32_t right0, uint16_t right_n);
+static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, uint16_t tup_n, uint32_t *out0);
 
 static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
@@ -4802,7 +5568,34 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         loop->bound_b = b_value;
     }
     index_dup = report_duplicate_loop_name(c, func_index, locals_in_scope, loop->index_start, loop->index_end);
-    if (same_span(c, loop->index_start, loop->index_end, loop->acc_start, loop->acc_end)) {
+    if (loop->nacc > 0) {
+        uint8_t acc;
+        acc_dup = 0;
+        for (acc = 0; acc < loop->nacc; acc++) {
+            int taken = 0;
+            uint8_t earlier;
+            if (same_span(c, loop->index_start, loop->index_end, loop->an_start[acc], loop->an_end[acc])) {
+                taken = 1;
+                add_diag(c, "ORC0219", loop->an_start[acc], loop->an_end[acc], "duplicate name",
+                         "this name is already in scope", "the accumulator must differ from the loop index", 2);
+            }
+            for (earlier = 0; earlier < acc && !taken; earlier++) {
+                if (same_span(c, loop->an_start[earlier], loop->an_end[earlier], loop->an_start[acc],
+                              loop->an_end[acc])) {
+                    taken = 1;
+                    add_diag(c, "ORC0219", loop->an_start[acc], loop->an_end[acc], "duplicate name",
+                             "this name is already in scope", "a loop's pattern names one value at each position", 2);
+                }
+            }
+            if (!taken &&
+                report_duplicate_loop_name(c, func_index, locals_in_scope, loop->an_start[acc], loop->an_end[acc])) {
+                taken = 1;
+            }
+            if (taken) {
+                acc_dup = 1;
+            }
+        }
+    } else if (same_span(c, loop->index_start, loop->index_end, loop->acc_start, loop->acc_end)) {
         acc_dup = 1;
         add_diag(c, "ORC0219", loop->acc_start, loop->acc_end, "duplicate name", "this name is already in scope",
                  "the accumulator must differ from the loop index", 2);
@@ -4818,33 +5611,73 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         return 1;
     }
-    if (loop->acc_type != expected || loop->acc_len != expected_len ||
-        (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
-        char message[192];
-        char expected_text[64];
-        char found_text[64];
-        write_type(expected_text, sizeof expected_text, expected, expected_len);
-        write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
-        snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                 "a loop has its accumulator's type", 2);
+    {
+        int shape_bad = loop->acc_type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && loop->tup_n > 0 &&
+                        !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, loop->tup0, loop->tup_n);
+        if (loop->acc_type != expected || loop->acc_len != expected_len || shape_bad ||
+            (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
+            char message[192];
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
+            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "a loop has its accumulator's type", 2);
+        }
     }
-    if (loop->init_expr != UINT32_MAX &&
-        !check_at(c, loop->init_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index, locals_in_scope)) {
+    {
+        uint32_t saved_tup0 = c->expect_tup0;
+        uint16_t saved_tup_n = c->expect_tup_n;
+        int init_ok = 1;
+        int step_ok = 1;
+        if (loop->acc_type == TY_TUPLE) {
+            c->expect_tup0 = loop->tup0;
+            c->expect_tup_n = loop->tup_n;
+        }
+        if (loop->init_expr != UINT32_MAX) {
+            init_ok = check_at(c, loop->init_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index,
+                               locals_in_scope);
+        }
+        if (init_ok && loop->bounds_ok && loop->step_expr != UINT32_MAX) {
+            if (c->nactive >= MAX_OPEN_LOOPS) {
+                resource_diag(c, "ORC0209", expr->start, expr->end, "semantic analysis could not retain loop scopes");
+                c->expect_tup0 = saved_tup0;
+                c->expect_tup_n = saved_tup_n;
+                return 0;
+            }
+            c->active_loops[c->nactive++] = expr->arg0;
+            step_ok = check_block(c, loop->bind0, loop->nbinds, loop->step_expr, loop->acc_type, loop->acc_len,
+                                  loop->acc_mod, func_index, locals_in_scope);
+            c->nactive--;
+        }
+        c->expect_tup0 = saved_tup0;
+        c->expect_tup_n = saved_tup_n;
+        return init_ok && step_ok;
+    }
+}
+
+static int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
+                     uint32_t right0, uint16_t right_n) {
+    uint16_t index;
+    if (left_n != right_n || left_owner == NULL || right_owner == NULL) {
         return 0;
     }
-    if (loop->bounds_ok && loop->step_expr != UINT32_MAX) {
-        if (c->nactive >= MAX_OPEN_LOOPS) {
-            resource_diag(c, "ORC0209", expr->start, expr->end, "semantic analysis could not retain loop scopes");
+    for (index = 0; index < left_n; index++) {
+        const TupleElem *left = &left_owner->telems[left0 + index];
+        const TupleElem *right = &right_owner->telems[right0 + index];
+        uint16_t mod = right->mod_index;
+        if (left->kind != right->kind || left->length != right->length) {
             return 0;
         }
-        c->active_loops[c->nactive++] = expr->arg0;
-        if (!check_block(c, loop->bind0, loop->nbinds, loop->step_expr, loop->acc_type, loop->acc_len, loop->acc_mod,
-                         func_index, locals_in_scope)) {
-            c->nactive--;
-            return 0;
+        if (left->kind == TY_MOD) {
+            if (!adopt_modulus((Compiler *)left_owner, right_owner, right->mod_index, &mod)) {
+                return 0;
+            }
+            if (mod != left->mod_index) {
+                return 0;
+            }
         }
-        c->nactive--;
     }
     return 1;
 }
@@ -4860,10 +5693,33 @@ static int is_scalar_type(TypeKind type) {
 static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
                     uint32_t func_index, uint32_t locals_in_scope) {
     uint16_t saved = c->expect_mod;
+    uint32_t saved_tup0 = c->expect_tup0;
+    uint16_t saved_tup_n = c->expect_tup_n;
     int ok;
     c->expect_mod = expected == TY_MOD ? expected_mod : 0;
+    if (expected != TY_TUPLE) {
+        c->expect_tup0 = 0;
+        c->expect_tup_n = 0;
+    }
     ok = check_expr(c, index, expected, expected_len, func_index, locals_in_scope);
     c->expect_mod = saved;
+    c->expect_tup0 = saved_tup0;
+    c->expect_tup_n = saved_tup_n;
+    return ok;
+}
+
+/* Check `index` as the tuple shape `(tup0, tup_n)` without leaving that shape
+   as the required shape of whatever is checked next. */
+static int check_as_tuple(Compiler *c, uint32_t index, uint32_t tup0, uint16_t tup_n, uint32_t func_index,
+                          uint32_t locals_in_scope) {
+    uint32_t saved0 = c->expect_tup0;
+    uint16_t saved_n = c->expect_tup_n;
+    int ok;
+    c->expect_tup0 = tup0;
+    c->expect_tup_n = tup_n;
+    ok = check_at(c, index, TY_TUPLE, 0, 0, func_index, locals_in_scope);
+    c->expect_tup0 = saved0;
+    c->expect_tup_n = saved_n;
     return ok;
 }
 
@@ -4919,8 +5775,37 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
                  "a conditional `if c { a } else { b }` chooses a value by a `Bool`", 2);
     }
     state = find_leaf(c, expr->left, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
-    if (state == 0) {
-        state = find_leaf(c, expr->right, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
+    if (state == 0 || state == 2) {
+        int left_state = state;
+        TypeKind right_type = TY_NONE;
+        uint32_t right_len = 0;
+        uint32_t right_leaf = 0;
+        int right_silent = 0;
+        int right_state = find_leaf(c, expr->right, func_index, locals_in_scope, &right_type, &right_len, &right_leaf,
+                                    &right_silent);
+        if (right_state == 1) {
+            state = 1;
+            operand = right_type;
+            operand_len = right_len;
+            leaf = right_leaf;
+            silent = right_silent;
+        } else if (left_state == 2 || right_state == 2) {
+            char message[160];
+            int tuple = c->exprs[expr->left].kind == EX_TUPLE || c->exprs[expr->right].kind == EX_TUPLE;
+            snprintf(message, sizeof message, "`%s` is not defined for %s", op_spelling(expr->op),
+                     tuple ? "a tuple" : "an array");
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
+                     tuple ? "compare elements, such as `p.0 == q.0`" : "compare elements, such as `x[0] == y[0]`", 2);
+            return 1;
+        } else if (right_state < 0) {
+            state = right_state;
+            operand = right_type;
+            operand_len = right_len;
+            leaf = right_leaf;
+            silent = right_silent;
+        } else {
+            state = 0;
+        }
     }
     if (state == 0) {
         add_diag(c, "ORC0227", expr->op_start, expr->op_end, "the operands of a comparison have no type of their own",
@@ -4955,6 +5840,15 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
                      "compare elements, such as `x[0] == y[0]`", 2);
         }
+    }
+    if (operand == TY_TUPLE && c->leaf_tup_n > 0) {
+        uint32_t shape = c->leaf_tup0;
+        const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
+        if (!adopt_tuple_shape(c, owner, c->leaf_tup0, c->leaf_tup_n, &shape)) {
+            return 0;
+        }
+        c->expect_tup0 = shape;
+        c->expect_tup_n = c->leaf_tup_n;
     }
     if (operand == TY_MOD) {
         uint16_t mod = c->leaf_mod;
@@ -5088,6 +5982,97 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_at(c, expr->left, base_kind, base_len, element_mod, func_index, locals_in_scope);
         }
     }
+    case EX_TUPLE: {
+        uint32_t tup0 = c->expect_tup0;
+        uint16_t tup_n = c->expect_tup_n;
+        uint16_t element;
+        if (expected != TY_TUPLE || tup_n == 0) {
+            char message[192];
+            char expected_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "a tuple cannot have type %s", expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "a tuple is written where a tuple type is required", 2);
+            return 1;
+        }
+        if (expr->argc != tup_n) {
+            char message[192];
+            snprintf(message, sizeof message, "this tuple has %u elements, but the required tuple has %u", expr->argc,
+                     tup_n);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "tuple length mismatch",
+                     "a tuple lists every element of its type", 2);
+            return 1;
+        }
+        for (element = 0; element < expr->argc; element++) {
+            TupleElem item = c->telems[tup0 + element];
+            if (!check_at(c, c->args[expr->arg0 + element], item.kind, item.length, item.mod_index, func_index,
+                          locals_in_scope)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    case EX_PROJECT: {
+        TypeKind base_kind = TY_NONE;
+        uint32_t base_len = 0;
+        int silent = 0;
+        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        uint32_t tup0 = c->leaf_tup0;
+        uint16_t tup_n = c->leaf_tup_n;
+        const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
+        uint16_t base_mod = c->leaf_mod;
+        if (state != 1) {
+            if (silent) {
+                return 1;
+            }
+            return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
+        }
+        if (base_kind != TY_TUPLE) {
+            char message[192];
+            char found[64];
+            write_type(found, sizeof found, base_kind, base_len);
+            snprintf(message, sizeof message, "only a tuple has elements selected by position, but this has type %s",
+                     found);
+            add_diag(c, "ORC0234", expr->start, expr->end, message, "not a tuple",
+                     base_len != 0 ? "an array's element is selected by an index, such as `x[0]`"
+                                   : "select an element of a tuple, such as `p.0`",
+                     2);
+            return check_at(c, expr->left, base_kind, base_len, base_mod, func_index, locals_in_scope);
+        }
+        if (expr->proj_pos >= tup_n || owner->telems == NULL) {
+            char message[160];
+            snprintf(message, sizeof message, "this tuple has no element %u", expr->proj_pos);
+            add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, message, "no element at that position",
+                     "a tuple's elements are numbered from zero", 2);
+        } else {
+            TupleElem item = owner->telems[tup0 + expr->proj_pos];
+            uint16_t mod = item.mod_index;
+            if (owner != c && item.kind == TY_MOD && !adopt_modulus(c, owner, item.mod_index, &mod)) {
+                return 0;
+            }
+            if (item.kind != expected || item.length != expected_len ||
+                (item.kind == TY_MOD && expected == TY_MOD && mod != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, item.kind, item.length);
+                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                         expected_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "Orange does not convert between types implicitly", 2);
+            }
+        }
+        {
+            uint32_t shape = tup0;
+            if (tup_n > 0 && !adopt_tuple_shape(c, owner, tup0, tup_n, &shape)) {
+                return 0;
+            }
+            c->expect_tup0 = shape;
+            c->expect_tup_n = tup_n;
+            return check_at(c, expr->left, TY_TUPLE, 0, 0, func_index, locals_in_scope);
+        }
+    }
     case EX_NAME: {
         NameRes res;
         uint16_t slot = 0;
@@ -5107,7 +6092,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         if (res == NAME_BLOCK) {
             uint16_t found_mod = type == TY_MOD ? c->block_locals[abs_index].mod_index : 0;
-            if (type != expected || length != expected_len ||
+            if (c->block_locals[abs_index].pat_len > 0 || c->block_locals[abs_index].pat_i > 0) {
+                expr->is_proj = 1;
+            }
+            uint32_t nt0 = c->block_locals[abs_index].tup0;
+            uint16_t ntn = c->block_locals[abs_index].tup_n;
+            int shape = type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && ntn > 0 &&
+                        !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
+            if (type != expected || length != expected_len || shape ||
                 (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
                 char message[192];
                 char expected_text[64];
@@ -5142,11 +6134,31 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         {
             uint16_t found_mod = 0;
+            uint32_t nt0 = 0;
+            uint16_t ntn = 0;
+            int shape;
+            if (res == NAME_LOCAL) {
+                const Local *bound = &c->locals[c->funcs[func_index].local0 + slot];
+                if (bound->pat_len > 0 || bound->pat_i > 0) {
+                    expr->is_proj = 1;
+                }
+            }
             if (type == TY_MOD) {
                 found_mod = res == NAME_PARAM ? c->params[c->funcs[func_index].param0 + slot].mod_index
                                               : c->locals[c->funcs[func_index].local0 + slot].mod_index;
             }
-            if (type != expected || length != expected_len ||
+            if (type == TY_TUPLE) {
+                if (res == NAME_PARAM) {
+                    nt0 = c->params[c->funcs[func_index].param0 + slot].tup0;
+                    ntn = c->params[c->funcs[func_index].param0 + slot].tup_n;
+                } else {
+                    nt0 = c->locals[c->funcs[func_index].local0 + slot].tup0;
+                    ntn = c->locals[c->funcs[func_index].local0 + slot].tup_n;
+                }
+            }
+            shape = type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && ntn > 0 &&
+                    !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
+            if (type != expected || length != expected_len || shape ||
                 (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
                 char message[192];
                 char expected_text[64];
@@ -5275,6 +6287,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 }
                 mod_differs = local != c->expect_mod;
             }
+            if (target->funcs[callee.func].result == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 &&
+                target->funcs[callee.func].tup_n > 0) {
+                mod_differs = !same_tuple(c, c->expect_tup0, c->expect_tup_n, target, target->funcs[callee.func].tup0,
+                                          target->funcs[callee.func].tup_n);
+            }
             if (target->funcs[callee.func].result != expected || target->funcs[callee.func].result_len != expected_len ||
                 mod_differs) {
                 char message[192];
@@ -5296,6 +6313,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             if (param->type == TY_MOD && !adopt_modulus(c, target, param->mod_index, &arg_mod)) {
                 return 0;
+            }
+            if (param->type == TY_TUPLE) {
+                uint32_t shape = param->tup0;
+                if (!adopt_tuple_shape(c, target, param->tup0, param->tup_n, &shape)) {
+                    return 0;
+                }
+                c->expect_tup0 = shape;
+                c->expect_tup_n = param->tup_n;
             }
             if (!check_at(c, c->args[expr->arg0 + arg], param->type, param->length, arg_mod, func_index,
                           locals_in_scope)) {
@@ -5481,6 +6506,10 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "`as` gives one `Int`, word, or residue value",
                      "convert each element, such as `x[0] as Int`", 2);
             return 1;
+        } else if (expr->conv_ty == TY_TUPLE) {
+            add_diag(c, "ORC0215", expr->name_start, expr->name_end, "`as` does not convert to a tuple type",
+                     "`as` gives one `Int`, word, or residue value", "select one element, such as `p.0 as Int`", 2);
+            return 1;
         } else if (expr->conv_ty != expected || expected_len != 0 ||
                    (expr->conv_ty == TY_MOD && expected == TY_MOD && expr->conv_mod != c->expect_mod)) {
             char message[192];
@@ -5493,9 +6522,12 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                      "the target of `as` is the type of the conversion", 2);
         }
         state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
-        if (state == 2 || (state > 0 && leaf_len != 0)) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "`as` is not defined for an array",
-                     "convert one element", "a conversion applies to one Int or word value", 2);
+        if (state == 2 || (state > 0 && (leaf_len != 0 || leaf_type == TY_TUPLE))) {
+            int tuple = leaf_type == TY_TUPLE || c->exprs[expr->left].kind == EX_TUPLE;
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end,
+                     tuple ? "`as` is not defined for a tuple" : "`as` is not defined for an array",
+                     "convert one element",
+                     tuple ? "select one element, such as `p.0`" : "a conversion applies to one Int or word value", 2);
             return 1;
         }
         if (state == 0) {
@@ -5561,7 +6593,28 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (!loop->acc_ok) {
             return 1;
         }
+        if (expr->is_proj) {
+            const TupleElem *elem;
+            if (expr->name_index >= loop->tup_n || c->telems == NULL) {
+                return 1;
+            }
+            elem = &c->telems[loop->tup0 + expr->name_index];
+            if (elem->kind != expected || elem->length != expected_len ||
+                (elem->kind == TY_MOD && expected == TY_MOD && elem->mod_index != c->expect_mod)) {
+                char message[192];
+                char expected_text[64];
+                char found_text[64];
+                write_type(expected_text, sizeof expected_text, expected, expected_len);
+                write_type(found_text, sizeof found_text, elem->kind, elem->length);
+                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                         "an accumulator has its declared type", 2);
+            }
+            return 1;
+        }
         if (loop->acc_type != expected || loop->acc_len != expected_len ||
+            (loop->acc_type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && loop->tup_n > 0 &&
+             !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, loop->tup0, loop->tup_n)) ||
         (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
             char message[192];
             char expected_text[64];
@@ -5841,6 +6894,7 @@ static void walk_moduli(Compiler *c, uint32_t index) {
     case EX_GROUP:
     case EX_UNARY:
     case EX_FILL:
+    case EX_PROJECT:
         walk_moduli(c, expr->left);
         break;
     case EX_BINARY:
@@ -5857,6 +6911,7 @@ static void walk_moduli(Compiler *c, uint32_t index) {
         break;
     case EX_CALL:
     case EX_ARRAY:
+    case EX_TUPLE:
         for (arg = 0; arg < expr->argc; arg++) {
             walk_moduli(c, c->args[expr->arg0 + arg]);
         }
@@ -5945,6 +7000,47 @@ static void copy_ident(char *dest, size_t cap, const Compiler *c, uint32_t start
     span_copy(dest, cap, c->text, start, end);
 }
 
+static int append_telem(Compiler *c, TypeKind kind, uint32_t length, uint16_t mod_index, int ok, uint32_t *index) {
+    TupleElem *elem;
+    if (!ensure_cap((void **)&c->telems, &c->telem_cap, c->ntelems + 1, sizeof(TupleElem), MAX_EXPRS)) {
+        resource_diag(c, "ORC0209", 0, 0, "tuple type storage allocation failed");
+        return 0;
+    }
+    elem = &c->telems[c->ntelems];
+    memset(elem, 0, sizeof *elem);
+    elem->kind = kind;
+    elem->length = length;
+    elem->mod_index = mod_index;
+    elem->ok = ok;
+    *index = c->ntelems++;
+    return 1;
+}
+
+static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, uint16_t tup_n, uint32_t *out0) {
+    uint16_t index;
+    uint32_t start = 0;
+    if (owner == NULL || owner == c || tup_n == 0) {
+        *out0 = tup0;
+        return 1;
+    }
+    for (index = 0; index < tup_n; index++) {
+        TupleElem src = owner->telems[tup0 + index];
+        uint16_t mod = src.mod_index;
+        uint32_t at = 0;
+        if (src.kind == TY_MOD && !adopt_modulus(c, owner, src.mod_index, &mod)) {
+            return 0;
+        }
+        if (!append_telem(c, src.kind, src.length, mod, src.ok, &at)) {
+            return 0;
+        }
+        if (index == 0) {
+            start = at;
+        }
+    }
+    *out0 = start;
+    return 1;
+}
+
 static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
     uint32_t found = 0;
     TypeSite *target;
@@ -5953,6 +7049,57 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         return;
     }
     site->resolved = 1;
+    if (site->is_tuple) {
+        uint16_t index;
+        int ok = 1;
+        int unreported = 0;
+        uint32_t start = 0;
+        for (index = 0; index < site->elem_n; index++) {
+            TypeSite *elem;
+            if (site->elem0 + index >= c->nsites) {
+                ok = 0;
+                unreported = 1;
+                break;
+            }
+            elem = &c->sites[site->elem0 + index];
+            resolve_site(c, elem, from_decl, earlier_limit);
+            if (!elem->ok || elem->kind == TY_TUPLE) {
+                ok = 0;
+                if (elem->length_bad && !site->length_bad) {
+                    site->length_bad = 1;
+                    site->length_start = elem->length_start;
+                    site->length_end = elem->length_end;
+                }
+                if (!elem->reported) {
+                    unreported = 1;
+                }
+            }
+        }
+        site->kind = TY_TUPLE;
+        site->rank = 0;
+        site->length = 0;
+        if (!ok) {
+            site->ok = 0;
+            site->reported = unreported ? 0 : 1;
+            return;
+        }
+        for (index = 0; index < site->elem_n; index++) {
+            TypeSite *elem = &c->sites[site->elem0 + index];
+            uint32_t at = 0;
+            uint32_t length = elem->rank <= 0 ? 0u : elem->length;
+            if (!append_telem(c, elem->kind, length, elem->mod_index, elem->ok, &at)) {
+                site->ok = 0;
+                return;
+            }
+            if (index == 0) {
+                start = at;
+            }
+        }
+        site->tup0 = start;
+        site->tup_n = site->elem_n;
+        site->ok = 1;
+        return;
+    }
     if (site->length_bad) {
         site->ok = 0;
         return;
@@ -6016,6 +7163,34 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         site->reported = 1;
         return;
     }
+    if (target->kind == TY_TUPLE) {
+        char message[160];
+        copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
+        if (site->wrote_axis) {
+            snprintf(message, sizeof message, "`%s` is a tuple type, so this is an array of tuples", name);
+            add_diag(c, "ORC0203", site->start, site->end, message, "an array holds no tuple",
+                     "an array's elements are `Int`, `Bool`, words, or residues", 2);
+            site->ok = 0;
+            site->reported = 1;
+            return;
+        }
+        if (site->tuple_elem) {
+            snprintf(message, sizeof message, "`%s` is a tuple type, so this is a tuple of tuples", name);
+            add_diag(c, "ORC0203", site->start, site->end, message, "a tuple holds no tuple",
+                     "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of them", 2);
+            site->ok = 0;
+            site->reported = 1;
+            return;
+        }
+        site->kind = TY_TUPLE;
+        site->is_tuple = 1;
+        site->tup0 = target->tup0;
+        site->tup_n = target->tup_n;
+        site->rank = 0;
+        site->length = 0;
+        site->ok = 1;
+        return;
+    }
     if (target->rank >= 2 && site->wrote_axis) {
         char message[160];
         copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
@@ -6055,12 +7230,60 @@ static void publish_site(const Compiler *c, uint32_t site_index, TypeKind *kind,
     *length = site->rank <= 0 ? 0u : site->length;
 }
 
+static void publish_shape(const Compiler *c, uint32_t site_index, TypeKind kind, uint32_t *tup0, uint16_t *tup_n) {
+    *tup0 = 0;
+    *tup_n = 0;
+    if (kind != TY_TUPLE || site_index == UINT32_MAX || site_index >= c->nsites) {
+        return;
+    }
+    *tup0 = c->sites[site_index].tup0;
+    *tup_n = c->sites[site_index].tup_n;
+}
+
+static void seal_patterns(Compiler *c, Local *locals, uint32_t count) {
+    uint32_t index;
+    for (index = 0; index < count; index++) {
+        Local *head = &locals[index];
+        uint16_t pat;
+        uint32_t start = 0;
+        if (head->pat_len < 2 || index + head->pat_len > count) {
+            continue;
+        }
+        for (pat = 0; pat < head->pat_len; pat++) {
+            Local *name = &locals[index + pat];
+            uint32_t at = 0;
+            if (!append_telem(c, name->type, name->length, name->mod_index, name->type_ok, &at)) {
+                return;
+            }
+            if (pat == 0) {
+                start = at;
+            }
+        }
+        for (pat = 0; pat < head->pat_len; pat++) {
+            locals[index + pat].tup0 = start;
+            locals[index + pat].tup_n = head->pat_len;
+        }
+    }
+}
+
 static void prepare_types(Compiler *c) {
     uint32_t index;
     uint16_t param;
     uint16_t local;
     if (c->resource || c->parse_diags > 0) {
         return;
+    }
+    for (index = 0; index < c->nsites; index++) {
+        TypeSite *site = &c->sites[index];
+        uint16_t elem;
+        if (!site->is_tuple) {
+            continue;
+        }
+        for (elem = 0; elem < site->elem_n; elem++) {
+            if (site->elem0 + elem < c->nsites) {
+                bind_modulus(c, &c->sites[site->elem0 + elem]);
+            }
+        }
     }
     for (index = 0; index < c->ntypes; index++) {
         TypeSite *site = &c->sites[c->types[index].site];
@@ -6117,21 +7340,36 @@ static void prepare_types(Compiler *c) {
         for (param = 0; param < func->nparams; param++) {
             Param *item = &c->params[func->param0 + param];
             publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+            publish_shape(c, item->site, item->type, &item->tup0, &item->tup_n);
         }
         publish_site(c, func->result_site, &func->result, &func->result_len, &func->result_ok, &func->result_mod,
                      &func->result_reported);
+        publish_shape(c, func->result_site, func->result, &func->tup0, &func->tup_n);
         for (local = 0; local < func->nlocals; local++) {
             Local *item = &c->locals[func->local0 + local];
             publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+            /* Pattern heads take their shape from the names, not from one
+               element's site. `seal_patterns` fills those after this loop. */
+            if (item->pat_len == 0 && item->pat_i == 0) {
+                publish_shape(c, item->site, item->type, &item->tup0, &item->tup_n);
+            }
+        }
+        if (func->nlocals > 0) {
+            seal_patterns(c, &c->locals[func->local0], func->nlocals);
         }
     }
     for (index = 0; index < c->nblock_locals; index++) {
         Local *item = &c->block_locals[index];
         publish_site(c, item->site, &item->type, &item->length, &item->type_ok, &item->mod_index, &item->type_reported);
+        if (item->pat_len == 0 && item->pat_i == 0) {
+            publish_shape(c, item->site, item->type, &item->tup0, &item->tup_n);
+        }
     }
+    seal_patterns(c, c->block_locals, c->nblock_locals);
     for (index = 0; index < c->nloops; index++) {
         LoopDesc *loop = &c->loops[index];
         publish_site(c, loop->site, &loop->acc_type, &loop->acc_len, &loop->acc_ok, &loop->acc_mod, &loop->acc_reported);
+        publish_shape(c, loop->site, loop->acc_type, &loop->tup0, &loop->tup_n);
     }
     for (index = 0; index < c->nexprs; index++) {
         Expr *expr = &c->exprs[index];
@@ -6227,6 +7465,72 @@ static void analyze(Compiler *c) {
         for (local_index = 0; local_index < func->nlocals; local_index++) {
             Local *local = &c->locals[func->local0 + local_index];
             int hidden = 0;
+            if (local->pat_i > 0) {
+                continue;
+            }
+            if (local->pat_len > 0) {
+                int bad_type = 0;
+                uint16_t pat;
+                for (pat = 0; pat < local->pat_len; pat++) {
+                    Local *name = &c->locals[func->local0 + local_index + pat];
+                    int taken = 0;
+                    uint16_t prev;
+                    for (param_index = 0; param_index < func->nparams; param_index++) {
+                        Param *param = &c->params[func->param0 + param_index];
+                        if (!param->duplicate &&
+                            same_span(c, param->name_start, param->name_end, name->name_start, name->name_end)) {
+                            taken = 1;
+                            break;
+                        }
+                    }
+                    for (prev = 0; prev < local_index && !taken; prev++) {
+                        Local *before = &c->locals[func->local0 + prev];
+                        if (!before->duplicate &&
+                            same_span(c, before->name_start, before->name_end, name->name_start, name->name_end)) {
+                            taken = 1;
+                        }
+                    }
+                    for (prev = 0; prev < pat && !taken; prev++) {
+                        Local *before = &c->locals[func->local0 + local_index + prev];
+                        if (!before->duplicate &&
+                            same_span(c, before->name_start, before->name_end, name->name_start, name->name_end)) {
+                            taken = 1;
+                        }
+                    }
+                    if (taken) {
+                        char message[128];
+                        char pname[64];
+                        size_t length = name->name_end - name->name_start;
+                        if (length >= sizeof pname) {
+                            length = sizeof pname - 1;
+                        }
+                        memcpy(pname, c->text + name->name_start, length);
+                        pname[length] = '\0';
+                        snprintf(message, sizeof message, "duplicate binding `%s`", pname);
+                        add_diag(c, "ORC0219", name->name_at, name->name_end_at, message, "this name is already in scope",
+                                 "parameters and bindings share one set of names", 2);
+                        name->duplicate = 1;
+                    }
+                    if (!name->type_ok) {
+                        bad_type = 1;
+                    }
+                }
+                if (bad_type) {
+                    for (pat = 0; pat < local->pat_len; pat++) {
+                        Local *name = &c->locals[func->local0 + local_index + pat];
+                        int unresolved = !name->type_ok;
+                        name->type_ok = 0;
+                        if (unresolved && !name->type_reported) {
+                            reject_declared(c, name->type, name->length_bad, name->type_start, name->type_end,
+                                            name->length_start, name->length_end);
+                        }
+                        name->type_reported = 1;
+                    }
+                    continue;
+                }
+                check_as_tuple(c, local->value, local->tup0, local->tup_n, index, local_index);
+                continue;
+            }
             for (param_index = 0; param_index < func->nparams; param_index++) {
                 Param *param = &c->params[func->param0 + param_index];
                 if (!param->duplicate &&
@@ -6265,10 +7569,18 @@ static void analyze(Compiler *c) {
                 }
                 continue;
             }
-            check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
+            if (local->type == TY_TUPLE) {
+                check_as_tuple(c, local->value, local->tup0, local->tup_n, index, local_index);
+            } else {
+                check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
+            }
         }
         if (func->body != UINT32_MAX) {
-            check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
+            if (func->result == TY_TUPLE) {
+                check_as_tuple(c, func->body, func->tup0, func->tup_n, index, func->nlocals);
+            } else {
+                check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
+            }
         }
     }
     {
@@ -6428,6 +7740,29 @@ static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
 
+static int eval_pattern(Compiler *c, const Local *head, Value *slot0, Value *params, Value *locals, int depth) {
+    Value tuple;
+    uint16_t index;
+    memset(&tuple, 0, sizeof tuple);
+    if (head->value == UINT32_MAX || !eval_expr(c, head->value, params, locals, depth, &tuple)) {
+        value_clear(&tuple);
+        return 0;
+    }
+    if (!tuple.is_tuple || tuple.elems == NULL || tuple.length < head->pat_len) {
+        c->failed = 1;
+        value_clear(&tuple);
+        return 0;
+    }
+    for (index = 0; index < head->pat_len; index++) {
+        if (!value_clone(c, &slot0[index], &tuple.elems[index], head->name_start, head->name_end)) {
+            value_clear(&tuple);
+            return 0;
+        }
+    }
+    value_clear(&tuple);
+    return 1;
+}
+
 static int eval_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, Value *params, Value *locals,
                       int depth, Value *out) {
     BlockFrame *frame;
@@ -6456,7 +7791,17 @@ static int eval_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t val
     frame->visible = 0;
     frame->slots = slots;
     for (bind = 0; bind < nbinds && ok; bind++) {
-        ok = eval_expr(c, c->block_locals[bind0 + bind].value, params, locals, depth, &slots[bind]);
+        const Local *local = &c->block_locals[bind0 + bind];
+        if (local->pat_i > 0) {
+            continue;
+        }
+        if (local->pat_len > 0) {
+            ok = eval_pattern(c, local, &slots[bind], params, locals, depth);
+            frame->visible = (uint16_t)(bind + local->pat_len);
+            bind = (uint16_t)(bind + local->pat_len - 1);
+            continue;
+        }
+        ok = eval_expr(c, local->value, params, locals, depth, &slots[bind]);
         frame->visible = (uint16_t)(bind + 1);
     }
     if (ok) {
@@ -6514,7 +7859,15 @@ static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int
         ok = value_clone(c, &params[index], &arguments[index], func->name_start, func->name_end);
     }
     for (index = 0; index < func->nlocals && ok; index++) {
-        ok = eval_expr(c, c->locals[func->local0 + index].value, params, locals, depth, &locals[index]);
+        const Local *local = &c->locals[func->local0 + index];
+        if (local->pat_i > 0) {
+            continue;
+        }
+        if (local->pat_len > 0) {
+            ok = eval_pattern(c, local, &locals[index], params, locals, depth);
+            continue;
+        }
+        ok = eval_expr(c, local->value, params, locals, depth, &locals[index]);
     }
     if (ok) {
         ok = eval_expr(c, func->body, params, locals, depth, out);
@@ -6703,6 +8056,15 @@ static int index_position(Compiler *c, const Value *index_value, uint32_t index_
    the module that is about to use it. */
 static void retag_modulus(Value *value, uint16_t mod_index) {
     uint32_t index;
+    if (value->is_tuple) {
+        if (value->elems == NULL) {
+            return;
+        }
+        for (index = 0; index < value->length; index++) {
+            retag_modulus(&value->elems[index], mod_index);
+        }
+        return;
+    }
     if (value->length == 0) {
         if (value->type == TY_MOD) {
             value->mod_index = mod_index;
@@ -6776,7 +8138,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return 1;
     }
     case EX_NAME:
-        if (!charge(c, expr->start, expr->end, 1)) {
+        if (!charge(c, expr->start, expr->end, expr->is_proj ? 2u : 1u)) {
             return 0;
         }
         if (expr->name_res == NAME_BLOCK) {
@@ -7538,10 +8900,61 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         out->length = 0;
         return 1;
     }
-    case EX_ACCUM: {
-        if (c->loop_acc == NULL || !charge(c, expr->start, expr->end, 1)) {
+    case EX_TUPLE: {
+        Value *items = NULL;
+        uint16_t index;
+        if (!alloc_array(c, &items, expr->argc, expr->start, expr->end)) {
+            return 0;
+        }
+        for (index = 0; index < expr->argc; index++) {
+            if (!eval_expr(c, c->args[expr->arg0 + index], params, locals, depth, &items[index])) {
+                value_list_clear(items, expr->argc);
+                return 0;
+            }
+        }
+        if (!charge(c, expr->start, expr->end, expr->argc)) {
+            value_list_clear(items, expr->argc);
+            return 0;
+        }
+        out->type = TY_TUPLE;
+        out->is_tuple = 1;
+        out->length = expr->argc;
+        out->elems = items;
+        return 1;
+    }
+    case EX_PROJECT: {
+        Value base;
+        memset(&base, 0, sizeof base);
+        if (!eval_expr(c, expr->left, params, locals, depth, &base) || !charge(c, expr->start, expr->end, 1)) {
+            value_clear(&base);
             c->failed = 1;
             return 0;
+        }
+        if (!base.is_tuple || base.elems == NULL || expr->proj_pos >= base.length) {
+            c->failed = 1;
+            value_clear(&base);
+            return 0;
+        }
+        if (!value_clone(c, out, &base.elems[expr->proj_pos], expr->start, expr->end)) {
+            value_clear(&base);
+            return 0;
+        }
+        value_clear(&base);
+        return 1;
+    }
+    case EX_ACCUM: {
+        uint32_t steps = expr->is_proj ? 2u : 1u;
+        if (c->loop_acc == NULL || !charge(c, expr->start, expr->end, steps)) {
+            c->failed = 1;
+            return 0;
+        }
+        if (expr->is_proj) {
+            Value *acc = &c->loop_acc[expr->arg0];
+            if (!acc->is_tuple || acc->elems == NULL || expr->proj_pos >= acc->length) {
+                c->failed = 1;
+                return 0;
+            }
+            return value_clone(c, out, &acc->elems[expr->proj_pos], expr->start, expr->end);
         }
         return value_clone(c, out, &c->loop_acc[expr->arg0], expr->start, expr->end);
     }
@@ -7627,6 +9040,20 @@ static int text_append(TextBuf *buf, const char *bytes, size_t count) {
 
 static int format_value(const Value *value, TextBuf *buf) {
     uint32_t index;
+    if (value->is_tuple) {
+        if (value->elems == NULL || !text_append(buf, "(", 1)) {
+            return 0;
+        }
+        for (index = 0; index < value->length; index++) {
+            if (index > 0 && !text_append(buf, ", ", 2)) {
+                return 0;
+            }
+            if (!format_value(&value->elems[index], buf)) {
+                return 0;
+            }
+        }
+        return text_append(buf, ")", 1);
+    }
     if (value->length > 0) {
         if (value->elems == NULL || !text_append(buf, "[", 1)) {
             return 0;
@@ -7879,6 +9306,46 @@ static int format_modulus(Compiler *c, const Big *modulus, char *buffer, size_t 
     return snprintf(buffer, cap, "(1 << %u) + %llu", bit, (unsigned long long)offset) > 0;
 }
 
+static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index);
+
+static int format_tuple_type(Compiler *c, char *buffer, size_t cap, uint32_t tup0, uint16_t tup_n) {
+    size_t used = 0;
+    uint16_t index;
+    if (cap < 4) {
+        return 0;
+    }
+    buffer[used++] = '(';
+    buffer[used] = '\0';
+    for (index = 0; index < tup_n; index++) {
+        char part[192];
+        size_t part_len;
+        const TupleElem *elem = &c->telems[tup0 + index];
+        if (index > 0) {
+            if (used + 2 >= cap) {
+                return 0;
+            }
+            memcpy(buffer + used, ", ", 2);
+            used += 2;
+        }
+        if (!format_type(c, part, sizeof part, elem->kind, elem->length, elem->mod_index)) {
+            return 0;
+        }
+        part_len = strlen(part);
+        if (used + part_len + 2 >= cap) {
+            return 0;
+        }
+        memcpy(buffer + used, part, part_len);
+        used += part_len;
+        buffer[used] = '\0';
+    }
+    if (used + 2 >= cap) {
+        return 0;
+    }
+    buffer[used++] = ')';
+    buffer[used] = '\0';
+    return 1;
+}
+
 static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index) {
     char modulus_text[160];
     int written;
@@ -7909,7 +9376,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
         Func *func = &c->funcs[index];
         Value result;
         TextBuf value = {0};
-        char type_text[192];
+        char type_text[768];
         int stop = 0;
         if (!func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
             continue;
@@ -7919,7 +9386,8 @@ static int evaluate_source(Compiler *c, FILE *out) {
             value_clear(&result);
             break;
         }
-        if (func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL && func->result != TY_MOD) {
+        if (func->result != TY_TUPLE && func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL &&
+            func->result != TY_MOD) {
             result.type = func->result;
             if (result.elems == NULL) {
                 result.length = 0;
@@ -7930,7 +9398,9 @@ static int evaluate_source(Compiler *c, FILE *out) {
             result.type = TY_MOD;
             result.mod_index = func->result_mod;
         }
-        if (!format_type(c, type_text, sizeof type_text, func->result, func->result_len, func->result_mod)) {
+        if (func->result == TY_TUPLE
+                ? !format_tuple_type(c, type_text, sizeof type_text, func->tup0, func->tup_n)
+                : !format_type(c, type_text, sizeof type_text, func->result, func->result_len, func->result_mod)) {
             c->failed = 1;
             add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a type",
                      "resource limit reached", NULL, 2);
@@ -8004,6 +9474,7 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->requested);
     free(compiler->types);
     free(compiler->sites);
+    free(compiler->telems);
     free(compiler->moduli);
     free(compiler->finished);
     if (compiler->own_text) {
@@ -8600,7 +10071,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, array, loop, conditional, lookup, module, residue, and block fragment.\n"
+        "conversion, array, loop, conditional, lookup, module, residue, block, and tuple fragment.\n"
         "It does not use the Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -8627,7 +10098,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3j\n", stdout);
+            fputs("orangec (standalone C) slice S3k\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {

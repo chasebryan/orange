@@ -2,7 +2,7 @@
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
 binding, conversion, array, bounded-loop, conditional, lookup, module,
-residue, and block fragment. It does
+residue, block, and tuple fragment. It does
 not amend D-008, does not select a D-010 output path, and does not replace
 the Rust frontend.
 
@@ -43,7 +43,9 @@ residues converted with `as Int`, `+`, `-`, `*`, `/`, `%`, and conditionals. `x 
 chosen branch is evaluated. A loop's step and each branch of a conditional
 may begin with `let` bindings. A step's bindings are evaluated afresh at
 every step, a branch's only when that branch is chosen, and each name is in
-scope only within its step or branch. `for`, `in`, `with`,
+scope only within its step or branch. A tuple type `(T, U)` holds two through
+16 scalars or arrays. `(a, b)` builds one, `.k` selects an element, and a
+`let` or `with` pattern names each element. `for`, `in`, `with`,
 `if`, and `else` are names outside those positions. `true` and `false` are
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.

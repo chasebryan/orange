@@ -10,10 +10,11 @@ interfaces to extend rather than a disposable prototype.
 
 A standalone C frontend in [`c/`](c/README.md) checks and reference-evaluates
 the expression, binding, conversion, fixed-length array, bounded-loop,
-conditional, lookup, module, residue, and block fragment (`Bool`, comparisons, Euclidean division,
+conditional, lookup, module, residue, block, and tuple fragment (`Bool`, comparisons, Euclidean division,
 `if` / `else`, data-dependent indices proved in range, `use` with
-qualified calls `m::f(...)`, `Mod[m]`, `type` declarations, and `let` bindings
-at the start of a loop step or a conditional branch) without the Rust
+qualified calls `m::f(...)`, `Mod[m]`, `type` declarations, `let` bindings
+at the start of a loop step or a conditional branch, and tuples with `.k`
+and tuple patterns) without the Rust
 toolchain. The Rust frontend in this workspace remains the implementation
 through the later slices.
 
