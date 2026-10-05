@@ -193,5 +193,103 @@ class ManuscriptIntegrity(unittest.TestCase):
         self.assertEqual(set(mapped), {f'chapter-{n}-{slug}' for n, slug in expected.items()})
 
 
+class ContinuationExamples(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_PROGRAMMING.md').read_text(encoding='utf-8')
+
+    def test_all_27_continuation_exercises_have_answers(self):
+        exercises = re.findall(r'^\*\*Exercise (\d+\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(\d+\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(len(exercises), 27)
+        self.assertEqual(len(set(exercises)), 27)
+        self.assertEqual(sorted(exercises), sorted(answers))
+
+    def test_epigraph_lengths(self):
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual([len(q.split()) for q in quotes], [7, 19, 10])
+
+    def test_nine_complete_listings_seven_expected_outputs(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        outputs = re.findall(r'^```text\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 9)
+        names = []
+        for source in sources:
+            self.assertTrue(source.startswith('edition 2026;'))
+            name = re.search(r'module (\w+) \{', source).group(1)
+            names.append(name)
+            expected = [out for out in outputs if out.startswith(name + '::')]
+            self.assertEqual(len(expected), 0 if name in ('too_large', 'ungrouped') else 1)
+        self.assertEqual(len(set(names)), 9)
+
+    def test_boundary_amounts_are_explicitly_computed(self):
+        source = re.search(r'module boundary_moves \{(.*?)\n\}', self.text, re.S).group(1)
+        for operation in ('<<< (8)', '<<< (9)', '<< (8)', '>> (9)', '<<< (-1)'):
+            self.assertIn(operation, source)
+        self.assertNotRegex(source, r'[<>]{2,3} [89]')
+
+    def test_wrapping_examples(self):
+        self.assertEqual((255 + 1) % 256, 0)
+        self.assertEqual((0 - 1) % 256, 255)
+        self.assertEqual((200 * 2) % 256, 0x90)
+        self.assertEqual((250 + 10) % 256, 4)
+        self.assertEqual((4 - 10) % 256, 250)
+        self.assertEqual((128 * 2) % 256, 0)
+
+    def test_euclidean_division_identity_and_unique_representative(self):
+        for modulus in range(1, 33):
+            for value in range(-512, 513):
+                quotient, remainder = divmod(value, modulus)
+                self.assertEqual(value, quotient * modulus + remainder)
+                self.assertTrue(0 <= remainder < modulus)
+                self.assertNotEqual(remainder + modulus, remainder)
+                self.assertNotEqual(remainder - modulus, remainder)
+
+    def test_rotation_inverse_and_ones_for_all_byte_values(self):
+        for value in range(256):
+            for amount in range(-17, 18):
+                result = rotate_byte(value, amount)
+                self.assertEqual(rotate_byte(result, -amount), value)
+                self.assertEqual(result.bit_count(), value.bit_count())
+
+    def test_shift_and_rotation_boundaries(self):
+        self.assertEqual((0x81 << 1) & 255, 2)
+        self.assertEqual(0x81 >> 1, 0x40)
+        self.assertEqual(rotate_byte(0x81, 1), 3)
+        self.assertEqual(rotate_byte(0x81, -1), 0xc0)
+        self.assertEqual(rotate_byte(0x81, 8), 0x81)
+        self.assertEqual(rotate_byte(0x81, 9), 3)
+        self.assertEqual(rotate_byte(0xa5, 9), 0x4b)
+        self.assertEqual((0xa5 << 8) & 255, 0)
+
+    def test_small_round_inverse_complete_byte_domain(self):
+        for value in range(256):
+            encoded = rotate_byte(((value + 7) & 255) ^ 0x3c, 1)
+            decoded = ((rotate_byte(encoded, -1) ^ 0x3c) - 7) & 255
+            self.assertEqual(decoded, value)
+        self.assertEqual(rotate_byte(((0xfa + 7) & 255) ^ 0x3c, 1), 0x7a)
+        self.assertEqual(rotate_byte((7 ^ 0x3c), 1), 0x76)
+        self.assertEqual(rotate_byte(((0x7a - 7) & 255) ^ 0x3c, -1), 0xa7)
+
+    def test_grouping_is_not_interchangeable(self):
+        self.assertEqual((1 + 1) ^ 1, 3)
+        self.assertEqual(1 + (1 ^ 1), 1)
+
+    def test_opening_retained_byte_for_byte(self):
+        import hashlib
+        data = MANUSCRIPT.read_bytes()
+        blob = b'blob ' + str(len(data)).encode('ascii') + b'\0' + data
+        self.assertEqual(hashlib.sha1(blob).hexdigest(),
+                         '0b544b89995d8b6198300ca1cc24fe91609a18e8')
+
+
+def rotate_byte(value: int, amount: int) -> int:
+    """Reference mathematical rotation, not an Orange interpreter."""
+    if not 0 <= value < 256:
+        raise ValueError('value must fit a byte')
+    amount %= 8
+    return ((value << amount) | (value >> (8 - amount))) & 255
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
