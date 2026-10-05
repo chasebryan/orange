@@ -94,7 +94,7 @@ Edition: `2026`
   - [§51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)](#51-complete-reference-specification-curve25519--x25519-rfc-7748)
   - [§52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-complete-reference-specification-poly1305-field-mac-rfc-8439)
   - [§52A. Complete Reference Specification: FIPS 197 AES](#52a-complete-reference-specification-fips-197-aes)
-  - [HMAC, FIPS 198-1](#hmac-fips-198-1)
+  - [§52B. Complete Reference Specification: FIPS 198-1 HMAC](#52b-complete-reference-specification-fips-198-1-hmac)
   - [HKDF, RFC 5869](#hkdf-rfc-5869)
   - [AEAD, RFC 8439](#aead-rfc-8439)
   - [SHA-3 and SHAKE, FIPS 202](#sha-3-and-shake-fips-202)
@@ -3738,86 +3738,154 @@ of one packed word, and the other cells are the same literal, unchecked here
 one by one. Nothing in this section is a claim of constant time or of
 deployment.
 
-### HMAC, FIPS 198-1
+### §52B. Complete Reference Specification: FIPS 198-1 HMAC
 
-HMAC-SHA-256 as FIPS 198-1 (2008, DOI 10.6028/NIST.FIPS.198-1) sections 4 and
-5 write it, and as RFC 2104 first defined it. The hash $H$ is SHA-256 of §49.
-The listing restates that hash, because a module has no imports. The buffer
-is not the byte array of §49. Each byte string is a length together with a
-`Word[32]^64`: the big-endian words of FIPS 180-4 section 5.2.1, zero after
-the last byte. One `sha256` and one `hmac_sha256` then serve every length in
-the tests. `orangec test` accepts the ten tests: the pad words of RFC 4231
-case 2, $K_0$ of case 6, the seven HMAC-SHA-256 cases of RFC 4231 section 4
-(case 5 also truncated to 128 bits), and Wycheproof `hmac_sha256` tcId 171.
+HMAC-SHA-256 as FIPS 198-1 writes it, and as RFC 2104 defined the
+construction. The cited HMAC standard is NIST FIPS PUB 198-1, July 2008,
+DOI 10.6028/NIST.FIPS.198-1: sections 2.3, 3, 4 (Table 1), and 5. RFC 2104
+is February 1997, sections 2 and 5. The hash $H$ is SHA-256. FIPS 198-1
+section 1 cites FIPS 180-3 as the Approved hash standard. The function this
+listing uses is the SHA-256 of §49, which is FIPS 180-4. The listing
+restates that hash, because a module has no imports. HMAC-SHA-224,
+HMAC-SHA-384, and HMAC-SHA-512 are the same construction at other widths.
+This section does not restate them.
 
-#### 1. Parameters (FIPS 198-1, sections 3 and 4)
+#### Status
 
-$B = 64$ is the SHA-256 block in bytes. $L = 32$ is the digest length. The
-pads are the bytes `0x36` and `0x5c`, each repeated $B$ times. As words they
-are `0x36363636` and `0x5c5c5c5c`.
+**Current** for the listing in this section, on the ten tests named below.
+The binary is the S3t compiler of §52A.
 
-| Step | $K_0$, the key brought to $B$ bytes |
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing: RFC 4231 section 4 HMAC-SHA-256 cases 1 through 7, the case 2 pads, $K_0$ of case 6, and Wycheproof tcId 171 | Current | Checked, as recorded after the listing |
+| `algorithms/hmac-hkdf/hmac-hkdf.or`, module `hmac_hkdf` | Same algorithm, eval pairs | No `test` member. Case 1 under `orangec eval --spec` is recorded below |
+| The full 32-byte MAC of RFC 4231 case 5 | Checked, not printed by the RFC | Section 4.6 prints 128 bits. The other 128 bits are a local `hmac` computation, named below |
+| A text longer than 183 bytes, or a key longer than 247 bytes | Same functions, outside this buffer | The buffer is `Word[32]^64`, 256 bytes |
+| HMAC with a hash other than SHA-256 | Not this section | FIPS 198-1 allows any Approved iterative hash. No such listing here |
+| HKDF | The next section | Not in this listing |
+| Constant time, a CMVP certificate, or a security reduction | Not claimed | RFC 4231 section 5 refers the reader to RFC 2104 and asserts no particular use |
+
+#### 1. Parameters (FIPS 198-1, section 2.3)
+
+| Symbol | SHA-256 in this listing |
 | :--- | :--- |
-| Key length $= B$ | the key |
-| Key length $> B$ | $H(\mathrm{key})$, then zeros through byte $B$ |
-| Key length $< B$ | the key, then zeros |
+| $B$ | 64 bytes, the SHA-256 block |
+| $L$ | 32 bytes, the digest |
+| $\mathrm{ipad}$ | the byte `0x36` repeated $B$ times. `ipad()` is the word `0x36363636` |
+| $\mathrm{opad}$ | the byte `0x5c` repeated $B$ times. `opad()` is the word `0x5c5c5c5c` |
+| $K$ | the secret key |
+| $K_0$ | $K$ brought to $B$ bytes |
+| $\mathrm{text}$ | the data. FIPS 198-1 bounds its bit length by $0 \le n < 2^{B} - 8B$. The listing takes a byte length beside a 256-byte buffer |
 
-The buffer is already zero past the key, so a key of at most $B$ bytes
-contributes its first sixteen words unchanged. A longer key is hashed only
-in the taken branch of `k0`.
+RFC 2104 section 2 uses the same $B$, $L$, `0x36`, and `0x5C`. Its prose
+limits a key to $B$ bytes and then says a longer key is hashed to $L$ bytes
+first. FIPS 198-1 Table 1 writes that rule as steps 1 through 3.
 
-#### 2. The MAC (section 4, steps 4 through 9)
+Each byte string in the listing is a length together with a `Word[32]^64`:
+the big-endian words of FIPS 180-4 section 5.2.1, zero after the last byte.
+One `sha256` and one `hmac_sha256` then serve every length in the tests.
+`words_n` copies $n$ words into that buffer. An index `buf[key_len / 4]`,
+with `key_len` a parameter, is `ORC0226`, recorded below. `put_byte` walks
+`for i in 0..64` and writes the one word whose index equals `p / 4`.
 
-$$\mathrm{HMAC}(K, \mathrm{text}) = H((K_0 \oplus \mathrm{opad}) \parallel H((K_0 \oplus \mathrm{ipad}) \parallel \mathrm{text})).$$
+#### 2. $K_0$ (Table 1, steps 1 through 3)
 
-`xor_pad` XORs each of the sixteen words of $K_0$ with the pad word. The
-inner hash is SHA-256 of the 64-byte inner pad followed by the text. The
-outer hash is SHA-256 of the 64-byte outer pad followed by the 32-byte inner
-digest, a message of 96 bytes. Truncation keeps the leftmost $t$ bits of
-that digest. `leftmost_128` is $t = 128$, RFC 2104 section 5 and the
-HMAC-SHA-256-128 value RFC 4231 prints for case 5.
+| Step | FIPS 198-1 | Orange |
+| :--- | :--- | :--- |
+| 1 | If the length of $K$ is $B$, set $K_0 = K$ and go to step 4 | `k0`, the `else` branch, the first sixteen words. A key of exactly 64 bytes is this branch |
+| 2 | If the length of $K$ is greater than $B$, $K_0 = H(K)$ followed by $B - L$ zero bytes, and go to step 4 | the `key_len > 64` branch: `sha256(key, key_len)` and eight zero words |
+| 3 | If the length of $K$ is less than $B$, append zeros through $B$ bytes | the same `else` branch. The buffer is already zero past the key |
 
-RFC 4231 case 2 has key "Jefe", the word `0x4a656665`, shorter than the
-block. $K_0 \oplus \mathrm{ipad}$ begins `0x7c535053` and every later word is
-`0x36363636`. $K_0 \oplus \mathrm{opad}$ begins `0x16393a39` and every later
-word is `0x5c5c5c5c`.
+RFC 2104's numbered step (1) is only the zero-append. The hash of a long key
+is the paragraph before those numbers. The listing follows Table 1.
 
-RFC 4231 case 6 has key `0xaa` repeated 131 times, longer than $B$. $K_0$ is
-SHA-256 of that key,
+RFC 4231 section 4.7, test case 6, has key `0xaa` repeated 131 times, which
+is longer than $B$. $K_0$ begins with SHA-256 of that key,
 
 `45ad4b37c6e2fc0a2cfcc1b5da524132ec707615c2cae1dbbc43c97aa521db81`,
 
-followed by 32 zero bytes.
+then 32 zero bytes. That digest is what `hashlib.sha256` of the 131 bytes
+prints on this machine. The test `RFC 4231 case 6 hashes a key longer than
+the block` checks those eight words and the eight zeros. RFC 4231 does not
+print $K_0$; it prints the MAC, which depends on it.
 
-#### 3. Known Answers (RFC 4231, section 4)
+#### 3. The MAC (Table 1, steps 4 through 9)
 
-| Case | Key and text | MAC |
+The formula in section 4 is
+
+$$\mathrm{MAC}(\mathrm{text}) = \mathrm{HMAC}(K, \mathrm{text}) = H((K_0 \oplus \mathrm{opad}) \parallel H((K_0 \oplus \mathrm{ipad}) \parallel \mathrm{text})).$$
+
+RFC 2104 writes the same formula as $H(K \oplus \mathrm{opad}, H(K \oplus \mathrm{ipad}, \mathrm{text}))$
+and then numbers the short-key steps (1) through (7).
+
+| FIPS step | What it does | Orange |
 | :--- | :--- | :--- |
-| 4.2 | `0x0b` repeated 20 times, "Hi There" | `b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7` |
-| 4.3 | "Jefe", "what do ya want for nothing?" | `5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843` |
-| 4.4 | `0xaa` 20 times, `0xdd` 50 times | `773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe` |
-| 4.5 | bytes `01` through `19`, `0xcd` 50 times | `82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b` |
-| 4.6 | `0x0c` 20 times, "Test With Truncation" | `a3b6167473100ee06e0c796c2955552b` in the first 128 bits |
-| 4.7 | `0xaa` 131 times, the 54-byte block-size sentence | `60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54` |
-| 4.8 | the same key, the 152-byte sentence | `9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2` |
+| 4 | $K_0 \oplus \mathrm{ipad}$ | `xor_pad(k, ipad())`, sixteen words |
+| 5 | append $\mathrm{text}$ | the 16 words of the inner pad followed by the text words, length `64 + n` |
+| 6 | apply $H$ | the inner `sha256` |
+| 7 | $K_0 \oplus \mathrm{opad}$ | `xor_pad(k, opad())` |
+| 8 | append the step-6 digest | the 16 words of the outer pad, then the eight digest words, length 96 |
+| 9 | apply $H$ | the outer `sha256` |
 
-RFC 4231 prints case 5 only after truncation to 128 bits. The listing also
-checks the full 32-byte MAC
+RFC 2104 steps (2) through (7) are FIPS steps 4 through 9 on a key that
+step (1) has already padded. `hmac_sha256` returns the eight words of step
+9, which are $L = 32$ bytes. It does not truncate.
+
+Section 5: when the output is truncated, the $\lambda$ leftmost bits are the MAC.
+RFC 2104 section 5: the $t$ leftmost bits. `leftmost_128` is $\lambda = t = 128$.
+It reads the digest as big-endian bytes and keeps the first 16. RFC 4231
+section 4.6 is that truncation for HMAC-SHA-256.
+
+RFC 4231 section 4.3, test case 2, key "Jefe" (`0x4a656665`), shorter than
+the block. $K_0 \oplus \mathrm{ipad}$ begins `0x7c535053` (`0x4a656665` XOR
+`0x36363636`) and every later word is `0x36363636`. $K_0 \oplus \mathrm{opad}$
+begins `0x16393a39` and every later word is `0x5c5c5c5c`. The test
+`RFC 4231 case 2 inner and outer pads` checks those two 16-word strings.
+The RFC does not print them.
+
+The inner message is $64 + n$ bytes. SHA-256 padding needs nine bytes after
+a whole-byte message, and the buffer is 256 bytes, so `pad` as written takes
+$n \le 247$ and the text inside `hmac_sha256` takes $n \le 183$. Case 7 is
+152 bytes of text and 131 bytes of key, inside both. A longer string is the
+same functions on a larger finite buffer. This listing does not contain one.
+HKDF is §52C. It is not in this listing.
+
+#### 4. Known Answers (RFC 4231, December 2005, section 4)
+
+Keys and data are hex, as section 4.1 says. Only the HMAC-SHA-256 line of
+each case is this section. The SHA-224, SHA-384, and SHA-512 lines are not
+checked.
+
+| Section | Case | Key and data | HMAC-SHA-256, as printed |
+| :--- | :--- | :--- | :--- |
+| 4.2 | 1 | key `0b` 20 times; data `4869205468657265` ("Hi There") | `b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7` |
+| 4.3 | 2 | key `4a656665` ("Jefe"); data the 28 bytes of "what do ya want for nothing?" | `5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843` |
+| 4.4 | 3 | key `aa` 20 times; data `dd` 50 times | `773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe` |
+| 4.5 | 4 | key `0102030405060708090a0b0c0d0e0f10111213141516171819` (25 bytes); data `cd` 50 times | `82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b` |
+| 4.6 | 5 | key `0c` 20 times; data "Test With Truncation" | `a3b6167473100ee06e0c796c2955552b`, and no further bytes |
+| 4.7 | 6 | key `aa` 131 times; data "Test Using Larger Than Block-Size Key - Hash Key First" | `60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54` |
+| 4.8 | 7 | the same key; data the 152-byte sentence that ends "algorithm." | `9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2` |
+
+Section 4.6 does not print a 256-bit HMAC-SHA-256. The listing's full MAC
+for that key and data is
 `a3b6167473100ee06e0c796c2955552bfa6f7c0a6a8aef8b93f860aab0cd20c5`.
-Wycheproof `hmac_sha256_test.json` tcId 171 is a 65-byte key, one byte over
-$B$, and a 32-byte message. Its tag is
+The first 128 bits are the RFC line. The other 128 bits are what Python's
+`hmac.new` with `hashlib.sha256` returned for those bytes on this machine.
+That call is not the RFC.
+
+Wycheproof `testvectors_v1/hmac_sha256_test.json`, tcId 171, comment
+"long key", flag `Pseudorandom`, result `valid`. The key is 65 bytes, one
+past $B$:
+
+`21178e26bc28ffc27c06f762ba190a627075856d7ca6feab79ac63149b17126e34fd9e5590e0e90aac801df09505d8af2dd0a2703b352c573ac9d2cb063927f2af`.
+
+The message is the 32 bytes
+`7d5f1d6b993452b1b53a4375760d10a20d46a0ab9ec3943fc4b07a2ce735e731`.
+The tag is
 `e542ac8ac8f364bae4b7da8b7a0777df350f001de4e8cfa2d9ef0b15019496ec`.
+Those three strings are the JSON fetched for this section.
 
-The inner message is $64 + n$ bytes. SHA-256 padding needs nine bytes past
-a whole-byte message, and the buffer is 256 bytes, so the text in this
-listing is at most 183 bytes. A key that is hashed first is at most 247
-bytes. Case 7, at 152 bytes of text and 131 bytes of key, sits inside both
-bounds. A longer string is the same functions on a larger finite buffer.
-HKDF-Extract and HKDF-Expand are the next section. They are not in this
-listing: one evaluation budget is $1\,048\,576$ steps, and the three RFC
-5869 appendix A cases are a separate file in `algorithms/hmac-hkdf/`.
-
-#### 4. Compiler-Checked Transcription
+#### 5. Compiler-Checked Transcription
 
 ```orange
 // HMAC-SHA-256 as FIPS 198-1 (2008, DOI 10.6028/NIST.FIPS.198-1) sections 4
@@ -4286,6 +4354,61 @@ module hmac_spec {
   }
 }
 ```
+
+#### 6. What This Binary Printed
+
+`orangec test --stats` on the listing, the S3t binary of §52A, default
+budget 1,048,576:
+
+```text
+test "RFC 4231 case 2 inner and outer pads" ... ok
+test "RFC 4231 case 6 hashes a key longer than the block" ... ok
+test "RFC 4231 section 4.2 case 1" ... ok
+test "RFC 4231 section 4.3 case 2" ... ok
+test "RFC 4231 section 4.4 case 3" ... ok
+test "RFC 4231 section 4.5 case 4" ... ok
+test "RFC 4231 section 4.6 case 5 and its 128-bit truncation" ... ok
+test "RFC 4231 section 4.7 case 6" ... ok
+test "RFC 4231 section 4.8 case 7" ... ok
+test "Wycheproof hmac_sha256 tcId 171, key one byte over the block" ... ok
+10 tests: 10 passed, 0 failed
+```
+
+The step counts on stderr were 511, 28,922, 39,337, 39,342, 39,453, 39,471,
+79,244, 68,238, 86,937, and 58,766. The total was 480,221 of 1,048,576.
+
+`orangec eval --spec rfc4231_case_1 --spec rfc4231_case_1_expected` on
+`algorithms/hmac-hkdf/hmac-hkdf.or` printed two lines and exited 0. Both
+were
+
+`Word[32]^8 = [0xb0344c61, 0xd8db3853, 0x5ca8afce, 0xaf0bf12b, 0x881dc200, 0xc9833da7, 0x26e9376c, 0x2e32cff7]`.
+
+That is RFC 4231 section 4.2. The repository module is `hmac_hkdf`. The
+manual listing is `hmac_spec`.
+
+#### 7. Rejections
+
+A byte position taken from a length is not an index the checker accepts.
+`put_byte` walks the buffer for that reason:
+
+```orange
+edition 2026;
+module neg_put {
+  spec bad(buf: Word[32]^64, n: Int) -> Word[32] { buf[n / 4] }
+}
+```
+
+`` error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int` ``
+
+#### 8. Non-Claims
+
+The ten tests show the seven HMAC-SHA-256 lines of RFC 4231 section 4, the
+128-bit truncation of section 4.6, the case 2 pad words, the case 6 $K_0$,
+and Wycheproof tcId 171. They do not show HMAC-SHA-224, HMAC-SHA-384, or
+HMAC-SHA-512. They do not show a text of 184 bytes or a key of 248 bytes.
+The 32-byte case 5 MAC is not a line of the RFC. Nothing here is a timing
+measurement, a CMVP result, or the security discussion RFC 4231 section 5
+declines to make.
 
 ### HKDF, RFC 5869
 
