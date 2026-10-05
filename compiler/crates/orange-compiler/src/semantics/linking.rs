@@ -388,7 +388,14 @@ pub(super) fn link_program<'ast>(
                 )
         });
         drop(imports);
-        id_offset = id_offset.saturating_add(typed_spec_count(source, ast));
+        let produced = outcome
+            .as_ref()
+            .and_then(|outcome| outcome.core.as_ref())
+            .map_or_else(
+                || typed_spec_count(source, ast),
+                |core| core.functions.len().saturating_sub(core.tests),
+            );
+        id_offset = id_offset.saturating_add(produced);
         let Some(outcome) = outcome else {
             complete = false;
             continue;
@@ -462,13 +469,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         signatures: &[Option<Signature<'ast>>],
         edges: &[CallEdge],
     ) {
-        // Each instance of a sized function is a node of its own.
-        let function_count = signatures
+        // Each concrete instance is a node, then each specialization, in
+        // the order their identities were reserved.
+        let mut names = Vec::new();
+        let concrete = signatures
             .iter()
             .flatten()
             .map(|signature| signature.instances.len())
             .fold(0_usize, usize::saturating_add);
-        let mut names = Vec::new();
+        let function_count = concrete.saturating_add(self.spec_keys.len());
         let mut offsets = Vec::new();
         let mut targets: Vec<(CoreFunctionId, usize)> = Vec::new();
         let mut state = Vec::new();
@@ -490,11 +499,34 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .functions
                 .iter()
                 .zip(signatures)
-                .filter_map(|(function, signature)| Some((&function.name, signature.as_ref()?)))
-                .flat_map(|(name, signature)| {
-                    (0..signature.instances.len()).map(move |index| (name, signature, index))
+                .filter_map(|(function, signature)| Some((function, signature.as_ref()?)))
+                .flat_map(|(function, signature)| {
+                    (0..signature.instances.len()).map(move |index| {
+                        signature
+                            .ranges
+                            .and_then(|ranges| ranges.instance(signature.sizes, index))
+                            .unwrap_or(Instance::NONE)
+                            .label(&function.name.text, &signature.spellings)
+                    })
                 }),
         );
+        for key in &self.spec_keys {
+            let label = self
+                .ast
+                .module
+                .functions
+                .get(key.function)
+                .zip(signatures.get(key.function).and_then(Option::as_ref))
+                .map(|(function, signature)| {
+                    Instance {
+                        parameters: signature.sizes,
+                        values: key.values,
+                    }
+                    .label(&function.name.text, &signature.spellings)
+                })
+                .unwrap_or_default();
+            names.push(label);
+        }
         // Group edges by caller; within one caller, edges keep the order in
         // which their calls finished checking.
         targets.extend(
@@ -580,7 +612,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         edge: &CallEdge,
         target: usize,
         path: &[(usize, usize)],
-        names: &[(&Identifier, &Signature<'ast>, usize)],
+        names: &[String],
     ) {
         // Each instance of a sized function repeats its calls, so a cycle
         // closed at a call already reported, by another instance, is not
@@ -596,17 +628,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .position(|(node, _)| *node == target)
             .unwrap_or(0);
         let cycle = path.get(start..).unwrap_or_default();
-        let name_of = |index: usize| {
-            names
-                .get(index)
-                .map_or_else(String::new, |(name, signature, instance)| {
-                    signature
-                        .ranges
-                        .and_then(|ranges| ranges.instance(signature.sizes, *instance))
-                        .unwrap_or(Instance::NONE)
-                        .label(&name.text, &signature.spellings)
-                })
-        };
+        let name_of = |index: usize| names.get(index).map(String::as_str).unwrap_or("");
         let target_name = name_of(target);
         let message = if cycle.len() <= 1 {
             format!("`{target_name}` calls itself")
@@ -621,7 +643,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     route.push_str(" -> ");
                 }
                 route.push('`');
-                route.push_str(&name_of(*node));
+                route.push_str(name_of(*node));
                 route.push('`');
             }
             format!("call cycle {route} -> `{target_name}`")

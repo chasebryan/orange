@@ -1,0 +1,6 @@
+edition 2026;
+module invalid_corner {
+  spec pick[W: Word, n in 1..6](a: W^4) -> W {
+    for i in 0..n with s: W = 0 { s ^ a[i] }
+  }
+}

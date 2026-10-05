@@ -1,0 +1,5 @@
+edition 2026;
+module invalid_type {
+  spec idw[W: Word](x: W) -> W { x }
+  spec use() -> Word[8] { idw[Int](1) }
+}

@@ -1,0 +1,4 @@
+edition 2026;
+module invalid_affine {
+  spec quot[W: Word, n in 2..8](a: W^4) -> W { a[n / 2] }
+}

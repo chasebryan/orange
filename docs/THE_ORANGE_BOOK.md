@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-02
+Snapshot: 2026-10-05
 
-Manuscript version: 0.26
+Manuscript version: 0.27
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -4689,7 +4689,7 @@ source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3v)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4867,6 +4867,43 @@ not universal dependent typing. The [static-modulus specification](STATIC_MODULI
 and [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) remain
 in owner review.
 
+### One definition for every word width
+
+A lane width does not have to be chosen from a written list. S3v checks one
+parameter at every word width Orange already has:
+
+```orange
+edition 2026;
+module words {
+  spec inc[W: Word](x: W) -> W { x + 1 }
+  spec result() -> (Word[8], Word[64]) {
+    (inc[Word[8]](254), inc[Word[64]](256))
+  }
+  test "both widths" { result() == (255, 257) }
+}
+```
+
+`W: Word` means `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`. The body is
+checked at each of them, including when nothing calls the narrow widths, so a
+literal that fits only a wider word is rejected. A size written beside that
+parameter is checked for every affine value, by checking the corners of its
+range. A length that would change with the size, and an index that divides or
+multiplies two sizes, are rejected. A call names the one specialization it
+uses, and only those specializations are lowered.
+
+The same form writes Keccak-p once. Theta, rho, pi, chi, and iota take the
+lane type `W`, the state is twenty-five lanes, and the round count is a size
+from 1 up to but not including 25. That one source reproduces SHA3-256 of
+`abc`, the width-64 case already in the S3r corpus, and Keccak-f[200] on the
+all-zero state, checked against XKCP's published intermediate values at a
+recorded commit. Those two answers are the tested inputs. They are not a
+complete SHA-3 implementation and not a constant-time or native-code result.
+
+The [universal-word specification](UNIVERSAL_2026.md) and
+[OEP-0026](governance/oeps/OEP-0026-orange-2026-universal-words.md) record S3v
+as implemented and in owner review. Listed type parameters and finite size
+instances keep the meanings of their own slices.
+
 The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
 implement OEP-0022 P2: reconstruction, abstraction and tight/loose/canonical
 predicates, followed by addition, carrying and canonicalization. Partial P4
@@ -4885,8 +4922,9 @@ later proof, compiler, corpus and release obligations explicit.
 The list of absences is long, and it is printed in the specifications rather
 than hidden: imports of names into scope, module paths and packages, modules
 that take modules as parameters, attributes, visibility, type parameters of
-`type` declarations, bounds or classes of types, types and sizes reasoned
-about for all their values at once, lists of types named once for several
+`type` declarations, bounds or classes of types, types other than the word
+widths reasoned about for every value, sizes of a function without a word
+parameter reasoned about for every value, lists of types named once for several
 functions, sizes fitted outside the finite argument and expected-result
 types, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
@@ -4924,7 +4962,8 @@ through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
-through OEP-0023, and S3t's, which builds on S3s, through OEP-0024.
+through OEP-0023, and S3t's, which builds on S3s, through OEP-0024, and
+S3v's, which builds on S3t, through OEP-0026.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
 documented migration. All nineteen migrations so far are small: every source
@@ -4953,6 +4992,8 @@ below the width. Every source S3r accepted retains its values and costs
 under S3s; rank-two type aliases and chained indices are newly admitted.
 S3t retains S3s values and costs and admits own finite size names in modulus
 expressions, while rejecting invalid concrete instances before evaluation.
+S3v retains S3t values and costs and admits one parameter `W: Word`, checked
+at every word width, with that function's sizes checked for every affine value.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -7173,6 +7214,11 @@ its typed value boundary, numeric instance selection and reference-only outcomes
 Version 0.26 adds partial P4 mathematical product preparation alongside the
 existing P2 representation definitions, with exact accumulators and three
 normalization passes; it adds no P3 proof or P4 completion claim.
+Version 0.27 adds the [universal-word specification](UNIVERSAL_2026.md) and
+[OEP-0026](governance/oeps/OEP-0026-orange-2026-universal-words.md): one
+`W: Word` parameter checked at every width, sizes checked for every affine
+value, and Keccak-p written once. It adds no proof, constant-time result, or
+complete SHA-3 claim.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7358,6 +7404,14 @@ witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
 execution supplies no proof, solver selection, D-009 candidate credit, atomic
 claim authority or release acceptance.
+
+Manuscript version 0.27 adds the Chapter 8 section "One definition for every
+word width", updates the absence list and the current slice marker, and records
+S3v under OEP-0026 in review. Grok, as a Cursor cloud agent, prepared these
+changes under Chase Bryan's direction on 2026-10-05. The Keccak known answers
+were run against the compiler at the revision that introduced them. That check
+is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply. The semantic boundary remains S3v in review.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

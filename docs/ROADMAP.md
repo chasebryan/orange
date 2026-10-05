@@ -658,6 +658,14 @@ its moduli. Global aliases and finite type lists remain concrete. The
 [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) record the
 implemented slice in owner review; they add no proof, primality or native claim.
 
+S3v follows S3t with one parameter `W: Word`, checked at every word width, and
+with that function's ordinary sizes checked once for every affine value. One
+Keccak-p definition covers the lane widths. The
+[universal-word proposal](UNIVERSAL_2026.md) and
+[OEP-0026](governance/oeps/OEP-0026-orange-2026-universal-words.md) record the
+implemented slice in owner review; they add no proof, constant-time, or
+complete SHA-3 claim.
+
 OEP-0022 P2 has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,

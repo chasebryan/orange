@@ -155,6 +155,8 @@ define_diagnostic_codes! {
     TypeParameter => "ORC0241",
     /// A test's title is empty, too long, or unprintable, or repeats another's.
     TestTitle => "ORC0242",
+    /// A function over every word, or a size checked for every value, is not valid.
+    NotForEveryValue => "ORC0243",
     /// A deterministic syntax-formatting resource budget was exhausted.
     FormatResourceLimit => "ORC0250",
     /// A formatter output failed source, token or comment preservation checks.
@@ -748,8 +750,8 @@ mod tests {
             "ORC0216", "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223",
             "ORC0224", "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231",
             "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0237", "ORC0238", "ORC0239",
-            "ORC0240", "ORC0241", "ORC0242", "ORC0250", "ORC0251", "ORC0252", "ORC0260", "ORC0261",
-            "ORC0270", "ORC0271", "ORC0272", "ORC0273", "ORC0274", "ORC0301",
+            "ORC0240", "ORC0241", "ORC0242", "ORC0243", "ORC0250", "ORC0251", "ORC0252", "ORC0260",
+            "ORC0261", "ORC0270", "ORC0271", "ORC0272", "ORC0273", "ORC0274", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

@@ -485,7 +485,10 @@ diagnostics, with these exceptions:
 
 This slice defines no symbolic reasoning about sizes: nothing is proved for
 all values of a size, only for each value in its finite range, one instance
-at a time. It defines no size inferred from anything but the lengths of a
+at a time. S3v, proposed separately in
+[`UNIVERSAL_2026.md`](UNIVERSAL_2026.md), checks the sizes of a function that
+also has a word parameter for every affine value, at the corners of those
+ranges. Finite instances in this document remain one instance at a time. It defines no size inferred from anything but the lengths of a
 call's arguments, no size parameters on `type` declarations or moduli, no
 sizes as run-time values beyond constants, no sets of values other than
 ranges, no instances beyond 256 per function, no empty arrays and so no

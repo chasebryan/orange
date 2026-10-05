@@ -1,0 +1,4 @@
+edition 2026;
+module invalid_length {
+  spec fill[W: Word, n in 1..4](x: W) -> W^n { [x; n] }
+}

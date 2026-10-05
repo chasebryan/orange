@@ -497,7 +497,10 @@ gets the same diagnostics, with these exceptions:
 
 This slice defines no type variables and no reasoning over all types: nothing
 is proved for a type that a function does not list, only for each listed type,
-one instance at a time. It defines no bounds or classes of types (such as
+one instance at a time. S3v, proposed separately in
+[`UNIVERSAL_2026.md`](UNIVERSAL_2026.md), checks one parameter `W: Word` at
+every word width. That later slice does not change the listed-type rules in
+this document. It defines no bounds or classes of types (such as
 "any field"), no type parameters on `type` declarations, no types computed
 from sizes or values, no types inferred from anything but a call's arguments
 and its place, no residue type written in a call's brackets except through a

@@ -11203,3 +11203,55 @@ fn a_tests_moduli_and_types_are_resolved_with_the_modules() {
     ));
     assert_eq!(core.tests, 1);
 }
+
+#[test]
+fn a_word_parameter_is_checked_at_every_width_and_specialized_when_called() {
+    let (_, core) = accepted(concat!(
+        "  spec idw[W: Word](x: W) -> W { x + 1 }\n",
+        "  spec use8() -> Word[8] { idw[Word[8]](254) }\n",
+        "  spec use64() -> Word[64] { idw[Word[64]](256) }\n",
+    ));
+    assert_eq!(core.functions.len(), 4);
+    assert_eq!(core.functions[0].name, "use8");
+    assert_eq!(core.functions[1].name, "use64");
+    assert_eq!(core.functions[2].instance, "[Word[8]]");
+    assert_eq!(core.functions[3].instance, "[Word[64]]");
+}
+
+#[test]
+fn a_literal_that_does_not_fit_every_word_is_rejected() {
+    let (_, result) = rejected(concat!(
+        "  spec bad[W: Word](x: W) -> W { x + 256 }\n",
+        "  spec use() -> Word[64] { bad[Word[64]](1) }\n",
+    ));
+    assert_eq!(
+        result.diagnostics[0].code(),
+        DiagnosticCode::WordLiteralOutOfRange
+    );
+}
+
+#[test]
+fn sizes_of_a_universal_function_are_checked_for_every_value() {
+    let _ = accepted(concat!(
+        "  spec pick[W: Word, n in 1..5](a: W^4) -> W {\n",
+        "    for i in 0..n with s: W = 0 { s ^ a[i] }\n",
+        "  }\n",
+        "  spec go() -> Word[8] { pick[Word[8], 3]([1, 2, 3, 4]) }\n",
+    ));
+    let (_, wide) = rejected(concat!(
+        "  spec pick[W: Word, n in 1..6](a: W^4) -> W {\n",
+        "    for i in 0..n with s: W = 0 { s ^ a[i] }\n",
+        "  }\n",
+    ));
+    assert_eq!(wide.diagnostics[0].code(), DiagnosticCode::IndexOutOfRange);
+    let (_, varying) = rejected("  spec fill[W: Word, n in 1..4](x: W) -> W^n { [x; n] }\n");
+    assert_eq!(
+        varying.diagnostics[0].code(),
+        DiagnosticCode::NotForEveryValue
+    );
+    let (_, divided) = rejected("  spec quot[W: Word, n in 2..8](a: W^4) -> W { a[n / 2] }\n");
+    assert_eq!(
+        divided.diagnostics[0].code(),
+        DiagnosticCode::NotForEveryValue
+    );
+}

@@ -26,7 +26,7 @@ const TYPE_ARGUMENT_NOTE: &str = "a type in a call's brackets is `Int`, `Bool`, 
      parameter of the calling function";
 
 /// What a call's entry in brackets gives a type parameter.
-enum TypeArgument {
+pub(in crate::semantics) enum TypeArgument {
     /// A type.
     Type(CoreType),
     /// A type that did not resolve, which was reported where it is written.
@@ -59,15 +59,15 @@ impl<'ast> Instance<'ast> {
         self.parameters
             .iter()
             .zip(self.values)
-            .find(|(parameter, _)| !parameter.is_type() && parameter.name.text == name)
+            .find(|(parameter, _)| parameter.is_size() && parameter.name.text == name)
     }
 
-    /// Returns the position among the brackets' parameters of the type
-    /// parameter named `name`, if the instance has one.
+    /// Returns the position among the brackets' parameters of the type or
+    /// word parameter named `name`, if the instance has one.
     pub(super) fn find_type(&self, name: &str) -> Option<usize> {
-        self.parameters
-            .iter()
-            .position(|parameter| parameter.is_type() && parameter.name.text == name)
+        self.parameters.iter().position(|parameter| {
+            (parameter.is_type() || parameter.is_word()) && parameter.name.text == name
+        })
     }
 
     /// Returns the values of the instance's sizes, in declaration order.
@@ -97,7 +97,19 @@ impl<'ast> Instance<'ast> {
                 if position != 0 {
                     suffix.push_str(", ");
                 }
-                if parameter.is_type() {
+                if parameter.is_word() {
+                    let width = usize::try_from(*value).ok().and_then(|index| {
+                        crate::semantics::universal::WORD_WIDTHS.get(index).copied()
+                    });
+                    match width {
+                        Some(width) => {
+                            suffix.push_str("Word[");
+                            suffix.push_str(&width.to_string());
+                            suffix.push(']');
+                        }
+                        None => suffix.push('?'),
+                    }
+                } else if parameter.is_type() {
                     let spelling = spellings
                         .get(position)
                         .and_then(|list| list.get(usize::try_from(*value).ok()?));
@@ -207,6 +219,9 @@ pub(super) struct SizeRanges {
     ranges: [(u32, u32); MAX_SIZES_PER_FUNCTION],
     count: usize,
     instances: usize,
+    /// The function has a word parameter. Its sizes are not expanded into
+    /// one instance per value; `instances` is then zero.
+    universal: bool,
 }
 
 impl SizeRanges {
@@ -219,9 +234,15 @@ impl SizeRanges {
         if function.sizes.len() > MAX_SIZES_PER_FUNCTION {
             return None;
         }
+        let universal = function.sizes.iter().any(SizeParameter::is_word);
         let mut instances = 1_usize;
         for (slot, size) in ranges.iter_mut().zip(&function.sizes) {
-            let (start, end) = if size.is_type() {
+            let (start, end) = if size.is_word() {
+                (
+                    0,
+                    u32::try_from(crate::semantics::universal::WORD_WIDTHS.len()).ok()?,
+                )
+            } else if size.is_type() {
                 (0, u32::try_from(size.types.len()).ok()?)
             } else {
                 (
@@ -229,17 +250,34 @@ impl SizeRanges {
                     size_bound(source, size.end_span)?,
                 )
             };
-            let width = usize::try_from(end.checked_sub(start)?).ok()?;
-            instances = instances
-                .checked_mul(width)
-                .filter(|count| (1..=MAX_INSTANCES_PER_FUNCTION).contains(count))?;
+            if !size.is_word() {
+                let width = usize::try_from(end.checked_sub(start)?).ok()?;
+                if width == 0 {
+                    return None;
+                }
+                if !universal {
+                    instances = instances
+                        .checked_mul(width)
+                        .filter(|count| (1..=MAX_INSTANCES_PER_FUNCTION).contains(count))?;
+                }
+            }
             *slot = (start, end);
+        }
+        if universal {
+            instances = 0;
         }
         Some(Self {
             ranges,
             count: function.sizes.len(),
             instances,
+            universal,
         })
+    }
+
+    /// Returns whether the function is checked for every word and every
+    /// size value, rather than once per instance.
+    pub(super) const fn is_universal(&self) -> bool {
+        self.universal
     }
 
     /// Returns the number of instances.
@@ -321,6 +359,11 @@ pub(super) enum SizeFault {
     TooLarge(Span),
     /// Storage could not be reserved at this part.
     Storage(Span),
+    /// A size checked for every value uses `/`, `%`, or a product of sizes.
+    NotAffine(Span),
+    /// An array length, fill length, or similar measure names a size, so it
+    /// is not the same at every value.
+    Varying(Span),
 }
 
 /// The sizes of the instance being checked and how their values are
@@ -336,6 +379,9 @@ pub(super) struct SizeScope<'ast> {
     pub(super) reserve: fn(&mut Vec<u32>, usize) -> bool,
     pub(super) reserve_limb: fn(&mut Vec<u32>) -> bool,
     pub(super) evaluated: Cell<usize>,
+    /// Size expressions are affine, and lengths do not name a size: the
+    /// function is checked for every value of its sizes.
+    pub(super) affine: bool,
 }
 
 impl SizeScope<'_> {
@@ -352,6 +398,9 @@ impl SizeScope<'_> {
         expression: &Expression,
     ) -> Result<ExactInteger, SizeFault> {
         self.evaluated.set(self.evaluated.get().saturating_add(1));
+        if self.affine && !affine_size(expression, self.instance) {
+            return Err(SizeFault::NotAffine(expression.span));
+        }
         let storage = SizeFault::Storage(expression.span);
         let value = match &expression.kind {
             ExpressionKind::Literal(literal) => self.literal(source, literal)?,
@@ -449,6 +498,9 @@ impl SizeScope<'_> {
                 .filter(|length| (1..=MAX_ARRAY_LENGTH).contains(length))
                 .map_or(Length::Literal, Length::Admitted);
         };
+        if self.affine && mentions_size(expression, self.instance) {
+            return Length::Fault(SizeFault::Varying(size.span));
+        }
         match self.value(source, expression) {
             Ok(value) => value
                 .to_i64()
@@ -457,6 +509,58 @@ impl SizeScope<'_> {
                 .map_or_else(|| Length::Value(value), Length::Admitted),
             Err(fault) => Length::Fault(fault),
         }
+    }
+}
+
+/// Returns whether `expression` names one of the instance's size parameters.
+///
+/// Parser-established expression height bounds this recursion.
+fn mentions_size(expression: &Expression, instance: Instance<'_>) -> bool {
+    match &expression.kind {
+        ExpressionKind::Name(name) => instance.find(&name.text).is_some(),
+        ExpressionKind::Parenthesized(inner) => mentions_size(inner, instance),
+        ExpressionKind::Unary(unary) => mentions_size(&unary.operand, instance),
+        ExpressionKind::Binary(binary) => {
+            mentions_size(&binary.left, instance) || mentions_size(&binary.right, instance)
+        }
+        _ => false,
+    }
+}
+
+/// Returns whether a size expression is affine in the instance's sizes:
+/// literals and size names with `+`, `-`, `*`, and parentheses, where a
+/// product has one factor that names no size. `/` and `%` are affine only
+/// when neither side names a size.
+///
+/// Parser-established expression height bounds this recursion.
+fn affine_size(expression: &Expression, instance: Instance<'_>) -> bool {
+    match &expression.kind {
+        ExpressionKind::Literal(_) | ExpressionKind::Name(_) => true,
+        ExpressionKind::Parenthesized(inner) => affine_size(inner, instance),
+        ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
+            affine_size(&unary.operand, instance)
+        }
+        ExpressionKind::Binary(binary)
+            if matches!(
+                binary.operator,
+                BinaryOperator::Add | BinaryOperator::Subtract
+            ) =>
+        {
+            affine_size(&binary.left, instance) && affine_size(&binary.right, instance)
+        }
+        ExpressionKind::Binary(binary) if binary.operator == BinaryOperator::Multiply => {
+            affine_size(&binary.left, instance)
+                && affine_size(&binary.right, instance)
+                && !(mentions_size(&binary.left, instance)
+                    && mentions_size(&binary.right, instance))
+        }
+        ExpressionKind::Binary(binary) if binary.operator.is_division() => {
+            affine_size(&binary.left, instance)
+                && affine_size(&binary.right, instance)
+                && !mentions_size(&binary.left, instance)
+                && !mentions_size(&binary.right, instance)
+        }
+        _ => true,
     }
 }
 
@@ -503,7 +607,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .zip(instance.values)
             .zip(listed)
         {
-            if parameter.is_type() {
+            if parameter.is_type() || parameter.is_word() {
                 *slot = usize::try_from(value)
                     .ok()
                     .and_then(|position| listed.get(position))
@@ -525,6 +629,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             reserve: self.reserve_range_limbs,
             reserve_limb: self.reserve_magnitude_limb,
             evaluated: Cell::new(0),
+            affine: self.checking_universal,
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(in crate::semantics) fn report_not_for_every(
+        &mut self,
+        span: Span,
+        message: &str,
+        label: &str,
+        note: &str,
+    ) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::NotForEveryValue, message, span)
+                    .with_label(label)
+                    .with_note(note),
+            );
         }
     }
 
@@ -579,6 +702,39 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
             }
             SizeFault::Storage(span) => self.resource_limit(span, "size storage allocation failed"),
+            SizeFault::NotAffine(span) => {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::NotForEveryValue,
+                            "a size checked for every value is not affine",
+                            span,
+                        )
+                        .with_label("this uses `/`, `%`, or a product of sizes")
+                        .with_note(
+                            "a size checked once for every value is built from integer literals \
+                             and size parameters with `+`, `-`, `*`, and parentheses, and a \
+                             product has a literal factor",
+                        ),
+                    );
+                }
+            }
+            SizeFault::Varying(span) => {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::NotForEveryValue,
+                            "a length checked for every value names a size",
+                            span,
+                        )
+                        .with_label("this length is not the same at every value")
+                        .with_note(
+                            "an array length and a fill length in a function over every word \
+                             are written without its size parameters",
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -601,6 +757,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .iter()
                     .find(|other| other.name.text == size.name.text)
             });
+            if size.is_word() {
+                valid &= self.check_word_parameter(size, &function.sizes, index);
+                if self.halted {
+                    return false;
+                }
+                continue;
+            }
             if size.is_type() {
                 valid &= self.check_type_parameter(size, &function.sizes);
                 if self.halted {
@@ -613,12 +776,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 continue;
             }
+            let universal = function.sizes.iter().any(SizeParameter::is_word);
             let start = size_bound(self.source, size.start_span);
             let end = size_bound(self.source, size.end_span);
             match (start, end) {
                 (Some(start), Some(end)) if start < end => {
                     let width = usize::try_from(end.abs_diff(start)).unwrap_or(usize::MAX);
-                    instances = instances.saturating_mul(width);
+                    if !universal {
+                        instances = instances.saturating_mul(width);
+                    }
                 }
                 (Some(start), Some(end)) => {
                     valid = false;
@@ -660,7 +826,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             if let Some(size) = function
                 .sizes
                 .iter()
-                .find(|size| !size.is_type() && size.name.text == parameter.name.text)
+                .find(|size| size.is_size() && size.name.text == parameter.name.text)
             {
                 valid = false;
                 self.report_repeated_size(
@@ -670,7 +836,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 );
             }
         }
-        if valid && instances > MAX_INSTANCES_PER_FUNCTION {
+        if valid
+            && !function.sizes.iter().any(SizeParameter::is_word)
+            && instances > MAX_INSTANCES_PER_FUNCTION
+        {
             valid = false;
             if let (Some(first), Some(last)) = (function.sizes.first(), function.sizes.last()) {
                 let span = self
@@ -688,6 +857,54 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     self.report_size_range(span, message, "too many instances");
                 }
             }
+        }
+        valid
+    }
+
+    /// Checks one word parameter `W: Word`: its name names no built-in or
+    /// declared type, the function has only one, and it is not combined
+    /// with a listed type parameter.
+    fn check_word_parameter(
+        &mut self,
+        parameter: &SizeParameter,
+        brackets: &[SizeParameter],
+        index: usize,
+    ) -> bool {
+        let mut valid = true;
+        let name = parameter.name.text.as_str();
+        let declared = self.types.name(name).map(|declared| declared.span);
+        if BUILT_IN_TYPE_NAMES.contains(&name) || declared.is_some() {
+            valid = false;
+            self.report_type_parameter_name(&parameter.name, declared);
+        }
+        if let Some(earlier) = brackets.get(..index).and_then(|earlier| {
+            earlier
+                .iter()
+                .find(|other| other.name.text == parameter.name.text)
+        }) {
+            valid = false;
+            self.report_repeated_bracket(&parameter.name, earlier.name.span);
+        }
+        if brackets
+            .get(..index)
+            .is_some_and(|earlier| earlier.iter().any(SizeParameter::is_word))
+        {
+            valid = false;
+            self.report_not_for_every(
+                parameter.span,
+                "a function has one word parameter",
+                "a second word parameter",
+                "one parameter `W: Word` stands for every word width",
+            );
+        }
+        if brackets.iter().any(SizeParameter::is_type) {
+            valid = false;
+            self.report_not_for_every(
+                parameter.span,
+                "a word parameter is not combined with a listed type parameter",
+                "this function lists types and also stands for every word",
+                "write `W: Word` for every word width, or `K in { ... }` for a listed few",
+            );
         }
         valid
     }
@@ -748,7 +965,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 && source.slice(diagnostic.primary_span()).is_some_and(|text| {
                     brackets
                         .iter()
-                        .any(|size| !size.is_type() && size.name.text == text)
+                        .any(|size| size.is_size() && size.name.text == text)
                 });
             if names_size {
                 diagnostic.add_note(
@@ -898,14 +1115,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             &type_spellings(self.source, &function.sizes),
         );
         let name = identifier_spelling_for_diagnostic(&function.name.text);
+        let word = function.sizes.iter().any(SizeParameter::is_word);
         let typed = function.sizes.iter().any(SizeParameter::is_type);
-        let sized = function.sizes.iter().any(|size| !size.is_type());
-        let rule = match (sized, typed) {
-            (true, false) => "a sized function is checked once for each value of its sizes",
-            (false, _) => "a function is checked once for each type of its type parameters",
-            (true, true) => {
-                "a function is checked once for each value of its sizes and each type of its \
-                 type parameters"
+        let sized = function.sizes.iter().any(SizeParameter::is_size);
+        let rule = if word {
+            "a function over every word is checked at each word width, and each size is checked \
+             for every value in its range; this is the first width and corner in error"
+        } else {
+            match (sized, typed) {
+                (true, false) => "a sized function is checked once for each value of its sizes",
+                (false, _) => "a function is checked once for each type of its type parameters",
+                (true, true) => {
+                    "a function is checked once for each value of its sizes and each type of its \
+                     type parameters"
+                }
             }
         };
         for diagnostic in self.diagnostics.iter_mut().skip(reported) {
@@ -933,23 +1156,26 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &Expression,
         call: &CallExpression,
-        signature: &'signature Signature<'_>,
+        signature: &'signature Signature<'ast>,
         expected: &CoreType,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
-    ) -> Option<(CoreFunctionId, &'signature InstanceSignature)> {
+    ) -> Option<(CoreFunctionId, InstanceSignature)> {
+        if signature.sizes.iter().any(SizeParameter::is_word) {
+            return self.called_universal(expression, call, signature);
+        }
         let ranges = signature.ranges?;
         if call.sizes().is_empty() && ranges.count() != 0 {
             // Every instance takes the same number of arguments; a call that
             // gives another number is reported as such by its caller.
             let first = signature.instances.first()?;
             if first.parameters.len() != call.arguments.len() {
-                return Some((signature.instance_id(0)?, first));
+                return Some((signature.instance_id(0)?, first.clone()));
             }
             return match self.fitting_instance(call, signature, Some(expected), context, scope) {
                 Ok(index) => Some((
                     signature.instance_id(index)?,
-                    signature.instances.get(index)?,
+                    signature.instances.get(index)?.clone(),
                 )),
                 Err(fitting) => {
                     self.report_unfitted_call(
@@ -998,14 +1224,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let index = ranges.index(values.get(..ranges.count())?)?;
         Some((
             signature.instance_id(index)?,
-            signature.instances.get(index)?,
+            signature.instances.get(index)?.clone(),
         ))
     }
 
     /// Returns the position, in the list of the type parameter at
     /// `position`, of the type a call writes for it in brackets, or reports
     /// why the entry is not one of the listed types.
-    fn called_type(
+    pub(in crate::semantics) fn called_type(
         &mut self,
         entry: &Expression,
         callee: &Identifier,
@@ -1057,7 +1283,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// declaration's name, or a type parameter of the instance being checked.
     ///
     /// Parser-established expression height bounds this recursion.
-    fn type_argument(&self, entry: &Expression) -> TypeArgument {
+    pub(in crate::semantics) fn type_argument(&self, entry: &Expression) -> TypeArgument {
         let resolved =
             |ty: Option<CoreType>| ty.map_or(TypeArgument::Unresolved, TypeArgument::Type);
         match &entry.kind {
@@ -1398,13 +1624,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_size_count(&mut self, span: Span, call: &CallExpression, declared: &[SizeParameter]) {
+    pub(in crate::semantics) fn report_size_count(
+        &mut self,
+        span: Span,
+        call: &CallExpression,
+        declared: &[SizeParameter],
+    ) {
         if !self.begin_report(span) {
             return;
         }
         let spelling = identifier_spelling_for_diagnostic(&call.callee.text);
         let given = call.sizes().len();
-        let types = declared.iter().filter(|size| size.is_type()).count();
+        let types = declared
+            .iter()
+            .filter(|size| size.is_type() || size.is_word())
+            .count();
         let sizes = declared.len().saturating_sub(types);
         let plural = |count: usize| if count == 1 { "size" } else { "sizes" };
         let (message, note) = if types == 0 {
@@ -1505,7 +1739,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_size_outside(
+    pub(in crate::semantics) fn report_size_outside(
         &mut self,
         span: Span,
         callee: &Identifier,

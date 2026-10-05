@@ -1,0 +1,12 @@
+edition 2026;
+module compat {
+  spec listed[K in {Word[8]}](x: K) -> K { x + 1 }
+  spec sized[n in 2..4](x: Mod[n]) -> Mod[n] { x + 1 }
+  spec every[W: Word](x: W) -> W { x + 1 }
+  spec result() -> (Word[8], Mod[3], Word[64]) {
+    (listed[Word[8]](1), sized[3](2), every[Word[64]](3))
+  }
+  test "older forms keep their values beside a word parameter" {
+    result() == (2, 0, 4)
+  }
+}

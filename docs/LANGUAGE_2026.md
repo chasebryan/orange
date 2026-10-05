@@ -149,6 +149,12 @@ unresolved.
 > modulus expressions, as `Mod[(1 << bits) - 19]`. Every concrete instance is
 > checked eagerly and retains its exact residue domain. It changes no grammar,
 > token or reserved word; global aliases and finite type lists remain concrete.
+>
+> The S3v slice proposed in [`UNIVERSAL_2026.md`](UNIVERSAL_2026.md) under
+> OEP-0026, also in review, builds on S3t with one parameter `W: Word`. That
+> parameter stands for every word width, and the function's sizes are checked
+> for every affine value. A call names one specialization. Listed type
+> parameters and finite size instances keep their earlier meanings.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

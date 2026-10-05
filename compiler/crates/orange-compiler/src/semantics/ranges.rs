@@ -212,6 +212,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !self.check_expression(index, &index_type, context, scope, output) {
             return false;
         }
+        if self.checking_universal && super::universal::size_degree(index, context).is_none() {
+            if self.begin_report(index.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NotForEveryValue,
+                        "an index checked for every value of a size is not affine",
+                        index.span,
+                    )
+                    .with_label("this index is not decided at the corners of the sizes")
+                    .with_note(super::universal::affine_index_note()),
+                );
+            }
+            return false;
+        }
         let length = array.length();
         let range = match word.as_ref().and_then(word_maximum) {
             Some(maximum) => {

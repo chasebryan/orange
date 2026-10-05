@@ -1,0 +1,4 @@
+edition 2026;
+module invalid_literal {
+  spec bad[W: Word](x: W) -> W { x + 256 }
+}

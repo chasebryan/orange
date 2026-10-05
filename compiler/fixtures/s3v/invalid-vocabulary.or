@@ -1,0 +1,4 @@
+edition 2026;
+module invalid_vocabulary {
+  spec mixed[W: Word, K in {Word[8]}](x: W) -> W { x }
+}

@@ -366,23 +366,30 @@ impl FunctionDeclaration {
     }
 }
 
-/// One size parameter `n in a..b` of a sized `spec`, or one type
-/// parameter `K in {F, L}`. The function is checked once for each value of
-/// `n` from `a` up to, but not including, `b`, or once for each type the
-/// braces list, as if it were written out once for each.
+/// One size parameter `n in a..b` of a sized `spec`, one type parameter
+/// `K in {F, L}`, or one word parameter `W: Word`. A size is checked once
+/// for each value from `a` up to, but not including, `b`, and a listed type
+/// parameter once for each type, as if written out once for each. A word
+/// parameter stands for every word width, and the function's sizes are
+/// checked for every value together rather than once per value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SizeParameter {
-    /// Extent from the name through the second bound or the closing brace.
+    /// Extent from the name through the second bound, the closing brace, or
+    /// `Word`.
     pub(crate) span: Span,
     /// The size's or the type parameter's name.
     pub(crate) name: Identifier,
-    /// Exact extent of the first bound's integer token, or of `{`.
+    /// Exact extent of the first bound's integer token, of `{`, or of
+    /// `Word`.
     pub(crate) start_span: Span,
-    /// Exact extent of the second bound's integer token, or of `}`.
+    /// Exact extent of the second bound's integer token, of `}`, or of
+    /// `Word`.
     pub(crate) end_span: Span,
     /// The listed types in source order, nonempty only for a type
     /// parameter.
     pub(crate) types: Vec<TypeSyntax>,
+    /// Whether this is `W: Word`, a parameter that stands for every word.
+    pub(crate) word: bool,
 }
 
 impl SizeParameter {
@@ -423,6 +430,18 @@ impl SizeParameter {
     #[must_use]
     pub const fn is_type(&self) -> bool {
         !self.types.is_empty()
+    }
+
+    /// Returns whether this is a word parameter, `W: Word`.
+    #[must_use]
+    pub const fn is_word(&self) -> bool {
+        self.word
+    }
+
+    /// Returns whether this is a size parameter, `n in a..b`.
+    #[must_use]
+    pub const fn is_size(&self) -> bool {
+        self.types.is_empty() && !self.word
     }
 }
 
@@ -1876,6 +1895,9 @@ const SIZED_CALL_NOTE: &str = "a sized function is called with its sizes in brac
 const SIZE_PARAMETER_NOTE: &str = "a sized function is written `spec f[n in 1..5](x: Word[8]^n) \
      -> Type { ... }` and checked once for each n from 1 up to, but not including, 5";
 
+const WORD_PARAMETER_NOTE: &str = "a word parameter is written `W: Word` and stands for every \
+     word width, as in `spec theta[W: Word](a: W^25) -> W^25 { ... }`";
+
 const TYPE_PARAMETER_NOTE: &str = "a type parameter is written `K in {F, L}` and names each type \
      its function is checked for, as in `spec square[K in {F, L}](x: K) -> K { x * x }`";
 
@@ -2759,16 +2781,33 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses the size and type parameters `[n in a..b, K in {F, L}, ...]`
-    /// of a function, at most [`MAX_SIZES_PER_FUNCTION`] of them, each size
-    /// with integer bounds and each type parameter with a braced list of
-    /// types.
+    /// Parses the size and type parameters `[n in a..b, K in {F, L}, ...]`,
+    /// and a word parameter `W: Word`, of a function, at most
+    /// [`MAX_SIZES_PER_FUNCTION`] of them, each size with integer bounds and
+    /// each type parameter with a braced list of types.
     #[inline(never)]
     fn parse_size_parameters(&mut self) -> Option<Vec<SizeParameter>> {
         self.bump()?;
         let mut sizes = Vec::new();
         loop {
             let name = self.parse_identifier("size parameter")?;
+            if self.current_kind() == TokenKind::Colon {
+                let parameter = self.parse_word_parameter(name)?;
+                if !self.push_bracket_parameter(&mut sizes, parameter) {
+                    return None;
+                }
+                match self.current_kind() {
+                    TokenKind::Comma => {
+                        self.bump()?;
+                        continue;
+                    }
+                    TokenKind::RightBracket => break,
+                    _ => {
+                        self.expected("`,` or `]` after the word parameter", WORD_PARAMETER_NOTE);
+                        return None;
+                    }
+                }
+            }
             if !self.current_is_word("in") {
                 self.expected("`in` after the size's name", SIZE_PARAMETER_NOTE);
                 return None;
@@ -2854,6 +2893,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 start_span,
                 end_span,
                 types: Vec::new(),
+                word: false,
             });
             if !self.record_node() {
                 return None;
@@ -2936,7 +2976,66 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             start_span: open.span,
             end_span: close.span,
             types,
+            word: false,
         })
+    }
+
+    /// Parses `W: Word` at the colon, after the parameter's name.
+    fn parse_word_parameter(&mut self, name: Identifier) -> Option<SizeParameter> {
+        self.bump()?;
+        let word = self.parse_identifier("`Word`")?;
+        if word.text != "Word" {
+            self.report(
+                DiagnosticCode::ExpectedSyntax,
+                "a word parameter stands for `Word`",
+                word.span,
+                "expected `Word`",
+                WORD_PARAMETER_NOTE,
+            );
+            return None;
+        }
+        if !self.record_node() {
+            return None;
+        }
+        Some(SizeParameter {
+            span: self.join(name.span, word.span),
+            name,
+            start_span: word.span,
+            end_span: word.span,
+            types: Vec::new(),
+            word: true,
+        })
+    }
+
+    /// Appends one bracket parameter, or reports that the function already
+    /// has [`MAX_SIZES_PER_FUNCTION`].
+    fn push_bracket_parameter(
+        &mut self,
+        sizes: &mut Vec<SizeParameter>,
+        parameter: SizeParameter,
+    ) -> bool {
+        if sizes.len() >= MAX_SIZES_PER_FUNCTION {
+            self.report(
+                DiagnosticCode::ExpectedSyntax,
+                format!(
+                    "a function has at most {MAX_SIZES_PER_FUNCTION} size, type, and word \
+                     parameters"
+                ),
+                parameter.span,
+                "one parameter in brackets too many",
+                WORD_PARAMETER_NOTE,
+            );
+            return false;
+        }
+        if sizes.try_reserve(1).is_err() {
+            self.resource_limit_at(
+                "parser could not allocate size storage",
+                parameter.name.span,
+            );
+            return false;
+        }
+        sizes.push(parameter);
+        true
     }
 
     fn parse_parameter_list(&mut self) -> Option<Vec<Parameter>> {

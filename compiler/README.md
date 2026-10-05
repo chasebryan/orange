@@ -1,7 +1,8 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3t proposed under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024, in owner review
+S3t and S3v proposed under OEP-0005 through OEP-0021, OEP-0023, OEP-0024, and
+OEP-0026, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -106,7 +107,11 @@ slice, proposed in [`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md)
 and in owner review under OEP-0024, admits own finite size names in modulus
 expressions. Every instance is checked eagerly with its exact concrete residue
 domain, including signatures, body annotations, conversions and direct type
-arguments. Module aliases and type-parameter lists remain concrete. All twenty
+arguments. Module aliases and type-parameter lists remain concrete. The S3v
+slice, proposed in [`docs/UNIVERSAL_2026.md`](../docs/UNIVERSAL_2026.md) and in
+owner review under OEP-0026, admits one parameter `W: Word`, checked at every
+word width, with that function's sizes checked for every affine value. A call
+lowers the specialization it names. All twenty-one
 lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -151,7 +156,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3v)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
@@ -205,7 +210,7 @@ that differs, and 2 for invalid command usage. Validation finishes before any
 formatted bytes are written; an output failure can leave a prefix already
 accepted by the host and returns status 1.
 
-This permanent W3 frontend tool does not change the S3t language marker,
+This permanent W3 frontend tool does not change the S3v language marker,
 accept a semantic OEP, complete S8, or create a release.
 
 ## Generating source documentation
@@ -238,7 +243,7 @@ prefix. Usage errors return status 2, and successful generation returns 0.
 
 This is parsed-source documentation. It does not supply resolved interfaces,
 ABI/claim matrices, source-bound evidence identity, semantic acceptance, S8
-closure or release authority. The S3t language marker is unchanged.
+closure or release authority. The S3v language marker is unchanged.
 
 ## Replaying a local witness
 
@@ -270,7 +275,7 @@ host failure returns 1 even if the stream accepted a prefix.
 
 This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
-proof/evidence identity or release authority. The S3t language marker remains.
+proof/evidence identity or release authority. The S3v language marker remains.
 
 ## Sealing files
 
@@ -1797,6 +1802,29 @@ equal costs at different mismatch positions. The 12-rule index in
 They establish implementation behavior and do not accept OEP-0023 or prove
 ML-KEM, transformation, leakage, or refinement properties.
 
+## S3v universal-word conformance
+
+`fixtures/s3v/` contains an exact nine-program corpus for the proposed S3v
+behavior: two programs must check, run their tests, and evaluate successfully,
+and seven must fail closed. The accepted programs write Keccak-p once for every
+lane width and reproduce SHA3-256 of `abc` and the XKCP Keccak-f[200]
+all-zero permutation, and they keep a listed type parameter and a finite size
+beside `W: Word`. The rejected programs cover a word parameter combined with a
+listed type, a literal that does not fit `Word[8]`, a non-affine index, a size
+corner past an array, a length that names a size, a size outside its range,
+and a type argument that is not a word width.
+
+`crates/orangec/tests/s3v_conformance.rs` runs each fixture's commands,
+`check`, `test`, and `eval` with their options, twice each, and requires
+identical status, standard output, and standard error. It parses the 7-rule
+S3v index in `docs/UNIVERSAL_2026.md` and binds every rule to named CLI or
+generated-CLI evidence. Generated programs check all four widths, a second
+word parameter, an uncalled overflowing literal, retained finite sizes and
+listed types, affine and non-affine sizes, invariant lengths, and call
+diagnostics. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0026, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1854,6 +1882,10 @@ ML-KEM, transformation, leakage, or refinement properties.
   rule-index, reference-amount, and amount-cost runner;
 - `crates/orangec/tests/s3s_conformance.rs`: repeatable nested-array corpus,
   rule-index, shape-limit, and recursive-cost runner;
+- `crates/orangec/tests/s3t_conformance.rs`: exact repeatable S3t corpus,
+  rule-index, and static-modulus runner;
+- `crates/orangec/tests/s3v_conformance.rs`: exact repeatable S3v corpus,
+  rule-index, width, and affine-size runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1877,6 +1909,8 @@ ML-KEM, transformation, leakage, or refinement properties.
   corpus;
 - `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
 - `fixtures/s3s/`: nested-array positive, negative, and failed-equality corpus;
+- `fixtures/s3t/`: exact six-positive/four-negative S3t CLI fixture corpus;
+- `fixtures/s3v/`: exact two-positive/seven-negative S3v CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

@@ -82,6 +82,7 @@ impl TypeTable<'_> {
                 reserve: reserve_range_limbs,
                 reserve_limb: reserve_magnitude_limb,
                 evaluated: Cell::new(0),
+                affine: false,
             },
         }
     }
@@ -809,6 +810,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if let Some(length) = &syntax.length
             && !self.event(length.span)
         {
+            return None;
+        }
+        if self.checking_universal && self.types.modulus_depends_on_sizes(syntax) {
+            self.report_not_for_every(
+                syntax.span,
+                "a modulus checked for every value names a size",
+                "this modulus is not the same at every value",
+                "a modulus in a function over every word is written without its size parameters",
+            );
             return None;
         }
         let class = classify_type(self.source, &self.types, syntax);

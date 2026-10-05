@@ -1,6 +1,6 @@
 //! Bounded name resolution, type checking, and Core construction.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::fmt;
 
@@ -30,6 +30,7 @@ mod ranges;
 mod sizes;
 mod tuples;
 mod types;
+mod universal;
 
 pub use answers::MAX_TEST_TITLE_BYTES;
 use linking::*;
@@ -490,6 +491,17 @@ struct Analyzer<'source, 'ast> {
     reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
     reserve_call_edge_slot: fn(&mut Vec<CallEdge>) -> bool,
     types: TypeTable<'ast>,
+    /// The function being checked stands for every word, so sizes are
+    /// affine and lengths do not name a size.
+    checking_universal: bool,
+    /// The universal body is being proved at a corner. Calls are typed and
+    /// are not specialized.
+    proving: bool,
+    /// Concrete instances already given Core identities, before
+    /// specializations.
+    preassigned: usize,
+    /// Specializations in the order their Core identities were reserved.
+    spec_keys: Vec<universal::SpecKey>,
 }
 
 struct PendingFunction {
@@ -528,8 +540,15 @@ struct Signature<'ast> {
     modular_sizes: bool,
     /// The parameter and result types of each instance, in order.
     instances: Vec<InstanceSignature>,
+    /// Parameter types as written, so a universal call can be specialized.
+    parameters: &'ast [Parameter],
+    /// Result type as written.
+    result: &'ast TypeSyntax,
+    /// Specializations requested while this module, or a caller, is checked.
+    specializations: RefCell<Vec<universal::StoredSpec>>,
 }
 
+#[derive(Clone)]
 struct InstanceSignature {
     parameters: Vec<Option<CoreType>>,
     result_type: Option<CoreType>,
@@ -1067,6 +1086,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             reserve_core_node_slot,
             reserve_call_edge_slot,
             types: TypeTable::new(),
+            checking_universal: false,
+            proving: false,
+            preassigned: 0,
+            spec_keys: Vec::new(),
         }
     }
 
@@ -1249,6 +1272,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     signatures: &signatures,
                     imports,
                 };
+                if ranges.is_universal() {
+                    if !self.prove_universal(function, body, signature, &scope, &mut call_edges) {
+                        break;
+                    }
+                    continue;
+                }
                 // Each instance is checked as the function written out with
                 // its sizes' values, in order, until one is in error.
                 for index in 0..ranges.instances() {
@@ -1306,23 +1335,61 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
         }
 
-        if !self.halted {
-            self.check_call_graph(&signatures, &call_edges);
-        }
-        if self.tests && !self.halted {
+        let mut spec_pending = Vec::new();
+        if self.diagnostics.is_empty() && !self.halted {
             let scope = ModuleScope {
                 declarations: &declarations,
                 signatures: &signatures,
                 imports,
             };
-            // The tests' identities follow every instance of the functions.
-            let first_id = signatures
-                .iter()
-                .flatten()
-                .map(|signature| signature.instances.len())
-                .fold(self.id_offset, usize::saturating_add);
+            self.lower_specializations(&signatures, &scope, &mut spec_pending, &mut call_edges);
+        }
+        let mut test_pending = Vec::new();
+        if self.tests && self.diagnostics.is_empty() && !self.halted {
+            let scope = ModuleScope {
+                declarations: &declarations,
+                signatures: &signatures,
+                imports,
+            };
+            // A test's own identity is assigned from its place after every
+            // specialization. Calls inside a test name function identities,
+            // not the test's.
+            let first_id = self
+                .id_offset
+                .saturating_add(self.preassigned)
+                .saturating_add(self.spec_keys.len());
             let mut test_edges = Vec::new();
-            self.analyze_tests(&scope, first_id, &mut pending_functions, &mut test_edges);
+            self.analyze_tests(&scope, first_id, &mut test_pending, &mut test_edges);
+            if self.diagnostics.is_empty()
+                && !self.halted
+                && spec_pending.len() < self.spec_keys.len()
+            {
+                let scope = ModuleScope {
+                    declarations: &declarations,
+                    signatures: &signatures,
+                    imports,
+                };
+                self.lower_specializations(&signatures, &scope, &mut spec_pending, &mut call_edges);
+            }
+        }
+        if !self.halted {
+            self.check_call_graph(&signatures, &call_edges);
+        }
+        if pending_functions.try_reserve(spec_pending.len()).is_ok() {
+            pending_functions.append(&mut spec_pending);
+        } else {
+            self.resource_limit(
+                self.ast.module.span,
+                "semantic analysis could not allocate pending function storage",
+            );
+        }
+        if pending_functions.try_reserve(test_pending.len()).is_ok() {
+            pending_functions.append(&mut test_pending);
+        } else {
+            self.resource_limit(
+                self.ast.module.span,
+                "semantic analysis could not allocate pending test storage",
+            );
         }
 
         let core = if self.diagnostics.is_empty() && !self.halted {
@@ -1374,10 +1441,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .sizes
                         .iter()
                         .map(|size| {
-                            size.types
-                                .iter()
-                                .map(|ty| silent_type(self.source, &self.types, ty))
-                                .collect()
+                            if size.is_word() {
+                                universal::WORD_WIDTHS
+                                    .into_iter()
+                                    .map(CoreType::word_of_width)
+                                    .collect()
+                            } else {
+                                size.types
+                                    .iter()
+                                    .map(|ty| silent_type(self.source, &self.types, ty))
+                                    .collect()
+                            }
                         })
                         .collect();
                     // A list with a type that does not resolve, or one type
@@ -1388,7 +1462,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .filter(|_| listed.iter().all(|types| distinct_types(types)));
                     let count = ranges.map_or(0, |ranges| ranges.instances());
                     next_id = next_id.saturating_add(count);
-                    let spellings = type_spellings(self.source, &function.sizes);
+                    let mut spellings = type_spellings(self.source, &function.sizes);
+                    for (spelling, size) in spellings.iter_mut().zip(&function.sizes) {
+                        if size.is_word() {
+                            *spelling = universal::WORD_WIDTHS
+                                .into_iter()
+                                .map(|width| format!("Word[{width}]"))
+                                .collect();
+                        }
+                    }
                     let mut instances = Vec::new();
                     if instances.try_reserve_exact(count).is_err() {
                         self.resource_limit(function.span, "semantic signature allocation failed");
@@ -1446,12 +1528,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         spellings,
                         modular_sizes,
                         instances,
+                        parameters: &function.parameters,
+                        result: &body.result_type,
+                        specializations: RefCell::new(Vec::new()),
                     })
                 }
                 _ => None,
             };
             signatures.push(signature);
         }
+        self.preassigned = next_id;
         Some(signatures)
     }
 
@@ -2312,6 +2398,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 let (declarations, signatures) = scope.tables_for(call)?;
                 let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
                 let signature = signatures.get(entry.source_index)?.as_ref()?;
+                if signature.sizes.iter().any(SizeParameter::is_word) {
+                    return self.universal_result(call, signature);
+                }
                 self.silent_instance(call, signature, context, scope)?
                     .result_type
                     .clone()
@@ -3808,6 +3897,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         span: Span,
         output: &mut BodyOutput<'_>,
     ) -> bool {
+        if self.proving {
+            return true;
+        }
         if usize::try_from(callee.index()).is_ok_and(|index| index < self.id_offset) {
             return true;
         }

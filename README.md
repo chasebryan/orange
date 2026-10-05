@@ -1107,6 +1107,31 @@ domain. Module aliases and finite type lists remain concrete. S3t is implemented
 with its [specification](docs/STATIC_MODULI_2026.md) and
 [OEP-0024](docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md) in review.
 
+### One definition for every word width
+
+A function can stand for every word width, and its sizes can be checked for
+every affine value, without listing the widths:
+
+```orange
+edition 2026;
+module words {
+  spec inc[W: Word](x: W) -> W { x + 1 }
+  spec result() -> (Word[8], Word[64]) { (inc[Word[8]](254), inc[Word[64]](256)) }
+  test "both widths" { result() == (255, 257) }
+}
+```
+
+`W: Word` is `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`. The body is
+checked at each width, so a literal that does not fit `Word[8]` is rejected.
+A size beside that parameter is checked at the corners of its range. One
+Keccak-p definition, in
+[`compiler/fixtures/s3v/valid-keccak.or`](compiler/fixtures/s3v/valid-keccak.or),
+reproduces SHA3-256 of `abc` and the XKCP Keccak-f[200] permutation of the
+all-zero state. S3v is implemented with its
+[specification](docs/UNIVERSAL_2026.md) and
+[OEP-0026](docs/governance/oeps/OEP-0026-orange-2026-universal-words.md) in
+review.
+
 The [five-limb field definitions](algorithms/x25519/field25519-limbs.or)
 also give executable reconstruction, abstraction, tight/loose/canonical
 predicates, addition, carrying and canonicalization for p = 2^255 − 19.
@@ -1152,9 +1177,10 @@ cryptography.
 | Arrays, literals, and byte strings of up to 65,536 elements, and `orangec eval --steps`, `--spec`, and `--stats` | Working; specification in review ([OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md)) |
 | Known-answer tests `test "TITLE" { claim }` beside the functions, `==` on whole arrays and tuples, and `orangec test` | Working; specification in review ([OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md)) |
 | Shift and rotation amounts computed from data, `x <<< r` or `x >> (i % 8)`, with a value at every amount | Working; specification in review ([OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md)) |
+| Functions over every word width, with sizes checked once for every affine value | Working; specification in review ([OEP-0026](docs/governance/oeps/OEP-0026-orange-2026-universal-words.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Typed local argument decoding and Boolean witness replay (`orangec replay`) | Working; [tool contract](docs/WITNESS_REPLAY_2026.md) |
-| Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
+| Imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -1180,6 +1206,7 @@ cd orange
 # Build and try the compiler
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-sha3.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3v/valid-keccak.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --stats compiler/fixtures/s3p/valid-rfc8439.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
@@ -1279,7 +1306,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, and computed amounts in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, computed amounts, and universal word widths in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |

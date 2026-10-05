@@ -1,0 +1,98 @@
+// S3v conformance: Keccak-p[b, nr] from FIPS 202 (August 2015), written once
+// for every lane width. Lane (x, y) is A[x + 5y]. The round count is a size
+// checked for every value from 1 up to, but not including, 25, and the lane
+// type is every word width. SHA3-256 is Keccak-p[1600, 24]. Keccak-f[200] is
+// Keccak-p[200, 18].
+//
+// The Keccak-f[200] known answer is the permutation of the all-zero state
+// from XKCP's intermediate values, file
+// tests/TestVectors/KeccakF-200-IntermediateValues.txt. The final line of
+// the first example is the state after 18 rounds. That file was last changed
+// in commit 4017707cade3c1fd42f3c6fa984609db87606700 (2018-03-16, "Reshaped
+// the directory structure").
+// https://github.com/XKCP/XKCP/blob/4017707cade3c1fd42f3c6fa984609db87606700/tests/TestVectors/KeccakF-200-IntermediateValues.txt
+edition 2026;
+module keccak {
+  type Z5 = Mod[5];
+
+  spec theta[W: Word](a: W^25) -> W^25 {
+    let c: W^5 = for x in 0..5 with c: W^5 = [0; 5] {
+      c with [x] = a[x] ^ a[x + 5] ^ a[x + 10] ^ a[x + 15] ^ a[x + 20]
+    };
+    for i in 0..25 with b: W^25 = a {
+      b with [i] = a[i] ^ c[(i + 4) % 5] ^ (c[(i + 1) % 5] <<< 1)
+    }
+  }
+
+  spec rho_walk[W: Word](a: W^25) -> (W^25, Z5, Z5) {
+    for t in 0..24 with (b: W^25, x: Z5, y: Z5) = (a, 1, 0) {
+      (
+        b with [(x as Int) + 5 * (y as Int)] =
+          a[(x as Int) + 5 * (y as Int)] <<< (((t + 1) * (t + 2)) / 2),
+        y,
+        2 * x + 3 * y,
+      )
+    }
+  }
+
+  spec rho[W: Word](a: W^25) -> W^25 { rho_walk[W](a).0 }
+
+  spec pi[W: Word](a: W^25) -> W^25 {
+    for i in 0..25 with b: W^25 = a {
+      b with [i] = a[(((i % 5) + 3 * (i / 5)) % 5) + 5 * (i % 5)]
+    }
+  }
+
+  spec chi[W: Word](a: W^25) -> W^25 {
+    for i in 0..25 with b: W^25 = a {
+      b with [i] = a[i] ^ (~a[5 * (i / 5) + ((i + 1) % 5)] & a[5 * (i / 5) + ((i + 2) % 5)])
+    }
+  }
+
+  // rc(t) is bit 0 of an 8-bit register after t steps. Round i_r sets bit
+  // 2^j - 1 to rc(j + 7 i_r). The places past a lane's width shift to 0, so
+  // one walk serves every width: j runs through 6, and a narrower lane
+  // keeps only j through log2(w).
+  spec rc_walk[W: Word](places: Word[8]^7) -> (W^24, Word[16]) {
+    for t in 0..168 with (rc: W^24, r: Word[16]) = ([0; 24], 1) {
+      let next: Word[16] = r << 1;
+      let bit: W = if (r & 1) == 0 { 0 } else { 1 };
+      (
+        rc with [t / 7] = rc[t / 7] | (bit << places[t % 7]),
+        if (next & 0x100) == 0 { next } else { next ^ 0x171 },
+      )
+    }
+  }
+
+  spec round_constants[W: Word]() -> W^24 { rc_walk[W]([0, 1, 3, 7, 15, 31, 63]).0 }
+
+  spec keccak_p[W: Word, nr in 1..25](a: W^25) -> W^25 {
+    let rc: W^24 = round_constants[W]();
+    for round in 0..nr with s: W^25 = a {
+      let b: W^25 = chi[W](pi[W](rho[W](theta[W](s))));
+      b with [0] = b[0] ^ rc[round]
+    }
+  }
+
+  // SHA3-256 of "abc": one block, rate 136 bytes, pad 06 .. 80, then the
+  // first 32 bytes of Keccak-p[1600, 24].
+  spec sha3_256_abc() -> Word[8]^32 {
+    let block: Word[64]^17 = ("abc" ++ hex"06" ++ [0; 131] ++ hex"80") as little Word[64]^17;
+    let absorbed: Word[64]^25 = for i in 0..17 with s: Word[64]^25 = [0; 25] {
+      s with [i] = block[i]
+    };
+    keccak_p[Word[64], 24](absorbed)[..4] as little Word[8]^32
+  }
+
+  spec keccak_f200() -> Word[8]^25 { keccak_p[Word[8], 18]([0; 25]) }
+
+  test "FIPS 202 example: SHA3-256 of abc" {
+    sha3_256_abc() ==
+      hex"3a985da7 4fe225b2 045c172d 6bd390bd 855f086e 3e9d525b 46bfe245 11431532"
+  }
+
+  test "XKCP Keccak-f[200] of the all-zero state" {
+    keccak_f200() ==
+      hex"3c 28 26 84 1c b3 5c 17 1e aa e9 b8 11 13 4c ea a3 85 2c 69 d2 c5 ab af ea"
+  }
+}
