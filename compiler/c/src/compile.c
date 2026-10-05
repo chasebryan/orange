@@ -4807,13 +4807,17 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (expr->op == TK_BANG) {
+            /* Defined only for `Bool`. Rust reports ORC0215 and does not
+               typecheck the operand, so a rejected `!` does not add the
+               operand's own codes. */
             if (expected != TY_BOOL) {
                 char message[128];
                 snprintf(message, sizeof message, "prefix `!` is not defined for `%s`", type_spelling(expected));
                 add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
                          "`!` negates a `Bool`; `~` is the bitwise complement of a word", 2);
+                return 1;
             }
-            return check_expr(c, expr->left, expected == TY_BOOL ? TY_BOOL : expected, 0, func_index, locals_in_scope);
+            return check_expr(c, expr->left, TY_BOOL, 0, func_index, locals_in_scope);
         }
         if (expr->op == TK_MINUS && expected == TY_MOD) {
             return check_expr(c, expr->left, TY_MOD, 0, func_index, locals_in_scope);
@@ -4846,19 +4850,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_compare(c, index, expected, expected_len, func_index, locals_in_scope);
         }
         if (expr->op == TK_AMPAMP || expr->op == TK_PIPEPIPE) {
+            /* Defined only for `Bool`. Rust reports ORC0215 and does not
+               typecheck either operand. An array expected type keeps its
+               length in the message. */
             if (expected != TY_BOOL || expected_len != 0) {
                 char message[128];
-                snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op),
-                         type_spelling(expected));
+                char found[64];
+                write_type(found, sizeof found, expected, expected_len);
+                snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op), found);
                 add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
                          "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words", 2);
+                return 1;
             }
-            if (!check_expr(c, expr->left, expected_len == 0 && expected == TY_BOOL ? TY_BOOL : expected, expected_len,
-                            func_index, locals_in_scope)) {
+            if (!check_expr(c, expr->left, TY_BOOL, 0, func_index, locals_in_scope)) {
                 return 0;
             }
-            return check_expr(c, expr->right, expected_len == 0 && expected == TY_BOOL ? TY_BOOL : expected,
-                              expected_len, func_index, locals_in_scope);
+            return check_expr(c, expr->right, TY_BOOL, 0, func_index, locals_in_scope);
         }
         if (expected_len != 0) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",

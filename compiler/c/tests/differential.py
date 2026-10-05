@@ -416,6 +416,67 @@ def conversion_targets(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
+def logical_operators(rust_compiler: Path, c_compiler: Path) -> int:
+    """A rejected `!`, `&&`, or `||` is only ORC0215; a `Bool` operator still checks operands."""
+    cases = [
+        ("logic-bang-missing", module("  spec f() -> Word[8] { !missing }"), ["ORC0215"]),
+        ("logic-bang-true", module("  spec f() -> Word[8] { !true }"), ["ORC0215"]),
+        ("logic-bang-compare", module("  spec f() -> Word[8] { !(1 == 1) }"), ["ORC0215"]),
+        ("logic-bang-int", module("  spec f() -> Int { !(missing && also) }"), ["ORC0215"]),
+        ("logic-and-literals", module("  spec f() -> Int { true && false }"), ["ORC0215"]),
+        ("logic-and-missing", module("  spec f() -> Word[8] { missing && also }"), ["ORC0215"]),
+        ("logic-or-missing", module("  spec f() -> Int { missing || 1 }"), ["ORC0215"]),
+        ("logic-and-array", module("  spec f() -> Bool^2 { true && false }"), ["ORC0215"]),
+        ("logic-or-array", module("  spec f() -> Word[8]^4 { true || false }"), ["ORC0215"]),
+        ("logic-bang-array", module("  spec f(t: Bool^2) -> Bool^2 { !t }"), ["ORC0215"]),
+        ("logic-defined-missing", module("  spec f() -> Bool { missing || also }"), ["ORC0211", "ORC0211"]),
+        ("logic-defined-and-one", module("  spec f(b: Bool) -> Bool { missing && b }"), ["ORC0211"]),
+        ("logic-defined-literal", module("  spec f() -> Bool { true && 1 }"), ["ORC0214"]),
+        ("logic-defined-bang", module("  spec f() -> Bool { !1 }"), ["ORC0214"]),
+        (
+            "logic-defined-words",
+            module("  spec f(x: Word[8], y: Word[8]) -> Bool { x && y }"),
+            ["ORC0214", "ORC0214"],
+        ),
+        (
+            "logic-defined-condition",
+            module("  spec f(c: Bool) -> Int { if missing && c { 1 } else { 2 } }"),
+            ["ORC0211"],
+        ),
+    ]
+    failures = 0
+    for name, source, expected in cases:
+        if not compare_codes(rust_compiler, c_compiler, name, source):
+            failures += 1
+            continue
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / f"{name}.or")
+            Path(path).write_text(source)
+            observed = codes(run(c_compiler, ["check", path]).stderr)
+        if observed != expected:
+            failures += 1
+            print(f"FAIL check {name} expected {expected} got {observed}")
+    admitted = module(
+        "  spec f() -> Bool { !(true && false) || true }\n"
+        "  spec g(b: Bool) -> Bool { b && !b }\n"
+        "  spec t() -> Bool { g(true) }\n"
+        "  spec u() -> Bool { g(false) }\n"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory) / "logic-admitted.or")
+        Path(path).write_text(admitted)
+        rust = run(rust_compiler, ["eval", path])
+        c_result = run(c_compiler, ["eval", path])
+    if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout:
+        failures += 1
+        print("FAIL eval logic-admitted")
+        print(f"  rust {rust.returncode} {rust.stdout!r} {codes(rust.stderr)}")
+        print(f"  c    {c_result.returncode} {c_result.stdout!r} {codes(c_result.stderr)}")
+    else:
+        print("ok   eval logic-admitted")
+    return failures
+
+
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -499,6 +560,7 @@ def main() -> int:
     failures += loop_bound_magnitude(rust_compiler, c_compiler)
     failures += index_chain_and_loop_recovery(rust_compiler, c_compiler)
     failures += conversion_targets(rust_compiler, c_compiler)
+    failures += logical_operators(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
