@@ -219,6 +219,102 @@ def loop_bound_magnitude(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
+def index_chain_and_loop_recovery(rust_compiler: Path, c_compiler: Path) -> int:
+    """A second index of a scalar is ORC0224, and a failed loop step is not ORC0104."""
+    chain = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let t: Word[8]^3 = [1, 2, 3]; t[0][1] }\n"
+        "}\n"
+    )
+    chain3 = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let t: Word[8]^3 = [1, 2, 3]; t[0][1][2] }\n"
+        "}\n"
+    )
+    past = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let t: Word[8]^4 = [1, 2, 3, 4]; t[4][0] }\n"
+        "}\n"
+    )
+    unbound = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let t: Word[8]^4 = [1, 2, 3, 4]; let k: Int = 0; t[k][0] }\n"
+        "}\n"
+    )
+    called = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec g() -> Word[8]^3 { [1, 2, 3] }\n"
+        "  spec f() -> Word[8] { g()[0][1] }\n"
+        "}\n"
+    )
+    scalar = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let x: Word[8] = 1; x[0][1] }\n"
+        "}\n"
+    )
+    loop_chain = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { for i in 0..3 with r: Word[8]^3 = [1, 2, 3] { r[i][0] } }\n"
+        "}\n"
+    )
+    step_only = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8]^3 { for i in 0..3 with r: Word[8]^3 = [1, 2, 3] { r[i][0] } }\n"
+        "}\n"
+    )
+    two_exprs = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Int { for i in 0..2 with s: Int = 0 { 1 2 } }\n"
+        "}\n"
+    )
+    fill_index = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8]^3 { for i in 0..3 with r: Word[8]^3 = [0; 3] { r with [i] = [7; 3][i] } }\n"
+        "}\n"
+    )
+    unclosed = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Int { for i in 0..2 with s: Int = 0 { (1 } }\n"
+        "}\n"
+    )
+    empty = (
+        "edition 2026;\n"
+        "module m {\n"
+        "  spec f() -> Word[8] { let t: Word[8]^3 = [1, 2, 3]; t[0][] }\n"
+        "}\n"
+    )
+    cases = [
+        ("index-chain", chain),
+        ("index-chain-three", chain3),
+        ("index-chain-past-end", past),
+        ("index-chain-unbounded", unbound),
+        ("index-chain-call", called),
+        ("index-chain-scalar", scalar),
+        ("index-chain-loop", loop_chain),
+        ("index-chain-step", step_only),
+        ("loop-step-two-exprs", two_exprs),
+        ("loop-step-fill-index", fill_index),
+        ("loop-step-unclosed", unclosed),
+        ("index-chain-empty", empty),
+    ]
+    failures = 0
+    for name, source in cases:
+        if not compare_codes(rust_compiler, c_compiler, name, source):
+            failures += 1
+    return failures
+
+
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -300,6 +396,7 @@ def main() -> int:
         print("ok   lex valid-int-arithmetic.or")
 
     failures += loop_bound_magnitude(rust_compiler, c_compiler)
+    failures += index_chain_and_loop_recovery(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
