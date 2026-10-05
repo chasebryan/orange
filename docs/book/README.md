@@ -108,22 +108,31 @@ understand each operation rather than memorize its notation.
   three of them intentionally rejected. Sixteen exercises with worked
   answers. N11 is a provisional label. It is not manuscript Chapter 11,
   *Standards as Versioned Inputs*.
+- **N12.** [The First Complete Study](NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md#n12-the-first-complete-study):
+  the ChaCha20 block function of RFC 8439 §2.3, including the quarter
+  round of §2.1, derived by hand and transcribed in Orange against the
+  §2.3.2 vector. The lesson separates a mathematical property, a test,
+  and an implementation behavior, and it stops at the block function.
+  Twelve exercises with worked answers. The four outcomes in that section
+  are the finish line. N12 is a provisional label. It is not a manuscript
+  chapter numeral.
 
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
-corrected source. Chapters 4–6, N7, N8, N9, N10, and N11, and the new executable checks remain
+corrected source. Chapters 4–6, N7, N8, N9, N10, N11, and N12, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
 worked answers. N7 adds twelve further exercises in its own file. N8 adds
 ten further exercises in its own file. N9 adds 20. N10 adds sixteen
 further exercises, numbered N10.1 onward. N11 adds sixteen further
-exercises, numbered N11.1 onward.
+exercises, numbered N11.1 onward. N12 adds twelve further exercises,
+numbered N12.1 onward.
 
 ### Remaining teaching sequence
 
 Item 1 is drafted as N7. Item 2 is drafted as N8. Item 3 is drafted as N9
 and listed above. Item 4 is drafted as N10. Item 5 is drafted as N11.
-Item 6 has not been written. Extend the manuscript in the following dependency order:
+Item 6 is drafted as N12. Extend the manuscript in the following dependency order:
 
 1. **Name the Intermediate Step.** Drafted in
    [N7](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step).
@@ -155,9 +164,13 @@ Item 6 has not been written. Extend the manuscript in the following dependency o
    in N11 are the finish line. The label is provisional. Final numbering
    waits on the integration plan. Do not introduce a practical primitive
    before its prerequisites.
-6. **The First Complete Study.** A supported small Orange construction,
-   a hand-derived expected result, documented tests, a deliberate error,
-   a repair, and a precisely scoped explanation of what was established.
+6. **The First Complete Study.** Drafted as
+   [N12](NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md#n12-the-first-complete-study).
+   The ChaCha20 block function of RFC 8439 §2.3, with the quarter round
+   of §2.1, a hand-derived expected result, a transcription, a deliberate
+   error, a repair, and a precisely scoped explanation of what was
+   established. The four outcomes in N12 are the finish line. The label
+   is provisional. Final numbering waits on the integration plan.
 
 The readiness check for Part 2 is demonstrated reasoning, not a certificate
 or an assertion that reading alone confers competence. The reader should be
@@ -351,6 +364,7 @@ New drafting and integration through Chapters 4–6 are AI-assisted with
 ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lessons N8 and N9
 are AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
 direction. Lesson N11 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
-at the owner's direction. The opening is owner-approved; continuation, N8, N9, and N11 review are
+at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
+2026-10-05, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N11, and N12 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
