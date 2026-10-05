@@ -7,8 +7,9 @@ By Chase Bryan
 Continuation: Chapters 4–6. Draft 2026-10-05.
 
 Continue from [A Rule You Can Undo](NOVICE_OPENING.md#chapter-3-a-rule-you-can-undo).
-The opening is unchanged. The language examples below target the compiler
-source at `21ae40f77b691099b41ee22990bad3322350eb46`, the baseline of this
+Corrections to the opening's worked examples do not alter the listings
+below. Those listings target the compiler source at
+`21ae40f77b691099b41ee22990bad3322350eb46`, the baseline of this
 continuation. Implementation is not acceptance of a language proposal.
 See [the evidence boundary](#evidence-boundary) for what has been checked.
 

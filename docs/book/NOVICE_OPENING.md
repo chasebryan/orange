@@ -196,10 +196,10 @@ or a computer program.
 The specification says what must happen. An implementation may or may not
 do it correctly. Giving both the same name does not establish agreement.
 
-Try the input `A B`. The specified output is `B A`. A method that reverses
-the letters in each word but leaves the words in place would instead return
-`A B`. One short input has exposed a difference that the vague instruction
-concealed.
+Try the input `AB C`. The specified output is `C BA`. Reversing the letters
+inside each word, while leaving the words in place, returns `BA C`.
+Reversing the order of the words returns `C AB`. The three results differ,
+so this input separates the three readings the short instruction allowed.
 
 ### 1.5 What one successful example establishes
 
@@ -442,8 +442,14 @@ That makes four strings. With three positions, put `0` before each of those
 four strings, then put `1` before each. You have eight strings, with no
 repetition and none missing.
 
-Adding one unrestricted bit position doubles the number of possible
-strings. It does not merely add one possibility.
+The same step works at every finite length. From each existing string, form
+one new string by writing `0` in front and another by writing `1` in front.
+Every string of the new length begins with exactly one of those bits and
+continues with exactly one old string. The construction therefore misses
+none and counts none twice, so the new count is twice the old count. Adding
+a bit does not merely add one possibility.
+
+The counts below are that doubling, from one position through eight.
 
 ```text
 Positions:       1   2   3    4    5    6     7     8
@@ -832,18 +838,19 @@ Both give one. The first combines the left pair, producing zero, and then
 combines zero with one. The second combines the right pair first, with the
 same final result.
 
-For XOR, this agreement holds for every three input bits. We can establish
-it by listing all eight cases, or by observing that each input one toggles
-the accumulated result. An even number of ones leaves zero; an odd number
-leaves one. The number of ones, not their grouping, determines the result.
-Exercise 3.7 asks you to check the complete table rather than accept that
-observation without inspection.
-
 An **even** whole number can be divided into pairs without anything left
 over. An **odd** whole number leaves one over. The word **parity** names this
-even-or-odd distinction. Repeated XOR of bits records the parity of the
-number of ones. Three ones therefore give one, despite not containing
-exactly one one.
+even-or-odd distinction.
+
+For XOR, this agreement holds for every three input bits. We can establish
+it by listing all eight cases, or by observing that each input one toggles
+the accumulated result, starting from zero. An even number of ones leaves
+zero; an odd number leaves one. The number of ones, not their grouping,
+determines the result. Exercise 3.7 asks you to check the complete table
+rather than accept that observation without inspection.
+
+Repeated XOR of bits records the parity of the number of ones. Three ones
+therefore give one, despite not containing exactly one one.
 
 Do not generalize this freedom of grouping to unrelated operations. Compare:
 
@@ -974,9 +981,11 @@ accurate. Its name does not make it the operation proved correct.
 are sixteen, zero, four, two, zero. The total is twenty-two.
 
 **2.2.** Nineteen minus sixteen leaves three; three minus two leaves one;
-one minus one leaves zero. The eight-bit representation is `00010011`,
-and its hex representation is `0x13`. The hexadecimal `1` contributes
-sixteen, not ten.
+one minus one leaves zero. The eight-bit representation is `00010011`.
+Grouped by fours, that is `0001 0011`, or `0x13`. The leading hex digit
+contributes `1 × 16 = 16`, and the last digit contributes `3`, so
+`(1 × 16) + 3 = 19`. A leading `1` in the decimal numeral 19 would
+contribute ten instead.
 
 **2.3.** Five unrestricted positions give `2⁵ = 32` strings. The largest
 unsigned value is `11111`, or `16 + 8 + 4 + 2 + 1 = 31`. Zero is one of
