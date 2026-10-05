@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-02
+Snapshot: 2026-10-05
 
-Manuscript version: 0.26
+Manuscript version: 0.27
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -6629,10 +6629,12 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [byte order specification](ORDER_2026.md), the
 [type parameters specification](TYPE_PARAMETERS_2026.md), the
 [lengths specification](LENGTHS_2026.md), the
-[tests specification](TESTS_2026.md), and the
-[computed amounts specification](AMOUNTS_2026.md) are proposed under
-OEP-0005 through OEP-0021 and in the owner's review. Where this summary and those
-documents differ, they control.
+[tests specification](TESTS_2026.md), the
+[computed amounts specification](AMOUNTS_2026.md), the
+[nested arrays specification](NESTED_ARRAYS_2026.md), and the
+[static moduli specification](STATIC_MODULI_2026.md) are proposed under
+OEP-0005 through OEP-0021, OEP-0023, and OEP-0024 and in the owner's review.
+Where this summary and those documents differ, they control.
 
 ### Grammar
 
@@ -6755,7 +6757,8 @@ included.
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
 | `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
-| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `T^n` | Sequences of exactly n values of a scalar type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `Row^n` where `type Row = S^k` | Rank-two rectangular arrays: n rows of k scalars each, at most 65,536 scalar leaves in all (S3s) | Nested arrays in row order, with the same spelling as their type |
 | `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
 No other type, width, or length is accepted; a name declared by `type` stands
@@ -6777,7 +6780,12 @@ and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
 conditionals. An update, a fill, a join, a slice, or a slice update costs one
 evaluation step per 64 elements of the array it builds, or part of 64, and a
 byte string costs one. No operator but `++`, and no conversion without a byte
-order, applies to a whole array, and an array's elements are never arrays. A byte string `"..."`
+order, applies to a whole array. An array's elements are scalars, or, under
+S3s, exact scalar rows named by a `type` alias such as `type Row = Word[8]^4`
+and written `Row^n`; there is no third dimension, and neither arrays of
+tuples nor tuples of matrices as array elements are admitted. A modulus may
+use a function's own finite size names under S3t, each instance checked with
+its exact concrete residue domain. A byte string `"..."`
 of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
 `\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
 of its bytes. `a ++ b` is the elements of a followed by those of b, of one
@@ -7091,10 +7099,10 @@ controls how far its prose may go.
 | IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.20 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
-| V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
+| V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3; revised in v0.25 | Local Boolean witness replay exists; package-level offline replay remains a product direction |
 | V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.20 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.20 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised through v0.27 | Must track the normative repository state, including S3s/S3t |
 
 ## Sources and drafting disclosure
 
@@ -7173,6 +7181,9 @@ its typed value boundary, numeric instance selection and reference-only outcomes
 Version 0.26 adds partial P4 mathematical product preparation alongside the
 existing P2 representation definitions, with exact accumulators and three
 normalization passes; it adds no P3 proof or P4 completion claim.
+Version 0.27 aligns Appendix A with the implemented S3s and S3t surface,
+corrects the array-rank summary, and points readers at the documentation
+index in [`docs/README.md`](README.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7358,6 +7369,18 @@ witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
 execution supplies no proof, solver selection, D-009 candidate credit, atomic
 claim authority or release acceptance.
+
+Manuscript version 0.26 documents partial P4 mathematical product preparation
+beside the existing P2 limb definitions. Codex using GPT-6.1 prepared these
+changes under Chase Bryan's 2026-10-05 direction. The semantic boundary remains
+S3t in review; exact accumulators and normalization passes supply no P3 proof,
+P4 completion, refinement, or release acceptance.
+
+Manuscript version 0.27 revises Appendix A so its type and array-rank summary
+matches the implemented S3s and S3t surface, and records the documentation
+index. Cursor Agent prepared these changes under Chase Bryan's 2026-10-05
+direction. The proposals remain in review; no foundational decision, proof, or
+release is inferred.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

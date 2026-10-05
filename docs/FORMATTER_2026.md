@@ -129,7 +129,9 @@ and resource rejection have separate negative cases.
 
 The formatter is permanent frontend tooling, with no third-party dependency.
 It supplies one part of the developer-tool path in
-[`RELEASE_1_0_EXECUTION.md`](RELEASE_1_0_EXECUTION.md). Language-server,
-documentation-generator, package/evidence and complete journey obligations
-remain open. Repository tests and merge do not accept semantic OEPs, close
-foundational decisions or authorize publication.
+[`RELEASE_1_0_EXECUTION.md`](RELEASE_1_0_EXECUTION.md). The syntax-only
+documentation generator is likewise permanent frontend tooling under
+[`DOCUMENTATION_2026.md`](DOCUMENTATION_2026.md). Language-server,
+package/evidence and complete journey obligations remain open. Repository
+tests and merge do not accept semantic OEPs, close foundational decisions or
+authorize publication.

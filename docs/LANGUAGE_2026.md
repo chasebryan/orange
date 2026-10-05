@@ -5,7 +5,7 @@ additively extended with accepted S3a syntax under D-026 and OEP-0003
 
 Edition: `2026`
 
-Snapshot: 2026-07-26
+Snapshot: 2026-10-05
 
 This document defines the complete lexical and syntactic language accepted by
 the Orange 2026 parser. It is intentionally small. Acceptance establishes only
