@@ -230,6 +230,18 @@ constructions, then investigate representation, composition and implementation
 hazards. Establish algorithm prerequisites before presenting the algorithm.
 Orange is the working language, not decoration around prose.
 
+- **J2.** [Standards as Versioned Inputs](JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md#j2-standards-as-versioned-inputs):
+  a standard is a pinned edition, not a title. The reader separates an RFC
+  from an erratum filed against it and from the RFC that obsoletes it, and
+  separates a FIPS publication from the date on its cover, including an
+  update. An Orange `test` carries one expected value back to one section
+  of one edition. A constant two editions print alike does not, by matching,
+  choose the edition. One deliberate mismatch fails under `orangec test`.
+  The six outcomes in that section are the finish line. The locked label is
+  J2. It is not manuscript Chapter 11, *Standards as Versioned Inputs*. The
+  manuscript chapter keeps that number. This lesson does not transcribe the
+  SHA-256 compression function or its message schedule.
+
 ### Existing manuscript integrated here
 
 | Existing chapter | Role in the new progression |
@@ -434,6 +446,7 @@ at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the
 owner's direction. Lesson N14, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, and N14 review are
+direction. Lesson J2 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
+at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, and J2 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

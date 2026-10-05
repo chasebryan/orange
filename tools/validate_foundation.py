@@ -613,6 +613,7 @@ docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
 docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md
