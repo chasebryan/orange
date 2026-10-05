@@ -494,11 +494,17 @@ typedef struct InstParam {
 
 typedef struct Diag {
     const char *code;
-    char message[192];
-    char label[128];
+    char message[384];
+    char label[192];
     char note[320];
+    char note2[320];
+    char sec_label[192];
     uint32_t start;
     uint32_t end;
+    uint32_t sec_start;
+    uint32_t sec_end;
+    uint8_t has_sec;
+    uint8_t has_note2;
 } Diag;
 
 typedef struct Value {
@@ -688,6 +694,14 @@ static int span_is(const Compiler *c, uint32_t start, uint32_t end, const char *
     return (size_t)(end - start) == length && memcmp(c->text + start, word, length) == 0;
 }
 
+static void found_token_label(TokenKind kind, char *buf, size_t cap) {
+    const char *name = "EOF";
+    if ((unsigned)kind < sizeof TOKEN_NAMES / sizeof TOKEN_NAMES[0]) {
+        name = TOKEN_NAMES[kind];
+    }
+    snprintf(buf, cap, "found %s", name);
+}
+
 static void span_copy(char *dest, size_t cap, const char *text, uint32_t start, uint32_t end) {
     size_t length = end >= start ? (size_t)(end - start) : 0;
     if (length >= cap) {
@@ -740,6 +754,21 @@ static void add_diag(Compiler *c, const char *code, uint32_t start, uint32_t end
     copy_text(diag->message, sizeof diag->message, message);
     copy_text(diag->label, sizeof diag->label, label == NULL ? "" : label);
     copy_text(diag->note, sizeof diag->note, note == NULL ? "" : note);
+}
+
+static void diag_add_secondary(Compiler *c, uint32_t start, uint32_t end, const char *label) {
+    Diag *diag;
+    if (c->ndiags == 0) {
+        return;
+    }
+    diag = &c->diags[c->ndiags - 1];
+    if (diag->has_sec) {
+        return;
+    }
+    diag->has_sec = 1;
+    diag->sec_start = start;
+    diag->sec_end = end;
+    copy_text(diag->sec_label, sizeof diag->sec_label, label == NULL ? "" : label);
 }
 
 static void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message) {
@@ -1051,11 +1080,27 @@ static void lex_source(Compiler *c) {
                              "this hex string is never closed",
                              "pre-alpha Orange strings cannot cross a line boundary", 0);
                 } else if (bad || pending) {
-                    uint32_t at = (uint32_t)(pending && !bad ? offense : offense);
-                    add_diag(c, "ORC0009", at, at + 1,
-                             lone || pending ? "hex digit has no partner" : "malformed hex string",
-                             "a byte is written as two hex digits",
-                             "a hex string holds bytes written as pairs of hex digits", 0);
+                    uint32_t at = (uint32_t)offense;
+                    unsigned char ch = at < c->length ? (unsigned char)c->text[at] : 0;
+                    char message[80];
+                    const char *label;
+                    if (lone || (pending && !bad)) {
+                        snprintf(message, sizeof message, "hex digit '%c' has no partner", ch);
+                        label = "a byte is written as two hex digits";
+                    } else if (ch == '\\') {
+                        snprintf(message, sizeof message, "'\\' cannot appear in a hex string");
+                        label = "a hex string has no escapes";
+                    } else if (ch >= 0x21 && ch <= 0x7e) {
+                        snprintf(message, sizeof message, "'%c' cannot appear in a hex string", ch);
+                        label = "not a hex digit or a space";
+                    } else {
+                        snprintf(message, sizeof message, "U+%04X cannot appear in a hex string", ch);
+                        label = "not a hex digit or a space";
+                    }
+                    add_diag(c, "ORC0009", at, at + 1, message, label,
+                             "a hex string holds bytes written as pairs of hex digits, as in `hex\"00 1f a0\"`; spaces "
+                             "may separate bytes but not split one",
+                             0);
                 }
                 (void)body;
                 if (!push_token(c, TK_HEX, (uint32_t)start, (uint32_t)cursor)) {
@@ -1564,7 +1609,9 @@ static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int
     memset(type, 0, sizeof *type);
     if (name.kind != TK_IDENT) {
         if (as_element) {
-            add_diag(c, "ORC0101", name.start, name.end, "expected an element type", "expected an element type",
+            char label[64];
+            found_token_label(name.kind, label, sizeof label);
+            add_diag(c, "ORC0101", name.start, name.end, "expected an element type", label,
                      "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of them; a tuple holds no tuple",
                      1);
         } else {
@@ -1594,7 +1641,9 @@ static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int
         leave_nest(c);
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the modulus", "found a different token",
+            char label[64];
+            found_token_label(close.kind, label, sizeof label);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the modulus", label,
                      "a modulus type is written `Mod[MODULUS]`, as in `Mod[(1 << 255) - 19]`", 1);
             type->end = close.end;
             return 0;
@@ -1669,15 +1718,20 @@ static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int
                 advance_token(c);
             }
             if (peek_kind(c) == TK_CARET) {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
                 add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                         "expected the end of the type after its array length", "repeated array length",
-                         "arrays of arrays are not part of this slice", 1);
+                         "expected the end of the type after its array length", label,
+                         "name the row type with a `type` declaration, then write `Row^LENGTH`; repeated `^` dimensions "
+                         "are not type syntax",
+                         1);
                 return 0;
             }
             if (size_operator(peek_kind(c))) {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
                 add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                         "expected the end of the type after its array length", "found an operator", COMPUTED_LENGTH_NOTE,
-                         1);
+                         "expected the end of the type after its array length", label, COMPUTED_LENGTH_NOTE, 1);
                 return 0;
             }
             if (sized) {
@@ -1792,8 +1846,10 @@ static int parse_tuple_type(Compiler *c, DeclaredType *type) {
     }
     close = peek_token(c);
     if (count < 2) {
-        add_diag(c, "ORC0101", close.start, close.end, "expected `,` and another element type", "expected another element type",
-                 TUPLE_TYPE_NOTE, 1);
+        char label[64];
+        found_token_label(close.kind, label, sizeof label);
+        add_diag(c, "ORC0101", close.start, close.end, "expected `,` and another element type", label, TUPLE_TYPE_NOTE,
+                 1);
         if (close.kind == TK_RPAREN) {
             advance_token(c);
         } else {
@@ -1821,8 +1877,10 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
             return 0;
         }
         if (allow_array && peek_kind(c) == TK_CARET) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the end of the type after the tuple",
-                     "an array cannot hold tuples",
+                     label,
                      "an array's elements are `Int`, `Bool`, words, or residues; arrays of tuples are not part of Orange 2026",
                      1);
             return 0;
@@ -1891,11 +1949,30 @@ static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint
         return;
     }
     if (end >= start + 4 && memcmp(c->text + start, "Word", 4) == 0) {
-        add_diag(c, "ORC0204", start, end, "word width must be 8, 16, 32, or 64",
-                 "this width is not admitted", "write Word[8], Word[16], Word[32], or Word[64]", 2);
+        if (end >= start + 5 && c->text[start + 4] == '[') {
+            uint32_t width_start = start + 5;
+            uint32_t width_end = end;
+            if (width_end > width_start && c->text[width_end - 1] == ']') {
+                width_end--;
+            }
+            add_diag(c, "ORC0204", width_start, width_end, "`Word` width must be exactly 8, 16, 32, or 64",
+                     "unsupported word width", "word widths do not coerce, truncate, or wrap", 2);
+        } else {
+            add_diag(c, "ORC0204", start, start + 4, "`Word` requires an exact width of 8, 16, 32, or 64",
+                     "missing word width", "write the width in decimal, as in `Word[32]`", 2);
+        }
     } else {
-        add_diag(c, "ORC0203", start, end, "type is outside the admitted fragment",
-                 "unsupported type", "admitted types are Int and Word[8], Word[16], Word[32], and Word[64]", 2);
+        char message[160];
+        char name[80];
+        size_t length = end > start ? (size_t)(end - start) : 0;
+        if (length >= sizeof name) {
+            length = sizeof name - 1;
+        }
+        memcpy(name, c->text + start, length);
+        name[length] = '\0';
+        snprintf(message, sizeof message, "unsupported type `%s`", name);
+        add_diag(c, "ORC0203", start, end, message, "unsupported type",
+                 "types are resolved contextually and never inferred by spelling similarity", 2);
     }
     (void)type;
 }
@@ -1934,6 +2011,14 @@ static int continue_product(Compiler *c, uint32_t left, uint32_t *out) {
     return 1;
 }
 
+static int token_word(const Compiler *c, Token token, const char *word) {
+    return token.kind == TK_IDENT && span_is(c, token.start, token.end, word);
+}
+
+static int is_shift_kind(TokenKind kind) {
+    return kind == TK_LSHIFT || kind == TK_RSHIFT || kind == TK_ROL || kind == TK_ROR;
+}
+
 static int ungrouped(Compiler *c, Token token, Token previous) {
     char message[160];
     char previous_text[32];
@@ -1951,9 +2036,35 @@ static int ungrouped(Compiler *c, Token token, Token previous) {
     memcpy(current_text, c->text + token.start, current_len);
     current_text[current_len] = '\0';
     snprintf(message, sizeof message, "`%s` follows `%s` without grouping parentheses", current_text, previous_text);
-    add_diag(c, "ORC0108", token.start, token.end, message, "ungrouped operator",
-             "operators from different groups have no relative precedence in Orange; parenthesize the part that applies first",
-             1);
+    {
+        const char *note =
+            "operators from different groups have no relative precedence in Orange; parenthesize the part that applies first";
+        int previous_as = token_word(c, previous, "as");
+        int current_as = token_word(c, token, "as");
+        int previous_with = token_word(c, previous, "with");
+        int current_with = token_word(c, token, "with");
+        int previous_shift = is_shift_kind(previous.kind);
+        int current_shift = is_shift_kind(token.kind);
+        int previous_div = previous.kind == TK_SLASH || previous.kind == TK_PERCENT;
+        int current_div = token.kind == TK_SLASH || token.kind == TK_PERCENT;
+        int previous_cmp = is_compare_op(previous.kind);
+        int current_cmp = is_compare_op(token.kind);
+        if (previous_with || current_with) {
+            note = "`with` updates exactly one array; parenthesize the update or the expression it updates";
+        } else if (previous_as && token.kind == TK_CARET) {
+            note = "`as` converts exactly one operand; parenthesize the conversion or the expression it converts. For "
+                   "an array type, name a byte order first, as in `as big Word[32]^16`";
+        } else if (previous_as || current_as) {
+            note = "`as` converts exactly one operand; parenthesize the conversion or the expression it converts";
+        } else if (previous_shift && current_shift) {
+            note = "a shift or rotation takes exactly two operands; parenthesize one of them";
+        } else if (previous_div && current_div) {
+            note = "`/` and `%` take exactly two operands; parenthesize one of them";
+        } else if (previous_cmp && current_cmp) {
+            note = "a comparison takes exactly two operands; join two comparisons with `&&` or `||`";
+        }
+        add_diag(c, "ORC0108", token.start, token.end, message, "ungrouped operator", note, 1);
+    }
     skip_expr_tail(c);
     return 1;
 }
@@ -1982,9 +2093,13 @@ static int finish_index_node(Compiler *c, uint32_t base, uint32_t end, ExprKind 
 }
 
 static const char SLICE_BOUND_NOTE[] =
-    "a slice `x[a..b]` holds the b - a elements from index a, and at least one bound is written";
+    "a slice is written `x[a..b]`, the elements of `x` from index a up to but not including index b, or `x[a..]` or "
+    "`x[..b]` to run to the end or from the start";
 static const char SLICE_UPDATE_NOTE[] =
     "`x with [a..b] = v` is the array `x` with its elements from index a up to b replaced by those of v";
+static const char PARSER_SLICE_UPDATE_NOTE[] =
+    "a slice update is written `x with [a..b] = values`, the array `x` with its elements from index a up to but not "
+    "including index b replaced";
 
 /* The current token is `..`. `start_expr` is UINT32_MAX when the start is omitted. */
 static int parse_slice_range(Compiler *c, uint32_t start_expr, uint32_t *end_expr, uint32_t *range_start,
@@ -2006,8 +2121,9 @@ static int parse_slice_range(Compiler *c, uint32_t start_expr, uint32_t *end_exp
     }
     if (start_expr == UINT32_MAX && end == UINT32_MAX) {
         Token at = peek_token(c);
-        add_diag(c, "ORC0101", at.start, at.end, "expected a bound of the slice after `..`", "a slice needs a bound",
-                 note, 1);
+        char label[64];
+        found_token_label(at.kind, label, sizeof label);
+        add_diag(c, "ORC0101", at.start, at.end, "expected a bound of the slice after `..`", label, note, 1);
         return 0;
     }
     *range_start = start_expr != UINT32_MAX ? c->exprs[start_expr].start : dots.start;
@@ -2050,8 +2166,10 @@ static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
     open = peek_token(c);
     advance_token(c);
     if (peek_kind(c) == TK_RBRACKET) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an index after `[`", "empty index",
-                 "an index is an integer literal or an expression", 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an index after `[`", label,
+                 "an array element is selected by an index, such as `x[0]` or `x[i + 1]`", 1);
         return 0;
     }
     index = peek_token(c);
@@ -2072,8 +2190,9 @@ static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
         leave_nest(c);
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", "unclosed slice",
-                     SLICE_BOUND_NOTE, 1);
+            char label[64];
+            found_token_label(close.kind, label, sizeof label);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", label, SLICE_BOUND_NOTE, 1);
             return 0;
         }
         advance_token(c);
@@ -2091,8 +2210,9 @@ static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
         leave_nest(c);
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", "unclosed slice",
-                     SLICE_BOUND_NOTE, 1);
+            char label[64];
+            found_token_label(close.kind, label, sizeof label);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", label, SLICE_BOUND_NOTE, 1);
             return 0;
         }
         advance_token(c);
@@ -2121,8 +2241,10 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
         }
         if (c->exprs[*out].kind == EX_SLICE) {
             if (peek_kind(c) == TK_LBRACKET) {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
                 add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                         "expected an operator or the end of the expression", "a slice is taken once",
+                         "expected an operator or the end of the expression", label,
                          "a slice is taken once, from a name, a call, or a tuple's element; bind it with `let` to select from it",
                          1);
                 return 0;
@@ -2197,13 +2319,17 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
         advance_token(c);
         position = peek_token(c);
         if (position.kind != TK_INT) {
+            char label[64];
+            found_token_label(position.kind, label, sizeof label);
             add_diag(c, "ORC0101", position.start == dot.end ? dot.start : position.start, position.end,
-                     "expected an element's position after `.`", "expected a position", POSITION_NOTE, 1);
+                     "expected an element's position after `.`", label, POSITION_NOTE, 1);
             return 0;
         }
         if (!canonical_position(c->text, position.start, position.end, &pos)) {
-            add_diag(c, "ORC0101", position.start, position.end, "expected an element's position in decimal",
-                     "expected a decimal position", POSITION_NOTE, 1);
+            char label[64];
+            found_token_label(position.kind, label, sizeof label);
+            add_diag(c, "ORC0101", position.start, position.end, "expected an element's position in decimal", label,
+                     POSITION_NOTE, 1);
             advance_token(c);
             return 0;
         }
@@ -2217,8 +2343,10 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
             }
         }
         if (peek_kind(c) == TK_DOT) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "expected an operator or the end of the expression", "an element is selected once",
+                     "expected an operator or the end of the expression", label,
                      "a tuple's elements are not tuples, so an element is selected once", 1);
             return 0;
         }
@@ -2229,8 +2357,10 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
             return 0;
         }
         if (peek_kind(c) == TK_DOT) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "expected an operator or the end of the expression", "an element has no `.k`",
+                     "expected an operator or the end of the expression", label,
                      "an array's elements are not tuples, so an element has no `.k`", 1);
             return 0;
         }
@@ -2249,8 +2379,10 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         return 0;
     }
     if (peek_kind(c) == TK_RBRACKET) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an array element",
-                 "an array has at least one element", "Orange 2026 has no empty arrays in this slice", 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an array element", label,
+                 "an array has at least one element; Orange 2026 has no empty arrays", 1);
         leave_nest(c);
         return 0;
     }
@@ -2274,8 +2406,10 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
                 return 0;
             }
         } else if (length.kind != TK_INT) {
-            add_diag(c, "ORC0101", length.start, length.end, "expected a fill length", "expected an integer length",
-                     "a fill literal is `[element; length]`", 1);
+            char label[64];
+            found_token_label(length.kind, label, sizeof label);
+            add_diag(c, "ORC0101", length.start, length.end, "expected an array length after `;`", label,
+                     "`[e; n]` is the array of n copies of e, such as `[0; 64]`", 1);
             leave_nest(c);
             return 0;
         } else {
@@ -2284,7 +2418,9 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
             if (size_operator(close.kind)) {
-                add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the array length", "found an operator",
+                char label[64];
+                found_token_label(close.kind, label, sizeof label);
+                add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the array length", label,
                          COMPUTED_FILL_NOTE, 1);
             } else {
                 add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed fill literal", NULL, 1);
@@ -2399,8 +2535,10 @@ static int parse_pattern_name(Compiler *c, Local *local) {
     local->name_end_at = name.end;
     advance_token(c);
     if (peek_kind(c) != TK_COLON) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the type of the name",
-                 "a pattern states each type", PATTERN_NOTE, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the type of the name", label,
+                 PATTERN_NOTE, 1);
         return 0;
     }
     advance_token(c);
@@ -2447,8 +2585,10 @@ static int parse_tuple_pattern(Compiler *c, Local *dest, uint16_t room, uint16_t
         break;
     }
     if (n < 2) {
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` and another name in the pattern",
-                 "expected another name", PATTERN_NOTE, 1);
+                 label, PATTERN_NOTE, 1);
         if (peek_kind(c) == TK_RPAREN) {
             advance_token(c);
         }
@@ -2521,9 +2661,10 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
                 return 0;
             }
             if (peek_kind(c) != TK_SEMI) {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
                 add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression",
-                         "each binding ends with `;`", "each binding ends with `;`; the block's last item is its value",
-                         1);
+                         label, "each binding ends with `;`; the block's last item is its value", 1);
                 free(pending);
                 return 0;
             }
@@ -2553,8 +2694,10 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
         local->name_end_at = name.end;
         advance_token(c);
         if (peek_kind(c) != TK_COLON) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the binding's type",
-                     "a binding states its type", note, 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the binding's type", label,
+                     "every binding states its type, as in `let t: Word[32] = x + y;`", 1);
             free(pending);
             return 0;
         }
@@ -2584,8 +2727,10 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
             return 0;
         }
         if (peek_kind(c) != TK_SEMI) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression",
-                     "each binding ends with `;`", "each binding ends with `;`; the block's last item is its value", 1);
+                     label, "each binding ends with `;`; the block's last item is its value", 1);
             free(pending);
             return 0;
         }
@@ -2607,8 +2752,10 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
         }
     }
     if (*nbinds > 0 && peek_kind(c) == TK_RBRACE) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a value after the last binding",
-                 "a block ends with its value", note, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a value after the last binding", label,
+                 note, 1);
         free(pending);
         return 0;
     }
@@ -2690,8 +2837,10 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     }
     if (peek_kind(c) != TK_DOTDOT) {
         if (size_operator(peek_kind(c))) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..` between the loop's bounds",
-                     "found an operator", COMPUTED_BOUND_NOTE, 1);
+                     label, COMPUTED_BOUND_NOTE, 1);
         } else {
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..`", "a loop range is `a..b`",
                      NULL, 1);
@@ -2710,8 +2859,10 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
         c->loops[id].b_start = c->exprs[size].start;
         c->loops[id].b_end = c->exprs[size].end;
     } else if (bound_b.kind != TK_INT) {
-        add_diag(c, "ORC0101", bound_b.start, bound_b.end, "expected a loop bound", "a loop bound is an integer literal",
-                 NULL, 1);
+        char label[64];
+        found_token_label(bound_b.kind, label, sizeof label);
+        add_diag(c, "ORC0101", bound_b.start, bound_b.end, "expected the loop's second bound", label,
+                 "a loop is written `for i in 0..n with s: Type = start { step }`", 1);
         return 0;
     } else {
         c->loops[id].b_start = bound_b.start;
@@ -2720,11 +2871,15 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     }
     if (!ident_token_is(c, peek_token(c), "with")) {
         if (size_operator(peek_kind(c))) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with` and the loop's accumulator",
-                     "found an operator", COMPUTED_BOUND_NOTE, 1);
+                     label, COMPUTED_BOUND_NOTE, 1);
         } else {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with`",
-                     "a loop names its accumulator", "write `for i in a..b with s: T = start { step }`", 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with` and the loop's accumulator",
+                     label, "a loop is written `for i in 0..n with s: Type = start { step }`", 1);
         }
         return 0;
     }
@@ -2773,8 +2928,10 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
         c->loops[id].acc_end = acc.end;
         advance_token(c);
         if (peek_kind(c) != TK_COLON) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:`",
-                     "an accumulator states its type", NULL, 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the accumulator's type",
+                     label, "every accumulator states its type, as in `with s: Word[32]^16 = x`", 1);
             return 0;
         }
         advance_token(c);
@@ -2907,14 +3064,17 @@ static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
         uint32_t range_end = 0;
         int bound_height = 0;
         Token close;
-        if (!parse_slice_range(c, UINT32_MAX, &end_expr, &range_start, &range_end, &bound_height, SLICE_UPDATE_NOTE)) {
+        if (!parse_slice_range(c, UINT32_MAX, &end_expr, &range_start, &range_end, &bound_height,
+                               PARSER_SLICE_UPDATE_NOTE)) {
             leave_nest(c);
             return 0;
         }
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", "unclosed slice",
-                     SLICE_UPDATE_NOTE, 1);
+            char label[64];
+            found_token_label(close.kind, label, sizeof label);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", label,
+                     PARSER_SLICE_UPDATE_NOTE, 1);
             leave_nest(c);
             return 0;
         }
@@ -2965,14 +3125,16 @@ static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
         uint32_t range_end = 0;
         int bound_height = 0;
         Token close;
-        if (!parse_slice_range(c, index, &end_expr, &range_start, &range_end, &bound_height, SLICE_UPDATE_NOTE)) {
+        if (!parse_slice_range(c, index, &end_expr, &range_start, &range_end, &bound_height, PARSER_SLICE_UPDATE_NOTE)) {
             leave_nest(c);
             return 0;
         }
         close = peek_token(c);
         if (close.kind != TK_RBRACKET) {
-            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", "unclosed slice",
-                     SLICE_UPDATE_NOTE, 1);
+            char label[64];
+            found_token_label(close.kind, label, sizeof label);
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]` after the slice", label,
+                     PARSER_SLICE_UPDATE_NOTE, 1);
             leave_nest(c);
             return 0;
         }
@@ -3020,8 +3182,10 @@ static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
     }
     advance_token(c);
     if (peek_kind(c) != TK_EQUAL) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "an update assigns one element",
-                 NULL, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=` after the updated index", label,
+                 "an update is written `x with [i] = value`", 1);
         leave_nest(c);
         return 0;
     }
@@ -3221,8 +3385,10 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
             local[count].nbinds = nbinds;
         }
         if (peek_kind(c) != TK_RBRACE) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
-                     "a conditional value is one expression", BRANCH_BLOCK_NOTE, 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value", label,
+                     BRANCH_BLOCK_NOTE, 1);
             skip_open_braces(c, 1);
             free(local);
             leave_nest(c);
@@ -3230,8 +3396,10 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
         }
         advance_token(c);
         if (!ident_token_is(c, peek_token(c), "else")) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "expected `else` and the value when the condition is false", "missing else",
+                     "expected `else` and the value when the condition is false", label,
                      "every `if` has an `else`, so that a conditional always has a value", 1);
             free(local);
             leave_nest(c);
@@ -3263,9 +3431,10 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
             continue;
         }
         if (peek_kind(c) != TK_LBRACE) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` or `if` after `else`",
-                     "expected the other value", "after `else`, `{` begins the last value and `if` begins another arm",
-                     1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` or `if` after `else`", label,
+                     "a conditional is written `if condition { value } else { other value }`", 1);
             free(local);
             leave_nest(c);
             return 0;
@@ -3290,8 +3459,10 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
             return 0;
         }
         if (peek_kind(c) != TK_RBRACE) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value",
-                     "a conditional value is one expression", BRANCH_BLOCK_NOTE, 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the value", label,
+                     BRANCH_BLOCK_NOTE, 1);
             skip_open_braces(c, 1);
             free(local);
             leave_nest(c);
@@ -3459,8 +3630,10 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                     }
                     leave_nest(c);
                     if (peek_kind(c) != TK_LPAREN) {
+                        char label[64];
+                        found_token_label(peek_kind(c), label, sizeof label);
                         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(` after the sizes",
-                                 "expected `(`", SIZED_CALL_NOTE, 1);
+                                 label, SIZED_CALL_NOTE, 1);
                         return 0;
                     }
                 } else if (peek_kind(c) != TK_LPAREN) {
@@ -3526,9 +3699,11 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                 return 0;
             }
             if (peek_kind(c) != TK_LPAREN) {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
                 leave_nest(c);
-                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(` after the sizes",
-                         "expected `(`", SIZED_CALL_NOTE, 1);
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `(` after the sizes", label,
+                         SIZED_CALL_NOTE, 1);
                 return 0;
             }
             advance_token(c);
@@ -3672,9 +3847,10 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             return 0;
         }
         if (peek_kind(c) == TK_LBRACKET || peek_kind(c) == TK_DOT) {
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "expected an operator or the end of the expression",
-                     "a byte string is not indexed or sliced where it is written",
+                     "expected an operator or the end of the expression", label,
                      "a byte string is not indexed or sliced where it is written; bind it with `let` to select from it",
                      1);
             return 0;
@@ -3722,8 +3898,10 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
             advance_token(c);
             if (peek_kind(c) == TK_RPAREN) {
                 if (count < 2) {
+                    char label[64];
+                    found_token_label(peek_kind(c), label, sizeof label);
                     add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected another element after `,`",
-                             "expected an element",
+                             label,
                              "a tuple is written `(a, b)` with two through 16 elements; `(a)` without a comma is a group",
                              1);
                     leave_nest(c);
@@ -3938,8 +4116,10 @@ static int parse_params(Compiler *c, Func *func) {
         param->name_end = name.end;
         advance_token(c);
         if (peek_kind(c) != TK_COLON) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` after the parameter name",
-                     "expected a parameter type", NULL, 1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` after the parameter name", label,
+                     "parameters are written `name: Type`", 1);
             return 0;
         }
         advance_token(c);
@@ -4003,8 +4183,10 @@ static int parse_binding(Compiler *c, Func *func) {
             return 0;
         }
         if (peek_kind(c) != TK_SEMI) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;`", "a binding ends with `;`", NULL,
-                     1);
+            char label[64];
+            found_token_label(peek_kind(c), label, sizeof label);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression",
+                     label, "each binding ends with `;`; the body's last item is its result expression", 1);
             return 0;
         }
         advance_token(c);
@@ -4035,8 +4217,10 @@ static int parse_binding(Compiler *c, Func *func) {
     local->name_end_at = name.end;
     advance_token(c);
     if (peek_kind(c) != TK_COLON) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` after the binding name",
-                 "a binding states its type", NULL, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:` and the binding's type", label,
+                 "every binding states its type, as in `let t: Word[32] = x + y;`", 1);
         return 0;
     }
     advance_token(c);
@@ -4061,8 +4245,10 @@ static int parse_binding(Compiler *c, Func *func) {
         return 0;
     }
     if (peek_kind(c) != TK_SEMI) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;`", "a binding ends with `;`", NULL,
-                 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `;` after the bound expression", label,
+                 "each binding ends with `;`; the body's last item is its result expression", 1);
         return 0;
     }
     advance_token(c);
@@ -4114,8 +4300,11 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
         }
     }
     if (peek_kind(c) == TK_RBRACE) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an expression",
-                 "a typed body ends with its result", NULL, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                 "expected a result expression after the last binding", label,
+                 "a typed `spec` body ends with the expression that gives its value", 1);
         advance_token(c);
         return 1;
     }
@@ -4127,8 +4316,9 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
         Token extra = peek_token(c);
         if (extra.kind == TK_STRING && func->body != UINT32_MAX && c->exprs[func->body].kind == EX_NAME &&
             span_is(c, c->exprs[func->body].name_start, c->exprs[func->body].name_end, "hex")) {
-            add_diag(c, "ORC0101", extra.start, extra.end, "expected `}` after the body expression",
-                     "a hex string's quote follows `hex` directly",
+            char label[64];
+            found_token_label(extra.kind, label, sizeof label);
+            add_diag(c, "ORC0101", extra.start, extra.end, "expected `}` after the body expression", label,
                      "a hex string's quote follows `hex` directly, with no space, as in `hex\"00 1f a0\"`", 1);
         } else {
             add_diag(c, "ORC0101", extra.start, extra.end, "expected `}`", "extra tokens after the result expression",
@@ -4160,8 +4350,12 @@ static int parse_size_params(Compiler *c, Func *func) {
         name = peek_token(c);
         advance_token(c);
         if (!span_is(c, peek_token(c).start, peek_token(c).end, "in")) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `in` after the size's name",
-                     "expected `in`", SIZE_PARAMETER_NOTE, 1);
+            {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `in` after the size's name",
+                         label, SIZE_PARAMETER_NOTE, 1);
+            }
             return 0;
         }
         advance_token(c);
@@ -4179,8 +4373,12 @@ static int parse_size_params(Compiler *c, Func *func) {
         }
         advance_token(c);
         if (peek_kind(c) != TK_INT) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's second bound",
-                     "expected an integer bound", SIZE_PARAMETER_NOTE, 1);
+            {
+                char label[64];
+                found_token_label(peek_kind(c), label, sizeof label);
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's second bound", label,
+                         SIZE_PARAMETER_NOTE, 1);
+            }
             return 0;
         }
         second = peek_token(c);
@@ -4265,16 +4463,26 @@ static int parse_function(Compiler *c) {
     advance_token(c);
     if (is_impl) {
         if (peek_kind(c) != TK_RPAREN) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                     "an `impl` function has no parameters in this slice", "expected `)`", NULL, 1);
+            Token first = peek_token(c);
+            uint32_t end = first.end;
+            uint32_t at = c->at;
+            while (at < c->ntokens && c->tokens[at].kind != TK_RPAREN && c->tokens[at].kind != TK_LBRACE &&
+                   c->tokens[at].kind != TK_EOF) {
+                end = c->tokens[at].end;
+                at++;
+            }
+            add_diag(c, "ORC0101", first.start, end, "`impl` functions have an empty parameter list",
+                     "parameters are allowed only on typed `spec` functions",
+                     "keep the legacy `impl name() {}` form until implementation semantics are defined", 2);
             skip_function_body(c, 0);
             c->nfuncs++;
             return 1;
         }
         advance_token(c);
         if (peek_kind(c) != TK_LBRACE) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{`", "expected an empty body",
-                     NULL, 1);
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "typed bodies are allowed only on `spec` functions", "an `impl` function cannot have a typed body",
+                     "keep the legacy `impl name() {}` form until implementation semantics are defined", 2);
             skip_function_body(c, 0);
             c->nfuncs++;
             return 1;
@@ -4331,8 +4539,9 @@ static int parse_function(Compiler *c) {
     advance_token(c);
     c->nfuncs++;
     if (peek_kind(c) == TK_LBRACE) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                 "a `spec` with parameters needs a result type", "expected `->`", NULL, 1);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `->` after the parameter list",
+                 "a `spec` with parameters or sizes needs a result type and a body expression",
+                 "write `spec name(x: Type) -> Type { expression }`", 2);
         skip_function_body(c, 0);
         return 1;
     }
@@ -4564,9 +4773,9 @@ static void reject_declared(Compiler *c, TypeKind type, int length_bad, uint32_t
                             uint32_t length_start, uint32_t length_end) {
     if (length_bad) {
         char message[128];
-        snprintf(message, sizeof message, "array length must be a decimal integer from 1 through %u", MAX_ARRAY_LENGTH);
+        snprintf(message, sizeof message, "an array length must be a decimal integer from 1 through 65536");
         add_diag(c, "ORC0221", length_start, length_end, message, "unsupported array length",
-                 "write the length in decimal without a prefix, separator, or leading zero", 2);
+                 "write the length in decimal without leading zeros, as in `Word[32]^16`", 2);
         return;
     }
     reject_type(c, type, 0, start, end);
@@ -4831,11 +5040,16 @@ static int decode_literal(Compiler *c, const Expr *expr, Big *out) {
                            expr->negative, out);
 }
 
+static uint64_t word_maximum(TypeKind type);
+static void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
+                       uint32_t tup0, uint16_t tup_n);
+
 static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint16_t expected_mod) {
     Big value = big_zero();
     if (!decode_literal(c, expr, &value)) {
-        add_diag(c, "ORC0205", expr->start, expr->end, "integer magnitude exceeds 16384 significant bits",
-                 "literal is too large", "Int is unbounded, but one literal must fit the representation budget", 2);
+        add_diag(c, "ORC0205", expr->lit_start, expr->lit_end, "integer magnitude exceeds the 16384-significant-bit limit",
+                 "exact integer is too large for this semantic fragment",
+                 "the literal is rejected rather than truncated or approximated", 2);
         return;
     }
     if (expected == TY_INT) {
@@ -4844,13 +5058,17 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint
     if (expected == TY_MOD) {
         Big magnitude = value;
         const Big *modulus;
+        char type_text[96];
+        char message[160];
         magnitude.negative = 0;
         if (expected_mod == 0 || expected_mod >= c->nmoduli) {
             return;
         }
         modulus = &c->moduli[expected_mod];
         if (big_cmp(&magnitude, modulus) >= 0) {
-            add_diag(c, "ORC0207", expr->lit_start, expr->lit_end, "literal is outside the range of its modulus",
+            spell_type(c, type_text, sizeof type_text, TY_MOD, 0, expected_mod, 0, 0);
+            snprintf(message, sizeof message, "literal is outside the range of `%s`", type_text);
+            add_diag(c, "ORC0207", expr->lit_start, expr->lit_end, message,
                      "the literal's magnitude is not less than the modulus",
                      "a literal of `Mod[m]` has a magnitude n less than m, and `-n` stands for m - n; residues do not "
                      "reduce out-of-range literals",
@@ -4859,18 +5077,30 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint
         return;
     }
     if (expected == TY_BOOL) {
-        add_diag(c, "ORC0214", expr->start, expr->end, "an integer literal cannot have type `Bool`", "type mismatch",
+        add_diag(c, "ORC0214", expr->start, expr->end, "an integer literal cannot have type `Bool`", "expected `Bool`",
                  "the `Bool` values are written `true` and `false`", 2);
         return;
     }
-    if (expr->negative) {
-        add_diag(c, "ORC0206", expr->start, expr->end, "a word literal cannot be negative",
-                 "write the residue in range instead", "word literals are canonical residues, never a sign", 2);
-        return;
-    }
-    if (big_bits(&value) > (uint32_t)type_width(expected)) {
-        add_diag(c, "ORC0207", expr->start, expr->end, "word literal is outside its type",
-                 "this value does not fit the word", "a word literal must lie in 0 through 2^n - 1", 2);
+    {
+        char type_text[96];
+        char maximum[32];
+        char message[160];
+        char label[128];
+        spell_type(c, type_text, sizeof type_text, expected, 0, 0, 0, 0);
+        snprintf(maximum, sizeof maximum, "%llu", (unsigned long long)word_maximum(expected));
+        if (expr->negative) {
+            snprintf(message, sizeof message, "`%s` literals cannot be negative", type_text);
+            snprintf(label, sizeof label, "negative value is outside the range 0 through %s", maximum);
+            add_diag(c, "ORC0206", expr->start, expr->end, message, label,
+                     "fixed-width words do not wrap or coerce negative integers", 2);
+            return;
+        }
+        if (big_bits(&value) > (uint32_t)type_width(expected)) {
+            snprintf(message, sizeof message, "literal is outside the range of `%s`", type_text);
+            snprintf(label, sizeof label, "expected a value from 0 through %s", maximum);
+            add_diag(c, "ORC0207", expr->lit_start, expr->lit_end, message, label,
+                     "fixed-width words do not truncate or wrap out-of-range integers", 2);
+        }
     }
 }
 
@@ -5520,6 +5750,51 @@ static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, 
     return 0;
 }
 
+static void report_binding_dup(Compiler *c, uint32_t func_index, uint32_t local_limit, uint32_t diag_start,
+                               uint32_t diag_end, uint32_t match_start, uint32_t match_end, uint32_t within_start,
+                               uint32_t within_end) {
+    char message[160];
+    char spelling[64];
+    const Func *func = &c->funcs[func_index];
+    uint32_t earlier_start = within_start;
+    uint32_t earlier_end = within_end;
+    const char *label = within_end > within_start ? "the first name is here" : NULL;
+    uint8_t slot = 0;
+    uint16_t index;
+    int overridden = 0;
+    span_copy(spelling, sizeof spelling, c->text, match_start, match_end);
+    snprintf(message, sizeof message, "duplicate binding `%s`", spelling);
+    if (size_slot_of(c, func_index, match_start, match_end, &slot)) {
+        earlier_start = func->sz_name0[slot];
+        earlier_end = func->sz_name1[slot];
+        label = "the size parameter is here";
+        overridden = 1;
+    }
+    for (index = 0; index < func->nparams && !overridden; index++) {
+        const Param *param = &c->params[func->param0 + index];
+        if (!param->duplicate && same_span(c, param->name_start, param->name_end, match_start, match_end)) {
+            earlier_start = param->name_start;
+            earlier_end = param->name_end;
+            label = "the parameter is here";
+            overridden = 1;
+        }
+    }
+    for (index = 0; index < local_limit && index < func->nlocals && !overridden; index++) {
+        const Local *before = &c->locals[func->local0 + index];
+        if (!before->duplicate && same_span(c, before->name_start, before->name_end, match_start, match_end)) {
+            earlier_start = before->name_start;
+            earlier_end = before->name_end;
+            label = "the first binding is here";
+            overridden = 1;
+        }
+    }
+    add_diag(c, "ORC0219", diag_start, diag_end, message, "this binding repeats an earlier name",
+             "each parameter and binding of a function has its own name; Orange has no shadowing", 2);
+    if (label != NULL && earlier_end > earlier_start) {
+        diag_add_secondary(c, earlier_start, earlier_end, label);
+    }
+}
+
 /* Euclidean quotient and remainder. x / 0 is 0 and x % 0 is x. */
 static int i64_euclid(int64_t left, int64_t right, int64_t *quot, int64_t *rem) {
     int64_t q;
@@ -5666,12 +5941,12 @@ static int size_length(Compiler *c, uint32_t index, int report, uint32_t *length
     if (value.value < 1 || value.value > (int64_t)MAX_ARRAY_LENGTH) {
         if (report) {
             char message[160];
-            snprintf(message, sizeof message, "this array length is %lld, but an array has 1 through %u elements",
-                     (long long)value.value, MAX_ARRAY_LENGTH);
+            snprintf(message, sizeof message, "this array length is %lld, but an array has 1 through 65536 elements",
+                     (long long)value.value);
             add_diag(c, "ORC0221", c->exprs[index].start, c->exprs[index].end, message,
                      "unsupported array length in this instance",
                      "a length written with sizes is computed in each instance of its function, and every instance's "
-                     "lengths are from 1 through 256",
+                     "lengths are from 1 through 65536",
                      2);
         }
         return 0;
@@ -6246,7 +6521,7 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
 }
 
 static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_index, NameRes res) {
-    char message[192];
+    char message[384];
     const char *func_name_start = c->text + c->funcs[func_index].name_start;
     size_t func_len = c->funcs[func_index].name_end - c->funcs[func_index].name_start;
     char func_name[64];
@@ -6263,12 +6538,26 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
     memcpy(ident, c->text + expr->name_start, ident_len);
     ident[ident_len] = '\0';
     if (res == NAME_EARLY || res == NAME_BLOCK_EARLY) {
+        uint32_t bind_start = 0;
+        uint32_t bind_end = 0;
         snprintf(message, sizeof message, "`%s` is used before it is bound", ident);
-        add_diag(c, "ORC0211", expr->start, expr->end, message, "binding is not in scope yet",
+        add_diag(c, "ORC0211", expr->start, expr->end, message, "not bound yet",
                  res == NAME_BLOCK_EARLY
                      ? "a binding is in scope after its own `;`, for the bindings that follow it and the value of its step or branch"
-                     : "a binding is in scope after its `;`",
+                     : "a binding is in scope after its own `;`, for the bindings that follow it and the result",
                  2);
+        if (res == NAME_BLOCK_EARLY && expr->name_abs < c->nblock_locals) {
+            const Local *bound = &c->block_locals[expr->name_abs];
+            bind_start = bound->name_start;
+            bind_end = bound->name_end;
+        } else if (res == NAME_EARLY && expr->name_index < c->funcs[func_index].nlocals) {
+            const Local *bound = &c->locals[c->funcs[func_index].local0 + expr->name_index];
+            bind_start = bound->name_start;
+            bind_end = bound->name_end;
+        }
+        if (bind_end > bind_start) {
+            diag_add_secondary(c, bind_start, bind_end, "the binding is here");
+        }
         return;
     }
     if (c->nfinished > 0) {
@@ -6284,6 +6573,7 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
                 snprintf(message, sizeof message, "`%s` is not in scope here", ident);
                 add_diag(c, "ORC0211", expr->start, expr->end, message, "unknown name",
                          "a binding of a loop's step or a branch is in scope only within that step or branch", 2);
+                diag_add_secondary(c, local->name_start, local->name_end, "a binding of this name is here");
                 return;
             }
         }
@@ -6293,8 +6583,24 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
     } else {
         snprintf(message, sizeof message, "`%s` is not a parameter of `%s`", ident, func_name);
     }
-    add_diag(c, "ORC0211", expr->start, expr->end, message, "unknown name",
-             "a bare name refers to a parameter or a binding in scope", 2);
+    {
+        const char *note = (c->funcs[func_index].nlocals > 0 || c->funcs[func_index].has_blocks)
+                               ? "a bare name in a `spec` body refers to one of its parameters or bindings"
+                               : "a bare name in a `spec` body refers to one of its parameters";
+        char call_note[192];
+        uint32_t cursor;
+        for (cursor = 0; cursor < c->nfuncs; cursor++) {
+            const Func *other = &c->funcs[cursor];
+            if (!other->is_impl &&
+                same_span(c, other->name_start, other->name_end, expr->name_start, expr->name_end)) {
+                snprintf(call_note, sizeof call_note, "to call the function `%s`, write `%s()` with its arguments",
+                         ident, ident);
+                note = call_note;
+                break;
+            }
+        }
+        add_diag(c, "ORC0211", expr->start, expr->end, message, "unknown name", note, 2);
+    }
 }
 
 static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32_t callee_inst, uint32_t start,
@@ -6337,47 +6643,91 @@ static int name_is_active_loop(const Compiler *c, uint32_t start, uint32_t end) 
     return 0;
 }
 
+static void report_scope_duplicate(Compiler *c, uint32_t start, uint32_t end, uint32_t earlier_start,
+                                   uint32_t earlier_end, const char *earlier_label) {
+    char message[160];
+    char spelling[64];
+    span_copy(spelling, sizeof spelling, c->text, start, end);
+    snprintf(message, sizeof message, "duplicate name `%s`", spelling);
+    add_diag(c, "ORC0219", start, end, message, "this name repeats a name in scope",
+             "each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing",
+             2);
+    if (earlier_end > earlier_start) {
+        diag_add_secondary(c, earlier_start, earlier_end, earlier_label);
+    }
+}
+
 static int report_duplicate_loop_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start,
                                       uint32_t end) {
     const Func *func = &c->funcs[func_index];
     uint16_t index;
-    int duplicate;
-    if (size_slot_of(c, func_index, start, end, NULL)) {
-        add_diag(c, "ORC0219", start, end, "duplicate name", "this name is already in scope",
-                 "a loop index and accumulator are new names", 2);
-        return 1;
+    uint8_t size_slot = 0;
+    uint32_t earlier_start = 0;
+    uint32_t earlier_end = 0;
+    const char *earlier_label = NULL;
+    if (size_slot_of(c, func_index, start, end, &size_slot)) {
+        earlier_start = func->sz_name0[size_slot];
+        earlier_end = func->sz_name1[size_slot];
+        earlier_label = "the size parameter is here";
     }
-    duplicate = name_is_active_loop(c, start, end);
-    for (index = 0; index < func->nparams && !duplicate; index++) {
+    for (index = 0; index < func->nparams && earlier_label == NULL; index++) {
         const Param *param = &c->params[func->param0 + index];
         if (!param->duplicate && same_span(c, param->name_start, param->name_end, start, end)) {
-            duplicate = 1;
+            earlier_start = param->name_start;
+            earlier_end = param->name_end;
+            earlier_label = "the parameter is here";
         }
     }
     if (locals_in_scope > func->nlocals) {
         locals_in_scope = func->nlocals;
     }
-    for (index = 0; index < locals_in_scope && !duplicate; index++) {
+    for (index = 0; index < locals_in_scope && earlier_label == NULL; index++) {
         const Local *local = &c->locals[func->local0 + index];
         if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
-            duplicate = 1;
+            earlier_start = local->name_start;
+            earlier_end = local->name_end;
+            earlier_label = "the binding is here";
         }
     }
-    for (index = 0; index < (uint16_t)c->nframes && !duplicate; index++) {
+    for (index = 0; index < (uint16_t)c->nframes && earlier_label == NULL; index++) {
         const BlockFrame *block = &c->frames[index];
         uint16_t bind;
-        for (bind = 0; bind < block->visible && !duplicate; bind++) {
+        for (bind = 0; bind < block->visible && earlier_label == NULL; bind++) {
             const Local *local = &c->block_locals[block->bind0 + bind];
             if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
-                duplicate = 1;
+                earlier_start = local->name_start;
+                earlier_end = local->name_end;
+                earlier_label = "the binding is here";
             }
         }
     }
-    if (!duplicate) {
+    if (earlier_label == NULL) {
+        int active;
+        for (active = 0; active < c->nactive && earlier_label == NULL; active++) {
+            const LoopDesc *loop = &c->loops[c->active_loops[active]];
+            uint8_t acc;
+            if (same_span(c, loop->index_start, loop->index_end, start, end)) {
+                earlier_start = loop->index_start;
+                earlier_end = loop->index_end;
+                earlier_label = "the loop index is here";
+            } else if (loop->nacc == 0 && same_span(c, loop->acc_start, loop->acc_end, start, end)) {
+                earlier_start = loop->acc_start;
+                earlier_end = loop->acc_end;
+                earlier_label = "the accumulator is here";
+            }
+            for (acc = 0; loop->nacc > 0 && acc < loop->nacc && earlier_label == NULL; acc++) {
+                if (same_span(c, loop->an_start[acc], loop->an_end[acc], start, end)) {
+                    earlier_start = loop->an_start[acc];
+                    earlier_end = loop->an_end[acc];
+                    earlier_label = "the accumulator is here";
+                }
+            }
+        }
+    }
+    if (earlier_label == NULL) {
         return 0;
     }
-    add_diag(c, "ORC0219", start, end, "duplicate name", "this name is already in scope",
-             "a loop index and accumulator are new names", 2);
+    report_scope_duplicate(c, start, end, earlier_start, earlier_end, earlier_label);
     return 1;
 }
 
@@ -6412,6 +6762,106 @@ static uint64_t word_maximum(TypeKind type) {
         return 0;
     }
     return (UINT64_C(1) << width) - 1u;
+}
+
+static const char IMPLICIT_NOTE[] = "Orange has no implicit conversions between types";
+static const char ARRAY_OPERATOR_NOTE[] =
+    "operators apply to `Int`, `Bool`, word, and residue values; apply them to elements, such as `x[0]`";
+static const char TUPLE_OPERATOR_NOTE[] =
+    "operators apply to `Int`, `Bool`, word, and residue values; apply them to elements, such as `p.0`";
+static const char BOOL_OPERATOR_NOTE[] = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
+static const char SHIFT_AMOUNT_NOTE[] =
+    "an amount written as one integer literal is from 0 through n - 1; any other amount is computed, an `Int` or a "
+    "word, such as `x <<< r` or `x >> (i % 8)`";
+static const char LOOP_RANGE_NOTE[] =
+    "a loop `for i in a..b` runs once for each i from a up to b - 1, with a < b <= 65536";
+
+static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index);
+static int format_tuple_type(Compiler *c, char *buffer, size_t cap, uint32_t tup0, uint16_t tup_n);
+
+static void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
+                       uint32_t tup0, uint16_t tup_n) {
+    int ok;
+    Compiler *writable = (Compiler *)owner;
+    if (writable != NULL && type == TY_TUPLE && tup_n > 0) {
+        ok = format_tuple_type(writable, buffer, cap, tup0, tup_n);
+    } else if (writable != NULL) {
+        ok = format_type(writable, buffer, cap, type, length, type == TY_MOD ? mod : 0);
+    } else {
+        ok = 0;
+    }
+    if (!ok) {
+        copy_text(buffer, cap, "?");
+    }
+}
+
+static void spell_expected(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length) {
+    spell_type(c, buffer, cap, type, length, c->expect_mod, c->expect_tup0, c->expect_tup_n);
+}
+
+static void add_expected(Compiler *c, uint32_t start, uint32_t end, const char *message, const char *expected_text,
+                         const char *note) {
+    char label[192];
+    snprintf(label, sizeof label, "expected `%s`", expected_text);
+    add_diag(c, "ORC0214", start, end, message, label, note, 2);
+}
+
+static const char *shift_name(TokenKind op) {
+    switch (op) {
+    case TK_LSHIFT: return "<<";
+    case TK_RSHIFT: return ">>";
+    case TK_ROL: return "<<<";
+    case TK_ROR: return ">>>";
+    default: return "operator";
+    }
+}
+
+static void report_undefined_op(Compiler *c, uint32_t start, uint32_t end, const char *op, int prefix, TypeKind type,
+                                uint32_t length, uint16_t mod, uint32_t tup0, uint16_t tup_n, const char *note) {
+    char message[384];
+    char type_text[96];
+    char label[160];
+    spell_type(c, type_text, sizeof type_text, type, length, mod, tup0, tup_n);
+    if (prefix) {
+        snprintf(message, sizeof message, "prefix `%s` is not defined for `%s`", op, type_text);
+    } else {
+        snprintf(message, sizeof message, "`%s` is not defined for `%s`", op, type_text);
+    }
+    snprintf(label, sizeof label, "`%s` is required here", type_text);
+    add_diag(c, "ORC0215", start, end, message, label, note, 2);
+}
+
+static void report_name_mismatch(Compiler *c, uint32_t start, uint32_t end, TypeKind found, uint32_t found_len,
+                                 uint16_t found_mod, uint32_t found_tup0, uint16_t found_tup_n, TypeKind expected,
+                                 uint32_t expected_len) {
+    char message[384];
+    char spelling[64];
+    char expected_text[96];
+    char found_text[96];
+    char note_buf[160];
+    const char *note = IMPLICIT_NOTE;
+    uint16_t index;
+    span_copy(spelling, sizeof spelling, c->text, start, end);
+    spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+    spell_type(c, found_text, sizeof found_text, found, found_len, found_mod, found_tup0, found_tup_n);
+    snprintf(message, sizeof message, "`%s` has type `%s`, but `%s` is required here", spelling, found_text,
+             expected_text);
+    if (found_len != 0 && expected_len == 0 && found == expected &&
+        !(found == TY_MOD && found_mod != c->expect_mod)) {
+        snprintf(note_buf, sizeof note_buf, "select one element with an index, such as `%s[0]`", spelling);
+        note = note_buf;
+    } else if (found == TY_TUPLE && found_tup_n > 0 && expected != TY_TUPLE) {
+        for (index = 0; index < found_tup_n; index++) {
+            const TupleElem *elem = &c->telems[found_tup0 + index];
+            if (elem->kind == expected && elem->length == expected_len &&
+                (expected != TY_MOD || elem->mod_index == c->expect_mod)) {
+                snprintf(note_buf, sizeof note_buf, "select one element by its position, such as `%s.0`", spelling);
+                note = note_buf;
+                break;
+            }
+        }
+    }
+    add_expected(c, start, end, message, expected_text, note);
 }
 
 /* Least value of the form 2^k - 1 that is at least `value`. */
@@ -7031,7 +7481,7 @@ static int big_below_u32(const Big *value, uint32_t limit) {
 
 static void report_index_range(Compiler *c, uint32_t start, uint32_t end, const Big *lo, const Big *hi, int have_range,
                                TypeKind element, uint32_t length) {
-    char message[192];
+    char message[384];
     char label[128];
     char low_text[96];
     char high_text[96];
@@ -7209,11 +7659,23 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
                     }
                 }
                 if (taken) {
+                    uint32_t within_start = 0;
+                    uint32_t within_end = 0;
+                    for (prev = 0; prev < pat; prev++) {
+                        Local *before = &c->block_locals[bind0 + bind + prev];
+                        if (!before->duplicate &&
+                            same_span(c, before->name_start, before->name_end, name->name_start, name->name_end)) {
+                            within_start = before->name_start;
+                            within_end = before->name_end;
+                            break;
+                        }
+                    }
                     name->duplicate = 1;
-                    add_diag(c, "ORC0219", name->name_start, name->name_end, "duplicate name",
-                             "this name is already in scope",
-                             "each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing",
-                             2);
+                    if (!report_duplicate_loop_name(c, func_index, locals_in_scope, name->name_start, name->name_end) &&
+                        within_end > within_start) {
+                        report_scope_duplicate(c, name->name_start, name->name_end, within_start, within_end,
+                                               "the first name is here");
+                    }
                 }
                 if (!name->type_ok) {
                     bad_type = 1;
@@ -7243,9 +7705,7 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
         }
         if (block_name_taken(c, func_index, locals_in_scope, local->name_start, local->name_end)) {
             local->duplicate = 1;
-            add_diag(c, "ORC0219", local->name_start, local->name_end, "duplicate name", "this name is already in scope",
-                     "each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing",
-                     2);
+            report_duplicate_loop_name(c, func_index, locals_in_scope, local->name_start, local->name_end);
         }
         if (!local->type_ok) {
             if (!local->type_reported) {
@@ -7362,11 +7822,15 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                          decode_loop_bound(c, loop->b_start, loop->b_end, &b_above, &b_value);
     }
     if (bounds_decoded && a_above) {
-        add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
-                 "a loop runs over a nonempty range within 0 through 65536", 2);
-    } else if (bounds_decoded && (b_above || a_value >= b_value)) {
-        add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop range must be nonempty and within 0 through 65536",
-                 "loop bounds", "write a..b with 0 <= a < b <= 65536", 2);
+        add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound too large",
+                 LOOP_RANGE_NOTE, 2);
+    } else if (bounds_decoded && b_above) {
+        add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop bound must be at most 65536", "loop bound too large",
+                 LOOP_RANGE_NOTE, 2);
+    } else if (bounds_decoded && a_value >= b_value) {
+        char message[64];
+        snprintf(message, sizeof message, "the loop range %u..%u is empty", a_value, b_value);
+        add_diag(c, "ORC0225", loop->b_start, loop->b_end, message, "a loop runs at least once", LOOP_RANGE_NOTE, 2);
     } else if (bounds_decoded) {
         loop->bounds_ok = 1;
         loop->bound_a = a_value;
@@ -7381,15 +7845,15 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             uint8_t earlier;
             if (same_span(c, loop->index_start, loop->index_end, loop->an_start[acc], loop->an_end[acc])) {
                 taken = 1;
-                add_diag(c, "ORC0219", loop->an_start[acc], loop->an_end[acc], "duplicate name",
-                         "this name is already in scope", "the accumulator must differ from the loop index", 2);
+                report_scope_duplicate(c, loop->an_start[acc], loop->an_end[acc], loop->index_start, loop->index_end,
+                                       "the loop index is here");
             }
             for (earlier = 0; earlier < acc && !taken; earlier++) {
                 if (same_span(c, loop->an_start[earlier], loop->an_end[earlier], loop->an_start[acc],
                               loop->an_end[acc])) {
                     taken = 1;
-                    add_diag(c, "ORC0219", loop->an_start[acc], loop->an_end[acc], "duplicate name",
-                             "this name is already in scope", "a loop's pattern names one value at each position", 2);
+                    report_scope_duplicate(c, loop->an_start[acc], loop->an_end[acc], loop->an_start[earlier],
+                                           loop->an_end[earlier], "the first name is here");
                 }
             }
             if (!taken &&
@@ -7402,8 +7866,8 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
     } else if (same_span(c, loop->index_start, loop->index_end, loop->acc_start, loop->acc_end)) {
         acc_dup = 1;
-        add_diag(c, "ORC0219", loop->acc_start, loop->acc_end, "duplicate name", "this name is already in scope",
-                 "the accumulator must differ from the loop index", 2);
+        report_scope_duplicate(c, loop->acc_start, loop->acc_end, loop->index_start, loop->index_end,
+                               "the loop index is here");
     } else {
         acc_dup = report_duplicate_loop_name(c, func_index, locals_in_scope, loop->acc_start, loop->acc_end);
     }
@@ -7421,14 +7885,16 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                         !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, loop->tup0, loop->tup_n);
         if (loop->acc_type != expected || loop->acc_len != expected_len || shape_bad ||
             (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
-            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "a loop has its accumulator's type", 2);
+            char message[384];
+            char expected_text[96];
+            char found_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            spell_type(c, found_text, sizeof found_text, loop->acc_type, loop->acc_len, loop->acc_mod, loop->tup0,
+                       loop->tup_n);
+            snprintf(message, sizeof message, "this loop has type `%s`, but `%s` is required here", found_text,
+                     expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "a loop's value is its accumulator after the last step");
         }
     }
     {
@@ -7573,12 +8039,12 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
     int state;
     int order = expr->op != TK_EQEQ && expr->op != TK_BANGEQ;
     if (expected != TY_BOOL || expected_len != 0) {
-        char message[192];
-        char expected_text[64];
-        write_type(expected_text, sizeof expected_text, expected, expected_len);
-        snprintf(message, sizeof message, "a comparison gives `Bool`, but %s is required here", expected_text);
-        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                 "a conditional `if c { a } else { b }` chooses a value by a `Bool`", 2);
+        char message[384];
+        char expected_text[96];
+        spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+        snprintf(message, sizeof message, "a comparison gives `Bool`, but `%s` is required here", expected_text);
+        add_expected(c, expr->start, expr->end, message, expected_text,
+                     "a conditional `if c { a } else { b }` chooses a value by a `Bool`");
     }
     state = find_leaf(c, expr->left, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
     if (state == 0 || state == 2) {
@@ -7596,12 +8062,22 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
             leaf = right_leaf;
             silent = right_silent;
         } else if (left_state == 2 || right_state == 2) {
-            char message[160];
-            int tuple = c->exprs[expr->left].kind == EX_TUPLE || c->exprs[expr->right].kind == EX_TUPLE;
-            snprintf(message, sizeof message, "`%s` is not defined for %s", op_spelling(expr->op),
-                     tuple ? "a tuple" : "an array");
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                     tuple ? "compare elements, such as `p.0 == q.0`" : "compare elements, such as `x[0] == y[0]`", 2);
+            char message[384];
+            if (order) {
+                snprintf(message, sizeof message, "`%s` is not defined for arrays and tuples", op_spelling(expr->op));
+                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message,
+                         "both operands are written out as arrays or tuples",
+                         "arrays and tuples are compared whole with `==` and `!=`; they have no order, so compare "
+                         "elements",
+                         2);
+            } else {
+                snprintf(message, sizeof message, "the operands of `%s` have no type of their own",
+                         op_spelling(expr->op));
+                add_diag(c, "ORC0227", expr->start, expr->end, message,
+                         "an array or tuple written out takes its type from where it is used",
+                         "compare with a typed operand, such as a name, or give one side a type with a `let` binding",
+                         2);
+            }
             return 1;
         } else if (right_state < 0) {
             state = right_state;
@@ -7614,9 +8090,10 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
         }
     }
     if (state == 0) {
-        add_diag(c, "ORC0227", expr->op_start, expr->op_end, "the operands of a comparison have no type of their own",
-                 "untyped comparison", "compare with a typed operand, such as a name, or give the literal a type with a `let` binding",
-                 2);
+        char message[160];
+        snprintf(message, sizeof message, "the operands of `%s` have no type of their own", op_spelling(expr->op));
+        add_diag(c, "ORC0227", expr->start, expr->end, message, "a literal takes its type from where it is used",
+                 "compare with a typed operand, such as a name, or give the literal a type with a `let` binding", 2);
         return 1;
     }
     if (state < 0) {
@@ -7625,27 +8102,30 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
         }
         return 1;
     }
-    if (order && operand == TY_MOD && operand_len == 0) {
-        char message[160];
-        snprintf(message, sizeof message, "`%s` is not defined for a residue", op_spelling(expr->op));
-        add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "the operands have a residue type",
-                 "residues are compared with `==` and `!=`; they have no order, so compare least residues, such as "
-                 "`(x as Int) < (y as Int)`",
-                 2);
-        return 1;
-    }
-    if (operand_len != 0 || !is_scalar_type(operand) || (order && operand == TY_BOOL)) {
-        char message[160];
-        char found[64];
-        write_type(found, sizeof found, operand, operand_len);
+    if (order && (operand == TY_MOD || operand_len != 0 || operand == TY_BOOL || operand == TY_TUPLE ||
+                  !is_scalar_type(operand))) {
+        char message[384];
+        char found[96];
+        char label[160];
+        const char *note;
+        spell_type(c, found, sizeof found, operand, operand_len, operand == TY_MOD ? c->leaf_mod : 0,
+                   operand == TY_TUPLE ? c->leaf_tup0 : 0, operand == TY_TUPLE ? c->leaf_tup_n : 0);
         snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op), found);
-        if (operand == TY_BOOL) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                     "`Bool` values are compared with `==` and `!=`; they have no order", 2);
+        snprintf(label, sizeof label, "the operands have type `%s`", found);
+        if (operand == TY_MOD) {
+            note = "residues are compared with `==` and `!=`; they have no order, so compare least residues, such as "
+                   "`(x as Int) < (y as Int)`";
+        } else if (operand == TY_BOOL) {
+            note = "`Bool` values are compared with `==` and `!=`; they have no order";
+        } else if (operand == TY_TUPLE) {
+            note = "tuples are compared whole with `==` and `!=`; they have no order, so compare elements, such as "
+                   "`p.0 < q.0`";
         } else {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                     "compare elements, such as `x[0] == y[0]`", 2);
+            note = "arrays are compared whole with `==` and `!=`; they have no order, so compare elements, such as "
+                   "`x[0] < y[0]`";
         }
+        add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, label, note, 2);
+        return 1;
     }
     if (operand == TY_TUPLE && c->leaf_tup_n > 0) {
         uint32_t shape = c->leaf_tup0;
@@ -7687,11 +8167,20 @@ static int scalar_index_base(Compiler *c, uint32_t base, uint32_t func_index, ui
 static int finish_scalar_index(Compiler *c, uint32_t base, TypeKind base_kind, uint32_t func_index,
                                uint32_t locals_in_scope) {
     if (!scalar_index_base(c, base, func_index, locals_in_scope)) {
-        char message[192];
-        snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
-                 type_spelling(base_kind));
-        add_diag(c, "ORC0224", c->exprs[base].start, c->exprs[base].end, message, "not an array",
-                 "an index selects one element of a value of type T^n", 2);
+        char message[384];
+        char found[96];
+        char label[128];
+        spell_type(c, found, sizeof found, base_kind, 0, c->leaf_mod, c->leaf_tup0, c->leaf_tup_n);
+        snprintf(message, sizeof message, "only an array can be indexed, but this has type `%s`", found);
+        if (base_kind == TY_TUPLE) {
+            snprintf(label, sizeof label, "`%s` is a tuple, not an array", found);
+            add_diag(c, "ORC0224", c->exprs[base].start, c->exprs[base].end, message, label,
+                     "a tuple's element is selected by its position, such as `p.0`", 2);
+        } else {
+            snprintf(label, sizeof label, "`%s` has no elements", found);
+            add_diag(c, "ORC0224", c->exprs[base].start, c->exprs[base].end, message, label,
+                     "an index selects one element of a value of type `T^n`", 2);
+        }
     }
     return check_expr(c, base, base_kind, 0, func_index, locals_in_scope);
 }
@@ -7787,11 +8276,14 @@ static int prove_slice(Compiler *c, uint32_t start_expr, uint32_t end_expr, uint
     }
     write_type(array_text, sizeof array_text, element, base_len);
     if (start_low < 0 || end_high > (int64_t)base_len) {
-        char message[192];
+        char message[384];
+        char label[96];
         int64_t last = end_high == INT64_MIN ? end_high : end_high - 1;
+        uint32_t highest = base_len == 0 ? 0 : base_len - 1u;
         snprintf(message, sizeof message, "this slice reaches elements %lld through %lld, out of range for `%s`",
                  (long long)start_low, (long long)last, array_text);
-        add_diag(c, "ORC0223", range_start, range_end, message, "indices run from 0 through the last element",
+        snprintf(label, sizeof label, "indices run from 0 through %u", highest);
+        add_diag(c, "ORC0223", range_start, range_end, message, label,
                  "every element a slice can take, over every loop index in its bounds, must be an element of the array",
                  2);
         return 0;
@@ -7827,12 +8319,40 @@ static int check_bytes(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     uint32_t err_end = 0;
     uint32_t point = 0;
     int status = decode_bytes(c, expr, NULL, &count, &err_start, &err_end, &point);
-    char message[192];
+    char message[384];
     char expected_text[64];
     if (status == BYTES_UNPRINTABLE) {
+        unsigned char encoded[4];
+        int nbytes = 1;
+        char hex[16];
+        char label[80];
+        int used = 0;
+        int byte;
         snprintf(message, sizeof message, "U+%04X is not a printable ASCII character", point);
-        add_diag(c, "ORC0235", err_start, err_end, message,
-                 point <= 0x7fu ? "its byte is written as a hex string" : "its UTF-8 bytes are written as a hex string",
+        if (point < 0x80u) {
+            encoded[0] = (unsigned char)point;
+        } else if (point < 0x800u) {
+            encoded[0] = (unsigned char)(0xC0u | (point >> 6));
+            encoded[1] = (unsigned char)(0x80u | (point & 0x3fu));
+            nbytes = 2;
+        } else if (point < 0x10000u) {
+            encoded[0] = (unsigned char)(0xE0u | (point >> 12));
+            encoded[1] = (unsigned char)(0x80u | ((point >> 6) & 0x3fu));
+            encoded[2] = (unsigned char)(0x80u | (point & 0x3fu));
+            nbytes = 3;
+        } else {
+            encoded[0] = (unsigned char)(0xF0u | (point >> 18));
+            encoded[1] = (unsigned char)(0x80u | ((point >> 12) & 0x3fu));
+            encoded[2] = (unsigned char)(0x80u | ((point >> 6) & 0x3fu));
+            encoded[3] = (unsigned char)(0x80u | (point & 0x3fu));
+            nbytes = 4;
+        }
+        for (byte = 0; byte < nbytes && used < (int)sizeof hex; byte++) {
+            used += snprintf(hex + used, sizeof hex - (size_t)used, "%s%02x", byte == 0 ? "" : " ", encoded[byte]);
+        }
+        snprintf(label, sizeof label, point <= 0x7fu ? "its byte is written `hex\"%s\"`" : "its UTF-8 bytes are written `hex\"%s\"`",
+                 hex);
+        add_diag(c, "ORC0235", err_start, err_end, message, label,
                  "a byte string's characters are its bytes, so each is printable ASCII, from ` ` through `~`; write any other byte as an escape, or in a hex string joined with `++`",
                  2);
         return 1;
@@ -7840,11 +8360,11 @@ static int check_bytes(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     if (status != BYTES_OK) {
         if (status == BYTES_EMPTY) {
             add_diag(c, "ORC0221", expr->start, expr->end, "a byte string holds at least one byte", "this string is empty",
-                     "a byte string is an array `Word[8]^n` of 1 through 256 bytes; join longer runs with `++`", 2);
+                     "a byte string is an array `Word[8]^n` of 1 through 65536 bytes; join longer runs with `++`", 2);
         } else {
-            add_diag(c, "ORC0221", expr->start, expr->end, "a byte string holds at most 256 bytes",
-                     "this string holds more than 256",
-                     "a byte string is an array `Word[8]^n` of 1 through 256 bytes; join longer runs with `++`", 2);
+            add_diag(c, "ORC0221", expr->start, expr->end, "a byte string holds at most 65536 bytes",
+                     "this string holds more than 65536",
+                     "a byte string is an array `Word[8]^n` of 1 through 65536 bytes; join longer runs with `++`", 2);
         }
         return 1;
     }
@@ -7853,14 +8373,18 @@ static int check_bytes(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     }
     write_type(expected_text, sizeof expected_text, expected, expected_len);
     if (expected == TY_W8 && expected_len != 0) {
+        char label[64];
         snprintf(message, sizeof message, "this byte string holds %u %s, but `%s` has %u", count,
                  count == 1 ? "byte" : "bytes", expected_text, expected_len);
-        add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch",
+        snprintf(label, sizeof label, "expected %u bytes", expected_len);
+        add_diag(c, "ORC0222", expr->start, expr->end, message, label,
                  "a byte string is the array `Word[8]^n` of its n bytes", 2);
     } else {
+        char label[96];
         snprintf(message, sizeof message, "this byte string has type `Word[8]^%u`, but `%s` is required here", count,
                  expected_text);
-        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+        snprintf(label, sizeof label, "expected `%s`", expected_text);
+        add_diag(c, "ORC0214", expr->start, expr->end, message, label,
                  "a byte string is the array `Word[8]^n` of its n bytes", 2);
     }
     return 1;
@@ -7887,11 +8411,13 @@ static int check_concat(Compiler *c, uint32_t index, TypeKind expected, uint32_t
     TypeKind right_ty = TY_NONE;
     TypeKind scalar = TY_NONE;
     char expected_text[64];
-    char message[192];
+    char message[384];
     write_type(expected_text, sizeof expected_text, expected, expected_len);
     if (expected_len == 0) {
+        char label[96];
         snprintf(message, sizeof message, "`++` joins arrays, but `%s` is required here", expected_text);
-        add_diag(c, "ORC0214", expr->op_start, expr->op_end, message, "`++` joins arrays", CONCAT_NOTE, 2);
+        snprintf(label, sizeof label, "`%s` is not an array type", expected_text);
+        add_diag(c, "ORC0214", expr->op_start, expr->op_end, message, label, CONCAT_NOTE, 2);
         return 1;
     }
     array_parts(c, expr->left, func_index, locals_in_scope, &have_left, &left_len, &left_elem, &left_ty);
@@ -7899,9 +8425,11 @@ static int check_concat(Compiler *c, uint32_t index, TypeKind expected, uint32_t
         if (known_non_array(c, expr->left, func_index, locals_in_scope, &scalar)) {
             char found[64];
             write_type(found, sizeof found, scalar, 0);
+            char label[96];
             snprintf(message, sizeof message, "only arrays can be joined, but this has type `%s`", found);
-            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
-                     CONCAT_NOTE, 2);
+            snprintf(label, sizeof label, "`%s` is not an array", found);
+            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, label, CONCAT_NOTE,
+                     2);
             return 1;
         }
         {
@@ -7910,10 +8438,12 @@ static int check_concat(Compiler *c, uint32_t index, TypeKind expected, uint32_t
                 return 0;
             }
             if (c->ndiags == before) {
+                char label[64];
                 snprintf(message, sizeof message,
                          "the left operand of `++` has %u elements, leaving none of the %u of `%s` for the right",
                          expected_len, expected_len, expected_text);
-                add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, "array length mismatch", CONCAT_NOTE, 2);
+                snprintf(label, sizeof label, "expected %u elements in all", expected_len);
+                add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, label, CONCAT_NOTE, 2);
             }
         }
         return 1;
@@ -7922,24 +8452,29 @@ static int check_concat(Compiler *c, uint32_t index, TypeKind expected, uint32_t
     if (!have_right && known_non_array(c, expr->right, func_index, locals_in_scope, &scalar)) {
         char found[64];
         write_type(found, sizeof found, scalar, 0);
+        char label[96];
         snprintf(message, sizeof message, "only arrays can be joined, but this has type `%s`", found);
-        add_diag(c, "ORC0224", c->exprs[expr->right].start, c->exprs[expr->right].end, message, "not an array",
-                 CONCAT_NOTE, 2);
+        snprintf(label, sizeof label, "`%s` is not an array", found);
+        add_diag(c, "ORC0224", c->exprs[expr->right].start, c->exprs[expr->right].end, message, label, CONCAT_NOTE, 2);
         return 1;
     }
     if (have_right) {
         unsigned long long total = (unsigned long long)left_len + right_len;
         if (total != expected_len) {
+            char label[64];
             snprintf(message, sizeof message, "`++` joins %u and %u elements, %llu in all, but `%s` has %u", left_len,
                      right_len, total, expected_text, expected_len);
-            add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, "array length mismatch", CONCAT_NOTE, 2);
+            snprintf(label, sizeof label, "expected %u elements in all", expected_len);
+            add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, label, CONCAT_NOTE, 2);
             return 1;
         }
     } else if (left_len >= expected_len) {
+        char label[64];
         snprintf(message, sizeof message,
                  "the left operand of `++` has %u elements, leaving none of the %u of `%s` for the right", left_len,
                  expected_len, expected_text);
-        add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, "array length mismatch", CONCAT_NOTE, 2);
+        snprintf(label, sizeof label, "expected %u elements in all", expected_len);
+        add_diag(c, "ORC0222", expr->op_start, expr->op_end, message, label, CONCAT_NOTE, 2);
         return 1;
     }
     if (!check_expr(c, expr->left, expected, left_len, func_index, locals_in_scope)) {
@@ -7982,17 +8517,23 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
         return check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope);
     }
     if (base_len == 0) {
-        char message[192];
-        char found[64];
-        write_type(found, sizeof found, base_kind, 0);
-        snprintf(message, sizeof message, "only an array can be sliced, but this has type %s", found);
-        add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
+        char message[384];
+        char found[96];
+        char label[128];
+        spell_type(owner, found, sizeof found, base_kind, 0, base_mod, tup0, tup_n);
+        snprintf(message, sizeof message, "only an array can be sliced, but this has type `%s`", found);
+        if (base_kind == TY_TUPLE) {
+            snprintf(label, sizeof label, "`%s` is a tuple, not an array", found);
+        } else {
+            snprintf(label, sizeof label, "`%s` has no elements", found);
+        }
+        add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, label,
                  "a slice `x[a..b]` is taken from a value of type `T^n`", 2);
         return check_owned(c, expr->left, base_kind, 0, base_mod, tup0, tup_n, owner, func_index, locals_in_scope);
     }
     element_ok = expected_len != 0 && expected == base_kind;
     if (!element_ok) {
-        char message[192];
+        char message[384];
         char expected_text[64];
         char element_text[64];
         write_type(expected_text, sizeof expected_text, expected, expected_len);
@@ -8003,10 +8544,14 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
         } else {
             snprintf(message, sizeof message, "a slice is an array, but `%s` is required here", expected_text);
         }
-        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                 expected_len != 0 ? "a slice is an array of the elements of the array it is taken from"
-                                   : "one element is selected by an index, such as `x[0]`",
-                 2);
+        {
+            char label[128];
+            snprintf(label, sizeof label, "expected `%s`", expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, label,
+                     expected_len != 0 ? "a slice is an array of the elements of the array it is taken from"
+                                       : "one element is selected by an index, such as `x[0]`",
+                     2);
+        }
     }
     if (!check_owned(c, expr->left, base_kind, base_len, base_mod, tup0, tup_n, owner, func_index, locals_in_scope)) {
         return 0;
@@ -8019,12 +8564,14 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
         return 1;
     }
     if (element_ok && slice_len != expected_len) {
-        char message[192];
+        char message[384];
         char expected_text[64];
         write_type(expected_text, sizeof expected_text, expected, expected_len);
+        char label[64];
         snprintf(message, sizeof message, "this slice has %u %s, but `%s` has %u", slice_len,
                  slice_len == 1 ? "element" : "elements", expected_text, expected_len);
-        add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch", SLICE_LENGTH_NOTE, 2);
+        snprintf(label, sizeof label, "expected %u elements", expected_len);
+        add_diag(c, "ORC0222", expr->start, expr->end, message, label, SLICE_LENGTH_NOTE, 2);
     }
     return 1;
 }
@@ -8042,20 +8589,30 @@ static int check_slice_update(Compiler *c, uint32_t index, TypeKind expected, ui
     uint16_t tup_n = c->leaf_tup_n;
     const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
     uint32_t slice_len = 0;
-    char message[192];
+    char message[384];
     char expected_text[64];
     if (state == 1 && base_len == 0) {
-        char found[64];
-        write_type(found, sizeof found, base_kind, 0);
-        snprintf(message, sizeof message, "only an array can be updated, but this has type %s", found);
-        add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
-                 SLICE_UPDATE_NOTE, 2);
+        char found[96];
+        char label[128];
+        spell_type(owner, found, sizeof found, base_kind, 0, base_mod, tup0, tup_n);
+        snprintf(message, sizeof message, "only an array can be updated, but this has type `%s`", found);
+        if (base_kind == TY_TUPLE) {
+            snprintf(label, sizeof label, "`%s` is a tuple, not an array", found);
+        } else {
+            snprintf(label, sizeof label, "`%s` has no elements", found);
+        }
+        add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, label,
+                 base_kind == TY_TUPLE ? "a tuple with elements replaced is written anew, such as `(v, p.1)`"
+                                       : SLICE_UPDATE_NOTE,
+                 2);
         return check_owned(c, expr->left, base_kind, 0, base_mod, tup0, tup_n, owner, func_index, locals_in_scope);
     }
     if (expected_len == 0) {
         write_type(expected_text, sizeof expected_text, expected, 0);
+        char label[96];
         snprintf(message, sizeof message, "an update gives an array, but `%s` is required here", expected_text);
-        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch", SLICE_UPDATE_NOTE, 2);
+        snprintf(label, sizeof label, "expected `%s`", expected_text);
+        add_diag(c, "ORC0214", expr->start, expr->end, message, label, SLICE_UPDATE_NOTE, 2);
         return 1;
     }
     if (!check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope)) {
@@ -8087,7 +8644,7 @@ static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t calle
        has none. */
     if (expr->nsize != 0 && expr->nsize != func->nsizes) {
         if (report) {
-            char message[192];
+            char message[384];
             if (func->nsizes == 0) {
                 snprintf(message, sizeof message, "`%s` has no size parameters, but this call gives %u size%s", name,
                          expr->nsize, expr->nsize == 1 ? "" : "s");
@@ -8126,7 +8683,7 @@ static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t calle
             }
             if (value.value < func->sz_lo[index] || value.value >= func->sz_hi[index]) {
                 if (report) {
-                    char message[192];
+                    char message[384];
                     char size_name[64];
                     span_copy(size_name, sizeof size_name, target->text, func->sz_name0[index], func->sz_name1[index]);
                     snprintf(message, sizeof message, "`%s` is defined for `%s` in %lld..%lld", name, size_name,
@@ -8253,7 +8810,7 @@ static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t calle
                      "the lengths of its arguments; any other call writes its sizes in brackets, as in `absorb[2](p)`",
                      2);
         } else {
-            char message[192];
+            char message[384];
             char label[128];
             char domain[192];
             size_t used = 0;
@@ -8281,10 +8838,39 @@ static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t calle
                 char note[320];
                 snprintf(note, sizeof note, "`%s` is defined for %s", name, domain);
                 add_diag(c, "ORC0238", expr->start, expr->end, message, label, note, 2);
+                if (c->ndiags > 0) {
+                    Diag *diag = &c->diags[c->ndiags - 1];
+                    copy_text(diag->note2, sizeof diag->note2,
+                              "a call that writes no sizes calls the one instance of its function whose array "
+                              "parameters have the lengths of its arguments; any other call writes its sizes in "
+                              "brackets, as in `absorb[2](p)`");
+                    diag->has_note2 = 1;
+                }
             }
         }
         return 0;
     }
+}
+
+static int operand_passes_branch(const Compiler *c, uint32_t index) {
+    const Expr *expr;
+    uint16_t arm;
+    if (index >= c->nexprs) {
+        return 0;
+    }
+    expr = &c->exprs[index];
+    if (expr->kind == EX_GROUP) {
+        return operand_passes_branch(c, expr->left);
+    }
+    if (expr->kind != EX_COND) {
+        return 0;
+    }
+    for (arm = 0; arm < expr->argc; arm++) {
+        if (c->cond_arms[expr->arg0 + arm].nbinds > 0) {
+            return 1;
+        }
+    }
+    return expr->else_nbinds > 0;
 }
 
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
@@ -8304,32 +8890,36 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         return check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope);
     case EX_LIT:
         if (expected_len != 0) {
-            char message[192];
-            char expected_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            snprintf(message, sizeof message, "an integer literal cannot have type %s", expected_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "an array value is written as an array literal", 2);
+            char message[384];
+            char expected_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "an integer literal cannot have type `%s`", expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "an array value is written `[e0, e1, ...]`, one element per index");
             return 1;
         }
         check_literal(c, expr, expected, c->expect_mod);
         return 1;
     case EX_ARRAY:
         if (expected_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "an array literal cannot have type %s", type_spelling(expected));
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "an array literal is written where an array type is required", 2);
+            char message[384];
+            char expected_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "an array literal cannot have type `%s`", expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "an array literal is written where an array type `T^n` is required");
             return 1;
         }
         if (expr->argc != expected_len) {
-            char message[192];
-            char expected_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            snprintf(message, sizeof message, "this array has %u elements, but %s has %u", expr->argc, expected_text,
+            char message[384];
+            char expected_text[96];
+            char label[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "this array has %u elements, but `%s` has %u", expr->argc, expected_text,
                      expected_len);
-            add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch",
-                     "an array literal lists every element of its type", 2);
+            snprintf(label, sizeof label, "expected %u %s", expected_len, expected_len == 1 ? "element" : "elements");
+            add_diag(c, "ORC0222", expr->start, expr->end, message, label,
+                     "an array literal lists every element of its type exactly once", 2);
         }
         for (uint16_t element = 0; element < expr->argc; element++) {
             if (!check_expr(c, c->args[expr->arg0 + element], expected, 0, func_index, locals_in_scope)) {
@@ -8358,23 +8948,32 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                          "integer magnitude exceeds 16384 significant bits", "index is too large",
                          "an index literal must fit the representation budget", 2);
             } else if (!index_below(&magnitude, base_len)) {
-                add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, "index is not below the array length",
-                         "index out of range", "a literal index must be less than the array's length", 2);
+                char message[384];
+                char label[128];
+                char type_text[64];
+                char value_text[96];
+                write_type(type_text, sizeof type_text, base_kind, base_len);
+                if (!big_format(&magnitude, value_text, sizeof value_text)) {
+                    copy_text(value_text, sizeof value_text, "?");
+                }
+                snprintf(message, sizeof message, "index `%s` is out of range for `%s`", value_text, type_text);
+                snprintf(label, sizeof label, "indices run from 0 through %u", base_len == 0 ? 0 : base_len - 1u);
+                add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, message, label,
+                         "a literal index must be less than the array's length", 2);
             }
         }
         {
             uint16_t element_mod = c->leaf_mod;
             if (base_kind != expected || expected_len != 0 ||
                 (base_kind == TY_MOD && expected == TY_MOD && element_mod != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, base_kind, 0);
-                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                char message[384];
+                char expected_text[96];
+                char found_text[96];
+                spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+                spell_type(c, found_text, sizeof found_text, base_kind, 0, element_mod, 0, 0);
+                snprintf(message, sizeof message, "this element has type `%s`, but `%s` is required here", found_text,
                          expected_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                add_expected(c, expr->start, expr->end, message, expected_text, IMPLICIT_NOTE);
             }
             return check_at(c, expr->left, base_kind, base_len, element_mod, func_index, locals_in_scope);
         }
@@ -8384,20 +8983,24 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint16_t tup_n = c->expect_tup_n;
         uint16_t element;
         if (expected != TY_TUPLE || tup_n == 0) {
-            char message[192];
-            char expected_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            snprintf(message, sizeof message, "a tuple cannot have type %s", expected_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "a tuple is written where a tuple type is required", 2);
+            char message[384];
+            char expected_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "a tuple cannot have type `%s`", expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "a tuple is written where a tuple type `(T, U, ...)` is required");
             return 1;
         }
         if (expr->argc != tup_n) {
-            char message[192];
-            snprintf(message, sizeof message, "this tuple has %u elements, but the required tuple has %u", expr->argc,
+            char message[384];
+            char expected_text[96];
+            char label[96];
+            spell_expected(c, expected_text, sizeof expected_text, TY_TUPLE, 0);
+            snprintf(message, sizeof message, "this tuple has %u elements, but `%s` has %u", expr->argc, expected_text,
                      tup_n);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "tuple length mismatch",
-                     "a tuple lists every element of its type", 2);
+            snprintf(label, sizeof label, "expected %u elements", tup_n);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, label,
+                     "a tuple lists every element of its type exactly once, in order", 2);
             return 1;
         }
         for (element = 0; element < expr->argc; element++) {
@@ -8425,22 +9028,31 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
         }
         if (base_kind != TY_TUPLE) {
-            char message[192];
-            char found[64];
-            write_type(found, sizeof found, base_kind, base_len);
-            snprintf(message, sizeof message, "only a tuple has elements selected by position, but this has type %s",
-                     found);
-            add_diag(c, "ORC0234", expr->start, expr->end, message, "not a tuple",
+            char message[384];
+            char found[96];
+            char label[128];
+            const Expr *base = &c->exprs[expr->left];
+            spell_type(c, found, sizeof found, base_kind, base_len, base_mod, tup0, tup_n);
+            snprintf(message, sizeof message,
+                     "only a tuple has elements selected by position, but this has type `%s`", found);
+            snprintf(label, sizeof label, "`%s` is not a tuple", found);
+            add_diag(c, "ORC0234", base->start, base->end, message, label,
                      base_len != 0 ? "an array's element is selected by an index, such as `x[0]`"
-                                   : "select an element of a tuple, such as `p.0`",
+                                   : "`.k` selects element k of a value of a tuple type `(T, U, ...)`",
                      2);
             return check_at(c, expr->left, base_kind, base_len, base_mod, func_index, locals_in_scope);
         }
         if (expr->proj_pos >= tup_n || owner->telems == NULL) {
-            char message[160];
-            snprintf(message, sizeof message, "this tuple has no element %u", expr->proj_pos);
-            add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, message, "no element at that position",
-                     "a tuple's elements are numbered from zero", 2);
+            char message[384];
+            char found[96];
+            char label[128];
+            char written[32];
+            spell_type(owner, found, sizeof found, TY_TUPLE, 0, 0, tup0, tup_n);
+            span_copy(written, sizeof written, c->text, expr->lit_start, expr->lit_end);
+            snprintf(message, sizeof message, "`%s` has no element %s", found, written);
+            snprintf(label, sizeof label, "its elements are numbered 0 through %u", tup_n == 0 ? 0 : tup_n - 1u);
+            add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, message, label,
+                     "a tuple's elements are counted from zero", 2);
         } else {
             TupleElem item = owner->telems[tup0 + expr->proj_pos];
             uint16_t mod = item.mod_index;
@@ -8449,15 +9061,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             if (item.kind != expected || item.length != expected_len ||
                 (item.kind == TY_MOD && expected == TY_MOD && mod != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, item.kind, item.length);
-                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                char message[384];
+                char expected_text[96];
+                char found_text[96];
+                spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+                spell_type(owner, found_text, sizeof found_text, item.kind, item.length, mod, 0, 0);
+                snprintf(message, sizeof message, "this element has type `%s`, but `%s` is required here", found_text,
                          expected_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                add_expected(c, expr->start, expr->end, message, expected_text, IMPLICIT_NOTE);
             }
         }
         {
@@ -8489,12 +9100,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         if (res == NAME_SIZE) {
             if (expected != TY_INT || expected_len != 0) {
-                char message[192];
-                char expected_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                snprintf(message, sizeof message, "expected %s, found Int", expected_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "a size parameter is an Int constant in each instance of its function", 2);
+                report_name_mismatch(c, expr->start, expr->end, TY_INT, 0, 0, 0, 0, expected, expected_len);
             }
             return 1;
         }
@@ -8509,14 +9115,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                         !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
             if (type != expected || length != expected_len || shape ||
                 (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, type, length);
-                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                report_name_mismatch(c, expr->start, expr->end, type, length, found_mod, nt0, ntn, expected,
+                                     expected_len);
             }
             return 1;
         }
@@ -8528,12 +9128,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 expr->name_ty = TY_BOOL;
                 expr->name_len = 0;
                 if (expected != TY_BOOL || expected_len != 0) {
-                    char message[192];
-                    char expected_text[64];
-                    write_type(expected_text, sizeof expected_text, expected, expected_len);
-                    snprintf(message, sizeof message, "expected %s, found Bool", expected_text);
-                    add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                             "Orange does not convert between types implicitly", 2);
+                    report_name_mismatch(c, expr->start, expr->end, TY_BOOL, 0, 0, 0, 0, expected, expected_len);
                 }
                 return 1;
             }
@@ -8568,14 +9163,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                     !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
             if (type != expected || length != expected_len || shape ||
                 (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, type, length);
-                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                report_name_mismatch(c, expr->start, expr->end, type, length, found_mod, nt0, ntn, expected,
+                                     expected_len);
             }
         }
         return 1;
@@ -8593,7 +9182,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             module_name[0] = '\0';
         }
         if (callee.not_used) {
-            char message[192];
+            char message[384];
             if (callee.is_self) {
                 snprintf(message, sizeof message, "`%s` is the calling module", module_name);
                 add_diag(c, "ORC0229", expr->left, expr->right, message, "a module does not qualify calls to itself",
@@ -8611,7 +9200,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (!callee.found) {
-            char message[192];
+            char message[384];
             char note[320];
             const char *note_text;
             if (callee.is_impl) {
@@ -8653,8 +9242,17 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                             "module as `NAME::f(...)`";
             }
             if (callee.empty_spec) {
+                uint32_t declared;
                 snprintf(message, sizeof message, "`spec` function `%s` has no typed body and cannot be called", ident);
                 add_diag(c, "ORC0212", expr->name_start, expr->name_end, message, "no value to call", note_text, 2);
+                for (declared = 0; declared < callee.mod->nfuncs; declared++) {
+                    const Func *empty = &callee.mod->funcs[declared];
+                    if (!empty->is_impl && !empty->typed &&
+                        same_span(callee.mod, empty->name_start, empty->name_end, expr->name_start, expr->name_end)) {
+                        diag_add_secondary(c, empty->name_start, empty->name_end, "declared without a result type here");
+                        break;
+                    }
+                }
             } else if (callee.qualified) {
                 snprintf(message, sizeof message, "no typed `spec` function named `%s` in module `%s`", ident,
                          module_name);
@@ -8674,7 +9272,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (expr->argc != target->funcs[callee.func].nparams) {
-            char message[192];
+            char message[384];
             snprintf(message, sizeof message, "`%s` takes %u argument%s but %u %s supplied", ident,
                      target->funcs[callee.func].nparams, target->funcs[callee.func].nparams == 1 ? "" : "s", expr->argc,
                      expr->argc == 1 ? "was" : "were");
@@ -8729,14 +9327,15 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 mod_differs = !same_tuple(c, c->expect_tup0, c->expect_tup_n, target, found_tup0, found_tup_n);
             }
             if (found_result != expected || found_len != expected_len || mod_differs) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, found_result, found_len);
-                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                char message[384];
+                char expected_text[96];
+                char found_text[96];
+                spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+                spell_type(target, found_text, sizeof found_text, found_result, found_len, found_mod, found_tup0,
+                           found_tup_n);
+                snprintf(message, sizeof message, "`%s` returns `%s`, but `%s` is required here", ident, found_text,
+                         expected_text);
+                add_expected(c, expr->start, expr->end, message, expected_text, IMPLICIT_NOTE);
             }
             for (uint16_t arg = 0; arg < expr->argc; arg++) {
                 TypeKind arg_type;
@@ -8783,10 +9382,12 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         return 1;
     }
-    case EX_UNARY:
-        if (expected_len != 0) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
-                     "operators apply to elements", "index the array and apply the operator to one element", 2);
+    case EX_UNARY: {
+        const char *uname = expr->op == TK_MINUS ? "-" : expr->op == TK_TILDE ? "~" : "!";
+        if (expected_len != 0 || expected == TY_TUPLE) {
+            report_undefined_op(c, expr->op_start, expr->op_end, uname, 1, expected, expected_len, c->expect_mod,
+                                c->expect_tup0, c->expect_tup_n,
+                                expected == TY_TUPLE ? TUPLE_OPERATOR_NOTE : ARRAY_OPERATOR_NOTE);
             return 1;
         }
         if (expr->op == TK_BANG) {
@@ -8794,10 +9395,10 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                typecheck the operand, so a rejected `!` does not add the
                operand's own codes. */
             if (expected != TY_BOOL) {
-                char message[128];
-                snprintf(message, sizeof message, "prefix `!` is not defined for `%s`", type_spelling(expected));
-                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                         "`!` negates a `Bool`; `~` is the bitwise complement of a word", 2);
+                const char *note = type_width(expected) > 0
+                                       ? "`!` negates a `Bool`; `~` is the bitwise complement of a word"
+                                       : "`!` negates a `Bool`; `-` negates an `Int` or a residue";
+                report_undefined_op(c, expr->op_start, expr->op_end, "!", 1, expected, 0, c->expect_mod, 0, 0, note);
                 return 1;
             }
             return check_expr(c, expr->left, TY_BOOL, 0, func_index, locals_in_scope);
@@ -8806,28 +9407,28 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_expr(c, expr->left, TY_MOD, 0, func_index, locals_in_scope);
         }
         if (expr->op == TK_TILDE && expected == TY_MOD) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "prefix `~` is not defined for a residue",
-                     "bitwise complement needs a word", "bitwise operators apply only to `Word[n]` values", 2);
+            report_undefined_op(c, expr->op_start, expr->op_end, "~", 1, TY_MOD, 0, c->expect_mod, 0, 0,
+                                "bitwise operators apply only to `Word[n]` values");
             return 1;
         }
         if (expr->op == TK_MINUS && expected != TY_INT) {
             if (expected == TY_BOOL) {
-                add_diag(c, "ORC0215", expr->op_start, expr->op_end, "prefix `-` is not defined for `Bool`",
-                         "operator not defined", "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
+                report_undefined_op(c, expr->op_start, expr->op_end, "-", 1, TY_BOOL, 0, 0, 0, 0, BOOL_OPERATOR_NOTE);
             } else {
-                add_diag(c, "ORC0215", expr->op_start, expr->op_end, "negation is not defined for this type",
-                         "write `0 - a` for a word", "prefix `-` is exact integer negation", 2);
+                char note[80];
+                snprintf(note, sizeof note, "write `0 - x` for negation modulo 2^%d", type_width(expected));
+                report_undefined_op(c, expr->op_start, expr->op_end, "-", 1, expected, 0, 0, 0, 0, note);
             }
             return 1;
         }
         if (expr->op == TK_TILDE && (expected == TY_INT || expected == TY_BOOL)) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end,
-                     expected == TY_BOOL ? "prefix `~` is not defined for `Bool`" : "complement is not defined for `Int`",
-                     "bitwise complement needs a word",
-                     expected == TY_BOOL ? "`Bool` has `!`, `&&`, `||`, `==`, and `!=`" : NULL, 2);
+            report_undefined_op(c, expr->op_start, expr->op_end, "~", 1, expected, 0, 0, 0, 0,
+                                expected == TY_BOOL ? BOOL_OPERATOR_NOTE
+                                                    : "bitwise operators apply only to `Word[n]` values");
             return 1;
         }
         return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
+    }
     case EX_BINARY:
         if (expr->op == TK_PLUSPLUS) {
             return check_concat(c, index, expected, expected_len, func_index, locals_in_scope);
@@ -8840,12 +9441,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                typecheck either operand. An array expected type keeps its
                length in the message. */
             if (expected != TY_BOOL || expected_len != 0) {
-                char message[128];
-                char found[64];
-                write_type(found, sizeof found, expected, expected_len);
-                snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op), found);
-                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                         "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words", 2);
+                report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, expected, expected_len,
+                                    c->expect_mod, c->expect_tup0, c->expect_tup_n,
+                                    "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words");
                 return 1;
             }
             if (!check_expr(c, expr->left, TY_BOOL, 0, func_index, locals_in_scope)) {
@@ -8853,21 +9451,20 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             return check_expr(c, expr->right, TY_BOOL, 0, func_index, locals_in_scope);
         }
-        if (expected_len != 0) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
-                     "operators apply to elements", "index the array and apply the operator to one element", 2);
+        if (expected_len != 0 || expected == TY_TUPLE) {
+            report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, expected, expected_len,
+                                c->expect_mod, c->expect_tup0, c->expect_tup_n,
+                                expected == TY_TUPLE ? TUPLE_OPERATOR_NOTE : ARRAY_OPERATOR_NOTE);
             return 1;
         }
         if (expected == TY_BOOL) {
-            char message[128];
-            snprintf(message, sizeof message, "`%s` is not defined for `Bool`", op_spelling(expr->op));
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined",
-                     "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
+            report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, TY_BOOL, 0, 0, 0, 0,
+                                BOOL_OPERATOR_NOTE);
             return 1;
         }
         if ((expr->op == TK_AMP || expr->op == TK_PIPE || expr->op == TK_CARET) && expected == TY_INT) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "bitwise operators are not defined for `Int`",
-                     "this operator needs a word", NULL, 2);
+            report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, TY_INT, 0, 0, 0, 0,
+                                "bitwise operators apply only to `Word[n]` values");
             return 1;
         }
         if (expected == TY_MOD) {
@@ -8876,9 +9473,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                                        ? "a residue is already reduced; `%` applies to `Int` and word values, such as "
                                          "`(x as Int) % 16`"
                                        : "bitwise operators apply only to `Word[n]` values";
-                char message[128];
-                snprintf(message, sizeof message, "`%s` is not defined for a residue", op_spelling(expr->op));
-                add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined", note, 2);
+                report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, TY_MOD, 0, c->expect_mod,
+                                    0, 0, note);
                 return 1;
             }
             if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
@@ -8887,10 +9483,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return check_expr(c, expr->right, expected, 0, func_index, locals_in_scope);
         }
         if (!is_number_type(expected) && expected != TY_NONE) {
-            char message[128];
-            snprintf(message, sizeof message, "`%s` is not defined for `%s`", op_spelling(expr->op),
-                     type_spelling(expected));
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "operator not defined", NULL, 2);
+            report_undefined_op(c, expr->op_start, expr->op_end, op_spelling(expr->op), 0, expected, expected_len,
+                                c->expect_mod, c->expect_tup0, c->expect_tup_n, NULL);
             return 1;
         }
         if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
@@ -8898,24 +9492,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         return check_expr(c, expr->right, expected, 0, func_index, locals_in_scope);
     case EX_SHIFT:
-        if (expected_len != 0) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
-                     "operators apply to elements", "index the array and apply the operator to one element", 2);
-            return 1;
-        }
-        if (expected == TY_BOOL) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for `Bool`",
-                     "operator not defined", "`Bool` has `!`, `&&`, `||`, `==`, and `!=`", 2);
-            return 1;
-        }
-        if (expected == TY_INT) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for `Int`",
-                     "this operator needs a word", NULL, 2);
-            return 1;
-        }
-        if (expected == TY_MOD) {
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for a residue",
-                     "this operator needs a word", "shifts and rotations apply only to `Word[n]` values", 2);
+        if (expected_len != 0 || expected == TY_TUPLE || expected == TY_BOOL || expected == TY_INT ||
+            expected == TY_MOD || type_width(expected) == 0) {
+            const char *note = expected == TY_BOOL ? BOOL_OPERATOR_NOTE
+                               : expected == TY_TUPLE ? TUPLE_OPERATOR_NOTE
+                               : expected_len != 0    ? ARRAY_OPERATOR_NOTE
+                                                      : "shifts and rotations apply only to `Word[n]` values";
+            report_undefined_op(c, expr->op_start, expr->op_end, shift_name(expr->op), 0, expected, expected_len,
+                                c->expect_mod, c->expect_tup0, c->expect_tup_n, note);
             return 1;
         }
         if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
@@ -8925,22 +9509,27 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             const Expr *amount = &c->exprs[expr->right];
             Big value = big_zero();
             int width = type_width(expected);
+            int highest = width > 0 ? width - 1 : 0;
+            char message[160];
+            char label[96];
+            char type_text[64];
+            spell_type(c, type_text, sizeof type_text, expected, 0, 0, 0, 0);
+            snprintf(message, sizeof message, "`%s` on `%s` needs an amount from 0 through %d", shift_name(expr->op),
+                     type_text, highest);
+            snprintf(label, sizeof label, "a literal amount is from 0 through %d", highest);
             if (amount->kind != EX_LIT || amount->negative) {
-                add_diag(c, "ORC0216", amount->start, amount->end,
-                         "shift amount must be an unsigned literal below the width", "invalid shift amount",
-                         "a literal amount is an integer from 0 through n - 1", 2);
+                add_diag(c, "ORC0216", amount->start, amount->end, message, label, SHIFT_AMOUNT_NOTE, 2);
                 return 1;
             }
             if (!decode_literal(c, amount, &value)) {
-                add_diag(c, "ORC0205", amount->start, amount->end, "integer magnitude exceeds 16384 significant bits",
-                         "literal is too large", NULL, 2);
+                add_diag(c, "ORC0205", amount->lit_start, amount->lit_end,
+                         "integer magnitude exceeds the 16384-significant-bit limit",
+                         "exact integer is too large for this semantic fragment",
+                         "the literal is rejected rather than truncated or approximated", 2);
                 return 1;
             }
-            if (big_bits(&value) > 31 || (value.nlimbs > 0 && value.limbs[0] >= (uint32_t)width) ||
-                (width == 0)) {
-                add_diag(c, "ORC0216", amount->start, amount->end,
-                         "shift amount must be an unsigned literal below the width", "invalid shift amount",
-                         "a literal amount is an integer from 0 through n - 1", 2);
+            if (big_bits(&value) > 31 || (value.nlimbs > 0 && value.limbs[0] >= (uint32_t)width) || width == 0) {
+                add_diag(c, "ORC0216", amount->start, amount->end, message, label, SHIFT_AMOUNT_NOTE, 2);
             }
         }
         return 1;
@@ -8959,9 +9548,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
             }
         } else if (expr->conv_len != 0) {
-            add_diag(c, "ORC0215", expr->name_start, expr->name_end, "`as` does not convert to an array type",
-                     "`as` gives one `Int`, word, or residue value",
-                     "convert each element, such as `x[0] as Int`", 2);
+            char message[384];
+            char target[96];
+            char note_buf[384];
+            const char *note = "convert each element, such as `x[0] as Int`";
+            spell_type(c, target, sizeof target, expr->conv_ty, expr->conv_len, expr->conv_mod, 0, 0);
+            snprintf(message, sizeof message, "`as` does not convert to the array type `%s`", target);
+            if (expr->conv_ty == TY_W8 || expr->conv_ty == TY_W16 || expr->conv_ty == TY_W32 ||
+                expr->conv_ty == TY_W64) {
+                snprintf(note_buf, sizeof note_buf,
+                         "name a byte order to write words as `%s`, as in `as big %s`, or build the array from its "
+                         "elements",
+                         target, target);
+                note = note_buf;
+            }
+            add_diag(c, "ORC0215", expr->name_start, expr->name_end, message,
+                     "`as` gives one `Int`, word, or residue value", note, 2);
             return 1;
         } else if (expr->conv_ty == TY_TUPLE) {
             add_diag(c, "ORC0215", expr->name_start, expr->name_end, "`as` does not convert to a tuple type",
@@ -8969,28 +9571,46 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         } else if (expr->conv_ty != expected || expected_len != 0 ||
                    (expr->conv_ty == TY_MOD && expected == TY_MOD && expr->conv_mod != c->expect_mod)) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, expr->conv_ty, 0);
-            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-            add_diag(c, "ORC0214", expr->name_start, expr->name_end, message, "conversion has a different type",
-                     "the target of `as` is the type of the conversion", 2);
+            char message[384];
+            char expected_text[96];
+            char found_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            spell_type(c, found_text, sizeof found_text, expr->conv_ty, expr->conv_len, expr->conv_mod, 0, 0);
+            snprintf(message, sizeof message, "this conversion gives `%s`, but `%s` is required here", found_text,
+                     expected_text);
+            add_expected(c, expr->name_start, expr->name_end, message, expected_text,
+                         "`as` gives exactly the type written after it");
         }
         state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
         if (state == 2 || (state > 0 && (leaf_len != 0 || leaf_type == TY_TUPLE))) {
+            char message[384];
+            char found[96];
             int tuple = leaf_type == TY_TUPLE || c->exprs[expr->left].kind == EX_TUPLE;
-            add_diag(c, "ORC0215", expr->op_start, expr->op_end,
-                     tuple ? "`as` is not defined for a tuple" : "`as` is not defined for an array",
-                     "convert one element",
-                     tuple ? "select one element, such as `p.0`" : "a conversion applies to one Int or word value", 2);
+            int words = leaf_len != 0 && type_width(leaf_type) > 0;
+            const char *note = tuple ? "convert each element, such as `p.0 as Int`"
+                               : words ? "name a byte order to read the words as one number or as words of another "
+                                        "width, as in `x as big Int`, or convert each element, such as `x[0] as Int`"
+                                       : "convert each element, such as `x[0] as Int`";
+            if (state > 0 && leaf_type != TY_NONE) {
+                spell_type(c, found, sizeof found, leaf_type, leaf_len, c->leaf_mod,
+                           leaf_type == TY_TUPLE ? c->leaf_tup0 : 0, leaf_type == TY_TUPLE ? c->leaf_tup_n : 0);
+                snprintf(message, sizeof message, "`as` is not defined for `%s`", found);
+            } else {
+                snprintf(message, sizeof message, "`as` is not defined for %s", tuple ? "a tuple" : "an array");
+            }
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, message,
+                     "`as` converts one `Int`, word, or residue value", note, 2);
             return 1;
         }
         if (state == 0) {
+            int branch = operand_passes_branch(c, expr->left);
             add_diag(c, "ORC0220", c->exprs[expr->left].start, c->exprs[expr->left].end,
-                     "conversion operand has no type of its own", "no typed leaf",
-                     "a literal takes its type from context; name it or convert a typed value", 2);
+                     "the operand of `as` has no type of its own",
+                     branch ? "a branch's own bindings are not in scope outside it"
+                            : "a literal takes its type from where it is used",
+                     branch ? "bind the conditional's value with a typed `let` first, or convert within each branch"
+                            : "write the literal where its type is required, or give it a type with a `let` binding",
+                     2);
             return 1;
         }
         if (state < 0) {
@@ -9037,12 +9657,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         return check_loop(c, index, expected, expected_len, func_index, locals_in_scope);
     case EX_LOOP_INDEX:
         if (expected != TY_INT || expected_len != 0) {
-            char message[192];
-            char expected_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            snprintf(message, sizeof message, "expected %s, found Int", expected_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "a loop index has type Int", 2);
+            report_name_mismatch(c, expr->start, expr->end, TY_INT, 0, 0, 0, 0, expected, expected_len);
         }
         return 1;
     case EX_ACCUM: {
@@ -9058,14 +9673,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             elem = &c->telems[loop->tup0 + expr->name_index];
             if (elem->kind != expected || elem->length != expected_len ||
                 (elem->kind == TY_MOD && expected == TY_MOD && elem->mod_index != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, elem->kind, elem->length);
-                snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "an accumulator has its declared type", 2);
+                report_name_mismatch(c, expr->start, expr->end, elem->kind, elem->length, elem->mod_index, 0, 0,
+                                     expected, expected_len);
             }
             return 1;
         }
@@ -9073,14 +9682,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             (loop->acc_type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && loop->tup_n > 0 &&
              !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, loop->tup0, loop->tup_n)) ||
         (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
-            char message[192];
-            char expected_text[64];
-            char found_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
-            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "an accumulator has its declared type", 2);
+            report_name_mismatch(c, expr->start, expr->end, loop->acc_type, loop->acc_len, loop->acc_mod, loop->tup0,
+                                 loop->tup_n, expected, expected_len);
         }
         return 1;
     }
@@ -9102,15 +9705,14 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             uint16_t element_mod = c->leaf_mod;
             if (base_kind != expected || expected_len != 0 ||
                 (base_kind == TY_MOD && expected == TY_MOD && element_mod != c->expect_mod)) {
-                char message[192];
-                char expected_text[64];
-                char found_text[64];
-                write_type(expected_text, sizeof expected_text, expected, expected_len);
-                write_type(found_text, sizeof found_text, base_kind, 0);
-                snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                char message[384];
+                char expected_text[96];
+                char found_text[96];
+                spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+                spell_type(c, found_text, sizeof found_text, base_kind, 0, element_mod, 0, 0);
+                snprintf(message, sizeof message, "this element has type `%s`, but `%s` is required here", found_text,
                          expected_text);
-                add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                         "Orange does not convert between types implicitly", 2);
+                add_expected(c, expr->start, expr->end, message, expected_text, IMPLICIT_NOTE);
             }
             if (!check_at(c, expr->left, base_kind, base_len, element_mod, func_index, locals_in_scope)) {
                 return 0;
@@ -9125,21 +9727,33 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         int silent = 0;
         int state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
         if (state == 1 && leaf_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "only an array can be updated, but this has type %s",
-                     type_spelling(leaf_type));
-            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
-                     "an update replaces one element of an array", 2);
+            char message[384];
+            char found[96];
+            char label[128];
+            const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
+            spell_type(owner, found, sizeof found, leaf_type, 0, c->leaf_mod, c->leaf_tup0, c->leaf_tup_n);
+            snprintf(message, sizeof message, "only an array can be updated, but this has type `%s`", found);
+            if (leaf_type == TY_TUPLE) {
+                snprintf(label, sizeof label, "`%s` is a tuple, not an array", found);
+            } else {
+                snprintf(label, sizeof label, "`%s` has no elements", found);
+            }
+            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, label,
+                     leaf_type == TY_TUPLE ? "a tuple with one element replaced is written anew, such as `(v, p.1)`"
+                                           : "`x with [i] = v` is the array `x` with one element replaced",
+                     2);
             if (!silent) {
                 return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
             }
             return 1;
         }
         if (expected_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "an update cannot have type %s", type_spelling(expected));
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "an update has the type of the array it updates", 2);
+            char message[384];
+            char expected_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "an update gives an array, but `%s` is required here", expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "`x with [i] = v` is the array `x` with one element replaced");
             return 1;
         }
         if (!check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope) ||
@@ -9152,10 +9766,12 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t length = 0;
         int admitted;
         if (expected_len == 0) {
-            char message[192];
-            snprintf(message, sizeof message, "a fill literal cannot have type %s", type_spelling(expected));
-            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
-                     "a fill literal is written where an array type is required", 2);
+            char message[384];
+            char expected_text[96];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "an array literal cannot have type `%s`", expected_text);
+            add_expected(c, expr->start, expr->end, message, expected_text,
+                         "an array literal is written where an array type `T^n` is required");
             return 1;
         }
         if (expr->size_expr != UINT32_MAX) {
@@ -9167,19 +9783,18 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             admitted = canonical_array_length(c->text, expr->lit_start, expr->lit_end, &length);
         }
         if (!admitted) {
-            char message[128];
-            snprintf(message, sizeof message, "array length must be a decimal integer from 1 through %u",
-                     MAX_ARRAY_LENGTH);
-            add_diag(c, "ORC0221", expr->lit_start, expr->lit_end, message, "unsupported fill length",
-                     "write the length in decimal without a prefix, separator, or leading zero", 2);
+            add_diag(c, "ORC0221", expr->lit_start, expr->lit_end,
+                     "an array length must be a decimal integer from 1 through 65536", "unsupported array length",
+                     "write the length in decimal without leading zeros, as in `Word[32]^16`", 2);
         } else if (length != expected_len) {
-            char message[192];
-            char expected_text[64];
-            write_type(expected_text, sizeof expected_text, expected, expected_len);
-            snprintf(message, sizeof message, "this fill has length %u, but %s has %u", length, expected_text,
-                     expected_len);
-            add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch",
-                     "a fill literal states its type's length", 2);
+            char message[384];
+            char expected_text[96];
+            char label[64];
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "this array has %u %s, but `%s` has %u", length,
+                     length == 1 ? "element" : "elements", expected_text, expected_len);
+            snprintf(label, sizeof label, "expected %u %s", expected_len, expected_len == 1 ? "element" : "elements");
+            add_diag(c, "ORC0222", expr->start, expr->end, message, label, "`[e; n]` is the array of n copies of e", 2);
         }
         return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
     }
@@ -9607,6 +10222,13 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
     if (!site->named) {
         if (site->ok) {
             site->rank = site->wrote_axis ? 1 : 0;
+        } else if (!span_is(c, site->ident_start, site->ident_end, "Word") && !site->reported) {
+            char message[160];
+            copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
+            snprintf(message, sizeof message, "unsupported %s `%s`", site->role != NULL ? site->role : "type", name);
+            add_diag(c, "ORC0203", site->start, site->end, message, ADMITTED_TYPE_LABEL,
+                     "types are resolved contextually and never inferred by spelling similarity", 2);
+            site->reported = 1;
         }
         return;
     }
@@ -9649,8 +10271,12 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
         if (site->wrote_axis) {
             snprintf(message, sizeof message, "`%s` is a tuple type, so this is an array of tuples", name);
-            add_diag(c, "ORC0203", site->start, site->end, message, "an array holds no tuple",
+            add_diag(c, "ORC0203", site->start, site->end, message, "arrays of tuples are not part of Orange 2026",
                      "an array's elements are `Int`, `Bool`, words, or residues", 2);
+            if (site->length_end > site->length_start) {
+                diag_add_secondary(c, site->length_start, site->length_end,
+                                   "this length would make each element a tuple");
+            }
             site->ok = 0;
             site->reported = 1;
             return;
@@ -9678,6 +10304,9 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         snprintf(message, sizeof message, "`%s` already has two array dimensions", name);
         add_diag(c, "ORC0203", site->start, site->end, message, "arrays have at most two dimensions",
                  "a row holds scalars; a matrix holds rows of the same type", 2);
+        if (site->length_end > site->length_start) {
+            diag_add_secondary(c, site->length_start, site->length_end, "this length would add a third dimension");
+        }
         site->ok = 0;
         site->reported = 1;
         return;
@@ -9808,6 +10437,7 @@ static void prepare_types(Compiler *c) {
             snprintf(message, sizeof message, "duplicate type name `%s`", name);
             add_diag(c, "ORC0233", decl->name_start, decl->name_end, message, "this declaration repeats a type name",
                      "each `type` declaration of a module names a different type", 2);
+            diag_add_secondary(c, c->types[earlier].name_start, c->types[earlier].name_end, "first declaration is here");
         } else {
             decl->installed = 1;
         }
@@ -10006,13 +10636,15 @@ static int decode_size_bound(Compiler *c, uint32_t start, uint32_t end, int64_t 
     return 1;
 }
 
-static void report_repeated_size(Compiler *c, uint32_t start, uint32_t end) {
+static void report_repeated_size(Compiler *c, uint32_t start, uint32_t end, uint32_t earlier_start,
+                                 uint32_t earlier_end, const char *earlier_label) {
     char name[64];
     char message[160];
     span_copy(name, sizeof name, c->text, start, end);
-    snprintf(message, sizeof message, "duplicate size parameter `%s`", name);
+    snprintf(message, sizeof message, "duplicate parameter `%s`", name);
     add_diag(c, "ORC0218", start, end, message, "this name is already a size parameter",
-             "size parameters and value parameters of one function have distinct names", 2);
+             "size parameters and parameters share one namespace, and each name is unique", 2);
+    diag_add_secondary(c, earlier_start, earlier_end, earlier_label);
 }
 
 /* Ranges, distinct names, and the 256-instance cap. A function in error here
@@ -10060,7 +10692,8 @@ static void admit_sizes(Compiler *c, Func *func) {
             if (same_span(c, func->sz_name0[earlier], func->sz_name1[earlier], func->sz_name0[slot],
                           func->sz_name1[slot])) {
                 valid = 0;
-                report_repeated_size(c, func->sz_name0[slot], func->sz_name1[slot]);
+                report_repeated_size(c, func->sz_name0[slot], func->sz_name1[slot], func->sz_name0[earlier],
+                                     func->sz_name1[earlier], "first size parameter is here");
                 break;
             }
         }
@@ -10075,12 +10708,13 @@ static void admit_sizes(Compiler *c, Func *func) {
             span_copy(name, sizeof name, c->text, param->name_start, param->name_end);
             snprintf(message, sizeof message, "duplicate parameter `%s`", name);
             add_diag(c, "ORC0218", param->name_start, param->name_end, message, "this name is already a size parameter",
-                     "the size parameter is here", 2);
+                     "size parameters and parameters share one namespace, and each name is unique", 2);
+            diag_add_secondary(c, func->sz_name0[size_slot], func->sz_name1[size_slot], "the size parameter is here");
         }
     }
     if (valid && instances > MAX_INSTANCES) {
         char name[64];
-        char message[192];
+        char message[384];
         valid = 0;
         copy_func_name(c, func, name, sizeof name);
         if (instances == UINT64_MAX) {
@@ -10279,6 +10913,113 @@ static int build_instances(Compiler *c, uint32_t func_index) {
     return 1;
 }
 
+static void instance_label(const Compiler *c, uint32_t inst, char *buf, size_t cap) {
+    const Instance *instance;
+    const Func *func;
+    size_t used;
+    uint8_t slot;
+    if (cap == 0) {
+        return;
+    }
+    buf[0] = '\0';
+    if (inst >= c->ninstances) {
+        return;
+    }
+    instance = &c->instances[inst];
+    func = &c->funcs[instance->func];
+    used = func->name_end - func->name_start;
+    if (used >= cap) {
+        used = cap - 1;
+    }
+    memcpy(buf, c->text + func->name_start, used);
+    buf[used] = '\0';
+    if (func->nsizes == 0 || used + 3 >= cap) {
+        return;
+    }
+    buf[used++] = '[';
+    for (slot = 0; slot < func->nsizes; slot++) {
+        char num[32];
+        int n = snprintf(num, sizeof num, "%s%lld", slot == 0 ? "" : ", ", (long long)instance->sz[slot]);
+        if (n < 0 || used + (size_t)n + 2 >= cap) {
+            break;
+        }
+        memcpy(buf + used, num, (size_t)n);
+        used += (size_t)n;
+    }
+    buf[used++] = ']';
+    buf[used] = '\0';
+}
+
+static void name_sized_diags(Compiler *c, const Func *func, uint32_t inst, uint32_t from) {
+    char label[96];
+    char name[64];
+    char note[320];
+    uint32_t index;
+    if (func->nsizes == 0) {
+        return;
+    }
+    instance_label(c, inst, label, sizeof label);
+    span_copy(name, sizeof name, c->text, func->name_start, func->name_end);
+    snprintf(note, sizeof note,
+             "in the instance `%s`, the first of `%s` in error: a sized function is checked once for each value of "
+             "its sizes",
+             label, name);
+    for (index = from; index < c->ndiags; index++) {
+        Diag *diag = &c->diags[index];
+        if (strcmp(diag->code, "ORC0208") == 0 || strcmp(diag->code, "ORC0209") == 0) {
+            continue;
+        }
+        if (diag->note[0] == '\0') {
+            copy_text(diag->note, sizeof diag->note, note);
+        } else if (!diag->has_note2) {
+            copy_text(diag->note2, sizeof diag->note2, note);
+            diag->has_note2 = 1;
+        }
+    }
+}
+
+static void report_call_cycle(Compiler *c, const uint32_t *stack, uint32_t top, uint32_t callee, uint32_t start,
+                              uint32_t end) {
+    char names[8][96];
+    char message[384];
+    uint32_t pos = 0;
+    uint32_t count;
+    uint32_t index;
+    size_t used = 0;
+    while (pos < top && stack[pos] != callee) {
+        pos++;
+    }
+    count = top - pos + 1;
+    if (count <= 1) {
+        instance_label(c, callee, names[0], sizeof names[0]);
+        snprintf(message, sizeof message, "`%s` calls itself", names[0]);
+    } else {
+        uint32_t shown = count > 6 ? 6 : count;
+        used = (size_t)snprintf(message, sizeof message, "call cycle ");
+        for (index = 0; index < shown && used < sizeof message; index++) {
+            char piece[120];
+            int n;
+            instance_label(c, stack[pos + index], names[0], sizeof names[0]);
+            n = snprintf(piece, sizeof piece, "%s`%s`", index == 0 ? "" : " -> ", names[0]);
+            if (n < 0 || used + (size_t)n >= sizeof message) {
+                break;
+            }
+            memcpy(message + used, piece, (size_t)n);
+            used += (size_t)n;
+            message[used] = '\0';
+        }
+        if (count > 6 && used + 7 < sizeof message) {
+            memcpy(message + used, " -> ...", 7);
+            used += 7;
+            message[used] = '\0';
+        }
+        instance_label(c, callee, names[0], sizeof names[0]);
+        snprintf(message + used, sizeof message - used, " -> `%s`", names[0]);
+    }
+    add_diag(c, "ORC0217", start, end, message, "this call closes the cycle",
+             "a `spec` may not depend on itself; recursion is not part of Orange 2026", 2);
+}
+
 static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) {
     uint32_t index;
     for (index = 0; index < c->ndiags; index++) {
@@ -10320,8 +11061,10 @@ static void analyze(Compiler *c) {
                 memcpy(name, c->text + func->name_start, length);
                 name[length] = '\0';
                 snprintf(message, sizeof message, "duplicate %s function `%s`", func->is_impl ? "impl" : "spec", name);
-                add_diag(c, "ORC0201", func->name_start, func->name_end, message, "this name is already declared",
-                         "spec and impl names are separate, and each kind is unique", 2);
+                add_diag(c, "ORC0201", func->name_start, func->name_end, message,
+                         "this declaration repeats a name in the same namespace",
+                         "`spec` and `impl` use separate declaration namespaces", 2);
+                diag_add_secondary(c, earlier->name_start, earlier->name_end, "first declaration is here");
                 func->duplicate = 1;
                 break;
             }
@@ -10369,6 +11112,7 @@ static void analyze(Compiler *c) {
                     add_diag(c, "ORC0218", param->name_start, param->name_end, message,
                              "this parameter repeats an earlier name",
                              "parameter names must be unique within one function", 2);
+                    diag_add_secondary(c, before->name_start, before->name_end, "first parameter is here");
                     param->duplicate = 1;
                     break;
                 }
@@ -10388,6 +11132,7 @@ static void analyze(Compiler *c) {
                 reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
                                 func->result_length_start, func->result_length_end);
             }
+            name_sized_diags(c, func, c->cur_inst, diags_before);
             func->signature_ok = 0;
             break;
         }
@@ -10430,17 +11175,19 @@ static void analyze(Compiler *c) {
                         taken = 1;
                     }
                     if (pass == 0 && taken) {
-                        char message[128];
-                        char pname[64];
-                        size_t length = name->name_end - name->name_start;
-                        if (length >= sizeof pname) {
-                            length = sizeof pname - 1;
+                        uint32_t within_start = 0;
+                        uint32_t within_end = 0;
+                        for (prev = 0; prev < pat; prev++) {
+                            Local *before = &c->locals[func->local0 + local_index + prev];
+                            if (!before->duplicate &&
+                                same_span(c, before->name_start, before->name_end, name->name_start, name->name_end)) {
+                                within_start = before->name_start;
+                                within_end = before->name_end;
+                                break;
+                            }
                         }
-                        memcpy(pname, c->text + name->name_start, length);
-                        pname[length] = '\0';
-                        snprintf(message, sizeof message, "duplicate binding `%s`", pname);
-                        add_diag(c, "ORC0219", name->name_at, name->name_end_at, message, "this name is already in scope",
-                                 "parameters and bindings share one set of names", 2);
+                        report_binding_dup(c, index, local_index, name->name_at, name->name_end_at, name->name_start,
+                                           name->name_end, within_start, within_end);
                         name->duplicate = 1;
                     }
                     if (!name->type_ok) {
@@ -10482,17 +11229,8 @@ static void analyze(Compiler *c) {
                 hidden = 1;
             }
             if (pass == 0 && hidden) {
-                char message[128];
-                char name[64];
-                size_t length = local->name_end - local->name_start;
-                if (length >= sizeof name) {
-                    length = sizeof name - 1;
-                }
-                memcpy(name, c->text + local->name_start, length);
-                name[length] = '\0';
-                snprintf(message, sizeof message, "duplicate binding `%s`", name);
-                add_diag(c, "ORC0219", local->name_at, local->name_end_at, message, "this name is already in scope",
-                         "parameters and bindings share one set of names", 2);
+                report_binding_dup(c, index, local_index, local->name_at, local->name_end_at, local->name_start,
+                                   local->name_end, 0, 0);
                 local->duplicate = 1;
             }
             if (!local->type_ok) {
@@ -10518,6 +11256,7 @@ static void analyze(Compiler *c) {
             }
         }
         if (c->ndiags > diags_before) {
+            name_sized_diags(c, func, c->cur_inst, diags_before);
             func->signature_ok = 0;
             break;
         }
@@ -10572,8 +11311,7 @@ static void analyze(Compiler *c) {
                     advanced = 1;
                     if (color[edge.callee_inst] == 1) {
                         if (!cycle_span_reported(c, edge.start, edge.end)) {
-                            add_diag(c, "ORC0217", edge.start, edge.end, "call cycle", "this call closes a cycle",
-                                     "specifications are acyclic, so every accepted program terminates", 2);
+                            report_call_cycle(c, stack, top, edge.callee_inst, edge.start, edge.end);
                         }
                     } else if (color[edge.callee_inst] == 0) {
                         color[edge.callee_inst] = 1;
@@ -12359,10 +13097,30 @@ static int format_value(const Value *value, TextBuf *buf) {
 static int compare_diag(const void *left_ptr, const void *right_ptr) {
     const Diag *left = left_ptr;
     const Diag *right = right_ptr;
+    int order;
     if (left->start != right->start) {
         return left->start < right->start ? -1 : 1;
     }
-    return strcmp(left->code, right->code);
+    if (left->end != right->end) {
+        return left->end < right->end ? -1 : 1;
+    }
+    order = strcmp(left->code, right->code);
+    if (order != 0) {
+        return order;
+    }
+    order = strcmp(left->message, right->message);
+    if (order != 0) {
+        return order;
+    }
+    order = strcmp(left->label, right->label);
+    if (order != 0) {
+        return order;
+    }
+    order = strcmp(left->note, right->note);
+    if (order != 0) {
+        return order;
+    }
+    return strcmp(left->note2, right->note2);
 }
 
 static void line_col(const char *text, size_t length, uint32_t offset, uint32_t *line, uint32_t *column) {
@@ -12394,6 +13152,224 @@ static void line_col(const char *text, size_t length, uint32_t offset, uint32_t 
     *column = current_column;
 }
 
+static unsigned decimal_width_u(uint32_t value) {
+    unsigned width = 1;
+    while (value >= 10u) {
+        value /= 10u;
+        width++;
+    }
+    return width;
+}
+
+/* Rust `escape_default` for the characters a diagnostic excerpt escapes. */
+static int escape_diag_char(uint32_t cp, char *tmp, size_t cap) {
+    int n;
+    if (cp == '\\') {
+        n = snprintf(tmp, cap, "\\\\");
+    } else if (cp == '\t') {
+        n = snprintf(tmp, cap, "\\t");
+    } else if (cp == '\r') {
+        n = snprintf(tmp, cap, "\\r");
+    } else if (cp == '\n') {
+        n = snprintf(tmp, cap, "\\n");
+    } else if (cp == '\'') {
+        n = snprintf(tmp, cap, "\\'");
+    } else if (cp == ' ' || (cp >= 0x21u && cp <= 0x7eu)) {
+        n = snprintf(tmp, cap, "%c", (char)cp);
+    } else {
+        n = snprintf(tmp, cap, "\\u{%x}", cp);
+    }
+    return n < 0 ? 0 : n;
+}
+
+static uint32_t decode_cp(const char *text, size_t length, size_t index, size_t *next) {
+    unsigned char lead;
+    size_t width;
+    uint32_t cp;
+    if (index >= length) {
+        *next = index;
+        return 0;
+    }
+    lead = (unsigned char)text[index];
+    width = utf8_width(lead);
+    if (width > length - index) {
+        width = 1;
+    }
+    if (width == 1) {
+        *next = index + 1;
+        return lead;
+    }
+    if (width == 2) {
+        cp = ((uint32_t)(lead & 0x1fu) << 6) | ((unsigned char)text[index + 1] & 0x3fu);
+    } else if (width == 3) {
+        cp = ((uint32_t)(lead & 0x0fu) << 12) | (((unsigned char)text[index + 1] & 0x3fu) << 6) |
+             ((unsigned char)text[index + 2] & 0x3fu);
+    } else {
+        cp = ((uint32_t)(lead & 0x07u) << 18) | (((unsigned char)text[index + 1] & 0x3fu) << 12) |
+             (((unsigned char)text[index + 2] & 0x3fu) << 6) | ((unsigned char)text[index + 3] & 0x3fu);
+    }
+    *next = index + width;
+    return cp;
+}
+
+static void fputs_sanitized(FILE *out, const char *text);
+
+static void render_span_line(FILE *out, const Compiler *c, uint32_t span_start, uint32_t span_end, char marker,
+                             const char *label, int always_label) {
+    uint32_t line = 1;
+    uint32_t column = 1;
+    size_t line_start = 0;
+    size_t line_end;
+    size_t cursor;
+    unsigned gutter;
+    size_t index;
+    size_t rel;
+    size_t cps = 0;
+    size_t cp_at[512];
+    size_t cp_byte[512];
+    size_t window_lo;
+    size_t window_hi;
+    size_t caret_at = 0;
+    size_t caret_width = 1;
+    int left_cut = 0;
+    int right_cut = 0;
+    char excerpt[768];
+    size_t used = 0;
+    size_t i;
+    line_col(c->text, c->length, span_start, &line, &column);
+    cursor = 0;
+    {
+        uint32_t seen = 1;
+        while (cursor < c->length && seen < line) {
+            if (c->text[cursor] == '\n') {
+                seen++;
+                cursor++;
+                line_start = cursor;
+            } else if (c->text[cursor] == '\r') {
+                seen++;
+                cursor++;
+                if (cursor < c->length && c->text[cursor] == '\n') {
+                    cursor++;
+                }
+                line_start = cursor;
+            } else {
+                cursor++;
+            }
+        }
+    }
+    line_end = line_start;
+    while (line_end < c->length && c->text[line_end] != '\n' && c->text[line_end] != '\r') {
+        line_end++;
+    }
+    index = line_start;
+    while (index < line_end && cps + 1 < sizeof cp_at / sizeof cp_at[0]) {
+        size_t next = index;
+        cp_byte[cps] = index;
+        cp_at[cps] = cps;
+        (void)decode_cp(c->text, c->length, index, &next);
+        if (next <= index) {
+            next = index + 1;
+        }
+        cps++;
+        index = next;
+    }
+    cp_byte[cps] = line_end;
+    rel = 0;
+    if (span_start > line_start) {
+        size_t target = span_start;
+        if (target > line_end) {
+            target = line_end;
+        }
+        while (rel < cps && cp_byte[rel + 1] <= target) {
+            rel++;
+        }
+    }
+    window_lo = rel > 40 ? rel - 40 : 0;
+    window_hi = rel + 80;
+    if (window_hi > cps) {
+        window_hi = cps;
+    }
+    left_cut = window_lo != 0;
+    right_cut = window_hi != cps;
+    excerpt[0] = '\0';
+    if (left_cut) {
+        memcpy(excerpt, "... ", 4);
+        used = 4;
+    }
+    for (i = window_lo; i < window_hi; i++) {
+        char tmp[16];
+        uint32_t cp = decode_cp(c->text, c->length, cp_byte[i], &index);
+        int n = escape_diag_char(cp, tmp, sizeof tmp);
+        if (used + (size_t)n >= sizeof excerpt) {
+            break;
+        }
+        memcpy(excerpt + used, tmp, (size_t)n);
+        used += (size_t)n;
+    }
+    if (right_cut && used + 4 < sizeof excerpt) {
+        memcpy(excerpt + used, " ...", 4);
+        used += 4;
+    }
+    excerpt[used] = '\0';
+    caret_at = left_cut ? 4u : 0u;
+    for (i = window_lo; i < rel && i < window_hi; i++) {
+        char tmp[16];
+        uint32_t cp = decode_cp(c->text, c->length, cp_byte[i], &index);
+        caret_at += (size_t)escape_diag_char(cp, tmp, sizeof tmp);
+    }
+    if (span_end > span_start) {
+        size_t end_rel = rel;
+        size_t end_byte = span_end < line_end ? span_end : line_end;
+        size_t width = 0;
+        while (end_rel < cps && cp_byte[end_rel] < end_byte && end_rel < window_hi) {
+            char tmp[16];
+            uint32_t cp = decode_cp(c->text, c->length, cp_byte[end_rel], &index);
+            width += (size_t)escape_diag_char(cp, tmp, sizeof tmp);
+            end_rel++;
+        }
+        if (width > 0) {
+            caret_width = width;
+        }
+    }
+    gutter = decimal_width_u(line);
+    fprintf(out, "%*s |\n%u | %s\n%*s | ", (int)gutter, "", line, excerpt, (int)gutter, "");
+    for (i = 0; i < caret_at; i++) {
+        fputc(' ', out);
+    }
+    for (i = 0; i < caret_width; i++) {
+        fputc(marker, out);
+    }
+    if (always_label || (label != NULL && label[0] != '\0')) {
+        fputc(' ', out);
+        if (label != NULL) {
+            fputs_sanitized(out, label);
+        }
+    }
+    fputc('\n', out);
+}
+
+/* Rust `push_sanitized_inline`: `\` and non-graphic characters use escape_default. */
+static void fputs_sanitized(FILE *out, const char *text) {
+    size_t index = 0;
+    size_t length = strlen(text);
+    while (index < length) {
+        size_t next = index;
+        uint32_t cp = decode_cp(text, length, index, &next);
+        char tmp[16];
+        int graphic = cp == ' ' || (cp >= 0x21u && cp <= 0x7eu && cp != '\\');
+        if (graphic) {
+            fputc((int)cp, out);
+        } else {
+            escape_diag_char(cp == '\\' ? '\\' : cp, tmp, sizeof tmp);
+            fputs(tmp, out);
+        }
+        if (next <= index) {
+            break;
+        }
+        index = next;
+    }
+}
+
 static void render_diags(Compiler *c, FILE *out) {
     uint32_t index;
     if (c->ndiags > 1) {
@@ -12403,33 +13379,31 @@ static void render_diags(Compiler *c, FILE *out) {
         Diag *diag = &c->diags[index];
         uint32_t line = 1;
         uint32_t column = 1;
-        size_t line_start = 0;
-        size_t cursor = 0;
-        uint32_t seen = 1;
-        line_col(c->text, c->length, diag->start, &line, &column);
-        while (cursor < c->length && seen < line) {
-            if (c->text[cursor] == '\n') {
-                seen++;
-                line_start = cursor + 1;
-            } else if (c->text[cursor] == '\r') {
-                seen++;
-                cursor++;
-                line_start = cursor < c->length && c->text[cursor] == '\n' ? cursor + 1 : cursor;
-                if (cursor < c->length && c->text[cursor - 1] == '\r' && c->text[cursor] == '\n') {
-                    cursor++;
-                }
-                continue;
-            }
-            cursor++;
+        if (index != 0) {
+            fputc('\n', out);
         }
-        fprintf(out, "error[%s]: %s\n --> %s:%u:%u\n", diag->code, diag->message, c->filename, line, column);
-        if (diag->label[0] != '\0') {
-            fprintf(out, "  = %s\n", diag->label);
+        line_col(c->text, c->length, diag->start, &line, &column);
+        fprintf(out, "error[%s]: ", diag->code);
+        fputs_sanitized(out, diag->message);
+        fprintf(out, "\n --> %s:%u:%u\n", c->filename, line, column);
+        render_span_line(out, c, diag->start, diag->end, '^', diag->label, 0);
+        if (diag->has_sec) {
+            uint32_t sec_line = 1;
+            uint32_t sec_column = 1;
+            line_col(c->text, c->length, diag->sec_start, &sec_line, &sec_column);
+            fprintf(out, " ::: %s:%u:%u\n", c->filename, sec_line, sec_column);
+            render_span_line(out, c, diag->sec_start, diag->sec_end, '-', diag->sec_label, 1);
         }
         if (diag->note[0] != '\0') {
-            fprintf(out, "  = note: %s\n", diag->note);
+            fputs("  = note: ", out);
+            fputs_sanitized(out, diag->note);
+            fputc('\n', out);
         }
-        (void)line_start;
+        if (diag->has_note2 && diag->note2[0] != '\0') {
+            fputs("  = note: ", out);
+            fputs_sanitized(out, diag->note2);
+            fputc('\n', out);
+        }
     }
 }
 
@@ -12897,7 +13871,7 @@ static void report_namesakes(Program *program, uint16_t module) {
     for (other = 0; other < program->nmods; other++) {
         Compiler *candidate;
         Compiler *later;
-        char message[192];
+        char message[384];
         if (other == (int)module) {
             continue;
         }
@@ -12923,7 +13897,7 @@ static void resolve_uses(Program *program, uint16_t module) {
         uint16_t earlier;
         int repeated = 0;
         char spelling[128];
-        char message[192];
+        char message[384];
         span_copy(spelling, sizeof spelling, mod->text, use->name_start, use->name_end);
         for (earlier = 0; earlier < index; earlier++) {
             if (same_span(mod, mod->uses[earlier].name_start, mod->uses[earlier].name_end, use->name_start,
@@ -12936,6 +13910,7 @@ static void resolve_uses(Program *program, uint16_t module) {
             snprintf(message, sizeof message, "module `%s` is used twice", spelling);
             add_diag(mod, "ORC0231", use->span_start, use->span_end, message,
                      "this declaration repeats an earlier `use`", "a module names each module it uses once", 2);
+            diag_add_secondary(mod, mod->uses[earlier].span_start, mod->uses[earlier].span_end, "first used here");
             program->use_target[module][index] = UINT16_MAX;
             program->graph_error = 1;
             continue;
@@ -13153,7 +14128,11 @@ static int load_one(Program *program, const char *path, const char *name, const 
     Compiler *mod;
     text = read_path(path, &length, error, sizeof error);
     if (text == NULL) {
+        int missing = errno == ENOENT;
         fprintf(err, "error[ORC1001]: %s\n", error);
+        if (missing) {
+            fprintf(err, "  = note: file was not found\n");
+        }
         print_use_note(err, name, user);
         return 0;
     }
@@ -13257,11 +14236,16 @@ static int load_used_modules(Program *program, const char *root_path, FILE *err)
 
 static void render_program_diags(Program *program, FILE *err, int dependency_order) {
     int index;
+    int started = 0;
     int count = dependency_order ? program->norder : program->nmods;
     for (index = 0; index < count; index++) {
         Compiler *mod = dependency_order ? program->mods[program->order[index]] : program->mods[index];
         if (mod->ndiags > 0) {
+            if (started) {
+                fputc('\n', err);
+            }
             render_diags(mod, err);
+            started = 1;
         }
     }
 }
