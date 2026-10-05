@@ -1087,6 +1087,27 @@ function currentValues(tab) {
   return map;
 }
 
+// A spec with size or type parameters evaluates as one instance per
+// argument, printed `name[1]`, `name[F]`, and so on. Those belong to `name`.
+function declValues(values, module, name) {
+  const exact = values.get(`${module}::${name}`);
+  if (exact) return [exact];
+  const prefix = `${module}::${name}[`;
+  const matched = [];
+  for (const [key, value] of values) {
+    if (key.startsWith(prefix)) matched.push(value);
+  }
+  return matched;
+}
+
+function showDeclValues(matched) {
+  if (matched.length === 1) return showValue(matched[0]);
+  return matched.map((value) => {
+    const suffix = value.name.includes("[") ? value.name.slice(value.name.indexOf("[")) : value.name;
+    return `${suffix} ${showValue(value)}`;
+  }).join("  ");
+}
+
 function showValue(value, radix = S.radix) {
   const number = parseValue(value.type, value.value);
   if (number === null) return value.value;
@@ -1101,9 +1122,9 @@ function updateInlays(tab) {
     const starts = tab.starts || lineStarts(tab.editor.getValue());
     for (const decl of tab.outline.decls) {
       if (decl.stratum !== "spec") continue;
-      const value = values.get(`${tab.outline.module}::${decl.name}`);
-      if (!value) continue;
-      inlays.set(lineOf(starts, decl.end), { label: stale ? "was" : "=", value: showValue(value) });
+      const matched = declValues(values, tab.outline.module, decl.name);
+      if (!matched.length) continue;
+      inlays.set(lineOf(starts, decl.end), { label: stale ? "was" : "=", value: showDeclValues(matched) });
     }
   }
   tab.editor.setInlays(inlays);
@@ -1216,10 +1237,11 @@ function renderStrata() {
         h("span", { class: "hint", text: meta.hint }),
         h("span", { class: "count", text: String(decls.length) })));
     for (const decl of decls) {
-      const value = stratum === "spec" && info.module ? values.get(`${info.module}::${decl.name}`) : null;
+      const matched = stratum === "spec" && info.module ? declValues(values, info.module, decl.name) : [];
+      const valueText = matched.length ? showDeclValues(matched) : null;
       const row = h("div", { class: "tree-row decl-row", role: "button", tabindex: "0", title: `Go to ${decl.stratum} ${decl.name}`, onclick: () => tab.editor.reveal(decl.nameStart, decl.nameEnd) },
         h("span", { class: "label" }, decl.name, decl.type ? h("span", { class: "decl-type", text: ` → ${decl.type}` }) : null),
-        value ? h("span", { class: "decl-value", title: stale ? "Value before your latest edit" : "Value from orangec eval", text: showValue(value) }) : null,
+        valueText ? h("span", { class: "decl-value", title: stale ? "Value before your latest edit" : "Value from orangec eval", text: valueText }) : null,
         h("span", { class: "row-actions" },
           iconButton("cite", `Cite ${decl.name} in the open note`, (event) => {
             event.stopPropagation();
