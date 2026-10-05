@@ -1,9 +1,9 @@
 # Standalone C compiler
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
-binding, conversion, array, and bounded-loop fragment. It does not amend
-D-008, does not select a D-010 output path, and does not replace the Rust
-frontend.
+binding, conversion, array, bounded-loop, and conditional fragment. It does
+not amend D-008, does not select a D-010 output path, and does not replace
+the Rust frontend.
 
 `compiler/c` is a dependency-free C11 program. It lexes, parses, checks, and
 reference-evaluates one Orange source without linking to the Rust compiler and
@@ -16,17 +16,21 @@ programs this slice admits.
 
 The admitted source is edition 2026 with one module of `spec` and `impl`
 functions. A typed `spec` may have parameters, `let` bindings, and one result
-expression. The scalar types are `Int`, `Word[8]`, `Word[16]`, `Word[32]`, and
-`Word[64]`. A fixed-length array `T^n` holds n values of one of those scalars,
-with n a decimal integer from 1 through 256. Expressions are literals, names,
-calls, parentheses, array literals, indices, exact integer arithmetic,
-word ring arithmetic, bitwise operators, shifts, rotations, and `as`
-conversions. A loop `for i in a..b with s: T = start { step }` folds `step`
-from the literal bound `a` up to `b`. An index may be an integer literal or an
-expression of literals and enclosing loop indices, proved in range before
-evaluation. `x with [i] = v` replaces one element, and `[v; n]` repeats a
-value. `for`, `in`, and `with` are names outside those positions. Empty
-`spec` and `impl` declarations parse and have no value.
+expression. The scalar types are `Int`, `Bool`, `Word[8]`, `Word[16]`,
+`Word[32]`, and `Word[64]`. A fixed-length array `T^n` holds n values of one
+of those scalars, with n a decimal integer from 1 through 256. Expressions are
+literals, names, calls, parentheses, array literals, indices, exact integer
+arithmetic, Euclidean `/` and `%`, word ring arithmetic, bitwise operators,
+shifts, rotations, comparisons, `!`, `&&`, `||`, and `as` conversions. A loop
+`for i in a..b with s: T = start { step }` folds `step` from the literal bound
+`a` up to `b`. An index may be an integer literal or an expression of literals
+and enclosing loop indices using `+`, `-`, `*`, `/`, and `%`, proved in range
+before evaluation. `x with [i] = v` replaces one element, and `[v; n]` repeats
+a value. `if c { a } else { b }` chooses one value; an `else if` chain is one
+conditional, and only the chosen branch is evaluated. `for`, `in`, `with`,
+`if`, and `else` are names outside those positions. `true` and `false` are
+`Bool` values where no parameter or binding of that spelling is in scope.
+Empty `spec` and `impl` declarations parse and have no value.
 
 `eval` prints one line for each parameterless typed `spec`, in source order:
 
@@ -35,8 +39,9 @@ module::name: Type = value
 ```
 
 Words are fixed-width lowercase hexadecimal. `Int` values are exact decimal
-integers, including negatives. An array prints as `[e0, e1, ...]` and its type
-as `T^n`. Functions with parameters are checked and run only when called.
+integers, including negatives. `Bool` values print as `true` and `false`. An
+array prints as `[e0, e1, ...]` and its type as `T^n`. Functions with
+parameters are checked and run only when called.
 
 An array literal lists every element. A fill states the length in decimal.
 An index follows a name, a call, or an accumulator. Operators and conversions
@@ -44,10 +49,11 @@ apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, data-dependent indices, and computed loop
 bounds are rejected.
 
-Later slices are outside this frontend. Conditionals, multiple modules,
-`Mod`, tuples, byte strings, size parameters, byte order, type parameters,
-tests, lengths above 256, and computed shift amounts are rejected rather than
-given a new meaning. The Rust `orangec` remains the frontend for those slices.
+Later slices are outside this frontend. Multiple modules, `Mod`, tuples, byte
+strings, size parameters, byte order, type parameters, tests, lengths above
+256, data-dependent indices, and computed shift amounts are rejected rather
+than given a new meaning. The Rust `orangec` remains the frontend for those
+slices.
 
 ## What it does not claim
 
@@ -66,8 +72,8 @@ compiler/c/out/orangec eval path/to/file.or
 
 `make -C compiler/c test` builds an address-sanitized binary, runs the
 exact-integer self-test, and compares `check`, `eval`, and `lex` with the Rust
-`orangec` on the S3a through S3e fixtures, including the ChaCha20 and SHA-256
-loop programs. The Rust binary is only a
+`orangec` on the S3a through S3f fixtures, including ChaCha20, SHA-256,
+Poly1305, X25519, and ChaCha20-Poly1305. The Rust binary is only a
 test oracle. Running the C compiler does not require it.
 
 ## Limits
