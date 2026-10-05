@@ -28,6 +28,7 @@ from tools.validate_foundation import (
     audit_schema_vocabulary,
     canonical_json_bytes,
     duplicate_yaml_mapping_key,
+    _CI_IMAGE_DIGEST_SECTION_POINTERS,
     _ML_MD033_CLAUSE,
     _MLC,
     load_json,
@@ -2905,6 +2906,20 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertIn("ci.dependabot_spec", self._codes(root))
+
+    def test_image_digest_section_pointers_must_name_section_5(self) -> None:
+        self.assertEqual(len(_CI_IMAGE_DIGEST_SECTION_POINTERS), 3)
+        for phrase in _CI_IMAGE_DIGEST_SECTION_POINTERS:
+            with self.subTest(phrase=phrase), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/operations/CI_DEPENDENCIES.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertEqual(source.count(phrase), 1)
+                wrong_section = phrase.replace("section 5", "section 4")
+                self.assertNotIn(wrong_section, source)
+                path.write_text(source.replace(phrase, wrong_section, 1), encoding="utf-8")
+                self.assertIn("ci.image_digest_section", self._codes(root))
 
     def test_markdownlint_allowlist_narrower_than_the_config_is_rejected(self) -> None:
         allowed = json.loads(_MLC)["config"]["MD033"]["allowed_elements"]

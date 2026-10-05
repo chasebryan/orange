@@ -1289,6 +1289,11 @@ _MLM = {
         ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", *_ML_ALLOWED_ELEMENTS),
     },
 }
+_CI_IMAGE_DIGEST_SECTION_POINTERS = (
+    "separately admitted OCI image recorded in section 5",
+    "whose image digest is recorded in section 5",
+    "to the digest recorded in section 5",
+)
 _PM = {
     "policy/README.md": {
         "ordinary text files at\n512 KiB (`512 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
@@ -4025,6 +4030,17 @@ class FoundationValidator:
                             specification,
                             f"{description} must state the exact {expected} budget marker {marker!r}",
                         )
+        inventory_path = self.root / "docs/operations/CI_DEPENDENCIES.md"
+        inventory_text = self._rt(inventory_path)
+        if inventory_text is not None:
+            for phrase in _CI_IMAGE_DIGEST_SECTION_POINTERS:
+                wrong_section = phrase.replace("section 5", "section 4")
+                if inventory_text.count(phrase) != 1 or wrong_section in inventory_text:
+                    self.add(
+                        "ci.image_digest_section",
+                        inventory_path,
+                        "image-digest prose must point at section 5, where those digests are recorded",
+                    )
 
     def _validate_tree_encoding_and_format(self) -> None:
         if not self._preflight_repository_resources():
