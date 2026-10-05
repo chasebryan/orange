@@ -950,7 +950,76 @@ class N12CompleteStudy(unittest.TestCase):
         self.assertIn('[S10]', self.text)
         self.assertNotIn('[S9]', self.text)
         self.assertIn('**[S10] Daniel J. Bernstein.**', self.text)
+        self.assertIn('**[T6] Orange tests.**', self.text)
+        self.assertNotIn('[T1]', self.text)
         self.assertIn('**[S9] Claude E. Shannon.**', self.protect)
+        self.assertNotIn('provisional', self.text.lower())
+        self.assertNotIn('integration plan', self.text.lower())
+
+    def test_n9_through_n12_labels_are_locked(self):
+        probability = (ROOT / 'docs' / 'book' / 'NOVICE_PROBABILITY.md').read_text(
+            encoding='utf-8'
+        )
+        logic = (ROOT / 'docs' / 'book' / 'NOVICE_LOGIC.md').read_text(encoding='utf-8')
+        for name, text in (
+            ('index', self.index),
+            ('n9', logic),
+            ('n10', probability),
+            ('n11', self.protect),
+            ('n12', self.text),
+        ):
+            self.assertNotIn('provisional', text.lower(), name)
+            self.assertNotIn('integration plan', text.lower(), name)
+            self.assertNotIn('Final numbering', text, name)
+        self.assertIn('The locked label is N9.', self.index)
+        self.assertIn('The locked label is N10.', self.index)
+        self.assertIn('The locked label is N11.', self.index)
+        self.assertIn('The locked label is N12.', self.index)
+        self.assertIn('The locked label is N10.', probability)
+        self.assertIn('The locked label is N11.', self.protect)
+        self.assertIn('The locked label is N12.', self.text)
+        self.assertIn('**N9.**', self.index)
+        self.assertIn('**N10.**', self.index)
+        self.assertIn('**N11.**', self.index)
+        self.assertIn('**N12.**', self.index)
+
+    def test_novice_s_and_t_tags_have_one_referent(self):
+        """[S*] and [T*] source records are unique across the novice arc."""
+        definition = re.compile(r'\*\*\[([ST]\d+)\] ([^*]+)\*\*')
+        citation = re.compile(r'\[([ST]\d+)\]')
+        records = {}
+        texts = []
+        for path in sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md')):
+            text = path.read_text(encoding='utf-8')
+            texts.append((path.name, text))
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        for name, text in texts:
+            for tag in citation.findall(text):
+                self.assertIn(tag, records, f'{name} cites undefined [{tag}]')
+        self.assertEqual(records['S10'], (
+            'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md',
+            'Daniel J. Bernstein.',
+        ))
+        self.assertEqual(records['T1'], ('NOVICE_PROGRAMMING.md', 'GNU Bash.'))
+        self.assertEqual(records['T6'], (
+            'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md',
+            'Orange tests.',
+        ))
+        n12_tags = {
+            tag for tag, (name, _) in records.items()
+            if name == 'NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md'
+        }
+        self.assertIn('S10', n12_tags)
+        self.assertIn('T6', n12_tags)
+        self.assertNotIn('T1', n12_tags)
+        self.assertNotIn('S9', n12_tags)
 
     def test_n12_ledger_matches_the_word_arithmetic(self):
         block = re.search(r'^```text\nn12-ledger\n(.*?)\n```', self.text, re.M | re.S)
