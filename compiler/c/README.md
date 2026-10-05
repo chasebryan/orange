@@ -49,7 +49,10 @@ scope only within its step or branch. A tuple type `(T, U)` holds two through
 the array `Word[8]^n` of its bytes, `++` joins two arrays, and a slice
 `x[a..b]` or slice update `x with [a..b] = v` reads or replaces a run whose
 bounds are integer literals and loop indices proved in range before the
-program runs. `for`, `in`, `with`,
+program runs. A function may take size parameters, `spec f[n in a..b](...)`,
+and is checked once for each value in range. Lengths, fill lengths, and loop
+bounds may be written with those sizes, and a call is `f[2](x)` or is fitted
+from the lengths of its arguments. `for`, `in`, `with`,
 `if`, and `else` are names outside those positions. `true` and `false` are
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.
@@ -75,7 +78,7 @@ An index follows a name, a call, or an accumulator. Operators and conversions
 apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
-Later slices are outside this frontend. Size parameters, byte order, type
+Later slices are outside this frontend. Byte order, type
 parameters, tests, lengths above 256, and computed shift amounts are rejected
 rather than given a new meaning.
 The Rust `orangec` remains the frontend for those slices.
