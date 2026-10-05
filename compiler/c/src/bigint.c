@@ -275,6 +275,58 @@ int big_add(Arena *arena, const Big *left, const Big *right, Big *out) {
     return sub_mag(arena, right, left, right->negative, out);
 }
 
+int big_shl(Arena *arena, const Big *value, uint32_t amount, Big *out) {
+    uint32_t limb_shift;
+    uint32_t bit_shift;
+    uint32_t count;
+    uint32_t *limbs;
+    uint32_t index;
+    uint32_t carry = 0;
+    uint32_t bits;
+    if (value->nlimbs == 0) {
+        *out = big_zero();
+        return 1;
+    }
+    bits = big_bits(value);
+    if (bits > ORANGE_MAX_BITS || amount > ORANGE_MAX_BITS - bits) {
+        return 0;
+    }
+    if (amount == 0) {
+        limbs = alloc_limbs(arena, value->nlimbs);
+        if (limbs == NULL) {
+            return 0;
+        }
+        memcpy(limbs, value->limbs, (size_t)value->nlimbs * sizeof(uint32_t));
+        *out = big_publish(limbs, value->nlimbs, value->negative);
+        return 1;
+    }
+    limb_shift = amount / 32u;
+    bit_shift = amount % 32u;
+    count = value->nlimbs + limb_shift + (bit_shift == 0 ? 0u : 1u);
+    limbs = alloc_limbs(arena, count);
+    if (limbs == NULL) {
+        return 0;
+    }
+    memset(limbs, 0, (size_t)count * sizeof(uint32_t));
+    if (bit_shift == 0) {
+        memcpy(limbs + limb_shift, value->limbs, (size_t)value->nlimbs * sizeof(uint32_t));
+    } else {
+        for (index = 0; index < value->nlimbs; index++) {
+            uint32_t limb = value->limbs[index];
+            limbs[index + limb_shift] = (limb << bit_shift) | carry;
+            carry = limb >> (32u - bit_shift);
+        }
+        if (carry != 0) {
+            limbs[value->nlimbs + limb_shift] = carry;
+        }
+    }
+    *out = big_publish(limbs, count, value->negative);
+    if (!fits_bits(out)) {
+        return 0;
+    }
+    return 1;
+}
+
 int big_neg(const Big *value, Big *out) {
     *out = *value;
     if (out->nlimbs != 0) {
@@ -820,6 +872,14 @@ static int limit_literal_self_test(Arena *arena) {
         strcmp(hex_text, built_text) != 0 || big_mul(arena, &value, &value, &too_wide) ||
         big_add(arena, &product, &one, &too_wide)) {
         goto done;
+    }
+    {
+        Big shifted = big_zero();
+        Big wide = big_zero();
+        if (!big_from_u64(arena, 1, &one) || !big_shl(arena, &one, 8, &shifted) || big_bits(&shifted) != 9u ||
+            shifted.negative || shifted.nlimbs != 1 || shifted.limbs[0] != 256u || big_shl(arena, &one, 16384u, &wide)) {
+            goto done;
+        }
     }
     ok = 1;
 done:

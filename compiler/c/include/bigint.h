@@ -39,6 +39,8 @@ int big_add(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_sub(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_mul(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_neg(const Big *value, Big *out);
+/* value * 2^amount. Fails when the result would exceed 16384 significant bits. */
+int big_shl(Arena *arena, const Big *value, uint32_t amount, Big *out);
 int big_cmp(const Big *left, const Big *right);
 
 /* Euclidean quotient and remainder: 0 <= rem < |divisor|, or 0 if divisor is 0. */
