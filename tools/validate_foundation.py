@@ -616,6 +616,7 @@ docs/THE_ORANGE_BOOK.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md
 docs/book/NOVICE_OPENING.md
+docs/book/NOVICE_PROBABILITY.md
 docs/book/NOVICE_PROGRAMMING.md
 docs/book/README.md
 docs/governance/adrs/ADR-0000-template.md

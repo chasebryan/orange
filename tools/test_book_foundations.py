@@ -6,6 +6,7 @@ access are required. Exhaustive results concern only the finite models below.
 The manuscript also contains a separate mathematical proof for arbitrary
 finite, equal-length bit strings.
 """
+from fractions import Fraction
 from itertools import product
 from pathlib import Path
 import re
@@ -549,6 +550,144 @@ class LessonN9Reference(unittest.TestCase):
         self.assertIn('from the output alone, both', self.answers['N9.20'])
         self.assertIn('hides nothing', self.answers['N9.8'])
         self.assertGreaterEqual(len(set(re.findall(r'NOVICE_LOGIC\.md#([^)]+)', self.index))), 3)
+
+
+class N10Probability(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_PROBABILITY.md').read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_n10_exercises_label_epigraph_and_anchors(self):
+        exercises = re.findall(r'^\*\*Exercise (N10\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(N10\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'N10.{n}' for n in range(1, 17)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ Chapter (?:7|8|9|10|11|12)\b')
+        self.assertNotRegex(self.text, r'(?m)^#+ N[789]\b')
+        self.assertRegex(self.text, r'(?m)^## N10: Count What You Do Not Know$')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'Although it is always possible in principle to determine these solutions '
+            '(by trial of each possible key for example), different enciphering systems '
+            'show a wide variation in the amount of work required.'
+        ])
+        self.assertIn('https://pages.cs.wisc.edu/~rist/642-spring-2014/shannon-secrecy.pdf', self.text)
+        self.assertIn('**N10.**', self.index)
+        self.assertIn('NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know', self.index)
+        self.assertNotIn('Chapter 7', self.index)
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n10-count-what-you-do-not-know', anchors)
+        for fragment in re.findall(r'NOVICE_PROBABILITY\.md#([^)\s]+)', self.index):
+            self.assertIn(fragment, anchors)
+        opening = (ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md').read_text(encoding='utf-8')
+        opening_anchors = {github_anchor(h) for h in re.findall(r'^#{1,6} (.+)$', opening, re.M)}
+        for fragment in re.findall(r'NOVICE_OPENING\.md#([^)\s]+)', self.text):
+            self.assertIn(fragment, opening_anchors)
+
+    def test_n10_ledger_matches_exact_rationals(self):
+        block = re.search(r'^```text\nn10-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            num, den = value.split('/')
+            printed[name] = Fraction(int(num), int(den))
+        distinct_3_5 = Fraction(4, 5) * Fraction(3, 5)
+        distinct_5_5 = Fraction(4, 5) * Fraction(3, 5) * Fraction(2, 5) * Fraction(1, 5)
+        s_3_5 = Fraction(3 * 2, 2 * 5)
+        s_23 = Fraction(23 * 22, 2 * 365)
+        expected = {
+            'sum-half-third': Fraction(1, 2) + Fraction(1, 3),
+            'bad-numerator-sum': Fraction(1 + 1, 2 + 3),
+            'three-fraction-sum': Fraction(1, 2) + Fraction(1, 3) + Fraction(1, 6),
+            'rejected-weights': Fraction(1, 2) + Fraction(1, 3) + Fraction(1, 7),
+            'conditional-unequal-00': Fraction(1, 2) / (Fraction(1, 2) + Fraction(1, 6)),
+            'conditional-unequal-01': Fraction(1, 6) / (Fraction(1, 2) + Fraction(1, 6)),
+            'conditional-uniform-00': Fraction(1, 4) / Fraction(1, 2),
+            'conditional-reverse': Fraction(1, 2) / Fraction(1, 2),
+            'second-bit-one': Fraction(1, 6) + Fraction(1, 6),
+            'second-bit-complement': 1 - (Fraction(1, 6) + Fraction(1, 6)),
+            'disjoint-product': Fraction(1, 2) * Fraction(1, 2),
+            'draw-product': Fraction(1, 3) * Fraction(1, 3),
+            'byte-bit-count': Fraction(256 * 2, 1),
+            'byte-bit-zero': Fraction(1, 256) * Fraction(1, 2),
+            'birthday-3-5-distinct': distinct_3_5,
+            'birthday-3-5-collision': 1 - distinct_3_5,
+            'birthday-3-5-upper': s_3_5,
+            'birthday-3-5-lower': s_3_5 / (1 + s_3_5),
+            'birthday-5-5-collision': 1 - distinct_5_5,
+            'birthday-5-5-lower': Fraction(2, 3),
+            'birthday-23-upper': s_23,
+            'birthday-23-lower': s_23 / (1 + s_23),
+            'expected-pairs-3-5': s_3_5,
+            'triple-pair-event': Fraction(1, 25),
+            'triple-pair-product': Fraction(1, 125),
+            'expected-trials-4': Fraction(4 + 1, 2),
+            'early-stop-4': Fraction(2, 4),
+            'expected-trials-remaining': Fraction(2 + 1, 2),
+            'sixteen-bit-count': Fraction(256 * 256, 1),
+        }
+        self.assertEqual(printed, expected)
+        outside = self.text.replace(block.group(0), '')
+        for value in ('5/6', '2/5', '41/42', '3/4', '13/25', '3/8', '601/625',
+                      '253/365', '253/618', '5/2', '3/2', '1/512', '1/125'):
+            self.assertIn(value, outside)
+
+    def test_n10_bounds_trials_and_fraction_rules(self):
+        def collision(people, days):
+            if people > days:
+                return Fraction(1)
+            distinct = Fraction(1)
+            for k in range(1, people):
+                distinct *= Fraction(days - k, days)
+            return 1 - distinct
+
+        def pair_ratio(people, days):
+            return Fraction(people * (people - 1), 2 * days)
+
+        for days in range(1, 9):
+            for people in range(1, days + 3):
+                probability = collision(people, days)
+                bound = pair_ratio(people, days)
+                self.assertGreaterEqual(probability, 0)
+                self.assertLessEqual(probability, 1)
+                self.assertLessEqual(probability, bound)
+                if people <= days:
+                    self.assertGreaterEqual(probability, bound / (1 + bound))
+                else:
+                    self.assertEqual(probability, 1)
+        self.assertEqual(5 * 4 * 3 + 3 * 5 * 4 + 5, 125)
+        self.assertEqual(Fraction(65, 125), Fraction(13, 25))
+        numerator = 1
+        denominator = 1
+        for k in range(1, 23):
+            numerator *= 365 - k
+            denominator *= 365
+        self.assertLess(2 * numerator, denominator)
+        upper = Fraction(253, 365)
+        lower = Fraction(253, 618)
+        self.assertLess(lower, Fraction(1, 2))
+        self.assertGreater(upper, Fraction(1, 2))
+        for width in range(0, 41):
+            self.assertEqual(sum(range(width + 1)), width * (width + 1) // 2)
+        for size in range(1, 31):
+            self.assertEqual(sum(range(1, size + 1)) / size, (size + 1) / 2)
+        for numerator in range(-3, 4):
+            for denominator in range(1, 5):
+                for other_num in range(-3, 4):
+                    for other_den in range(1, 5):
+                        for factor in range(1, 4):
+                            left = Fraction(numerator, denominator)
+                            right = Fraction(other_num, other_den)
+                            scaled = Fraction(factor * numerator, factor * denominator)
+                            self.assertEqual(left, scaled)
+                            self.assertEqual(left + right, Fraction(
+                                numerator * other_den + denominator * other_num,
+                                denominator * other_den))
+                            self.assertEqual(left * right, Fraction(
+                                numerator * other_num, denominator * other_den))
 
 
 def rotate_byte(value: int, amount: int) -> int:

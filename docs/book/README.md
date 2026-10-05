@@ -81,6 +81,14 @@ understand each operation rather than memorize its notation.
   induction, invariants, and finite exhaustive arguments. Twenty exercises
   with worked answers. The label is lesson N9. It is not a manuscript
   chapter numeral. [Worked answers](NOVICE_LOGIC.md#worked-answers-n9).
+- **N10.** [Count What You Do Not Know](NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know):
+  fractions, ratios, finite probability spaces, conditional knowledge,
+  independence, an elementary birthday bound, expected value, and base-two
+  logarithms. Key length, the distribution a key is drawn from, and an
+  adversary's uncertainty are separated. Sixteen exercises with worked
+  answers. No Orange listing is included. N10 is a provisional label.
+  Final numbering waits on the integration plan. N10 does not use the
+  formal vocabulary reserved for Say What You Mean.
 
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
@@ -88,13 +96,14 @@ hexadecimal answer are in the opening file; this index describes that
 corrected source. Chapters 4–6, N7, N9, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
 worked answers. N7 adds twelve further exercises in its own file. N9 adds
-20. N8 is not in that count.
+20. N10 adds sixteen further exercises, numbered N10.1 onward. N8 is not
+in that count.
 
 ### Remaining teaching sequence
 
-Item 1 is drafted as N7. Item 3 is drafted as N9 and listed above. Items
-2, 4, 5, and 6 have not been written. Extend the manuscript in the
-following dependency order:
+Item 1 is drafted as N7. Item 3 is drafted as N9 and listed above. Item 4
+is drafted as N10. Items 2, 5, and 6 have not been written. Extend the
+manuscript in the following dependency order:
 
 1. **Name the Intermediate Step.** Under way in
    [N7](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step).
@@ -109,9 +118,12 @@ following dependency order:
    [N9: Say What You Mean](NOVICE_LOGIC.md#n9-say-what-you-mean).
    The locked label is N9. It does not use a manuscript chapter numeral.
    N7 and N8 stay ahead of it in this order and are not part of that file.
-4. **Count What You Do Not Know.** Fractions, ratios, probability,
-   conditional knowledge, independent choices, powers and logarithms;
-   distinguish key length, distribution and adversary uncertainty.
+4. **Count What You Do Not Know.** Drafted as
+   [N10](NOVICE_PROBABILITY.md#n10-count-what-you-do-not-know).
+   Fractions, ratios, probability, conditional knowledge, independent
+   choices, powers and logarithms; distinguish key length, distribution
+   and adversary uncertainty. The label is provisional. Final numbering
+   waits on the integration plan.
 5. **Protect More Than Appearance.** Explicitly educational classical
    constructions; encoding, encryption, hashing, authentication; keys,
    randomness, nonces and counters; the conditions of the one-time pad.
@@ -277,9 +289,10 @@ python3 tools/test_book_foundations.py
 ```
 
 These checks validate the worked examples, finite models, the 52 chapter
-answers, the N7 answers, the 20 lesson-N9 answers, and document structure.
-Python test discovery through `tools/tests/test_book_foundations.py` loads
-those checks and the two printed-continuation audits.
+answers, the N7 answers, the 20 lesson-N9 answers, the 16 lesson-N10
+answers, and document structure. Python test discovery through
+`tools/tests/test_book_foundations.py` loads those checks and the two
+printed-continuation audits.
 They do not execute Orange, establish a cryptographic security claim, or
 constitute independent review. The index preserves all seventeen original
 chapter links without changing the original file. Check repository-wide
