@@ -302,6 +302,14 @@ compiler/.gitignore
 compiler/Cargo.lock
 compiler/Cargo.toml
 compiler/README.md
+compiler/c/Makefile
+compiler/c/README.md
+compiler/c/include/bigint.h
+compiler/c/include/compile.h
+compiler/c/src/bigint.c
+compiler/c/src/compile.c
+compiler/c/src/main.c
+compiler/c/tests/differential.py
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/diagnostic.rs
