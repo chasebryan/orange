@@ -273,10 +273,11 @@ below records the formal status of every feature slice and architectural stratum
 | **Proof Stratum (`proof`)** | Proposed | Proposed | Proof IR Deduction | Not implemented | D-006, D-007 |
 | **Assurance & Claims (`claim`)** | Proposed | Proposed | Content-Addressed Graph | Not implemented | D-005, AM-01 |
 
-`Implemented` in the table means the post-#235 compiler, whose `orangec --version`
-reports `implemented slice S3u`. The rows below S3u are Proposed and are not that
-compiler. This documentation branch does not contain the S3u compiler commit; the
-judgments are those of OEP-0025 and `docs/DIMENSIONS_2026.md` on that tip.
+`Implemented` in the table is the status recorded for that row. The binary
+built from this tree prints `implemented slice S3t`:
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`.
+The S3u row names OEP-0025. OEP-0025 is not a file in this checkout, and this
+binary's version string does not name S3u. The rows below S3u are Proposed.
 
 ---
 
@@ -8225,7 +8226,7 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 
   ```console
   $ orangec --version
-  orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
+  orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
   ```
 
 ### §102. Deterministic Resource Limits and Denial-of-Service Defense
