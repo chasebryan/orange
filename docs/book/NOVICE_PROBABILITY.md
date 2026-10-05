@@ -37,7 +37,7 @@ value. A passing test means the test's `Bool` was true. None of those is
 the quantifier in a proposition, and none is a security claim. [C1]
 
 The named surface of these listings is `Int`, `Bool`, comparisons,
-Euclidean `/` and `%`, `let`, fixed-length arrays, a bounded `for` whose
+Euclidean `/`, `let`, fixed-length arrays, a bounded `for` whose
 bounds are integer literals, and `test`. There is no fraction type. The
 expression `1 / 2` is Euclidean division of integers. Its value is `0`,
 not the fraction one half. Every rational comparison a listing asks the
@@ -1808,8 +1808,8 @@ rights clearance.
 ## Source note for the listings
 
 **[C1] Counting surface.** The listings use `Int` arithmetic as specified
-in `docs/EXPRESSIONS_2026.md`; `Bool`, comparisons, and Euclidean `/` and
-`%` as specified in `docs/CONDITIONS_2026.md`; `let` and fixed-length
+in `docs/EXPRESSIONS_2026.md`; `Bool`, comparisons, and Euclidean `/`
+as specified in `docs/CONDITIONS_2026.md`; `let` and fixed-length
 arrays as N7 uses them; bounded `for` as specified in `docs/LOOPS_2026.md`;
 and `test` as specified in `docs/TESTS_2026.md`. A loop bound is an integer
 literal with `0 ≤ start < end ≤ 65536`. Comparing two expressions that are
