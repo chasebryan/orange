@@ -318,6 +318,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
                     )
                 }
+                // A position ranges over every integer in its declared range.
+                NameResolution::Position { low, high, .. } => {
+                    let last = high.checked_sub(1).ok_or(name.span)?;
+                    ExactInteger::from_u64(u64::from(low), self.reserve_range_limbs).zip(
+                        ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
+                    )
+                }
                 _ => return Err(name.span),
             },
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {

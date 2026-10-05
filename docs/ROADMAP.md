@@ -668,6 +668,15 @@ abbreviates. The [array dimensions proposal](DIMENSIONS_2026.md) and
 the implemented slice in owner review; they add no proof, transform, backend,
 or target.
 
+S3w follows S3u, and does not depend on S3v, with position parameters
+`a at lo..hi`. One function is checked for every integer in each range and a
+call chooses the integers, so one ChaCha20 quarter round acts on four
+positions of a 16-word state. The range adds no instance. The
+[position-parameter proposal](POSITIONS_2026.md) and
+[OEP-0027](governance/oeps/OEP-0027-orange-2026-position-parameters.md) record
+the implemented slice in owner review; they add no proof, transform, backend,
+or target.
+
 OEP-0022 P2 has permanent executable five-limb definitions in
 [`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
 reconstruction and abstraction, tight/loose/canonical predicates, addition,
@@ -682,11 +691,9 @@ invariant or establish refinement. P4 is incomplete. Native wide multiplication,
 checked P3 contracts and full X25519 implementation refinement remain later
 obligations.
 
-Lists of types named once for several functions, positions given as parameters,
-so that one quarter round can act on
-four positions of a whole state, slices and words at positions computed from
-data, and tests that claim a call stops or a source is rejected are the next
-candidate slices.
+Lists of types named once for several functions, slices and words at positions
+computed from data, and tests that claim a call stops or a source is rejected
+are the next candidate slices. Positions given as parameters are S3w.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.

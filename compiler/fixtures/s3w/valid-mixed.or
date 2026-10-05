@@ -1,0 +1,11 @@
+edition 2026;
+module mixed {
+  // `at` is a position word only between a bracket name and its bounds.
+  spec spell(at: Int) -> Int { at }
+
+  spec row[n in 2..4, a at 0..2](s: Int^n) -> Int { s[(a + 1) % 2] }
+
+  spec result() -> Int { row[2, 0]([10, 20]) + row[3, 1]([7, 8, 9]) + spell(7) }
+
+  test "a size and a position are chosen together" { result() == 34 }
+}

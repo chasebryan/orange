@@ -11438,3 +11438,168 @@ fn update_path_of_a_mistyped_base_uses_the_bases_axes() {
         [("row", "this array has fewer dimensions")]
     );
 }
+
+#[test]
+fn position_parameters_are_one_instance_and_trailing_int_arguments() {
+    let (fixture, core) = accepted(concat!(
+        "  spec lane[a at 0..4](s: Word[8]^4) -> Word[8] { s[(a + 1) % 4] }\n",
+        "  spec put[a at 0..4](s: Word[8]^4, v: Word[8]) -> Word[8]^4 { s with [a] = v }\n",
+        "  spec quarter[a at 0..16, b at 0..16, c at 0..16, d at 0..16](s: Word[32]^16) -> Word[32] {\n",
+        "    s[a] + s[b] + s[c] + s[d]\n",
+        "  }\n",
+        "  spec row[n in 2..4, a at 0..2](s: Int^n) -> Int { s[a] }\n",
+        "  spec use_all() -> Int {\n",
+        "    let words: Word[8]^4 = put[3]([1, 2, 3, 4], 9) with [0] = lane[1]([8, 7, 6, 5]);\n",
+        "    let wide: Word[32]^16 = [0; 16];\n",
+        "    (words[0] as Int) + (quarter[0, 4, 8, 12](wide) as Int) + row[3, 1]([4, 5, 6])\n",
+        "  }\n",
+        "  spec at(at: Int) -> Int { at }\n",
+    ));
+    let described = core
+        .functions
+        .iter()
+        .map(|function| {
+            (
+                function.name(),
+                function.instance().to_string(),
+                function.sizes().to_vec(),
+                function.parameters().to_vec(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let word4 = CoreType::Array(ArrayType::new(&CoreType::Word8, 4).unwrap());
+    let word16 = CoreType::Array(ArrayType::new(&CoreType::Word32, 16).unwrap());
+    assert_eq!(
+        described,
+        [
+            (
+                "lane",
+                String::new(),
+                vec![],
+                vec![word4.clone(), CoreType::Int]
+            ),
+            (
+                "put",
+                String::new(),
+                vec![],
+                vec![word4, CoreType::Word8, CoreType::Int]
+            ),
+            (
+                "quarter",
+                String::new(),
+                vec![],
+                vec![
+                    word16,
+                    CoreType::Int,
+                    CoreType::Int,
+                    CoreType::Int,
+                    CoreType::Int
+                ]
+            ),
+            (
+                "row",
+                String::from("[2]"),
+                vec![2],
+                vec![
+                    CoreType::Array(ArrayType::new(&CoreType::Int, 2).unwrap()),
+                    CoreType::Int
+                ]
+            ),
+            (
+                "row",
+                String::from("[3]"),
+                vec![3],
+                vec![
+                    CoreType::Array(ArrayType::new(&CoreType::Int, 3).unwrap()),
+                    CoreType::Int
+                ]
+            ),
+            ("use_all", String::new(), vec![], vec![]),
+            ("at", String::new(), vec![], vec![CoreType::Int]),
+        ]
+    );
+    let user = core
+        .functions
+        .iter()
+        .find(|f| f.name() == "use_all")
+        .unwrap();
+    let mut calls = user
+        .locals()
+        .iter()
+        .flat_map(|local| expression_nodes(&fixture, &local.value))
+        .chain(core_nodes(&fixture, user))
+        .filter(|(operation, _, _)| operation.starts_with("call"))
+        .map(|(operation, source, _)| (operation, source))
+        .collect::<Vec<_>>();
+    calls.sort();
+    assert_eq!(
+        calls,
+        [
+            (String::from("call #0 with 2"), "lane[1]([8, 7, 6, 5])"),
+            (String::from("call #1 with 3"), "put[3]([1, 2, 3, 4], 9)"),
+            (String::from("call #2 with 5"), "quarter[0, 4, 8, 12](wide)"),
+            (String::from("call #4 with 2"), "row[3, 1]([4, 5, 6])"),
+        ]
+    );
+    let lane = core_nodes(&fixture, &core.functions[0]);
+    assert!(
+        lane.iter()
+            .any(|(operation, source, _)| { operation == "parameter 1" && *source == "a" })
+    );
+}
+
+#[test]
+fn position_parameters_reject_ranges_calls_and_non_indices() {
+    let cases = [
+        (
+            "  spec empty[a at 3..3](s: Word[8]^4) -> Word[8] { s[0] }\n",
+            DiagnosticCode::PositionParameter,
+            "the position range 3..3 is empty",
+        ),
+        (
+            "  spec wide[a at 0..65537](s: Word[8]^4) -> Word[8] { s[0] }\n",
+            DiagnosticCode::PositionParameter,
+            "a position's bound must be at most 65536",
+        ),
+        (
+            "  spec lane[a at 0..4](s: Word[8]^4) -> Word[8] { s[a] }\n  spec missing() -> Word[8] { lane([1, 2, 3, 4]) }\n",
+            DiagnosticCode::SizeCount,
+            "`lane` takes 1 position, but this call gives none",
+        ),
+        (
+            "  spec lane[a at 0..4](s: Word[8]^4) -> Word[8] { s[a] }\n  spec past() -> Word[8] { lane[4]([1, 2, 3, 4]) }\n",
+            DiagnosticCode::PositionParameter,
+            "`lane` is defined for `a` at 0..4",
+        ),
+        (
+            "  spec lane[a at 0..4](s: Word[8]^4, i: Int) -> Word[8] { s[a] }\n  spec moved(i: Int) -> Word[8] { lane[i]([1, 2, 3, 4], i) }\n",
+            DiagnosticCode::PositionParameter,
+            "a call's position may use only integer literals and size parameters",
+        ),
+        (
+            "  spec sized[a at 0..4](s: Word[8]^a) -> Word[8] { s[0] }\n",
+            DiagnosticCode::NonStaticSize,
+            "a size may use only integer literals and size parameters",
+        ),
+        (
+            "  spec runtime(i: Int, s: Word[8]^4) -> Word[8] { s[i] }\n",
+            DiagnosticCode::NonStaticIndex,
+            "an `Int` index may use only integer literals, loop indices, and words converted with `as Int`",
+        ),
+        (
+            "  spec sliced[a at 0..4](s: Word[8]^4) -> Word[8]^2 { s[a..2] }\n",
+            DiagnosticCode::NonStaticIndex,
+            "a slice's bounds may use only integer literals and loop indices",
+        ),
+        (
+            "  spec bounded[a at 0..4](s: Int) -> Int { for i in 0..a with t: Int = s { t } }\n",
+            DiagnosticCode::NonStaticSize,
+            "a size may use only integer literals and size parameters",
+        ),
+    ];
+    for (source, code, message) in cases {
+        let (_, result) = rejected(source);
+        assert_eq!(result.diagnostics[0].code(), code, "{source}");
+        assert_eq!(result.diagnostics[0].message(), message, "{source}");
+    }
+}

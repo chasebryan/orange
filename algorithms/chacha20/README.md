@@ -61,9 +61,9 @@ nonce.
 | draft, 2.3, steps 1 and 2 | `subkey`, `chacha20_nonce` |
 | draft, 2.3.1, `xchacha20_encrypt` | `xchacha20_encrypt` |
 
-`quarter_round` takes and returns the four words, and `inner_block` places
-each result back into the state in one array literal, exactly as the S3f
-fixture does. `block` keeps the RFC's split between the state after the
+`quarter_round` takes and returns the four words. `quarter_at` applies that
+quarter round at four position parameters of the 16-word state, and
+`inner_block` calls it at the eight positions RFC 8439 writes. `block` keeps the RFC's split between the state after the
 final addition (which section 2.3.2 prints as words) and its serialization
 (which it prints as bytes), so both can be checked. `encrypt` is the RFC's
 loop over whole blocks for a message of four blocks, with the block counter
@@ -156,7 +156,8 @@ where its vectors and those of the draft agree.
 ### What the Orange rendering shows
 
 Nothing in the cipher depends on data. The rotation amounts are the
-literals 16, 12, 8 and 7, every index in `inner_block` is a constant, the
+literals 16, 12, 8 and 7, the positions in `inner_block` are the static
+position parameters of `quarter_at`, the
 loop bounds are 10 (double rounds) and 4 (blocks), and the file's only `if`
 is in `xor_block`, on the loop index j, to place a keystream block at byte
 offset 64j; it is a workaround for two language rules (a spec parameter is

@@ -1145,6 +1145,10 @@ scalars. The S3u corpus writes [AES-128](compiler/fixtures/s3u/valid-aes-state.o
 as FIPS 197, 202, and 203 write them, and reproduces their examples. S3u is implemented and tested, with its
 [specification](docs/DIMENSIONS_2026.md) in review as
 [OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
+S3w, in review as
+[OEP-0027](docs/governance/oeps/OEP-0027-orange-2026-position-parameters.md),
+adds position parameters `a at lo..hi`, so one ChaCha20 quarter round acts on
+four positions of the state. It does not depend on S3v.
 
 ### Daylight Horizon example
 
@@ -1171,6 +1175,7 @@ cryptography.
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Rectangular arrays of scalar rows, with both axes checked and a bounded scalar product | Working; specification in review ([OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md)) |
 | Arrays of up to four dimensions and update paths `x with [i][j] = v`, one index per dimension | Working; specification in review ([OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md)) |
+| Position parameters `a at lo..hi`, so one function can act at several static positions of a state | Working; specification in review ([OEP-0027](docs/governance/oeps/OEP-0027-orange-2026-position-parameters.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
@@ -1313,7 +1318,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, and computed amounts in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, computed amounts, and position parameters in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |

@@ -25,25 +25,33 @@ module chacha20 {
     [a2, b2, c2, d2]
   }
 
+  // One quarter round at four positions of a 16-word state. `a`, `b`, `c`,
+  // and `d` are position parameters: the body is checked for every integer
+  // in 0..16, and each call chooses four of them. The four words are read,
+  // the quarter round of section 2.1 is applied, and the results are written
+  // back. Column and diagonal rounds use disjoint positions, so applying the
+  // quarters one after another is the same placement as assembling them.
+  spec quarter_at[a at 0..16, b at 0..16, c at 0..16, d at 0..16](s: Word[32]^16) -> Word[32]^16 {
+    let q: Word[32]^4 = quarter_round(s[a], s[b], s[c], s[d]);
+    let s1: Word[32]^16 = s with [a] = q[0];
+    let s2: Word[32]^16 = s1 with [b] = q[1];
+    let s3: Word[32]^16 = s2 with [c] = q[2];
+    s3 with [d] = q[3]
+  }
+
   // Sections 2.2 and 2.3: the eight quarter rounds of inner_block, a column
   // round QUARTERROUND(0, 4, 8, 12) through (3, 7, 11, 15) and a diagonal
-  // round QUARTERROUND(0, 5, 10, 15) through (3, 4, 9, 14). Each quarter
-  // round returns its four words, which are placed back into the state.
+  // round QUARTERROUND(0, 5, 10, 15), (1, 6, 11, 12), (2, 7, 8, 13), and
+  // (3, 4, 9, 14), as RFC 8439 writes them.
   spec inner_block(x: Word[32]^16) -> Word[32]^16 {
-    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
-    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
-    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
-    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
-    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
-    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
-    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
-    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
-    [
-      d0[0], d1[0], d2[0], d3[0],
-      d3[1], d0[1], d1[1], d2[1],
-      d2[2], d3[2], d0[2], d1[2],
-      d1[3], d2[3], d3[3], d0[3],
-    ]
+    let c0: Word[32]^16 = quarter_at[0, 4, 8, 12](x);
+    let c1: Word[32]^16 = quarter_at[1, 5, 9, 13](c0);
+    let c2: Word[32]^16 = quarter_at[2, 6, 10, 14](c1);
+    let c3: Word[32]^16 = quarter_at[3, 7, 11, 15](c2);
+    let d0: Word[32]^16 = quarter_at[0, 5, 10, 15](c3);
+    let d1: Word[32]^16 = quarter_at[1, 6, 11, 12](d0);
+    let d2: Word[32]^16 = quarter_at[2, 7, 8, 13](d1);
+    quarter_at[3, 4, 9, 14](d2)
   }
 
   spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {

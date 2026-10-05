@@ -366,15 +366,16 @@ impl FunctionDeclaration {
     }
 }
 
-/// One size parameter `n in a..b` of a sized `spec`, or one type
-/// parameter `K in {F, L}`. The function is checked once for each value of
-/// `n` from `a` up to, but not including, `b`, or once for each type the
-/// braces list, as if it were written out once for each.
+/// One size parameter `n in a..b` of a sized `spec`, one type parameter
+/// `K in {F, L}`, or one position parameter `a at lo..hi`. A size or type
+/// parameter is checked once for each value or listed type. A position
+/// parameter does not multiply those instances: its name ranges over every
+/// integer from `lo` up to, but not including, `hi`, and each call chooses one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SizeParameter {
     /// Extent from the name through the second bound or the closing brace.
     pub(crate) span: Span,
-    /// The size's or the type parameter's name.
+    /// The size's, type parameter's, or position parameter's name.
     pub(crate) name: Identifier,
     /// Exact extent of the first bound's integer token, or of `{`.
     pub(crate) start_span: Span,
@@ -383,6 +384,8 @@ pub struct SizeParameter {
     /// The listed types in source order, nonempty only for a type
     /// parameter.
     pub(crate) types: Vec<TypeSyntax>,
+    /// Whether this is a position parameter, `a at lo..hi`.
+    pub(crate) index: bool,
 }
 
 impl SizeParameter {
@@ -423,6 +426,18 @@ impl SizeParameter {
     #[must_use]
     pub const fn is_type(&self) -> bool {
         !self.types.is_empty()
+    }
+
+    /// Returns whether this is a position parameter, `a at lo..hi`.
+    #[must_use]
+    pub const fn is_index(&self) -> bool {
+        self.index
+    }
+
+    /// Returns whether this is a size parameter, `n in a..b`.
+    #[must_use]
+    pub const fn is_size(&self) -> bool {
+        self.types.is_empty() && !self.index
     }
 }
 
@@ -1887,6 +1902,10 @@ const SIZED_CALL_NOTE: &str = "a sized function is called with its sizes in brac
 const SIZE_PARAMETER_NOTE: &str = "a sized function is written `spec f[n in 1..5](x: Word[8]^n) \
      -> Type { ... }` and checked once for each n from 1 up to, but not including, 5";
 
+const POSITION_PARAMETER_NOTE: &str = "a position parameter is written `a at 0..16` and names each \
+     integer from 0 up to, but not including, 16; a call writes those integers, as in \
+     `quarter[0, 4, 8, 12](s)`";
+
 const TYPE_PARAMETER_NOTE: &str = "a type parameter is written `K in {F, L}` and names each type \
      its function is checked for, as in `spec square[K in {F, L}](x: K) -> K { x * x }`";
 
@@ -2780,30 +2799,33 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses the size and type parameters `[n in a..b, K in {F, L}, ...]`
-    /// of a function, at most [`MAX_SIZES_PER_FUNCTION`] of them, each size
-    /// with integer bounds and each type parameter with a braced list of
-    /// types.
+    /// Parses the bracket parameters `[n in a..b, K in {F, L}, a at 0..16]`
+    /// of a function, at most [`MAX_SIZES_PER_FUNCTION`] of them. A size has
+    /// integer bounds, a type parameter a braced list of types, and a
+    /// position parameter integer bounds after `at`.
     #[inline(never)]
     fn parse_size_parameters(&mut self) -> Option<Vec<SizeParameter>> {
         self.bump()?;
         let mut sizes = Vec::new();
         loop {
             let name = self.parse_identifier("size parameter")?;
-            if !self.current_is_word("in") {
+            let position = self.current_is_word("at");
+            if !position && !self.current_is_word("in") {
                 self.expected("`in` after the size's name", SIZE_PARAMETER_NOTE);
                 return None;
             }
             self.bump()?;
-            if self.current_kind() == TokenKind::LeftBrace {
+            if !position && self.current_kind() == TokenKind::LeftBrace {
                 let parameter = self.parse_type_parameter(name)?;
                 if sizes.len() >= MAX_SIZES_PER_FUNCTION {
+                    let kinds = if sizes.iter().any(SizeParameter::is_index) {
+                        "parameters in brackets"
+                    } else {
+                        "size and type parameters"
+                    };
                     self.report(
                         DiagnosticCode::ExpectedSyntax,
-                        format!(
-                            "a function has at most {MAX_SIZES_PER_FUNCTION} size and type \
-                             parameters"
-                        ),
+                        format!("a function has at most {MAX_SIZES_PER_FUNCTION} {kinds}"),
                         parameter.span,
                         "one parameter in brackets too many",
                         TYPE_PARAMETER_NOTE,
@@ -2830,37 +2852,49 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     }
                 }
             }
-            let start_span = self
-                .expect(
-                    TokenKind::Integer,
+            let (first_bound, between, second_bound, after, kinds_note) = if position {
+                (
+                    "the position's first bound",
+                    "`..` between the position's bounds",
+                    "the position's second bound",
+                    "`,` or `]` after the position parameter",
+                    POSITION_PARAMETER_NOTE,
+                )
+            } else {
+                (
                     "the size's first bound",
-                    SIZE_PARAMETER_NOTE,
-                )?
-                .span;
-            self.expect(
-                TokenKind::DotDot,
-                "`..` between the size's bounds",
-                SIZE_PARAMETER_NOTE,
-            )?;
-            let end_span = self
-                .expect(
-                    TokenKind::Integer,
+                    "`..` between the size's bounds",
                     "the size's second bound",
+                    "`,` or `]` after the size parameter",
                     SIZE_PARAMETER_NOTE,
-                )?
+                )
+            };
+            let start_span = self
+                .expect(TokenKind::Integer, first_bound, kinds_note)?
+                .span;
+            self.expect(TokenKind::DotDot, between, kinds_note)?;
+            let end_span = self
+                .expect(TokenKind::Integer, second_bound, kinds_note)?
                 .span;
             if sizes.len() >= MAX_SIZES_PER_FUNCTION {
-                let kinds = if sizes.iter().any(SizeParameter::is_type) {
+                let kinds = if position || sizes.iter().any(SizeParameter::is_index) {
+                    "parameters in brackets"
+                } else if sizes.iter().any(SizeParameter::is_type) {
                     "size and type parameters"
                 } else {
                     "size parameters"
+                };
+                let label = if position {
+                    "one position parameter too many"
+                } else {
+                    "one size parameter too many"
                 };
                 self.report(
                     DiagnosticCode::ExpectedSyntax,
                     format!("a function has at most {MAX_SIZES_PER_FUNCTION} {kinds}"),
                     self.join(name.span, end_span),
-                    "one size parameter too many",
-                    SIZE_PARAMETER_NOTE,
+                    label,
+                    kinds_note,
                 );
                 return None;
             }
@@ -2875,6 +2909,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 start_span,
                 end_span,
                 types: Vec::new(),
+                index: position,
             });
             if !self.record_node() {
                 return None;
@@ -2885,7 +2920,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 }
                 TokenKind::RightBracket => break,
                 _ => {
-                    self.expected("`,` or `]` after the size parameter", SIZE_PARAMETER_NOTE);
+                    self.expected(after, kinds_note);
                     return None;
                 }
             }
@@ -2957,6 +2992,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             start_span: open.span,
             end_span: close.span,
             types,
+            index: false,
         })
     }
 

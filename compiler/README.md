@@ -110,8 +110,12 @@ arguments. Module aliases and type-parameter lists remain concrete. The S3u
 slice, proposed in [`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md) and
 in owner review under OEP-0025, admits arrays of up to four dimensions, each a
 `type` declaration over the one before it, and update paths
-`x with [i][j][k] = v` that mean the nested updates they abbreviate. All
-twenty-one lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+`x with [i][j][k] = v` that mean the nested updates they abbreviate. The S3w
+slice, proposed in [`docs/POSITIONS_2026.md`](../docs/POSITIONS_2026.md) and in
+owner review under OEP-0027, admits position parameters `a at lo..hi`, checked
+once for every integer in the range, so one quarter round can act on four
+positions of a state. It does not depend on S3v. All
+twenty-two lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -155,7 +159,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3w)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status

@@ -214,7 +214,7 @@ is not well typed reports its own error and no range error.
 | Code | Phase | Meaning |
 | --- | --- | --- |
 | `ORC0223` | semantic | also a word index, or an `Int` index with converted words or conditionals, whose range leaves the array; the note is now "every value an index can take, over every loop index and word in it, must select an element" |
-| `ORC0226` | semantic | now only an `Int` index with a part that has no bound; the message, label, and note are those of section 6, and the note reads "every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals" |
+| `ORC0226` | semantic | now only an `Int` index with a part that has no bound; the message, label, and note are those of section 6, and the note reads "every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, position parameters, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals" |
 
 Every other code keeps its meaning.
 
@@ -313,7 +313,7 @@ returns to that depth is followed by `else`, as it already did before `(`,
 This slice defines no index built from unbounded `Int` values, no index
 narrowed by a condition (`if x < 16 { t[x] } else { 0 }` is rejected for a
 table of 16, because the range of `x` is its type's), no signed words, no
-index parameters that are themselves static, no table larger than 256
+index parameters beyond the position parameters of S3w, no table larger than 256
 entries, and none of the exclusions of `CONDITIONS_2026.md` section 15 that
 this document does not lift.
 
@@ -321,8 +321,8 @@ A lookup is a mathematical selection, not a memory access. A table lookup
 keyed by a secret is the classic cache-timing leak of software AES, and
 nothing here says how any machine would perform one, or in what time. S3f's
 static indices are still recognizable by their syntax: an index is static
-exactly when it is built from literals and loop indices with `+`, `-`, `*`,
-`/`, and `%`. Every other accepted index may depend on data. A later decision
+exactly when it is built from literals, loop indices, and position parameters
+with `+`, `-`, `*`, `/`, and `%`. Every other accepted index may depend on data. A later decision
 on the implementation stratum (D-004) and the native target (D-011) must say
 what code generation does with such an index where it may be secret: for
 example, compile it to a scan of the whole table, or reject it under a

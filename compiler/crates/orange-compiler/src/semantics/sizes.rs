@@ -16,6 +16,16 @@ pub(super) const SIZE_NOTE: &str = "a size is fixed in each instance of its func
 pub(super) const SIZE_RANGE_NOTE: &str = "a size parameter `n in a..b` takes each value from a \
      up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances";
 
+/// The note of a position parameter whose range is empty or too large.
+const POSITION_RANGE_NOTE: &str = "a position parameter `a at 0..16` names each integer from 0 \
+     up to, but not including, 16, with the bounds at most 65536; it does not add an instance \
+     of its function";
+
+/// The note of a call whose position is not a static integer in range.
+const POSITION_CALL_NOTE: &str = "a call writes one integer in each position parameter's range, \
+     in brackets before its arguments, as in `quarter[0, 4, 8, 12](s)`; the integer is built \
+     from integer literals and the caller's size parameters";
+
 /// The note of a call that gives a type parameter a type it does not list.
 const TYPE_PARAMETER_CALL_NOTE: &str = "a call gives each type parameter one of the types it \
      lists, in brackets, as in `pow[F](x, e)`";
@@ -24,6 +34,16 @@ const TYPE_PARAMETER_CALL_NOTE: &str = "a call gives each type parameter one of 
 const TYPE_ARGUMENT_NOTE: &str = "a type in a call's brackets is `Int`, `Bool`, `Word[n]`, an \
      array of one of them such as `Word[8]^4`, the name of a `type` declaration, or a type \
      parameter of the calling function";
+
+/// The instance a call names, and the integers it writes for the callee's
+/// position parameters, in declaration order.
+pub(super) struct CalledInstance<'signature> {
+    pub(super) id: CoreFunctionId,
+    pub(super) signature: &'signature InstanceSignature,
+    /// The call's positions, in the order of the callee's position parameters.
+    pub(super) positions: [u32; MAX_SIZES_PER_FUNCTION],
+    pub(super) position_count: usize,
+}
 
 /// What a call's entry in brackets gives a type parameter.
 enum TypeArgument {
@@ -39,27 +59,49 @@ enum TypeArgument {
 
 /// The instance of a function being checked: its size and type parameters
 /// and the value of each, which for a type parameter is the position of its
-/// type in the parameter's list. A function without size or type parameters
-/// has one instance, with none.
+/// type in the parameter's list. A position parameter does not vary by
+/// instance; `positions` holds its declared range. A function without size
+/// or type parameters has one instance.
 #[derive(Clone, Copy)]
 pub(super) struct Instance<'ast> {
     pub(super) parameters: &'ast [SizeParameter],
     pub(super) values: [u32; MAX_SIZES_PER_FUNCTION],
+    /// Declared `(start, end)` of each position parameter, by bracket
+    /// position; `(0, 0)` for a size or a type.
+    pub(super) positions: [(u32, u32); MAX_SIZES_PER_FUNCTION],
 }
 
 impl<'ast> Instance<'ast> {
     pub(super) const NONE: Self = Self {
         parameters: &[],
         values: [0; MAX_SIZES_PER_FUNCTION],
+        positions: [(0, 0); MAX_SIZES_PER_FUNCTION],
     };
 
     /// Returns the size parameter named `name` and its value, if the
-    /// instance has one. A type parameter is not a size.
+    /// instance has one. A type parameter is not a size, and a position
+    /// parameter is not one value.
     pub(super) fn find(&self, name: &str) -> Option<(&'ast SizeParameter, u32)> {
         self.parameters
             .iter()
             .zip(self.values)
-            .find(|(parameter, _)| !parameter.is_type() && parameter.name.text == name)
+            .find(|(parameter, _)| parameter.is_size() && parameter.name.text == name)
+    }
+
+    /// Returns the position parameter named `name`, its range `start..end`,
+    /// and its slot among the function's position parameters.
+    pub(super) fn find_position(&self, name: &str) -> Option<(&'ast SizeParameter, u32, u32, u32)> {
+        let mut slot = 0_u32;
+        for (parameter, range) in self.parameters.iter().zip(self.positions) {
+            if !parameter.is_index() {
+                continue;
+            }
+            if parameter.name.text == name {
+                return Some((parameter, range.0, range.1, slot));
+            }
+            slot = slot.saturating_add(1);
+        }
+        None
     }
 
     /// Returns the position among the brackets' parameters of the type
@@ -89,23 +131,29 @@ impl<'ast> Instance<'ast> {
     /// none.
     pub(super) fn suffix(&self, spellings: &[Vec<String>]) -> String {
         let mut suffix = String::new();
-        if !self.parameters.is_empty() {
-            suffix.push('[');
-            for (position, (parameter, value)) in
-                self.parameters.iter().zip(self.values()).enumerate()
-            {
-                if position != 0 {
-                    suffix.push_str(", ");
-                }
-                if parameter.is_type() {
-                    let spelling = spellings
-                        .get(position)
-                        .and_then(|list| list.get(usize::try_from(*value).ok()?));
-                    suffix.push_str(spelling.map_or("?", String::as_str));
-                } else {
-                    suffix.push_str(&value.to_string());
-                }
+        let mut written = false;
+        for (position, (parameter, value)) in self.parameters.iter().zip(self.values()).enumerate()
+        {
+            // A position is chosen by each call, not by the instance.
+            if parameter.is_index() {
+                continue;
             }
+            if !written {
+                suffix.push('[');
+                written = true;
+            } else {
+                suffix.push_str(", ");
+            }
+            if parameter.is_type() {
+                let spelling = spellings
+                    .get(position)
+                    .and_then(|list| list.get(usize::try_from(*value).unwrap_or(usize::MAX)));
+                suffix.push_str(spelling.map_or("?", String::as_str));
+            } else {
+                suffix.push_str(&value.to_string());
+            }
+        }
+        if written {
             suffix.push(']');
         }
         suffix
@@ -199,12 +247,17 @@ pub(super) fn size_bound(source: &SourceFile, span: Span) -> Option<u32> {
     Some(value)
 }
 
-/// The ranges of a function's size parameters, each `(a, b)` for
-/// `n in a..b`, and `(0, k)` for a type parameter that lists k types, and
-/// the number of instances they give.
+/// The ranges of a function's bracket parameters, each `(a, b)` for
+/// `n in a..b` or `a at a..b`, and `(0, k)` for a type parameter that lists
+/// k types, and the number of instances they give. A position parameter
+/// contributes one instance, not one per integer in its range.
 #[derive(Clone, Copy)]
 pub(super) struct SizeRanges {
     ranges: [(u32, u32); MAX_SIZES_PER_FUNCTION],
+    /// How many instances this parameter contributes. One for a position.
+    widths: [u32; MAX_SIZES_PER_FUNCTION],
+    /// Whether the parameter at this position is a position parameter.
+    indexes: [bool; MAX_SIZES_PER_FUNCTION],
     count: usize,
     instances: usize,
 }
@@ -216,11 +269,13 @@ impl SizeRanges {
     /// size parameters has one instance.
     pub(super) fn of(source: &SourceFile, function: &FunctionDeclaration) -> Option<Self> {
         let mut ranges = [(0, 0); MAX_SIZES_PER_FUNCTION];
+        let mut widths = [0; MAX_SIZES_PER_FUNCTION];
+        let mut indexes = [false; MAX_SIZES_PER_FUNCTION];
         if function.sizes.len() > MAX_SIZES_PER_FUNCTION {
             return None;
         }
         let mut instances = 1_usize;
-        for (slot, size) in ranges.iter_mut().zip(&function.sizes) {
+        for (position, size) in function.sizes.iter().enumerate() {
             let (start, end) = if size.is_type() {
                 (0, u32::try_from(size.types.len()).ok()?)
             } else {
@@ -229,14 +284,26 @@ impl SizeRanges {
                     size_bound(source, size.end_span)?,
                 )
             };
-            let width = usize::try_from(end.checked_sub(start)?).ok()?;
+            if start >= end {
+                return None;
+            }
+            let width = if size.is_index() {
+                1
+            } else {
+                end.checked_sub(start)?
+            };
+            let width_usize = usize::try_from(width).ok()?;
             instances = instances
-                .checked_mul(width)
+                .checked_mul(width_usize)
                 .filter(|count| (1..=MAX_INSTANCES_PER_FUNCTION).contains(count))?;
-            *slot = (start, end);
+            *ranges.get_mut(position)? = (start, end);
+            *widths.get_mut(position)? = width;
+            *indexes.get_mut(position)? = size.is_index();
         }
         Some(Self {
             ranges,
+            widths,
+            indexes,
             count: function.sizes.len(),
             instances,
         })
@@ -268,15 +335,23 @@ impl SizeRanges {
         index: usize,
     ) -> Option<Instance<'ast>> {
         let mut values = [0; MAX_SIZES_PER_FUNCTION];
+        let mut positions = [(0, 0); MAX_SIZES_PER_FUNCTION];
         let mut rest = index;
         for position in (0..self.count).rev() {
-            let (start, end) = self.range(position)?;
-            let width = usize::try_from(end.checked_sub(start)?).ok()?;
+            let (start, _) = self.range(position)?;
+            let width = usize::try_from(*self.widths.get(position)?).ok()?;
             let offset = u32::try_from(rest.checked_rem(width)?).ok()?;
             rest = rest.checked_div(width)?;
             *values.get_mut(position)? = start.checked_add(offset)?;
+            if *self.indexes.get(position)? {
+                *positions.get_mut(position)? = self.range(position)?;
+            }
         }
-        (rest == 0).then_some(Instance { parameters, values })
+        (rest == 0).then_some(Instance {
+            parameters,
+            values,
+            positions,
+        })
     }
 
     /// Returns the index of the instance whose sizes have `values`, which
@@ -291,7 +366,11 @@ impl SizeRanges {
             if !(start..end).contains(value) {
                 return None;
             }
-            let width = usize::try_from(end.checked_sub(start)?).ok()?;
+            // Every integer in a position's range is the same instance.
+            if *self.indexes.get(position)? {
+                continue;
+            }
+            let width = usize::try_from(*self.widths.get(position)?).ok()?;
             let offset = usize::try_from(value.checked_sub(start)?).ok()?;
             index = index.checked_mul(width)?.checked_add(offset)?;
         }
@@ -617,8 +696,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             let end = size_bound(self.source, size.end_span);
             match (start, end) {
                 (Some(start), Some(end)) if start < end => {
-                    let width = usize::try_from(end.abs_diff(start)).unwrap_or(usize::MAX);
-                    instances = instances.saturating_mul(width);
+                    // A position ranges over its integers inside one instance.
+                    if size.is_size() {
+                        let width = usize::try_from(end.abs_diff(start)).unwrap_or(usize::MAX);
+                        instances = instances.saturating_mul(width);
+                    }
+                }
+                (Some(start), Some(end)) if size.is_index() => {
+                    valid = false;
+                    self.report_position_range(
+                        size.end_span,
+                        format!("the position range {start}..{end} is empty"),
+                        "a position takes at least one integer",
+                    );
                 }
                 (Some(start), Some(end)) => {
                     valid = false;
@@ -626,6 +716,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         size.end_span,
                         format!("the size range {start}..{end} is empty"),
                         "a size takes at least one value",
+                    );
+                }
+                (start, _) if size.is_index() => {
+                    valid = false;
+                    self.report_position_range(
+                        if start.is_none() {
+                            size.start_span
+                        } else {
+                            size.end_span
+                        },
+                        format!("a position's bound must be at most {MAX_LOOP_BOUND}"),
+                        "bound too large",
                     );
                 }
                 (start, _) => {
@@ -649,7 +751,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     self.report_repeated_size(
                         &size.name,
                         earlier.name.span,
-                        "first size parameter is here",
+                        if earlier.is_index() {
+                            "first position parameter is here"
+                        } else {
+                            "first size parameter is here"
+                        },
+                        earlier.is_index(),
                     );
                 }
             }
@@ -666,7 +773,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 self.report_repeated_size(
                     &parameter.name,
                     size.name.span,
-                    "the size parameter is here",
+                    if size.is_index() {
+                        "the position parameter is here"
+                    } else {
+                        "the size parameter is here"
+                    },
+                    size.is_index(),
                 );
             }
         }
@@ -748,7 +860,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 && source.slice(diagnostic.primary_span()).is_some_and(|text| {
                     brackets
                         .iter()
-                        .any(|size| !size.is_type() && size.name.text == text)
+                        .any(|size| size.is_size() && size.name.text == text)
                 });
             if names_size {
                 diagnostic.add_note(
@@ -829,6 +941,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
+    fn report_position_range(&mut self, span: Span, message: String, label: &str) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::PositionParameter, message, span)
+                    .with_label(label)
+                    .with_note(POSITION_RANGE_NOTE),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
     fn report_instance_count(&mut self, span: Span, message: String) {
         if self.begin_report(span) {
             self.diagnostics.push(
@@ -864,20 +988,35 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_repeated_size(&mut self, name: &Identifier, earlier: Span, label: &str) {
+    fn report_repeated_size(
+        &mut self,
+        name: &Identifier,
+        earlier: Span,
+        label: &str,
+        position: bool,
+    ) {
         if self.begin_report(name.span) {
             let spelling = identifier_spelling_for_diagnostic(&name.text);
+            let (primary, note) = if position {
+                (
+                    "this name is already a position parameter",
+                    "position parameters and parameters share one namespace, and each name is unique",
+                )
+            } else {
+                (
+                    "this name is already a size parameter",
+                    "size parameters and parameters share one namespace, and each name is unique",
+                )
+            };
             self.diagnostics.push(
                 Diagnostic::error(
                     DiagnosticCode::DuplicateParameter,
                     format!("duplicate parameter `{spelling}`"),
                     name.span,
                 )
-                .with_label("this name is already a size parameter")
+                .with_label(primary)
                 .with_secondary_span(earlier, label)
-                .with_note(
-                    "size parameters and parameters share one namespace, and each name is unique",
-                ),
+                .with_note(note),
             );
         }
     }
@@ -899,7 +1038,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         );
         let name = identifier_spelling_for_diagnostic(&function.name.text);
         let typed = function.sizes.iter().any(SizeParameter::is_type);
-        let sized = function.sizes.iter().any(|size| !size.is_type());
+        let sized = function.sizes.iter().any(SizeParameter::is_size);
+        if !typed && !sized {
+            return;
+        }
         let rule = match (sized, typed) {
             (true, false) => "a sized function is checked once for each value of its sizes",
             (false, _) => "a function is checked once for each type of its type parameters",
@@ -921,14 +1063,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     /// Returns the instance a call names and its signature: the call gives
-    /// one entry in brackets for each of the callee's size and type
-    /// parameters, each size's value, computed in the caller's instance,
-    /// lies in its range, and each type is one its parameter lists. A call
-    /// that writes no brackets names the one instance that fits its
-    /// arguments, and for a callee with type parameters the place of the
-    /// call, whose type is `expected`. Reports why otherwise. A callee whose
-    /// sizes or types are malformed was reported at its declaration and is
-    /// not reported again.
+    /// one entry in brackets for each of the callee's size, type, and
+    /// position parameters, each size's value, computed in the caller's
+    /// instance, lies in its range, each type is one its parameter lists,
+    /// and each position is one integer in its range. `positions` holds
+    /// those integers in declaration order. A call that writes no brackets
+    /// names the one instance that fits its arguments, and for a callee with
+    /// type parameters the place of the call, whose type is `expected`,
+    /// unless the callee has a position parameter, which a call must write.
+    /// Reports why otherwise. A callee whose sizes or types are malformed
+    /// was reported at its declaration and is not reported again.
     pub(super) fn called_instance<'signature>(
         &mut self,
         expression: &Expression,
@@ -937,20 +1081,33 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expected: &CoreType,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
-    ) -> Option<(CoreFunctionId, &'signature InstanceSignature)> {
+    ) -> Option<CalledInstance<'signature>> {
         let ranges = signature.ranges?;
+        let none = [0; MAX_SIZES_PER_FUNCTION];
         if call.sizes().is_empty() && ranges.count() != 0 {
+            // A position is not a length of an argument, so it cannot be fitted.
+            if signature.sizes.iter().any(SizeParameter::is_index) {
+                self.report_size_count(expression.span, call, signature.sizes);
+                return None;
+            }
             // Every instance takes the same number of arguments; a call that
             // gives another number is reported as such by its caller.
             let first = signature.instances.first()?;
             if first.parameters.len() != call.arguments.len() {
-                return Some((signature.instance_id(0)?, first));
+                return Some(CalledInstance {
+                    id: signature.instance_id(0)?,
+                    signature: first,
+                    positions: none,
+                    position_count: 0,
+                });
             }
             return match self.fitting_instance(call, signature, Some(expected), context, scope) {
-                Ok(index) => Some((
-                    signature.instance_id(index)?,
-                    signature.instances.get(index)?,
-                )),
+                Ok(index) => Some(CalledInstance {
+                    id: signature.instance_id(index)?,
+                    signature: signature.instances.get(index)?,
+                    positions: none,
+                    position_count: 0,
+                }),
                 Err(fitting) => {
                     self.report_unfitted_call(
                         expression.span,
@@ -969,10 +1126,34 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         let mut values = [0; MAX_SIZES_PER_FUNCTION];
+        let mut positions = none;
+        let mut position_count = 0_usize;
         for ((position, size), slot) in call.sizes().iter().enumerate().zip(&mut values) {
             let parameter = signature.sizes.get(position)?;
             if parameter.is_type() {
                 *slot = self.called_type(size, &call.callee, signature, position)?;
+                continue;
+            }
+            if parameter.is_index() {
+                let value = self.position_integer(size)?;
+                let (start, end) = ranges.range(position)?;
+                let admitted = value
+                    .to_i64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .filter(|value| (start..end).contains(value));
+                let Some(admitted) = admitted else {
+                    self.report_position_outside(
+                        size.span,
+                        &call.callee,
+                        parameter,
+                        (start, end),
+                        &value,
+                    );
+                    return None;
+                };
+                *slot = admitted;
+                *positions.get_mut(position_count)? = admitted;
+                position_count = position_count.saturating_add(1);
                 continue;
             }
             let value = self.size_value(size)?;
@@ -996,10 +1177,32 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
         }
         let index = ranges.index(values.get(..ranges.count())?)?;
-        Some((
-            signature.instance_id(index)?,
-            signature.instances.get(index)?,
-        ))
+        Some(CalledInstance {
+            id: signature.instance_id(index)?,
+            signature: signature.instances.get(index)?,
+            positions,
+            position_count,
+        })
+    }
+
+    /// Returns the integer a call writes for a position parameter, or reports
+    /// why it is not built from integer literals and the caller's sizes.
+    fn position_integer(&mut self, expression: &Expression) -> Option<ExactInteger> {
+        let value = self.types.sizes.value(self.source, expression);
+        if !self.charge_size_events(expression.span) {
+            return None;
+        }
+        match value {
+            Ok(value) => Some(value),
+            Err(SizeFault::NotStatic(span)) => {
+                self.report_position_not_static(span);
+                None
+            }
+            Err(fault) => {
+                self.report_size_fault(fault);
+                None
+            }
+        }
     }
 
     /// Returns the position, in the list of the type parameter at
@@ -1398,6 +1601,52 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
+    fn report_position_not_static(&mut self, span: Span) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::PositionParameter,
+                    "a call's position may use only integer literals and size parameters",
+                    span,
+                )
+                .with_label("this is neither")
+                .with_note(POSITION_CALL_NOTE),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_position_outside(
+        &mut self,
+        span: Span,
+        callee: &Identifier,
+        parameter: &SizeParameter,
+        (start, end): (u32, u32),
+        value: &ExactInteger,
+    ) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let function = identifier_spelling_for_diagnostic(&callee.text);
+        let name = identifier_spelling_for_diagnostic(&parameter.name.text);
+        let label = value.to_i64().map_or_else(
+            || String::from("this position is far outside that range"),
+            |value| format!("this position is {value}"),
+        );
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::PositionParameter,
+                format!("`{function}` is defined for `{name}` at {start}..{end}"),
+                span,
+            )
+            .with_label(label)
+            .with_note(POSITION_CALL_NOTE),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
     fn report_size_count(&mut self, span: Span, call: &CallExpression, declared: &[SizeParameter]) {
         if !self.begin_report(span) {
             return;
@@ -1405,7 +1654,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let spelling = identifier_spelling_for_diagnostic(&call.callee.text);
         let given = call.sizes().len();
         let types = declared.iter().filter(|size| size.is_type()).count();
-        let sizes = declared.len().saturating_sub(types);
+        let positions = declared.iter().filter(|size| size.is_index()).count();
+        let sizes = declared.iter().filter(|size| size.is_size()).count();
+        if positions > 0 {
+            self.report_position_count(span, &spelling.to_string(), given, sizes, types, positions);
+            return;
+        }
         let plural = |count: usize| if count == 1 { "size" } else { "sizes" };
         let (message, note) = if types == 0 {
             let message = match (sizes, given) {
@@ -1452,6 +1706,70 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 } else {
                     "wrong number of entries in brackets"
                 })
+                .with_note(note),
+        );
+    }
+
+    /// Reports a call that does not write one entry for each position, and
+    /// for each size and type beside it.
+    #[cold]
+    #[inline(never)]
+    fn report_position_count(
+        &mut self,
+        span: Span,
+        spelling: &str,
+        given: usize,
+        sizes: usize,
+        types: usize,
+        positions: usize,
+    ) {
+        fn word<'a>(count: usize, one: &'a str, many: &'a str) -> &'a str {
+            if count == 1 { one } else { many }
+        }
+        let only_positions = sizes == 0 && types == 0;
+        let (message, label, note) = if only_positions {
+            let positions_word = word(positions, "position", "positions");
+            let message = if given == 0 {
+                format!("`{spelling}` takes {positions} {positions_word}, but this call gives none")
+            } else {
+                format!(
+                    "`{spelling}` takes {positions} {positions_word}, but this call gives {given}"
+                )
+            };
+            (
+                message,
+                "wrong number of positions",
+                "a function with position parameters is called with one integer for each of \
+                 them, in brackets before its arguments, as in `quarter[0, 4, 8, 12](s)`",
+            )
+        } else {
+            let mut parts = Vec::new();
+            if sizes > 0 {
+                parts.push(format!("{sizes} {}", word(sizes, "size", "sizes")));
+            }
+            if types > 0 {
+                parts.push(format!("{types} {}", word(types, "type", "types")));
+            }
+            parts.push(format!(
+                "{positions} {}",
+                word(positions, "position", "positions")
+            ));
+            let taken = match parts.as_slice() {
+                [first, second, third] => format!("{first}, {second}, and {third}"),
+                [first, second] => format!("{first} and {second}"),
+                [one] => one.clone(),
+                _ => parts.join(", "),
+            };
+            (
+                format!("`{spelling}` takes {taken} in brackets, but this call gives {given}"),
+                "wrong number of entries in brackets",
+                "a call writes one entry in brackets for each size, type, and position \
+                 parameter, in order",
+            )
+        };
+        self.diagnostics.push(
+            Diagnostic::error(DiagnosticCode::SizeCount, message, span)
+                .with_label(label)
                 .with_note(note),
         );
     }
@@ -1568,6 +1886,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> Option<&'signature InstanceSignature> {
         let ranges = signature.ranges?;
         if call.sizes().is_empty() && ranges.count() != 0 {
+            if signature.sizes.iter().any(SizeParameter::is_index) {
+                return None;
+            }
             let index = self
                 .fitting_instance(call, signature, None, context, scope)
                 .ok()?;
@@ -1578,7 +1899,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let mut values = [0; MAX_SIZES_PER_FUNCTION];
         for ((position, size), slot) in call.sizes().iter().enumerate().zip(&mut values) {
-            *slot = if signature.sizes.get(position)?.is_type() {
+            let parameter = signature.sizes.get(position)?;
+            *slot = if parameter.is_type() {
                 let TypeArgument::Type(ty) = self.type_argument(size) else {
                     return None;
                 };
@@ -1589,6 +1911,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .position(|candidate| candidate.as_ref() == Some(&ty))?,
                 )
                 .ok()?
+            } else if parameter.is_index() {
+                let admitted = self
+                    .types
+                    .sizes
+                    .value(self.source, size)
+                    .ok()?
+                    .to_i64()
+                    .and_then(|value| u32::try_from(value).ok())?;
+                let (start, end) = ranges.range(position)?;
+                if !(start..end).contains(&admitted) {
+                    return None;
+                }
+                admitted
             } else {
                 self.types
                     .sizes

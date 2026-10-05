@@ -1,0 +1,5 @@
+edition 2026;
+module invalid_declaration {
+  spec empty[a at 3..3](s: Word[8]^4) -> Word[8] { s[0] }
+  spec wide[a at 0..65537](s: Word[8]^4) -> Word[8] { s[0] }
+}
