@@ -4,7 +4,7 @@
 
 By Chase Bryan
 
-Status: normative Orange 2026 reference manual and 1.0 language architecture specification
+Status: Current reference for the Orange 2026 `spec` stratum through implemented slice S3u (Parts I–VII). Parts VIII–XVI are Proposed.
 
 Snapshot: 2026-10-05
 
@@ -12,17 +12,13 @@ Edition: `2026`
 
 ---
 
-> This manual is the definitive, exhaustive, and mathematically rigorous reference
-> specification for the Orange programming language, its multi-strata semantic
-> architecture, formal type system, small-step and big-step operational semantics,
-> deductive proof foundation, cryptographic leakage models, assurance claim graph,
-> foreign interface, and diagnostic taxonomy. It authoritatively defines the normative
-> grammar, static semantics, and dynamic execution behavior of Orange Edition `2026`
-> as implemented in the authoritative compiler toolchain (`orangec`), alongside the
-> formal 1.0 product architecture uniting pure mathematical specifications (`spec`),
-> terminating imperative implementations (`impl`), target-modeled machine code
-> (`machine impl`), probabilistic cryptographic games (`game`), deductive proof terms
-> (`proof`), and atomic assurance contracts (`claim`).
+> Parts I–VII are the reference for Orange Edition `2026` as implemented by
+> `orangec` 0.0.1 through slice S3u (OEP-0025): the `spec` stratum, its types,
+> its operational semantics, and the cryptographic transcriptions in Part VII.
+> Parts VIII–XVI record the Proposed 1.0 architecture (`impl`, `machine impl`,
+> `game`, `proof`, `claim`, the foreign interface, and the toolchain narrative).
+> They are not the behavior of the Current compiler. A diagnostic code that
+> slice S3u already emits stays Current wherever a Proposed section names it.
 
 ---
 
@@ -295,11 +291,17 @@ below records the formal status of every feature slice and architectural stratum
 | **S3r**: Variable Shift & Rotation Amounts | Normative | Normative | Ring Turn Reduction | Implemented | OEP-0021 |
 | **S3s**: Bounded Rectangular Nested Arrays | Normative | Normative | Chained Indexing | Implemented | OEP-0023 |
 | **S3t**: Static Moduli with Own Size Names | Normative | Normative | Size-Dependent Moduli | Implemented | OEP-0024 |
-| **Implementation Stratum (`impl`)** | Normative 1.0 | Normative 1.0 | Imperative Place Semantics | Planned 1.0 Kernel | D-004, ST-REL |
-| **Machine Stratum (`machine impl`)** | Normative 1.0 | Normative 1.0 | Target ISA Simulation | Planned 1.0 Kernel | D-004, D-011 |
-| **Game Stratum (`game`)** | Normative 1.0 | Normative 1.0 | Probabilistic Sampling | Planned 1.0 Kernel | D-004, ST-REL |
-| **Proof Stratum (`proof`)** | Normative 1.0 | Normative 1.0 | Proof IR Deduction | Planned 1.0 Kernel | D-006, D-007 |
-| **Assurance & Claims (`claim`)** | Normative 1.0 | Normative 1.0 | Content-Addressed Graph | Planned 1.0 Kernel | D-005, AM-01 |
+| **S3u**: Rank 3 and 4 Arrays, Update Paths | Normative | Normative | Nested Path Update | Implemented | OEP-0025 |
+| **Implementation Stratum (`impl`)** | Proposed | Proposed | Imperative Place Semantics | Not implemented | D-004, ST-REL |
+| **Machine Stratum (`machine impl`)** | Proposed | Proposed | Target ISA Simulation | Not implemented | D-004, D-011 |
+| **Game Stratum (`game`)** | Proposed | Proposed | Probabilistic Sampling | Not implemented | D-004, ST-REL |
+| **Proof Stratum (`proof`)** | Proposed | Proposed | Proof IR Deduction | Not implemented | D-006, D-007 |
+| **Assurance & Claims (`claim`)** | Proposed | Proposed | Content-Addressed Graph | Not implemented | D-005, AM-01 |
+
+`Implemented` in the table means the post-#235 compiler, whose `orangec --version`
+reports `implemented slice S3u`. The rows below S3u are Proposed and are not that
+compiler. This documentation branch does not contain the S3u compiler commit; the
+judgments are those of OEP-0025 and `docs/DIMENSIONS_2026.md` on that tip.
 
 ---
 
@@ -724,8 +726,8 @@ Where:
 1. The `Bool` type forms a Boolean algebra $(\mathbb{B}, \land, \lor, \neg, \text{false}, \text{true})$.
 2. Relational operators produce `Bool`:
    $$\frac{\Gamma \vdash a : \tau \quad \Gamma \vdash b : \tau \quad \tau \in \{\text{Int}, \text{Word}[W], \text{Mod}[m]\}}{\Gamma \vdash a \mathbin{\text{cmp}} b : \text{Bool}} \quad (\text{cmp} \in \{==, !=, <, <=, >, >=\})$$
-3. In specifications, `&&` and `||` evaluate both operands purely; in `impl`,
-   they execute as short-circuit control flow.
+3. In `spec`, `&&` and `||` evaluate both operands. Short-circuit control flow
+   for `impl` is Proposed (Part VIII) and is not the Current evaluator.
 
 ### §24. Fixed-Length Array Spaces ($T^n$ for $1 \le n \le 65,536$)
 
@@ -740,12 +742,123 @@ Where:
 
 ### §25. Multi-Dimensional Rectangular Matrices and Nested Arrays
 
-1. Rectangular multi-dimensional arrays are defined by recursive array types:
-   $$T^{n_1 \times n_2 \times \dots \times n_k} = (\dots((T^{n_k})\dots)^{n_2})^{n_1}$$
-2. **Global Element Ceiling:**
-   $$\prod_{i=1}^k n_i \le 65,536$$
-   Exceeding this aggregate scalar limit emits diagnostic `ORC0221`.
-3. Chained indexing $M[i][j]$ resolves row types statically without pointer dereferencing.
+Current through slice S3u (OEP-0025), over the nested-array rules of S3s. An array
+of rank $r + 1$ holds arrays of rank $r$, all of one type. The scalar leaves are
+the S3s leaves, including S3t residue domains.
+
+#### 1. Rank
+
+The admitted ranks are 1, 2, 3, and 4. A fifth dimension is rejected before
+evaluation with `ORC0203`. For an alias `Hyper` of rank 4 the message is
+`` `Hyper` already has 4 array dimensions ``, labeled "arrays have at most 4
+dimensions", with the secondary label "this length would add a fifth dimension"
+at the outer length. The same rejection applies in aliases, parameter and result
+types, tuple fields, and every instance of a size or type parameter.
+
+S3u adds no type syntax. Each dimension is a `type` alias over the one before it:
+
+```orange
+type Zq = Mod[3329];
+type Poly = Zq^256;
+type Vector = Poly^2;
+type Matrix = Vector^2;
+```
+
+`Word[8]^2^2`, and a parenthesized array type followed by `^n`, remain parser
+errors, as in S3s. Repeated powers are not source syntax. The diagnostic and
+evaluation display parenthesizes each level from the innermost out, as
+`((Mod[3329]^256)^2)^2`; that display is not source syntax. Aliases of the same
+leaf and the same axes, in the same order, are the same type.
+
+AES keeps a $4 \times 4$ state of bytes and Keccak a $5 \times 5$ state of lanes,
+both rank 2. An ML-KEM matrix is a $k \times k$ array of polynomials of 256
+coefficients, rank 3. A batch of such matrices is rank 4.
+
+#### 2. Axes and the Scalar Limit
+
+Every axis length $n$ satisfies $1 \le n \le 65,536$. The product of the axes,
+the number of scalar leaves, is at most 65,536. A cube of $p$ planes, $r$ rows,
+and $c$ columns requires $p \times r \times c \le 65,536$. A $16 \times 16 \times
+16 \times 16$ array is admitted, and so is $1 \times 1 \times 1 \times 65,536$.
+A declared product over the limit is `ORC0221`, message "an array shape has N
+scalar elements, exceeding 65536", labeled "array shape exceeds the scalar
+element limit". Each size-parameter instance is checked as if written out, and
+the first erroneous instance is named. Shape checks use bounded arithmetic; an
+overflow does not admit a shape.
+
+Literals and fills nest to every rank. Each level is checked against its own
+element type and length. A ragged level is `ORC0222`. A fill evaluates its
+element once and repeats it.
+
+#### 3. Selection
+
+`a[i]` selects one element of the outermost dimension. Up to four successive
+indices reach a scalar, as `m[i][j][k]`. Each index is checked against its own
+axis by the rules of S3d, S3e, and S3g. A possibly out-of-range index is
+`ORC0223`. A further index after a scalar is `ORC0224`. Selection returns the
+exact element type and does not flatten. Each index costs one step beyond its
+operands.
+
+#### 4. Slices and Joins
+
+A slice `a[x..y]` selects consecutive elements of the outermost dimension and
+keeps their element type. A slice of a selected row or plane does the same one
+level in. `++` joins the outer elements of two arrays of one exact element type,
+and the joined shape must satisfy the scalar limit. A slice update
+`a with [x..y] = b` replaces a run of outer elements. A selection does not
+follow a slice, and no operation selects a rectangular window across several axes.
+
+#### 5. Update Paths
+
+An update may name one index per dimension it reaches:
+
+```orange
+c with [i][j][k] = v
+```
+
+The grammar of an update target is a single index, two to four successive
+single indices, or one range. A slice inside a path, an empty index, or a fifth
+index is `ORC0101`. The parser note says that an element of a row is updated
+with `x with [i][j] = v`, and a run of a row as `x with [i] = (x[i] with [a..b] = v)`.
+Paths apply at rank 2 as well.
+
+The first index selects within the base, and each further index within the
+element the one before it reached. The value must have the exact type at the
+end of the path, a scalar or a shorter array, and the update has the base's
+type. A path whose indices reach past the scalars is `ORC0224`, message "only
+an array can be indexed, but this selects within `T`", with the note that the
+indices reach past the array's scalars. A value of the wrong type or length is
+`ORC0214` or `ORC0222`.
+
+#### 6. Path Meaning and Cost
+
+A path denotes the nested updates it abbreviates, and every element off the
+path keeps its value:
+
+```orange
+c with [i][j][k] = v
+// denotes
+c with [i] = (c[i] with [j] = (c[i][j] with [k] = v))
+```
+
+Evaluation visits the base, then the indices in order, then the value. Each
+index is evaluated once. The value equals the nested updates. The step cost
+does not: beyond its operands, a path costs $\lceil n / 64 \rceil$ steps, and
+at least one, for each level copied, where $n$ is that level's outer length.
+On a $16 \times 16 \times 256$ cube, `c with [i][j][k] = v` costs $1 + 1 + 4$
+steps beyond its base, three indices, and value. The nested spelling also
+selects `c[i]` and `c[i][j]`, so it costs more. The budget is an evaluation
+budget, not a timing or constant-time guarantee.
+
+#### 7. What S3u Does Not Add
+
+Arrays of rank 3 and 4 may be parameters, results, `let` bindings, loop
+accumulators, and tuple fields. A finite type parameter may list them, and a
+size parameter may supply any axis. `as`, `as big`, and `as little` still
+reject an array of arrays as source or target. Arrays of tuples, and type
+arguments spelled as repeated powers, stay rejected. No command, option, token,
+or reserved word is added. Every S3t source keeps its types, values, output
+bytes, and evaluation steps.
 
 ### §26. Heterogeneous Product Types: Tuples ($(T_0, \dots, T_{k-1})$ for $2 \le k \le 16$)
 
@@ -793,6 +906,8 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{TotalBits}(\tau_{\text{s
 
 1. **Bit Invariance Requirement:**
    $$\text{TotalBits}(\tau_{\text{src}}) \ne \text{TotalBits}(\tau_{\text{dst}}) \implies \text{Diagnostic}(\text{ORC0240})$$
+   An array of arrays is not a source or a target of `as`, `as big`, or `as little`,
+   at any rank. The conversion stays a map on words and on rank-1 arrays of words.
 2. **Packing Equations:**
    Let $B : \text{Word}[8]^k$ be an array of bytes converted to $W : \text{Word}[8k]$:
    - **Big-Endian:**
@@ -809,11 +924,15 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{TotalBits}(\tau_{\text{s
    ```
 
 2. **Finite Domain Invariant:**
-   - $\text{low}, \text{high} \in \mathbb{N}$ MUST satisfy $1 \le \text{low} \le \text{high} \le 65,536$.
-   - Malformed bounds emit diagnostic `ORC0238`.
+   The range `low..high` is half-open. The bounds are integers satisfying
+   $0 \le \text{low} < \text{high} \le 65,536$. The instance count
+   $\text{high} - \text{low}$ is at least 1 and at most 256. An empty range,
+   a bound above 65,536, or a count above 256 emits `ORC0238`.
 3. **Eager Monomorphization:**
-   The compiler specializes the function for every integer $k \in [\text{low}, \text{high}]$.
-   Type checking and verification conditions are checked independently for each instance.
+   The compiler specializes the function for every integer $k$ with
+   $\text{low} \le k < \text{high}$. The spelling `n in 1..4` is the three
+   instances $n = 1, 2, 3$, not $n = 4$. The example `len in 1..64` above is
+   the lengths 1 through 63. Each instance is type-checked on its own.
 4. Calling with an invalid size parameter count emits `ORC0239`.
 
 ### §31. Finite Type Parameter Domains ($[K \in \{T_1, \dots, T_m\}]$)
@@ -966,6 +1085,12 @@ $$\frac{\mathcal{C} \vdash v : T \quad 1 \le n \le 65,536}{\mathcal{C} \vdash [v
 $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n)}{\mathcal{C} \vdash A[i] : T} \quad (\text{T-Index})$$
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n) \quad \mathcal{C} \vdash v : T}{\mathcal{C} \vdash (A \text{ with } [i] = v) : T^n} \quad (\text{T-Update})$$
+
+$$\frac{\operatorname{rank}(\tau) = r \in \{2, 3, 4\} \quad \mathcal{C} \vdash A : \tau \quad \forall j \in [1, r].\ \mathcal{C} \vdash i_j : \operatorname{Index}(\operatorname{axis}_j(\tau)) \quad \mathcal{C} \vdash v : \operatorname{leaf}(\tau)}{\mathcal{C} \vdash (A \text{ with } [i_1][i_2] \dots [i_r] = v) : \tau} \quad (\text{T-Update-Path})$$
+
+A path with more indices than $\operatorname{rank}(\tau)$ is `ORC0224` (§25.5).
+The value's type is the type at the end of the path, which is the leaf when
+the path names every axis.
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad 0 \le l \le u \le n}{\mathcal{C} \vdash A[l..u] : T^{u - l}} \quad (\text{T-Slice})$$
 
@@ -1151,6 +1276,9 @@ $$\frac{r \longrightarrow_{\text{redex}} r'}{E[r] \longrightarrow E[r']} \quad (
 6. **Array Indexing and Update:**
    $$[v_0, \dots, v_{n-1}][k] \longrightarrow_{\text{redex}} v_k \quad (\text{where } 0 \le k < n) \quad (\text{R-Index})$$
    $$([v_0, \dots, v_{n-1}] \text{ with } [k] = u) \longrightarrow_{\text{redex}} [v_0, \dots, v_{k-1}, u, v_{k+1}, \dots, v_{n-1}] \quad (\text{R-Update})$$
+   A path denotes the nested updates of §25.6 and yields their value. Its step
+   cost is the path cost of that section, not the cost of the selections in the
+   expanded spelling. $\quad (\text{R-Update-Path})$
 7. **Tuple Projection:**
    $$(v_0, \dots, v_{k-1}).j \longrightarrow_{\text{redex}} v_j \quad (\text{where } 0 \le j < k) \quad (\text{R-Tuple-Proj})$$
 8. **Function Invocation:**
@@ -1620,6 +1748,10 @@ module poly1305_spec {
 
 ## Part VIII: Implementation Stratum (`impl`) & Memory Model
 
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement `impl`. A diagnostic code named below is
+Current only when Part XV records that slice S3u emits it.
+
 ### §53. Imperative Execution Semantics and Place Logic
 
 The `impl` stratum formalizes effectful, terminating imperative procedures engineered
@@ -1890,6 +2022,9 @@ variant   64 - i
 
 ## Part IX: Machine Implementation Stratum (`machine impl`)
 
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement `machine impl`.
+
 ### §62. Target Machine Modeling and Register Capabilities
 
 The `machine impl` stratum allows direct assembly-level cryptographic engineering
@@ -1988,6 +2123,10 @@ Computes two rounds of SHA-256 compression over vector registers in hardware:
 ---
 
 ## Part X: Information Flow, Secrecy & Microarchitectural Leakage
+
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement information-flow labels or the policies named
+below.
 
 ### §67. The Information Flow Lattice ($\text{public} \sqsubseteq \text{secret}$)
 
@@ -2112,6 +2251,9 @@ Extends noninterference to transient and speculative execution (Spectre-v1, Spec
 
 ## Part XI: Cryptographic Game Stratum (`game`)
 
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement `game`.
+
 ### §73. Monadic Probabilistic Semantics and Distribution Ensembles
 
 The `game` stratum formalizes cryptographic games, adversary interactions, and
@@ -2201,6 +2343,9 @@ where $q$ is the number of encryption queries and $L$ is block length.
 
 ## Part XII: Deductive Proof System & Metatheory (`proof`)
 
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement `proof` or `orange-check`.
+
 ### §76. Propositions as Types and the $\text{Prop}$ Universe
 
 The `proof` stratum implements an intuitionistic dependent type theory formalizing
@@ -2286,6 +2431,9 @@ correctness upon bounded termination. $\blacksquare$
 ---
 
 ## Part XIII: Assurance Claims & Evidence Architecture (`claim`)
+
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not implement `claim`.
 
 ### §82. The Philosophy of Atomic Claims ("Claims, Not Labels")
 
@@ -2494,6 +2642,9 @@ Components excluded from the TCB:
 
 ## Part XIV: Foreign Function Interface & ABI
 
+**Status: Proposed.** This part is not the Current `spec` stratum. `orangec` 0.0.1
+through slice S3u does not generate C or Rust bindings.
+
 ### §88. Sound Foreign Interface Principles and Import Contracts
 
 1. External C routines cannot be called without an explicit two-state contract:
@@ -2674,6 +2825,13 @@ pub mod chacha20 {
 ---
 
 ## Part XV: Complete Diagnostic Reference Catalog
+
+**Status: Proposed predicate writeup of the Current codes.** The identifiers
+from `ORC0001` through `ORC0301` are codes slice S3u emits. The predicate
+notation in this part is reference text for those codes, not a separate checker.
+S3u's rank limit is `ORC0203`; a shape whose scalar product exceeds 65,536 is
+`ORC0221`; a path that indexes past the scalars is `ORC0224`; a path with a
+slice, an empty index, or a fifth index is `ORC0101`.
 
 ### §93. Diagnostic Philosophy, Severity Structure, and Error Budgets
 
@@ -3025,10 +3183,13 @@ pub mod chacha20 {
 
 - **Subsystem:** Semantic Analyzer (Type Elaborator)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(\tau) \iff \tau \notin \text{Universe}(\text{Orange 2026}) = \{\text{Int}, \text{Bool}, \text{Byte}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n\} \cup \{(T_0, \dots, T_{k-1})\}$$
+  $$\text{Trigger}(\tau) \iff \tau \notin \text{Universe}(\text{Orange 2026}) \lor \operatorname{rank}(\tau) > 4$$
+  where the universe is $\{\text{Int}, \text{Bool}, \text{Byte}\} \cup \{\text{Word}[W] \mid W \in \{8,16,32,64\}\} \cup \{\text{Mod}[m]\} \cup \{T^n \mid \operatorname{rank}(T^n) \le 4\} \cup \{(T_0, \dots, T_{k-1})\}$.
 - **Theoretical Rationale:** IEEE-754 floating-point numbers, unbounded dynamic pointers,
   and recursive algebraic data types introduce nondeterministic rounding, platform divergence,
   and side-channel leakages. They are strictly excluded from Orange's type universe.
+  Slice S3u also uses this code for a fifth array dimension (§25.1). The message is
+  `` `Hyper` already has 4 array dimensions ``, labeled "arrays have at most 4 dimensions".
 - **Erroneous Example:**
 
   ```orange
@@ -3554,10 +3715,12 @@ pub mod chacha20 {
 
 - **Subsystem:** Semantic Analyzer (Array Type Elaborator)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(n) \iff n < 1 \lor n > 65,536$$
+  $$\text{Trigger}(n_1, \dots, n_r) \iff (\exists j.\ n_j < 1 \lor n_j > 65,536) \lor \prod_{j=1}^{r} n_j > 65,536$$
+  with $1 \le r \le 4$. A product over the limit reports "an array shape has N scalar
+  elements, exceeding 65536".
 - **Theoretical Rationale:** Zero-length arrays introduce degenerate algebraic properties
-  and indexing ambiguities. Upper bounding arrays at $65,536$ elements ensures that stack
-  allocation bounds $\text{StackFrameSize} \le 64\text{ KiB}$ are preserved by construction.
+  and indexing ambiguities. The scalar-leaf ceiling of 65,536 is the same bound at every
+  admitted rank (§25.2).
 - **Erroneous Example:**
 
   ```orange
@@ -3672,6 +3835,9 @@ pub mod chacha20 {
   $$\text{Trigger}(X) \iff \text{Type}(X) \not\equiv T^n$$
 - **Theoretical Rationale:** Bracket indexing `X[i]` is defined exclusively over fixed-length
   Cartesian power array types. Applying brackets to scalar words or tuples is prohibited.
+  Slice S3u uses the same code when an update path names more indices than the rank.
+  The message is "only an array can be indexed, but this selects within `T`", with the
+  secondary label "this array has fewer dimensions" (§25.5).
 - **Erroneous Example:**
 
   ```orange
@@ -4337,6 +4503,11 @@ pub mod chacha20 {
 
 ## Part XVI: Toolchain, Evaluator & Formal EBNF Grammar
 
+**Status: Proposed.** The `orangec` commands and numeric limits that slice S3u
+implements are Current and are the ones named in §101 and §102. The EBNF in §103,
+and any behavior this part states that the S3u compiler does not exercise, are
+Proposed.
+
 ### §101. The Driver CLI: `orangec` Commands, Options, and Determinism
 
 The authoritative compiler driver `orangec` provides deterministic, offline tooling:
@@ -4368,7 +4539,7 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 
   ```console
   $ orangec --version
-  orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
+  orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
   ```
 
 ### §102. Deterministic Resource Limits and Denial-of-Service Defense
@@ -4382,7 +4553,8 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 | **Admitted Word Bit Widths ($W$)** | Exactly $\{8, 16, 32, 64\}$ bits | `ORC0204` |
 | **Admitted Modular Moduli ($m$)** | $2 \le m \le 2^{521} - 1$ | `ORC0232` |
 | **Maximum Array Length ($n$)** | 65,536 elements ($2^{16}$) | `ORC0221` |
-| **Maximum Nested Array Elements** | 65,536 scalar elements ($2^{16}$) | `ORC0221` |
+| **Maximum Array Rank** | 4 | `ORC0203` |
+| **Maximum Nested Array Elements** | 65,536 scalar elements ($2^{16}$), product of every axis | `ORC0221` |
 | **Tuple Arity Range ($k$)** | $2 \le k \le 16$ | `ORC0234` |
 | **Default Evaluator Step Budget** | 1,048,576 steps ($2^{20}$) | `ORC0301` |
 | **Documentation Work Items** | 1,048,576 items ($2^{20}$) | `ORC0260` |
