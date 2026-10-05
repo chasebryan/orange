@@ -3,7 +3,7 @@
    CLI behind orange_main. Exact integer magnitudes live in bigint.c.
    src/main.c only forwards the process arguments.
 
-   Slice boundary: S3a through S3l. The admitted source is edition 2026.
+   Slice boundary: S3a through S3m. The admitted source is edition 2026.
    A program is a root module plus every module it reaches through use.
    check and eval read module m of `use m;` from m.or beside the root.
    lex reads only the file it is given. A module names each used module
@@ -73,6 +73,25 @@
    the parameter in `data`, or a non-linear bound, such as `i * i` in
    `squared`, is ORC0226. A length that changes from step to step is
    ORC0236. A last step that leaves the array is ORC0223.
+   A function may take at most 4 size parameters, `spec f[n in a..b]`,
+   as in `mac[len in 1..256]`. n takes each value from a up to, but not
+   including, b, with a < b and both bounds at most 65536. The function
+   is checked once for each combination, at most 256 instances, and the
+   first size changes slowest. An empty range, a bound past 65536, and
+   a product past the cap (`many` has 361) are ORC0238, and the body is
+   not checked. Checking stops at the first instance in error: `last`
+   fails at n = 1, and `none` fails at n = 0. A size is an Int constant
+   in that instance, built from integer literals and the function's size
+   parameters with +, -, *, /, %, and parentheses. / and % are Euclidean,
+   the same rules as for Int, so `blocks[1]` is 3. Anything else in a
+   size is ORC0237. A computed length or bound is parenthesized:
+   `^n + 1`, `[0; 2 * n]`, and `0..n - 1` are ORC0101. A call writes one
+   size per parameter, `f[2](x)` or `sha256::sha256[n](...)`, or writes
+   none and fits the one instance whose array lengths match. An
+   out-of-range size is ORC0238. The wrong number of sizes, including a
+   size on a function that has none, is ORC0239. No matching instance is
+   ORC0238, and more than one match is ORC0239. Instances may call one
+   another. A cycle such as `swap` at 1 calling 2 calling 1 is ORC0217.
    `for`, `in`, `with`, `if`, and `else` are names outside those
    positions. `true` and `false` are Bool values where no parameter or
    binding of that spelling is in scope. Empty spec and impl
@@ -88,11 +107,11 @@
    lex output can be compared with the Rust frontend. `let` and `as` stay
    identifiers there, and they stay identifiers here.
 
-   Fail closed. Size parameters, byte order, type parameters, tests,
-   lengths above 256, computed shift amounts, and whole-tuple equality
-   are rejected rather than given a new meaning. The lexer still produces
-   the Rust token names for those forms. The parser or the checker
-   rejects them. This file does not implement S3m or any later slice.
+   Fail closed. Byte order, type parameters, tests, lengths above 256,
+   computed shift amounts, and whole-tuple equality are rejected rather
+   than given a new meaning. The lexer still produces the Rust token
+   names for those forms. The parser or the checker rejects them. This
+   file does not implement S3n or any later slice.
 
    Layout:
      limits, token kinds, and the Rust token-name table
@@ -1819,10 +1838,11 @@ static int parse_call_sizes(Compiler *c, uint32_t *size0, uint8_t *nsize, int *c
 }
 
 /* Int, Word[8|16|32|64], Mod[m], a name, and, when allow_array is set, one T^n.
-   A name that is not an admitted type still consumes the type syntax
-   and returns with ok == 0 so a later pass can report the type.
-   A broken type returns 0. A second caret is rejected here.
-   as_element rejects a tuple written inside another tuple. */
+   A length after ^ is a decimal integer or a parenthesized size.
+   `^n + 1` is ORC0101. A name that is not an admitted type still
+   consumes the type syntax and returns with ok == 0 so a later pass can
+   report the type. A broken type returns 0. A second caret is rejected
+   here. as_element rejects a tuple written inside another tuple. */
 static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int as_element) {
     Token name = peek_token(c);
     int admit_length = 0;
@@ -5038,7 +5058,11 @@ static int parse_source(Compiler *c) {
    A runtime or non-linear bound is ORC0226, a varying length is ORC0236,
    and an out-of-range step is ORC0223. A non-printable or non-ASCII byte
    is ORC0235, an empty string is ORC0221, and a join past 256 bytes is
-   ORC0222. */
+   ORC0222. A sized function is instantiated for each value in range, at
+   most 256 instances, and checked until the first instance reports an
+   error. Size `/` and `%` are Euclidean. A call resolves one instance:
+   an out-of-range or unmatched size is ORC0238, and a wrong count or an
+   ambiguous fit is ORC0239. A cycle among instances is ORC0217. */
 
 static const char *type_spelling(TypeKind type) {
     switch (type) {
