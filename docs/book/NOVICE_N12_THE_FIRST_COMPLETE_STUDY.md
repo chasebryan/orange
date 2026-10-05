@@ -514,6 +514,453 @@ and that a tired eye might “correct” into a wrap, is `c1 + d2`. Both
 integers are on the page above so that the comparison with 4294967296 can
 be repeated without trusting the hex.
 
+### N12.8 The sixteen words the block function starts from
+
+Section 2.3 names three inputs and one layout.
+
+The key is 256 bits, read as eight 32-bit little-endian integers. The
+nonce is 96 bits, read as three 32-bit little-endian integers. The block
+count is one 32-bit little-endian integer. The output is 64 bytes. The
+RFC also says that the original ChaCha used a 64-bit nonce and a 64-bit
+block count, and that this document changes that layout. The study
+follows the document in front of you, RFC 8439, not the 2008 paper's
+widths. Bernstein's paper is the source of the quarter round. It is not
+the source of these input sizes.
+
+The state is filled in four rows:
+
+```text
+cccccccc  cccccccc  cccccccc  cccccccc
+kkkkkkkk  kkkkkkkk  kkkkkkkk  kkkkkkkk
+kkkkkkkk  kkkkkkkk  kkkkkkkk  kkkkkkkk
+bbbbbbbb  nnnnnnnn  nnnnnnnn  nnnnnnnn
+```
+
+`c` is a constant, `k` a key word, `b` the block count, `n` a nonce word.
+The constants are fixed by the RFC as these four words, in this order:
+
+```text
+0x61707865  0x3320646e  0x79622d32  0x6b206574
+```
+
+They are not an arbitrary salt. They are the sixteen ASCII bytes of the
+sentence fragment `expand 32-byte k`, stored little-endian. The bytes, in
+the order a reader of the sentence meets them, are
+
+```text
+65 78 70 61  6e 64 20 33  32 2d 62 79  74 65 20 6b
+```
+
+which is `e`, `x`, `p`, `a`, `n`, `d`, the space, `3`, `2`, `-`, `b`,
+`y`, `t`, `e`, the space, `k`.
+
+A little-endian word takes the first byte as the least significant byte.
+The first four bytes `65 78 70 61` are therefore the word whose low byte
+is `0x65` and whose high byte is `0x61`, written `0x61707865`. The next
+three groups give `0x3320646e`, `0x79622d32`, and `0x6b206574`.
+
+**Proposition N12.4.** The four constant words in RFC 8439 §2.3 are the
+little-endian 32-bit readings of the sixteen ASCII bytes of
+`expand 32-byte k`, taken four at a time from the left.
+
+*Proof.* The sixteen byte values are the ASCII codes of those characters,
+in that order. Grouping them as above and placing the first byte of each
+group in the low position produces the four words the RFC prints. There
+are sixteen bytes and four groups, so the grouping is exhaustive. □
+
+Read the hex of `0x61707865` from the left and you see `61 70 78 65`,
+which is `a`, `p`, `x`, `e`. That is the same four letters in the
+opposite order. The word is not the string `apxe`. The string is `expa`,
+and the hex display of a little-endian word shows the high byte on the
+left. Both readings are determined. Mixing them produces a different
+constant, and a different constant produces a different function. The
+test vector later in the section will not forgive that swap, because the
+first row of the state is these four words and every later word depends
+on them.
+
+Section 2.3.2 chooses a key, a nonce, and a block count:
+
+```text
+Key = 00:01:02:03:04:05:06:07:08:09:0a:0b:0c:0d:0e:0f:
+      10:11:12:13:14:15:16:17:18:19:1a:1b:1c:1d:1e:1f
+Nonce = 00:00:00:09:00:00:00:4a:00:00:00:00
+Block Count = 1
+```
+
+The key is thirty-two bytes. The RFC says they have no structure until
+they are copied into the state. Copy them in little-endian groups of
+four. The first group is `00 01 02 03`. The low byte is `0x00` and the
+high byte is `0x03`, so the word is `0x03020100`. The same reversal on
+each following group gives the eight key words
+
+```text
+0x03020100  0x07060504  0x0b0a0908  0x0f0e0d0c
+0x13121110  0x17161514  0x1b1a1918  0x1f1e1d1c
+```
+
+The block count is the integer 1. As a little-endian word it is
+`0x00000001`. The nonce's three groups are `00 00 00 09`,
+`00 00 00 4a`, and `00 00 00 00`, so the three words are `0x09000000`,
+`0x4a000000`, and `0x00000000`.
+
+Lay these sixteen words into the matrix in the order the RFC states:
+constants, key, block count, nonce.
+
+```text
+61707865  3320646e  79622d32  6b206574
+03020100  07060504  0b0a0908  0f0e0d0c
+13121110  17161514  1b1a1918  1f1e1d1c
+00000001  09000000  4a000000  00000000
+```
+
+**Proposition N12.5.** Under the little-endian grouping just stated, the
+inputs of RFC 8439 §2.3.2 produce this matrix, and the matrix is the one
+the RFC prints under “ChaCha state with the key setup.”
+
+*Proof.* Proposition N12.4 gives the first row. The eight key groups are
+the eight reversals displayed above, and they occupy indices 4 through 11
+because the RFC places the key immediately after the constants. Index 12
+is the block count, whose only set bit is the low bit of the integer 1.
+Indices 13, 14, and 15 are the three nonce groups, each reversed. The
+resulting sixteen words are the sixteen words in the RFC's setup matrix,
+in the same order. □
+
+This matrix is an input to the rounds. It is not yet the output. A
+program that returns the setup and stops has computed Proposition N12.5
+and has not computed the block function.
+
+### N12.9 The first column, by hand
+
+The block function runs twenty rounds, in ten repetitions of eight
+quarter rounds. The RFC lists them in §2.3:
+
+```text
+QUARTERROUND(0, 4,  8, 12)
+QUARTERROUND(1, 5,  9, 13)
+QUARTERROUND(2, 6, 10, 14)
+QUARTERROUND(3, 7, 11, 15)
+QUARTERROUND(0, 5, 10, 15)
+QUARTERROUND(1, 6, 11, 12)
+QUARTERROUND(2, 7,  8, 13)
+QUARTERROUND(3, 4,  9, 14)
+```
+
+The first four calls are a column round. Each call takes one column of
+the matrix. The second four are a diagonal round. The RFC's picture of
+`QUARTERROUND(1, 5, 9, 13)` in §2.2 is the second of the column calls.
+The test vector of §2.2.1 is the third of the diagonal calls, run on a
+different state. The indices in the list above are the same indices.
+The state they read, at the start of §2.3.2, is the matrix of
+Proposition N12.5, not the random matrix of §2.2.1.
+
+Eighty quarter rounds is eighty times eight updates. Doing all of them
+by hand would be a copying exercise. The study does the first call in
+full, so that the same eight updates are visible on the actual §2.3.2
+state, and then it uses the RFC's printed checkpoint after all twenty
+rounds for the additions that follow. The checkpoint is the RFC's
+sentence, not a result derived here. That division is part of the claim
+you will be asked to state.
+
+The first call is `QUARTERROUND(0, 4, 8, 12)`. From Proposition N12.5,
+
+```text
+a = 0x61707865
+b = 0x03020100
+c = 0x13121110
+d = 0x00000001
+```
+
+`a + b` in integers is 1634760805 + 50462976 = 1685223781 = `0x64727965`.
+That is less than 2³², so `a1 = 0x64727965`.
+
+`d` is 1. XOR with 1 flips the low bit and leaves the other thirty-one
+bits alone. The low byte of `a1` is `0x65`, whose low bit is 1, so the
+low byte becomes `0x64`. Thus `d XOR a1 = 0x64727964`. Rotation by 16
+exchanges the halves: `d1 = 0x79646472`.
+
+`c + d1` byte by byte, low byte first:
+
+```text
+0x10 + 0x72 = 16 + 114 = 130 = 0x82
+0x11 + 0x64 = 17 + 100 = 117 = 0x75
+0x12 + 0x64 = 18 + 100 = 118 = 0x76
+0x13 + 0x79 = 19 + 121 = 140 = 0x8c
+```
+
+No byte sum reaches 256, so there is no carry between bytes, and
+`c1 = 0x8c767582`. In integers, 319951120 + 2036622450 = 2356573570,
+which equals that word and is less than 2³².
+
+`b XOR c1 = 0x03020100 XOR 0x8c767582 = 0x8f747482`. The bits, then the
+bits after a left rotation by 12:
+
+```text
+1000 1111 0111 0100 0111 0100 1000 0010
+0100 0111 0100 1000 0010 1000 1111 0111
+```
+
+The second line is `b1 = 0x474828f7`.
+
+`a1 + b1` in integers is 1685223781 + 1195911415 = 2881135196 =
+`0xabbaa25c`, still below 2³², so `a2 = 0xabbaa25c`.
+
+`d1 XOR a2 = 0x79646472 XOR 0xabbaa25c = 0xd2dec62e`. Rotation by 8 cycles
+the bytes, and the old high byte `0xd2` reenters as the low byte:
+`d2 = 0xdec62ed2`.
+
+The next sum crosses the modulus.
+
+```text
+0x8c767582 + 0xdec62ed2 = 2356573570 + 3737530066 = 6094103636
+6094103636 = 1 × 4294967296 + 1799136340
+1799136340 = 0x6b3ca454
+```
+
+So `c2 = 0x6b3ca454`. The integer 6094103636 is what you would keep if
+the addition were the addition of Chapter 2 rather than C1.
+
+`b1 XOR c2 = 0x474828f7 XOR 0x6b3ca454 = 0x2c748ca3`. The bits, then the
+bits after a left rotation by 7:
+
+```text
+0010 1100 0111 0100 1000 1100 1010 0011
+0011 1010 0100 0110 0101 0001 1001 0110
+```
+
+The second line is `b2 = 0x3a465196`.
+
+**Proposition N12.6.** Under C1–C3, the first quarter round of the
+§2.3.2 column round replaces indices 0, 4, 8, and 12 with `0xabbaa25c`,
+`0x3a465196`, `0x6b3ca454`, and `0xdec62ed2`, and leaves the other twelve
+words of the setup matrix unchanged.
+
+*Proof.* The four input words are the words Proposition N12.5 places at
+those indices. The eight updates are the calculations above, and the one
+sum that meets or exceeds 2³² is reduced by exactly one multiple of that
+modulus. The definition of `QUARTERROUND` writes results only at the
+indices it names. □
+
+The RFC does not print this intermediate. Proposition N12.6 is a derived
+checkpoint, not a copied one. When a program later prints the same four
+words, the agreement is between the program and this calculation. It is
+not, by itself, agreement with a line of the RFC. The RFC's next printed
+state is the state after all twenty rounds.
+
+### N12.10 What the twenty rounds leave, and what the addition does
+
+After the list of eight quarter rounds, §2.3 says that ChaCha20 runs
+that list ten times, twenty rounds in all, eighty quarter rounds. It
+then adds the original input words to the output words, modulo 2³², and
+serializes. The pseudocode in §2.3.1 is the same sentence in another
+notation:
+
+```text
+inner_block(state):
+   Qround(state, 0, 4, 8, 12)
+   Qround(state, 1, 5, 9, 13)
+   Qround(state, 2, 6, 10, 14)
+   Qround(state, 3, 7, 11, 15)
+   Qround(state, 0, 5, 10, 15)
+   Qround(state, 1, 6, 11, 12)
+   Qround(state, 2, 7, 8, 13)
+   Qround(state, 3, 4, 9, 14)
+   end
+
+chacha20_block(key, counter, nonce):
+   state = constants | key | counter | nonce
+   initial_state = state
+   for i=1 upto 10
+      inner_block(state)
+      end
+   state += initial_state
+   return serialize(state)
+   end
+```
+
+The bar in `constants | key | counter | nonce` is concatenation, the
+RFC's own note under the pseudocode. It is not the bitwise OR of
+Chapter 3. The same glyph will mean OR again when a program uses `|`.
+The pseudocode's bar does not.
+
+The loop variable `i` runs from 1 through 10 inclusive. The body does
+not read `i`. Ten iterations are the whole use of the variable. The RFC
+also says that if the prose and the pseudocode still conflict, the prose
+and the test vectors are normative. On this function the three agree:
+eight quarter rounds, ten times, then add the original words, then
+serialize little-endian.
+
+Section 2.3.2 prints the state after those twenty rounds:
+
+```text
+837778ab  e238d763  a67ae21e  5950bb2f
+c4f2d0c7  fc62bb2f  8fa018fc  3f5ec7b7
+335271c2  f29489f3  eabda8fc  82e46ebd
+d19c12b4  b04e16de  9e83d0cb  4e3c50a2
+```
+
+Take that matrix as the RFC's checkpoint. Do not pretend it was
+recomputed from the setup by hand in this lesson. The addition that
+follows can be done by hand, because it is sixteen independent sums.
+Each sum is one word of this matrix plus the word of Proposition N12.5
+at the same index, reduced modulo 2³².
+
+Index 0 does not wrap. The integers are 2205644971 and 1634760805.
+Their sum is 3840405776 = `0xe4e7f110`, and 3840405776 < 4294967296.
+
+Index 1 does wrap.
+
+```text
+3795375971 + 857760878 = 4653136849
+4653136849 = 1 × 4294967296 + 358169553
+358169553 = 0x15593bd1
+```
+
+The same rule on all sixteen indices produces the following residues.
+`fit` means the integer sum was already a 32-bit word. `wrap` means one
+multiple of 2³² was subtracted. The last column is the residue.
+
+```text
+index   integer sum   case   residue
+    0    3840405776    fit    0xe4e7f110
+    1    4653136849    wrap   0x15593bd1
+    2    4829548368    wrap   0x1fdd0f50
+    3    3295748259    fit    0xc47120a3
+    4    3354710471    fit    0xc7f4d1c7
+    5    4352163891    wrap   0x0368c033
+    6    2594841092    fit    0x9aaa2204
+    7    1315755203    fit    0x4e6cd4c3
+    8    1180992210    fit    0x466482d2
+    9    4457144071    wrap   0x09aa9f07
+   10    4392993300    wrap   0x05d7c214
+   11    2718075865    fit    0xa2028bd9
+   12    3516666549    fit    0xd19c12b5
+   13    3108902622    fit    0xb94e16de
+   14    3900952779    fit    0xe883d0cb
+   15    1312575650    fit    0x4e3c50a2
+```
+
+Five positions wrap: 1, 2, 5, 9, and 10. The other eleven do not.
+Index 12 is the block count. Its original word is 1, and the checkpoint
+word plus 1 is 3516666549, which still fits, so the residue is one more
+than the checkpoint word. That is a fact about these two integers. It is
+not a fact about every block count. If the checkpoint word were
+`0xffffffff`, adding 1 would wrap to 0.
+
+**Proposition N12.7.** Grant the §2.3.2 matrix printed after twenty
+rounds, and grant the setup of Proposition N12.5. Under C1, the sixteen
+sums of corresponding words are the sixteen residues in the table, and
+those residues are the matrix the RFC prints as “ChaCha state at the end
+of the ChaCha20 operation.”
+
+*Proof.* Each row of the table is one pair. The five wrapping rows are
+the pairs whose integer sum is at least 2³², and each of those sums is
+less than 2 × 2³² because each addend is less than 2³², so subtracting
+2³² once is the residue C1 requires. The eleven other sums are already
+in range. Reading the residues in order gives
+
+```text
+e4e7f110  15593bd1  1fdd0f50  c47120a3
+c7f4d1c7  0368c033  9aaa2204  4e6cd4c3
+466482d2  09aa9f07  05d7c214  a2028bd9
+d19c12b5  b94e16de  e883d0cb  4e3c50a2
+```
+
+which is the RFC's final matrix. The hypothesis that the after-rounds
+matrix is the result of twenty rounds is the RFC's statement. This
+proposition does not prove that hypothesis. It proves the addition that
+the RFC places after it. □
+
+A program that matches the final matrix might be right because its rounds
+are right, or it might be right because an error in the rounds was
+cancelled by an error in the addition. Proposition N12.7 separates those
+possibilities for this vector: the addition, given the printed
+checkpoint, is determined. A transcription can be checked against the
+checkpoint and against the final matrix separately. The lesson's program
+will print both.
+
+### N12.11 Sixty-four bytes, least significant first
+
+`serialize` writes the words one by one, each word little-endian. For a
+word `w`, the four bytes are the residues
+
+```text
+w mod 256
+floor(w / 256) mod 256
+floor(w / 65536) mod 256
+floor(w / 16777216) mod 256
+```
+
+Equivalently, they are the four bytes of `w` from low to high. The block
+is those four bytes for index 0, then index 1, and so on through index 15.
+The length is 16 × 4 = 64.
+
+Take the first final word, `0xe4e7f110`, which is 3840405776. The
+hex digits of that word already are the bytes, high byte first:
+`e4`, `e7`, `f1`, `10`. Little-endian order reverses them:
+
+```text
+10 f1 e7 e4
+```
+
+**Proposition N12.8.** The little-endian serialization of `0xe4e7f110`
+is the four bytes `10 f1 e7 e4`.
+
+*Proof.* `0x10 = 16` and `3840405776 − 16` is divisible by 256, because
+the low eight bits of `0xe4e7f110` are `0001 0000`. Dividing the
+remaining word `0xe4e7f1` by the same rule yields `0xf1`, then `0xe7`,
+then `0xe4`. Those are the four residues in the definition, in order. □
+
+The RFC's serialized block begins
+
+```text
+000  10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4
+016  c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e
+032  d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2
+048  b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e
+```
+
+The first four bytes are Proposition N12.8. The next four are the
+little-endian bytes of `0x15593bd1`, namely `d1 3b 59 15`. The row that
+starts at offset 48 is the little-endian bytes of the last four words.
+Index 12 is `0xd19c12b5`, whose low byte is `0xb5`, so offset 48 begins
+`b5 12 9c d1`. That is what the RFC prints.
+
+**Proposition N12.9.** Serializing the sixteen residues of Proposition
+N12.7 in little-endian order produces the sixty-four bytes printed as
+the serialized block in RFC 8439 §2.3.2.
+
+*Proof.* Proposition N12.8 is the first word. Each later word is a
+32-bit residue, so it has a unique four-byte little-endian form, and
+the RFC's lines are those forms in index order: the line at offset 0
+holds indices 0 through 3, offset 16 holds indices 4 through 7, offset
+32 holds indices 8 through 11, and offset 48 holds indices 12 through
+15. Comparing each word's four bytes with the corresponding four
+positions in those lines matches throughout. The ASCII column to the
+right of the RFC's hex is a rendering of the same bytes. It is not a
+second value. □
+
+The comparison in that proof is finite and exhaustive: sixteen words,
+four bytes each. It is the sort of check a truth table is, scaled to
+sixty-four positions. It does not show that a different final matrix
+would serialize to the same bytes. Little-endian encoding of a 32-bit
+word is unique, so a different word would differ in at least one byte.
+
+Two readings remain easy to confuse, and both have now appeared. The
+setup's key bytes `00 01 02 03` became the word `0x03020100` because
+loading is little-endian. The final word `0xe4e7f110` becomes the bytes
+`10 f1 e7 e4` because storing is little-endian. The same rule, applied
+in opposite directions to the same byte order, is why the hex of a word
+and the hex of its stored bytes are reversals of each other. A test that
+expects `e4 e7 f1 10` is a test of the opposite order. It can fail while
+every round is right.
+
+The pseudocode returns `serialize(state)`. The sixty-four bytes are the
+block function's result. The final matrix is the value that serialization
+reads. Both are in the RFC. A study that checks only the matrix has not
+yet checked the function the pseudocode returns. A study that checks
+only the bytes has not shown which of the two stages produced them. The
+program in the next sections prints both, and the tests name both.
+
 ## Sources and epigraph record
 
 The quotations and the copied vectors are the only borrowed words. The
