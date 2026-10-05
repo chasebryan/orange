@@ -1180,7 +1180,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The eighteen current slices complete bounded parts of the roadmap's S3 stage:
+The twenty-one current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1198,7 +1198,12 @@ once for each, then arrays of up to 65,536 elements, so that a standard's long
 vectors are written whole, then known-answer tests and equality of whole
 arrays and tuples, so that a standard's examples are claims inside the
 program, then shift and rotation amounts computed from data, each with the
-value the arithmetic gives.
+value the arithmetic gives, then arrays of scalar rows, so that a state is a
+table whose axes are checked separately, then modulus expressions over a
+function's own finite sizes, each instance checked with its exact residue
+domain, then arrays of three and four dimensions and update paths, so that a
+matrix of polynomials is one type and a state is updated one index per
+dimension.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
