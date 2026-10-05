@@ -20,6 +20,8 @@
 #define MAX_BINDINGS 256
 #define MAX_STEPS 1048576u
 #define MAX_CALL_DEPTH 256
+#define MAX_ARRAY_LENGTH 256u
+#define MAX_ARRAY_ELEMENTS 256u
 #define ARENA_BYTES (16u * 1024u * 1024u)
 
 typedef enum TokenKind {
@@ -141,8 +143,21 @@ typedef enum ExprKind {
     EX_BINARY,
     EX_SHIFT,
     EX_CONV,
-    EX_GROUP
+    EX_GROUP,
+    EX_ARRAY,
+    EX_INDEX
 } ExprKind;
+
+typedef struct DeclaredType {
+    TypeKind kind;
+    uint32_t length;
+    int ok;
+    int length_bad;
+    uint32_t start;
+    uint32_t end;
+    uint32_t length_start;
+    uint32_t length_end;
+} DeclaredType;
 
 typedef enum NameRes { NAME_NONE = 0, NAME_PARAM, NAME_LOCAL, NAME_MISSING, NAME_EARLY, NAME_BAD } NameRes;
 
@@ -171,11 +186,13 @@ typedef struct Expr {
     uint32_t op_start;
     uint32_t op_end;
     TypeKind ty;
+    uint32_t ty_len;
     TypeKind conv_ty;
     int conv_ok;
     NameRes name_res;
     uint16_t name_index;
     TypeKind name_ty;
+    uint32_t name_len;
 } Expr;
 
 typedef struct Param {
@@ -184,7 +201,11 @@ typedef struct Param {
     uint32_t type_start;
     uint32_t type_end;
     TypeKind type;
+    uint32_t length;
     int type_ok;
+    int length_bad;
+    uint32_t length_start;
+    uint32_t length_end;
     int duplicate;
 } Param;
 
@@ -196,7 +217,11 @@ typedef struct Local {
     uint32_t type_start;
     uint32_t type_end;
     TypeKind type;
+    uint32_t length;
     int type_ok;
+    int length_bad;
+    uint32_t length_start;
+    uint32_t length_end;
     int duplicate;
     uint32_t value;
 } Local;
@@ -219,9 +244,13 @@ typedef struct Func {
     uint32_t local0;
     uint16_t nlocals;
     TypeKind result;
+    uint32_t result_len;
     int result_ok;
+    int result_length_bad;
     uint32_t result_start;
     uint32_t result_end;
+    uint32_t result_length_start;
+    uint32_t result_length_end;
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
@@ -238,6 +267,8 @@ typedef struct Diag {
 
 typedef struct Value {
     TypeKind type;
+    uint32_t length;
+    uint32_t elem0;
     uint64_t word;
     Big big;
 } Value;
@@ -281,6 +312,9 @@ typedef struct Compiler {
     uint32_t module_start;
     uint32_t module_end;
     Arena arena;
+    Value *elems;
+    uint32_t nelems;
+    size_t elem_cap;
     uint64_t steps;
     int failed;
 } Compiler;
@@ -853,7 +887,8 @@ static void lex_source(Compiler *c) {
 
 static int enter_nest(Compiler *c, uint32_t start, uint32_t end) {
     if (c->nesting >= MAX_NESTING) {
-        resource_diag(c, "ORC0106", start, end, "expression exceeds the nesting limit of 64");
+        resource_diag(c, "ORC0106", start, end,
+                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, and prefix operators");
         return 0;
     }
     c->nesting++;
@@ -978,67 +1013,121 @@ static void skip_function_body(Compiler *c, int inside_body) {
 static int parse_prefixed(Compiler *c, uint32_t *out);
 static int parse_expr(Compiler *c, uint32_t *out);
 
-static int parse_type(Compiler *c, TypeKind *type, int *ok, uint32_t *start, uint32_t *end) {
-    Token name = peek_token(c);
-    uint32_t type_start;
-    uint32_t type_end;
-    if (name.kind != TK_IDENT) {
-        add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected a type", NULL, 1);
-        *type = TY_NONE;
-        *ok = 0;
-        *start = name.start;
-        *end = name.end;
+static int canonical_array_length(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
+    uint64_t acc = 0;
+    uint32_t index;
+    if (end <= start || text[start] == '0') {
         return 0;
     }
-    type_start = name.start;
+    for (index = start; index < end; index++) {
+        unsigned char digit = (unsigned char)text[index];
+        if (digit < '0' || digit > '9') {
+            return 0;
+        }
+        if (acc > MAX_ARRAY_LENGTH / 10u) {
+            return 0;
+        }
+        acc = acc * 10u + (uint64_t)(digit - '0');
+        if (acc > MAX_ARRAY_LENGTH) {
+            return 0;
+        }
+    }
+    if (acc < 1u) {
+        return 0;
+    }
+    *value = (uint32_t)acc;
+    return 1;
+}
+
+static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
+    Token name = peek_token(c);
+    memset(type, 0, sizeof *type);
+    if (name.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", name.start, name.end, "expected a type name", "expected a type", NULL, 1);
+        type->start = name.start;
+        type->end = name.end;
+        return 0;
+    }
+    type->start = name.start;
     advance_token(c);
-    type_end = name.end;
-    *type = TY_NONE;
-    *ok = 0;
+    type->end = name.end;
     if (peek_kind(c) == TK_LBRACKET) {
         Token width;
         advance_token(c);
         width = peek_token(c);
         if (width.kind != TK_INT) {
             add_diag(c, "ORC0101", width.start, width.end, "expected a word width", "expected an integer width", NULL, 1);
-            *start = type_start;
-            *end = width.end;
+            type->end = width.end;
             return 0;
         }
         advance_token(c);
         if (peek_kind(c) != TK_RBRACKET) {
             add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `]`", "unclosed type width", NULL, 1);
-            *start = type_start;
-            *end = peek_token(c).end;
+            type->end = peek_token(c).end;
             return 0;
         }
-        type_end = peek_token(c).end;
+        type->end = peek_token(c).end;
         advance_token(c);
         if (span_is(c, name.start, name.end, "Word")) {
             if (span_is(c, width.start, width.end, "8")) {
-                *type = TY_W8;
-                *ok = 1;
+                type->kind = TY_W8;
+                type->ok = 1;
             } else if (span_is(c, width.start, width.end, "16")) {
-                *type = TY_W16;
-                *ok = 1;
+                type->kind = TY_W16;
+                type->ok = 1;
             } else if (span_is(c, width.start, width.end, "32")) {
-                *type = TY_W32;
-                *ok = 1;
+                type->kind = TY_W32;
+                type->ok = 1;
             } else if (span_is(c, width.start, width.end, "64")) {
-                *type = TY_W64;
-                *ok = 1;
+                type->kind = TY_W64;
+                type->ok = 1;
             }
         }
     } else if (span_is(c, name.start, name.end, "Int")) {
-        *type = TY_INT;
-        *ok = 1;
-    } else if (span_is(c, name.start, name.end, "Word")) {
-        *type = TY_NONE;
-        *ok = 0;
+        type->kind = TY_INT;
+        type->ok = 1;
     }
-    *start = type_start;
-    *end = type_end;
+    if (allow_array && peek_kind(c) == TK_CARET) {
+        Token length;
+        advance_token(c);
+        length = peek_token(c);
+        if (length.kind != TK_INT) {
+            add_diag(c, "ORC0101", length.start, length.end, "expected an array length", "expected a length",
+                     "an array type is `T^n` with one decimal length", 1);
+            return 0;
+        }
+        advance_token(c);
+        if (peek_kind(c) == TK_CARET) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "expected the end of the type after its array length", "repeated array length",
+                     "arrays of arrays are not part of this slice", 1);
+            return 0;
+        }
+        type->length_start = length.start;
+        type->length_end = length.end;
+        if (type->ok) {
+            uint32_t value = 0;
+            if (!canonical_array_length(c->text, length.start, length.end, &value)) {
+                type->ok = 0;
+                type->length_bad = 1;
+            } else {
+                type->length = value;
+            }
+        }
+    }
     return 1;
+}
+
+static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length, int *ok, int *length_bad,
+                           uint32_t *start, uint32_t *end, uint32_t *length_start, uint32_t *length_end) {
+    *kind = type->kind;
+    *length = type->length;
+    *ok = type->ok;
+    *length_bad = type->length_bad;
+    *start = type->start;
+    *end = type->end;
+    *length_start = type->length_start;
+    *length_end = type->length_end;
 }
 
 static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
@@ -1111,6 +1200,114 @@ static int ungrouped(Compiler *c, Token token, Token previous) {
              1);
     skip_expr_tail(c);
     return 1;
+}
+
+static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
+    Token open;
+    Token index;
+    Token close;
+    if (peek_kind(c) != TK_LBRACKET) {
+        *out = base;
+        return 1;
+    }
+    open = peek_token(c);
+    advance_token(c);
+    index = peek_token(c);
+    if (index.kind != TK_INT) {
+        add_diag(c, "ORC0101", index.start, index.end, "expected a literal index", "expected an integer index",
+                 "an index in this slice is one integer literal", 1);
+        return 0;
+    }
+    advance_token(c);
+    close = peek_token(c);
+    if (close.kind != TK_RBRACKET) {
+        add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed index", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (peek_kind(c) == TK_LBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected one index", "repeated index",
+                 "an element is not an array, so it cannot be indexed again", 1);
+        return 0;
+    }
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = EX_INDEX;
+    c->exprs[*out].left = base;
+    c->exprs[*out].start = c->exprs[base].start;
+    c->exprs[*out].end = close.end;
+    c->exprs[*out].lit_start = index.start;
+    c->exprs[*out].lit_end = index.end;
+    c->exprs[*out].height = 1 + height_of(c, base);
+    (void)open;
+    return note_height(c, *out);
+}
+
+static int parse_array(Compiler *c, Token open, uint32_t *out) {
+    uint32_t local_elems[MAX_ARRAY_ELEMENTS];
+    uint32_t count = 0;
+    Token close;
+    int height = 1;
+    if (!enter_nest(c, open.start, open.end)) {
+        return 0;
+    }
+    if (peek_kind(c) == TK_RBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an array element",
+                 "an array has at least one element", "Orange 2026 has no empty arrays in this slice", 1);
+        leave_nest(c);
+        return 0;
+    }
+    for (;;) {
+        if (count >= MAX_ARRAY_ELEMENTS) {
+            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
+                          "array literal exceeds the 256-element limit");
+            leave_nest(c);
+            return 0;
+        }
+        if (!parse_expr(c, &local_elems[count])) {
+            leave_nest(c);
+            return 0;
+        }
+        count++;
+        if (peek_kind(c) == TK_COMMA) {
+            advance_token(c);
+            if (peek_kind(c) == TK_RBRACKET) {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+    leave_nest(c);
+    close = peek_token(c);
+    if (close.kind != TK_RBRACKET) {
+        add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed array literal", NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!ensure_cap((void **)&c->args, &c->arg_cap, c->nargs + count, sizeof(uint32_t), MAX_EXPRS)) {
+        resource_diag(c, "ORC0106", open.start, close.end, "parser could not retain array elements");
+        return 0;
+    }
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = EX_ARRAY;
+    c->exprs[*out].start = open.start;
+    c->exprs[*out].end = close.end;
+    c->exprs[*out].arg0 = c->nargs;
+    c->exprs[*out].argc = (uint16_t)count;
+    memcpy(c->args + c->nargs, local_elems, (size_t)count * sizeof(uint32_t));
+    c->nargs += count;
+    for (uint32_t index = 0; index < count; index++) {
+        int child = height_of(c, local_elems[index]);
+        if (1 + child > height) {
+            height = 1 + child;
+        }
+    }
+    c->exprs[*out].height = height;
+    return note_height(c, *out);
 }
 
 static int parse_args(Compiler *c, uint32_t *arg0, uint16_t *argc) {
@@ -1258,7 +1455,10 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
                     c->exprs[*out].height = 1 + child;
                 }
             }
-            return note_height(c, *out);
+            if (!note_height(c, *out)) {
+                return 0;
+            }
+            return parse_index(c, *out, out);
         }
         if (!new_expr(c, out)) {
             return 0;
@@ -1269,7 +1469,11 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
         c->exprs[*out].name_start = name.start;
         c->exprs[*out].name_end = name.end;
         c->exprs[*out].height = 1;
-        return 1;
+        return parse_index(c, *out, out);
+    }
+    if (token.kind == TK_LBRACKET) {
+        advance_token(c);
+        return parse_array(c, token, out);
     }
     if (token.kind == TK_LPAREN) {
         uint32_t inner;
@@ -1313,12 +1517,9 @@ static int parse_expr(Compiler *c, uint32_t *out) {
     }
     if (is_as(c)) {
         Token as_token = peek_token(c);
-        TypeKind type = TY_NONE;
-        int ok = 0;
-        uint32_t type_start = as_token.start;
-        uint32_t type_end = as_token.end;
+        DeclaredType type;
         advance_token(c);
-        if (!parse_type(c, &type, &ok, &type_start, &type_end)) {
+        if (!parse_type(c, &type, 0)) {
             return 0;
         }
         if (is_binary_kind(peek_kind(c)) || is_as(c)) {
@@ -1330,13 +1531,13 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         c->exprs[*out].kind = EX_CONV;
         c->exprs[*out].left = left;
         c->exprs[*out].start = c->exprs[left].start;
-        c->exprs[*out].end = type_end;
+        c->exprs[*out].end = type.end;
         c->exprs[*out].op_start = as_token.start;
         c->exprs[*out].op_end = as_token.end;
-        c->exprs[*out].conv_ty = type;
-        c->exprs[*out].conv_ok = ok;
-        c->exprs[*out].name_start = type_start;
-        c->exprs[*out].name_end = type_end;
+        c->exprs[*out].conv_ty = type.kind;
+        c->exprs[*out].conv_ok = type.ok;
+        c->exprs[*out].name_start = type.start;
+        c->exprs[*out].name_end = type.end;
         c->exprs[*out].height = 1 + height_of(c, left);
         return note_height(c, *out);
     }
@@ -1439,8 +1640,13 @@ static int parse_params(Compiler *c, Func *func) {
             return 0;
         }
         advance_token(c);
-        if (!parse_type(c, &param->type, &param->type_ok, &param->type_start, &param->type_end)) {
-            return 0;
+        {
+            DeclaredType declared;
+            if (!parse_type(c, &declared, 1)) {
+                return 0;
+            }
+            store_declared(&declared, &param->type, &param->length, &param->type_ok, &param->length_bad,
+                           &param->type_start, &param->type_end, &param->length_start, &param->length_end);
         }
         c->nparams++;
         func->nparams++;
@@ -1488,8 +1694,13 @@ static int parse_binding(Compiler *c, Func *func) {
         return 0;
     }
     advance_token(c);
-    if (!parse_type(c, &local->type, &local->type_ok, &local->type_start, &local->type_end)) {
-        return 0;
+    {
+        DeclaredType declared;
+        if (!parse_type(c, &declared, 1)) {
+            return 0;
+        }
+        store_declared(&declared, &local->type, &local->length, &local->type_ok, &local->length_bad, &local->type_start,
+                       &local->type_end, &local->length_start, &local->length_end);
     }
     if (peek_kind(c) != TK_EQUAL) {
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the binding's value",
@@ -1523,9 +1734,14 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
         return 1;
     }
     advance_token(c);
-    if (!parse_type(c, &func->result, &func->result_ok, &result_start, &result_end)) {
-        skip_function_body(c, 0);
-        return 1;
+    {
+        DeclaredType declared;
+        if (!parse_type(c, &declared, 1)) {
+            skip_function_body(c, 0);
+            return 1;
+        }
+        store_declared(&declared, &func->result, &func->result_len, &func->result_ok, &func->result_length_bad,
+                       &result_start, &result_end, &func->result_length_start, &func->result_length_end);
     }
     func->typed = 1;
     func->result_start = result_start;
@@ -1748,6 +1964,26 @@ static int type_width(TypeKind type) {
     }
 }
 
+static void write_type(char *buffer, size_t cap, TypeKind type, uint32_t length) {
+    if (length == 0) {
+        snprintf(buffer, cap, "%s", type_spelling(type));
+    } else {
+        snprintf(buffer, cap, "%s^%u", type_spelling(type), length);
+    }
+}
+
+static void reject_declared(Compiler *c, TypeKind type, int length_bad, uint32_t start, uint32_t end,
+                            uint32_t length_start, uint32_t length_end) {
+    if (length_bad) {
+        char message[128];
+        snprintf(message, sizeof message, "array length must be a decimal integer from 1 through %u", MAX_ARRAY_LENGTH);
+        add_diag(c, "ORC0221", length_start, length_end, message, "unsupported array length",
+                 "write the length in decimal without a prefix, separator, or leading zero", 2);
+        return;
+    }
+    reject_type(c, type, 0, start, end);
+}
+
 static int signature_is_usable(const Compiler *c, uint32_t func_index) {
     const Func *func = &c->funcs[func_index];
     uint16_t param;
@@ -1787,12 +2023,13 @@ static int find_function(const Compiler *c, uint32_t start, uint32_t end, uint32
 }
 
 static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end,
-                         NameRes *res, uint16_t *slot, TypeKind *type, int *type_ok) {
+                         NameRes *res, uint16_t *slot, TypeKind *type, uint32_t *length, int *type_ok) {
     const Func *func = &c->funcs[func_index];
     uint16_t index;
     *res = NAME_MISSING;
     *slot = 0;
     *type = TY_NONE;
+    *length = 0;
     *type_ok = 0;
     for (index = 0; index < func->nparams; index++) {
         const Param *param = &c->params[func->param0 + index];
@@ -1803,6 +2040,7 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
             *res = param->type_ok ? NAME_PARAM : NAME_BAD;
             *slot = index;
             *type = param->type;
+            *length = param->length;
             *type_ok = param->type_ok;
             return;
         }
@@ -1824,6 +2062,7 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
                 *res = local->type_ok ? NAME_LOCAL : NAME_BAD;
                 *slot = (uint16_t)local_index;
                 *type = local->type;
+                *length = local->length;
                 *type_ok = local->type_ok;
                 return;
             }
@@ -1839,9 +2078,10 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
     }
 }
 
-static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t func_index, uint32_t locals_in_scope);
+static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
+                      uint32_t locals_in_scope);
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
-                     uint32_t *leaf, int *silent);
+                     uint32_t *length, uint32_t *leaf, int *silent);
 
 static int decode_literal(Compiler *c, const Expr *expr, Big *out) {
     return big_from_digits(&c->arena, c->text + expr->lit_start, (size_t)(expr->lit_end - expr->lit_start),
@@ -1869,32 +2109,85 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected) {
     }
 }
 
+static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+                     uint32_t *length, int *silent) {
+    const Expr *expr = &c->exprs[index];
+    *silent = 0;
+    *type = TY_NONE;
+    *length = 0;
+    if (expr->kind == EX_NAME) {
+        NameRes res;
+        uint16_t slot = 0;
+        int type_ok = 0;
+        resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
+                     &type_ok);
+        if (res == NAME_BAD) {
+            *silent = 1;
+            return -1;
+        }
+        if (res == NAME_PARAM || res == NAME_LOCAL) {
+            return 1;
+        }
+        return 0;
+    }
+    if (expr->kind == EX_CALL) {
+        uint32_t callee = UINT32_MAX;
+        int empty_spec = 0;
+        int is_impl = 0;
+        if (!find_function(c, expr->name_start, expr->name_end, &callee, &empty_spec, &is_impl)) {
+            return 0;
+        }
+        if (!signature_is_usable(c, callee)) {
+            *silent = 1;
+            return -1;
+        }
+        *type = c->funcs[callee].result;
+        *length = c->funcs[callee].result_len;
+        return 1;
+    }
+    return 0;
+}
+
+static int index_below(const Big *value, uint32_t length) {
+    if (value->negative || value->nlimbs > 1) {
+        return 0;
+    }
+    if (value->nlimbs == 0) {
+        return 1;
+    }
+    return value->limbs[0] < length;
+}
+
 static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
-                     uint32_t *leaf, int *silent) {
+                     uint32_t *length, uint32_t *leaf, int *silent) {
     const Expr *expr = &c->exprs[index];
     int left_state;
     *silent = 0;
     *leaf = index;
     *type = TY_NONE;
+    *length = 0;
     switch (expr->kind) {
     case EX_LIT:
         return 0;
+    case EX_ARRAY:
+        return 2;
     case EX_GROUP:
     case EX_UNARY:
-        return find_leaf(c, expr->left, func_index, locals_in_scope, type, leaf, silent);
+        return find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
     case EX_SHIFT:
-        return find_leaf(c, expr->left, func_index, locals_in_scope, type, leaf, silent);
+        return find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
     case EX_BINARY:
-        left_state = find_leaf(c, expr->left, func_index, locals_in_scope, type, leaf, silent);
+        left_state = find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
         if (left_state != 0) {
             return left_state;
         }
-        return find_leaf(c, expr->right, func_index, locals_in_scope, type, leaf, silent);
+        return find_leaf(c, expr->right, func_index, locals_in_scope, type, length, leaf, silent);
     case EX_NAME: {
         NameRes res;
         uint16_t slot;
         int type_ok = 0;
-        resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, &type_ok);
+        resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, type, length,
+                     &type_ok);
         if (res == NAME_BAD) {
             *silent = 1;
             return -1;
@@ -1916,6 +2209,19 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         *type = c->funcs[callee].result;
+        *length = c->funcs[callee].result_len;
+        return 1;
+    }
+    case EX_INDEX: {
+        int state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        if (state != 1 || *length == 0) {
+            if (state < 0) {
+                return -1;
+            }
+            *silent = 0;
+            return -1;
+        }
+        *length = 0;
         return 1;
     }
     case EX_CONV:
@@ -1979,28 +2285,108 @@ static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32
     return 1;
 }
 
-static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t func_index, uint32_t locals_in_scope) {
+static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
+                      uint32_t locals_in_scope) {
     Expr *expr;
     if (c->resource || c->sema_limited) {
         return 0;
     }
     expr = &c->exprs[index];
     expr->ty = expected;
+    expr->ty_len = expected_len;
     switch (expr->kind) {
     case EX_GROUP:
-        return check_expr(c, expr->left, expected, func_index, locals_in_scope);
+        return check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope);
     case EX_LIT:
+        if (expected_len != 0) {
+            char message[192];
+            char expected_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "an integer literal cannot have type %s", expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "an array value is written as an array literal", 2);
+            return 1;
+        }
         check_literal(c, expr, expected);
         return 1;
+    case EX_ARRAY:
+        if (expected_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "an array literal cannot have type %s", type_spelling(expected));
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "an array literal is written where an array type is required", 2);
+            return 1;
+        }
+        if (expr->argc != expected_len) {
+            char message[192];
+            char expected_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "this array has %u elements, but %s has %u", expr->argc, expected_text,
+                     expected_len);
+            add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch",
+                     "an array literal lists every element of its type", 2);
+        }
+        for (uint16_t element = 0; element < expr->argc; element++) {
+            if (!check_expr(c, c->args[expr->arg0 + element], expected, 0, func_index, locals_in_scope)) {
+                return 0;
+            }
+        }
+        return 1;
+    case EX_INDEX: {
+        TypeKind base_kind = TY_NONE;
+        uint32_t base_len = 0;
+        int silent = 0;
+        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        if (state != 1) {
+            if (silent) {
+                return 1;
+            }
+            return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
+        }
+        if (base_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
+                     type_spelling(base_kind));
+            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
+                     "an index selects one element of a value of type T^n", 2);
+            return check_expr(c, expr->left, base_kind, 0, func_index, locals_in_scope);
+        }
+        {
+            Big magnitude = big_zero();
+            if (!decode_literal(c, expr, &magnitude)) {
+                add_diag(c, "ORC0205", expr->lit_start, expr->lit_end,
+                         "integer magnitude exceeds 16384 significant bits", "index is too large",
+                         "an index literal must fit the representation budget", 2);
+            } else if (!index_below(&magnitude, base_len)) {
+                add_diag(c, "ORC0223", expr->lit_start, expr->lit_end, "index is not below the array length",
+                         "index out of range", "a literal index must be less than the array's length", 2);
+            }
+        }
+        if (base_kind != expected || expected_len != 0) {
+            char message[192];
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, base_kind, 0);
+            snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                     expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "Orange does not convert between types implicitly", 2);
+        }
+        return check_expr(c, expr->left, base_kind, base_len, func_index, locals_in_scope);
+    }
     case EX_NAME: {
         NameRes res;
         uint16_t slot = 0;
         TypeKind type = TY_NONE;
+        uint32_t length = 0;
         int type_ok = 0;
-        resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, &type, &type_ok);
+        resolve_name(c, func_index, locals_in_scope, expr->name_start, expr->name_end, &res, &slot, &type, &length,
+                     &type_ok);
         expr->name_res = res;
         expr->name_index = slot;
         expr->name_ty = type;
+        expr->name_len = length;
         if (res == NAME_BAD) {
             return 1;
         }
@@ -2008,9 +2394,13 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
             report_unknown_name(c, expr, func_index, res);
             return 1;
         }
-        if (type != expected) {
+        if (type != expected || length != expected_len) {
             char message[192];
-            snprintf(message, sizeof message, "expected %s, found %s", type_spelling(expected), type_spelling(type));
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, type, length);
+            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
             add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
                      "Orange does not convert between types implicitly", 2);
         }
@@ -2061,25 +2451,33 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
                      "every parameter receives exactly one argument", 2);
             return 1;
         }
-        if (c->funcs[callee].result != expected) {
+        if (c->funcs[callee].result != expected || c->funcs[callee].result_len != expected_len) {
             char message[192];
-            snprintf(message, sizeof message, "expected %s, found %s", type_spelling(expected),
-                     type_spelling(c->funcs[callee].result));
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, c->funcs[callee].result, c->funcs[callee].result_len);
+            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
             add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
                      "Orange does not convert between types implicitly", 2);
         }
         for (uint16_t arg = 0; arg < expr->argc; arg++) {
-            TypeKind param_type = c->params[c->funcs[callee].param0 + arg].type;
-            if (!c->params[c->funcs[callee].param0 + arg].type_ok) {
+            Param *param = &c->params[c->funcs[callee].param0 + arg];
+            if (!param->type_ok) {
                 continue;
             }
-            if (!check_expr(c, c->args[expr->arg0 + arg], param_type, func_index, locals_in_scope)) {
+            if (!check_expr(c, c->args[expr->arg0 + arg], param->type, param->length, func_index, locals_in_scope)) {
                 return 0;
             }
         }
         return 1;
     }
     case EX_UNARY:
+        if (expected_len != 0) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
+                     "operators apply to elements", "index the array and apply the operator to one element", 2);
+            return 1;
+        }
         if (expr->op == TK_MINUS && expected != TY_INT) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "negation is not defined for this type",
                      "write `0 - a` for a word", "prefix `-` is exact integer negation", 2);
@@ -2090,24 +2488,34 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
                      "bitwise complement needs a word", NULL, 2);
             return 1;
         }
-        return check_expr(c, expr->left, expected, func_index, locals_in_scope);
+        return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
     case EX_BINARY:
+        if (expected_len != 0) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
+                     "operators apply to elements", "index the array and apply the operator to one element", 2);
+            return 1;
+        }
         if ((expr->op == TK_AMP || expr->op == TK_PIPE || expr->op == TK_CARET) && expected == TY_INT) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "bitwise operators are not defined for `Int`",
                      "this operator needs a word", NULL, 2);
             return 1;
         }
-        if (!check_expr(c, expr->left, expected, func_index, locals_in_scope)) {
+        if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
             return 0;
         }
-        return check_expr(c, expr->right, expected, func_index, locals_in_scope);
+        return check_expr(c, expr->right, expected, 0, func_index, locals_in_scope);
     case EX_SHIFT:
+        if (expected_len != 0) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "this operator is not defined for an array",
+                     "operators apply to elements", "index the array and apply the operator to one element", 2);
+            return 1;
+        }
         if (expected == TY_INT) {
             add_diag(c, "ORC0215", expr->op_start, expr->op_end, "shifts and rotations are not defined for `Int`",
                      "this operator needs a word", NULL, 2);
             return 1;
         }
-        if (!check_expr(c, expr->left, expected, func_index, locals_in_scope)) {
+        if (!check_expr(c, expr->left, expected, 0, func_index, locals_in_scope)) {
             return 0;
         }
         {
@@ -2135,6 +2543,7 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
         return 1;
     case EX_CONV: {
         TypeKind leaf_type = TY_NONE;
+        uint32_t leaf_len = 0;
         uint32_t leaf = index;
         int silent = 0;
         int state;
@@ -2142,14 +2551,22 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
             reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
             return 1;
         }
-        if (expr->conv_ty != expected) {
+        if (expr->conv_ty != expected || expected_len != 0) {
             char message[192];
-            snprintf(message, sizeof message, "expected %s, found %s", type_spelling(expected),
-                     type_spelling(expr->conv_ty));
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, expr->conv_ty, 0);
+            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
             add_diag(c, "ORC0214", expr->name_start, expr->name_end, message, "conversion has a different type",
                      "the target of `as` is the type of the conversion", 2);
         }
-        state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf, &silent);
+        state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        if (state == 2 || (state > 0 && leaf_len != 0)) {
+            add_diag(c, "ORC0215", expr->op_start, expr->op_end, "`as` is not defined for an array",
+                     "convert one element", "a conversion applies to one Int or word value", 2);
+            return 1;
+        }
         if (state == 0) {
             add_diag(c, "ORC0220", c->exprs[expr->left].start, c->exprs[expr->left].end,
                      "conversion operand has no type of its own", "no typed leaf",
@@ -2158,11 +2575,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t f
         }
         if (state < 0) {
             if (!silent) {
-                return check_expr(c, leaf, leaf_type == TY_NONE ? TY_INT : leaf_type, func_index, locals_in_scope);
+                return check_expr(c, leaf, leaf_type == TY_NONE ? TY_INT : leaf_type, 0, func_index, locals_in_scope);
             }
             return 1;
         }
-        return check_expr(c, expr->left, leaf_type, func_index, locals_in_scope);
+        return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
     }
     default:
         return 1;
@@ -2221,12 +2638,14 @@ static void analyze(Compiler *c) {
                 }
             }
             if (!param->type_ok) {
-                reject_type(c, param->type, 0, param->type_start, param->type_end);
+                reject_declared(c, param->type, param->length_bad, param->type_start, param->type_end,
+                                param->length_start, param->length_end);
                 func->signature_ok = 0;
             }
         }
         if (!func->result_ok) {
-            reject_type(c, func->result, 0, func->result_start, func->result_end);
+            reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
+                            func->result_length_start, func->result_length_end);
             func->signature_ok = 0;
             continue;
         }
@@ -2263,13 +2682,14 @@ static void analyze(Compiler *c) {
                 local->duplicate = 1;
             }
             if (!local->type_ok) {
-                reject_type(c, local->type, 0, local->type_start, local->type_end);
+                reject_declared(c, local->type, local->length_bad, local->type_start, local->type_end,
+                                local->length_start, local->length_end);
                 continue;
             }
-            check_expr(c, local->value, local->type, index, local_index);
+            check_expr(c, local->value, local->type, local->length, index, local_index);
         }
         if (func->body != UINT32_MAX) {
-            check_expr(c, func->body, func->result, index, func->nlocals);
+            check_expr(c, func->body, func->result, func->result_len, index, func->nlocals);
         }
     }
     {
@@ -2417,11 +2837,26 @@ static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, 
     }
 }
 
+static int push_elem(Compiler *c, Value value, uint32_t *slot) {
+    if (c->nelems >= MAX_EXPRS) {
+        c->failed = 1;
+        return 0;
+    }
+    if (!ensure_cap((void **)&c->elems, &c->elem_cap, c->nelems + 1, sizeof(Value), MAX_EXPRS)) {
+        c->failed = 1;
+        return 0;
+    }
+    *slot = c->nelems;
+    c->elems[c->nelems++] = value;
+    return 1;
+}
+
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
     const Expr *expr = &c->exprs[index];
     if (c->failed) {
         return 0;
     }
+    memset(out, 0, sizeof *out);
     switch (expr->kind) {
     case EX_GROUP:
         return eval_expr(c, expr->left, params, locals, depth, out);
@@ -2624,14 +3059,93 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         out->big = big_zero();
         return 1;
     }
+    case EX_ARRAY: {
+        uint32_t first = 0;
+        uint32_t element;
+        if (!charge(c, expr->start, expr->end, expr->argc == 0 ? 1 : expr->argc)) {
+            return 0;
+        }
+        for (element = 0; element < expr->argc; element++) {
+            Value item;
+            uint32_t slot = 0;
+            if (!eval_expr(c, c->args[expr->arg0 + element], params, locals, depth, &item) ||
+                !push_elem(c, item, &slot)) {
+                c->failed = 1;
+                return 0;
+            }
+            if (element == 0) {
+                first = slot;
+            }
+        }
+        out->type = expr->ty;
+        out->length = expr->argc;
+        out->elem0 = first;
+        return 1;
+    }
+    case EX_INDEX: {
+        Value base;
+        Big magnitude = big_zero();
+        uint32_t position = 0;
+        if (!eval_expr(c, expr->left, params, locals, depth, &base)) {
+            return 0;
+        }
+        if (!decode_literal(c, expr, &magnitude) || !index_below(&magnitude, base.length) ||
+            !charge(c, expr->start, expr->end, 1)) {
+            c->failed = 1;
+            return 0;
+        }
+        if (magnitude.nlimbs > 0) {
+            position = magnitude.limbs[0];
+        }
+        if (base.elem0 > UINT32_MAX - position || base.elem0 + position >= c->nelems) {
+            c->failed = 1;
+            return 0;
+        }
+        *out = c->elems[base.elem0 + position];
+        return 1;
+    }
     default:
         c->failed = 1;
         return 0;
     }
 }
 
-static int format_value(const Value *value, char *buffer, size_t cap) {
+static int format_value(const Compiler *c, const Value *value, char *buffer, size_t cap) {
     int width;
+    if (value->length > 0) {
+        size_t used = 0;
+        uint32_t index;
+        if (cap < 3) {
+            return 0;
+        }
+        buffer[used++] = '[';
+        for (index = 0; index < value->length; index++) {
+            char element[8192];
+            size_t element_len;
+            if (value->elem0 > UINT32_MAX - index || value->elem0 + index >= c->nelems) {
+                return 0;
+            }
+            if (index > 0) {
+                if (used + 2 >= cap) {
+                    return 0;
+                }
+                buffer[used++] = ',';
+                buffer[used++] = ' ';
+            }
+            if (!format_value(c, &c->elems[value->elem0 + index], element, sizeof element)) {
+                return 0;
+            }
+            element_len = strlen(element);
+            if (used + element_len + 2 >= cap) {
+                return 0;
+            }
+            memcpy(buffer + used, element, element_len);
+            used += element_len;
+        }
+        buffer[used++] = ']';
+        buffer[used] = '\0';
+        return 1;
+    }
     if (value->type == TY_INT) {
         return big_format(&value->big, buffer, cap);
     }
@@ -2750,6 +3264,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
     for (index = 0; index < c->nfuncs && !c->failed; index++) {
         Func *func = &c->funcs[index];
         Value result;
+        char type_text[64];
         char value_text[8192];
         char line[8700];
         int length;
@@ -2760,20 +3275,19 @@ static int evaluate_source(Compiler *c, FILE *out) {
         if (!eval_function(c, index, NULL, 1, &result)) {
             break;
         }
-        if (result.type != func->result && func->result != TY_INT) {
+        if (func->result_len == 0 && func->result != TY_INT) {
             result.type = func->result;
-        }
-        if (func->result != TY_INT) {
-            result.type = func->result;
+            result.length = 0;
             result.word &= word_mask_of(type_width(func->result));
         }
-        if (!format_value(&result, value_text, sizeof value_text)) {
+        write_type(type_text, sizeof type_text, func->result, func->result_len);
+        if (!format_value(c, &result, value_text, sizeof value_text)) {
             c->failed = 1;
             break;
         }
         length = snprintf(line, sizeof line, "%.*s::%.*s: %s = %s\n", (int)(c->module_end - c->module_start),
                           c->text + c->module_start, (int)(func->name_end - func->name_start),
-                          c->text + func->name_start, type_spelling(func->result), value_text);
+                          c->text + func->name_start, type_text, value_text);
         if (length < 0 || (size_t)length >= sizeof line) {
             c->failed = 1;
             break;
@@ -2826,6 +3340,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.params);
         free(compiler.locals);
         free(compiler.edges);
+        free(compiler.elems);
         return status;
     }
     if (compiler.lex_diags > 0 || compiler.resource) {
@@ -2838,6 +3353,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.params);
         free(compiler.locals);
         free(compiler.edges);
+        free(compiler.elems);
         return 1;
     }
     parse_source(&compiler);
@@ -2866,6 +3382,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     free(compiler.params);
     free(compiler.locals);
     free(compiler.edges);
+    free(compiler.elems);
     return status;
 }
 
@@ -2967,8 +3484,9 @@ static void print_usage(FILE *out) {
         "Usage: orangec <check|eval|lex> <FILE>\n"
         "       orangec --self-test\n"
         "\n"
-        "Standalone C frontend for the Orange 2026 expression, binding, and\n"
-        "conversion fragment. It does not use the Rust compiler.\n"
+        "Standalone C frontend for the Orange 2026 expression, binding,\n"
+        "conversion, and fixed-length array fragment. It does not use the\n"
+        "Rust compiler.\n"
         "\n"
         "Commands:\n"
         "  check    Lex, parse, and check one source\n"
@@ -2994,7 +3512,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3c\n", stdout);
+            fputs("orangec (standalone C) slice S3d\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
