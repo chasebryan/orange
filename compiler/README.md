@@ -106,8 +106,12 @@ slice, proposed in [`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md)
 and in owner review under OEP-0024, admits own finite size names in modulus
 expressions. Every instance is checked eagerly with its exact concrete residue
 domain, including signatures, body annotations, conversions and direct type
-arguments. Module aliases and type-parameter lists remain concrete. All twenty
-lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+arguments. Module aliases and type-parameter lists remain concrete. The S3u
+slice, proposed in [`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md) and
+in owner review under OEP-0025, admits arrays of up to four dimensions, each a
+`type` declaration over the one before it, and update paths
+`x with [i][j][k] = v` that mean the nested updates they abbreviate. All
+twenty-one lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -151,7 +155,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
@@ -1140,7 +1144,7 @@ and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3s rules, limits, and non-claims are in
+through S3u rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -1157,8 +1161,10 @@ through S3s rules, limits, and non-claims are in
 [`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
 [`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md),
 [`docs/TESTS_2026.md`](../docs/TESTS_2026.md),
-[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md), and
-[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md). None of them defines
+[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md),
+[`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md),
+[`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md), and
+[`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1469,8 +1475,8 @@ compute constants in the rings their standards define: ML-KEM's zeta^128 and
 on its curve. The rejected programs cover moduli that are too small, negative,
 too wide, not constant, missing, or too large to compute; `type` declarations
 out of order, naming built-in types, repeated, used before they are declared,
-or adding a third array dimension (the former rank-two rejection is extended
-by S3s); residue literals out of range; order, remainder,
+or adding a fifth array dimension (the former rank-two rejection is extended
+by S3s and S3u); residue literals out of range; order, remainder,
 and bitwise operators on residues; two moduli in one operator or call; `as`
 to `Bool` or an array type; and a residue used directly as an index.
 
@@ -1797,6 +1803,35 @@ equal costs at different mismatch positions. The 12-rule index in
 They establish implementation behavior and do not accept OEP-0023 or prove
 ML-KEM, transformation, leakage, or refinement properties.
 
+## S3u dimension conformance
+
+`fixtures/s3u/` contains an exact seven-program corpus for the proposed S3u
+behavior, of which four must evaluate successfully and three must fail closed.
+The accepted programs write AES-128 with its state as FIPS 197 draws it,
+`s[r][c]`, reproducing Appendix A.1's key expansion and the cipher examples of
+Appendices B and C.1; SHA3-256 with its lanes `A[x][y]` as FIPS 202 indexes
+them, reproducing NIST's examples; ML-KEM-512's NTT, NTT^-1 and MultiplyNTTs
+over a 2 × 2 matrix of polynomials of 256 coefficients modulo 3329, checked
+against FIPS 203's Appendix A zetas, reduction modulo each quadratic factor,
+and multiplication in Z_q[X]/(X^256 + 1); and rank-three and rank-four values
+through literals, fills, selections, slices, joins, paths of two to four
+indices, residues, type and size parameters, and tuples. The rejected programs
+cover a fifth dimension and shapes past 65,536 scalars, in declarations and
+size instances; paths past the scalars, out of range on an axis, or with a
+value of the wrong type or length; and five indices, a slice, or an empty
+index in a path.
+
+`crates/orangec/tests/s3u_conformance.rs` parses the 12-rule index in
+`docs/DIMENSIONS_2026.md` and runs every fixture twice through `check`, `eval`,
+and `test`. Generated programs reach the scalar limit at rank four, check
+every path index against its own axis, compare paths with their nested forms
+at every position of a rank-four array, measure path costs across shapes with
+exact and one-short budgets, compare equality costs at early and late
+differences, replay rank-three and rank-four witnesses, and confirm that
+conversions, arrays of tuples, and repeated `^` types stay refused. They
+establish implementation behavior and do not accept OEP-0025 or prove ML-KEM,
+transformation, leakage, or refinement properties.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1854,6 +1889,8 @@ ML-KEM, transformation, leakage, or refinement properties.
   rule-index, reference-amount, and amount-cost runner;
 - `crates/orangec/tests/s3s_conformance.rs`: repeatable nested-array corpus,
   rule-index, shape-limit, and recursive-cost runner;
+- `crates/orangec/tests/s3u_conformance.rs`: repeatable dimension corpus,
+  rule-index, path, path-cost, and witness runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1877,6 +1914,7 @@ ML-KEM, transformation, leakage, or refinement properties.
   corpus;
 - `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
 - `fixtures/s3s/`: nested-array positive, negative, and failed-equality corpus;
+- `fixtures/s3u/`: exact four-positive/three-negative S3u CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

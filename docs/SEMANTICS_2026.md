@@ -66,7 +66,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > adds bounded rectangular arrays of scalar rows, and the S3t slice proposed
 > in [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md) under OEP-0024, which
 > evaluates own finite size names in modulus expressions for each eagerly
-> checked instance, retaining exact concrete residue-domain types.
+> checked instance, retaining exact concrete residue-domain types, and the S3u
+> slice proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under OEP-0025,
+> which adds arrays of up to four dimensions and update paths.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

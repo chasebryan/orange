@@ -73,10 +73,10 @@ only convenient notation.
 
 ## Scope and non-goals
 
-The current accepted foothold is S3a. S3b through S3t are implemented and in
-owner review under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024; implementation is not semantic
-acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
-`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays and rank-two arrays with
+The current accepted foothold is S3a. S3b through S3u are implemented and in
+owner review under OEP-0005 through OEP-0021 and OEP-0023 through OEP-0025;
+implementation is not semantic acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
+`Word[32]`, `Word[64]`, `Mod[m]`, and arrays of up to four dimensions with
 at most 65,536 scalar elements,
 tuples, transparent type aliases, array concatenation and slicing, and bounded
 size and type parameters within those proposed slices.
@@ -127,7 +127,9 @@ state, concatenation and slicing, bounded size parameters, and finite type
 parameters. Their records are OEP-0014, OEP-0015, OEP-0016, and OEP-0018.
 S3s adds bounded scalar rows under OEP-0023. S3t adds modulus expressions
 over own finite size instances under
-[OEP-0024](OEP-0024-orange-2026-static-moduli.md). These implementations
+[OEP-0024](OEP-0024-orange-2026-static-moduli.md). S3u adds third and fourth
+dimensions and update paths under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md). These implementations
 remain in owner review and do not select universal parameter constraints.
 Review these implementations against the criteria below before proposing
 remaining parameter domains or constraints; this plan does not accept them.

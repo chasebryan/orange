@@ -1113,6 +1113,39 @@ predicates, addition, carrying and canonicalization for p = 2^255 − 19.
 Their mathematical boundary tests do not establish a refinement proof or
 verified machine arithmetic.
 
+### Matrices of polynomials, one index per dimension
+
+An array may have up to four dimensions, each named by one more `type`
+declaration, and an update may name one index per dimension it reaches:
+
+```orange
+edition 2026;
+module aes {
+  type Row = Word[8]^4;
+  type State = Row^4;
+  // FIPS 197, section 5.1.2: ShiftRows turns row r left by r places.
+  spec shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c + r) % 4] }
+    }
+  }
+  test "each row turns by its index" {
+    shift_rows([[0, 1, 2, 3]; 4]) == [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 0, 1], [3, 0, 1, 2]]
+  }
+}
+```
+
+`u with [r][c] = v` means `u with [r] = (u[r] with [c] = v)`, and each index
+is proved in range on its own axis. ML-KEM's matrix is
+`type Poly = Mod[3329]^256; type Vector = Poly^2; type Matrix = Vector^2;`,
+three dimensions; every axis is positive and their product is at most 65,536
+scalars. The S3u corpus writes [AES-128](compiler/fixtures/s3u/valid-aes-state.or),
+[SHA3-256](compiler/fixtures/s3u/valid-keccak-state.or), and
+[ML-KEM-512's NTT over that matrix](compiler/fixtures/s3u/valid-mlkem-matrix.or)
+as FIPS 197, 202, and 203 write them, and reproduces their examples. S3u is implemented and tested, with its
+[specification](docs/DIMENSIONS_2026.md) in review as
+[OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1137,6 +1170,7 @@ cryptography.
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Rectangular arrays of scalar rows, with both axes checked and a bounded scalar product | Working; specification in review ([OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md)) |
+| Arrays of up to four dimensions and update paths `x with [i][j] = v`, one index per dimension | Working; specification in review ([OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |

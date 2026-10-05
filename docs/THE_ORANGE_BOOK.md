@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-02
+Snapshot: 2026-10-04
 
-Manuscript version: 0.26
+Manuscript version: 0.27
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -121,8 +121,11 @@ are written as the RFC prints them, the S3q slice lets a module state its
 known answers as tests beside its functions, so that RFC 8439's examples are
 claims the program checks, and the S3r slice lets a shift or rotation take an
 amount computed from data, so that RC6 and SHA-3 turn their words as their
-designers write them. S3s adds tables of scalar rows, and S3t lets each finite
-size instance compute its own exact modulus. None of them
+designers write them. S3s adds tables of scalar rows, S3t lets each finite
+size instance compute its own exact modulus, and S3u carries arrays to four
+dimensions, so that ML-KEM's matrix of polynomials is one type, with updates
+that name one index per dimension, as AES and Keccak update their states.
+None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -1755,9 +1758,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [lengths specification](LENGTHS_2026.md) of S3p, the
 [tests specification](TESTS_2026.md) of S3q, and the
 [computed amounts specification](AMOUNTS_2026.md) of S3r, the
-[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, and the
-[static moduli specification](STATIC_MODULI_2026.md) of S3t. S3b through
-S3t are implemented and tested, but their specifications are **proposed**:
+[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, the
+[static moduli specification](STATIC_MODULI_2026.md) of S3t, and the
+[array dimensions specification](DIMENSIONS_2026.md) of S3u. S3b through
+S3u are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1775,8 +1779,9 @@ S3t are implemented and tested, but their specifications are **proposed**:
 [OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md),
 [OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md),
 [OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md),
-[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md), and
-[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) are in
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md),
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), and
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -4664,7 +4669,7 @@ must leave it byte-identical. Generated layout whitespace uses LF, while bytes
 inside strings and comments are retained. Formatting does not load imports or
 check types. It changes source bytes, spans and digests and does not preserve
 or migrate source-bound proof/evidence identities. It adds no proof claim and
-leaves the S3t language marker unchanged.
+leaves the language marker unchanged.
 
 The [documentation generator](DOCUMENTATION_2026.md) describes the module's
 imports, aliases, specifications, implementation declarations and tests in
@@ -4689,7 +4694,7 @@ source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4826,8 +4831,9 @@ module rows {
 The outer index chooses a row; the inner index chooses its scalar. Each is
 proved in range on its own axis. The rows have one exact type, so a short row,
 a different word width, or another residue modulus is rejected. A matrix
-holds at most 65,536 scalars, including the product of both dimensions. A
-third dimension and arrays of tuples remain outside this bounded slice.
+holds at most 65,536 scalars, including the product of both dimensions.
+Arrays of tuples remain outside this bounded slice, and a third and fourth
+dimension arrive with S3u, below.
 
 Rows are immutable values. Updating one row can share every other row, and
 slices and joins preserve the row type. Equality visits every row and every
@@ -4880,6 +4886,67 @@ not enforce the predicates, and these tests are not P3 checked refinement proofs
 The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
 later proof, compiler, corpus and release obligations explicit.
 
+### Four dimensions, one index each
+
+Lattice cryptography has more than two dimensions. FIPS 203 writes
+ML-KEM's public matrix as a k × k array of polynomials, each 256
+coefficients modulo q = 3329. S3u names each dimension with one more
+`type` declaration, up to four, and lets an update name one index per
+dimension it reaches:
+
+```orange
+edition 2026;
+module lattice {
+  type Zq = Mod[3329];
+  type Poly = Zq^4;
+  type Vector = Poly^2;
+  type Matrix = Vector^2;
+  spec transpose(a: Matrix) -> Matrix {
+    for i in 0..2 with t: Matrix = a {
+      for j in 0..2 with u: Matrix = t { u with [i][j] = a[j][i] }
+    }
+  }
+  spec sample() -> Matrix {
+    [[[1, 2, 3, 4], [5, 6, 7, 8]], [[9, 10, 11, 12], [13, 14, 15, 3328]]]
+  }
+  test "the transpose exchanges A[0][1] and A[1][0]" {
+    let t: Matrix = transpose(sample());
+    (t[0][1] == [9, 10, 11, 12]) && (transpose(t) == sample())
+  }
+  test "one coefficient, three indices deep" {
+    let b: Matrix = sample() with [1][1][3] = sample()[1][1][3] + 1;
+    b[1][1] == [13, 14, 15, 0]
+  }
+}
+```
+
+Polynomials here have four coefficients so the example fits on a page;
+the conformance corpus uses all 256. `u with [i][j] = a[j][i]` replaces
+one polynomial of the matrix, and `with [1][1][3]` one coefficient of one
+polynomial. A path means the nested updates it abbreviates,
+`m with [i] = (m[i] with [j] = v)`, and every index is proved in range on
+its own axis before the program runs. Its cost is one step for each array
+of up to 64 elements it copies, so it is cheaper than the nested form,
+which also selects each row. Every axis is positive, and the product of all
+of them is at most 65,536 scalars, so a 16 × 16 × 16 × 16 array fits.
+
+Repeated powers are still not types. `Zq^256^2^2` reads in mathematics as
+a tower of exponents, and a declaration names the object a standard names:
+a polynomial, a vector, a matrix. The display spells the type from the
+innermost dimension out, as `((Mod[3329]^256)^2)^2`, for readers, not as
+source.
+
+The S3u corpus writes AES-128's state as FIPS 197 draws it, a 4 × 4 array
+`s[r][c]`, and reproduces Appendix A.1's key expansion and the cipher
+examples of Appendices B and C.1; SHA3-256 with its lanes `A[x][y]` as
+FIPS 202 indexes them; and ML-KEM-512's NTT over a 2 × 2 matrix of
+polynomials, checked against Appendix A's zetas, against reduction modulo
+each of its 128 quadratic factors, and against multiplication in
+Z_q[X]/(X^256 + 1). The [array dimensions specification](DIMENSIONS_2026.md)
+and [OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md)
+record S3u in owner review. The corpus tests representation and arithmetic;
+it makes no complete ML-KEM claim.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
@@ -4889,7 +4956,7 @@ that take modules as parameters, attributes, visibility, type parameters of
 about for all their values at once, lists of types named once for several
 functions, sizes fitted outside the finite argument and expected-result
 types, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
+shadowing, type inference, arrays of rank five or more, tuples of tuples, arrays of
 tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
 arrays of more than 65,536 elements, step budgets written in a source,
@@ -4924,10 +4991,11 @@ through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
-through OEP-0023, and S3t's, which builds on S3s, through OEP-0024.
+through OEP-0023, and S3t's, which builds on S3s, through OEP-0024, and
+S3u's, which builds on S3t, through OEP-0025.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All nineteen migrations so far are small: every source
+documented migration. All twenty migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4953,6 +5021,8 @@ below the width. Every source S3r accepted retains its values and costs
 under S3s; rank-two type aliases and chained indices are newly admitted.
 S3t retains S3s values and costs and admits own finite size names in modulus
 expressions, while rejecting invalid concrete instances before evaluation.
+S3u retains S3t values and costs; a third and fourth dimension and update
+paths, both rejected before, are newly admitted.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6305,7 +6375,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3t in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -7037,6 +7107,7 @@ part are listed here so a reader can move from explanation to authority.
   [amount](AMOUNTS_2026.md) specifications under OEP-0005 through OEP-0021,
   [nested arrays](NESTED_ARRAYS_2026.md) under OEP-0023 and
   [static moduli](STATIC_MODULI_2026.md) under OEP-0024,
+  [array dimensions](DIMENSIONS_2026.md) under OEP-0025,
   the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
@@ -7173,6 +7244,8 @@ its typed value boundary, numeric instance selection and reference-only outcomes
 Version 0.26 adds partial P4 mathematical product preparation alongside the
 existing P2 representation definitions, with exact accumulators and three
 normalization passes; it adds no P3 proof or P4 completion claim.
+Version 0.27 adds the [array dimensions specification](DIMENSIONS_2026.md) and
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7358,6 +7431,14 @@ witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
 execution supplies no proof, solver selection, D-009 candidate credit, atomic
 claim authority or release acceptance.
+
+Manuscript version 0.27 revises the preface, Chapter 8, the current slice
+marker, the status ledger and Appendix D for the S3u dimension slice, and adds
+the Chapter 8 section "Four dimensions, one index each". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-10-04, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. That check is not independent review, and the same authorship, review,
+evidence, and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

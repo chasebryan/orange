@@ -677,8 +677,8 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                     "evaluation tuple storage could not be reserved",
                 ));
             }
-            // A tuple holds scalars and arrays of rank at most two, so
-            // recursion descends through at most three aggregate levels.
+            // A tuple holds scalars and arrays of at most four dimensions,
+            // so recursion descends through at most five aggregate levels.
             for element in tuple.elements() {
                 if matches!(element, CoreValue::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
@@ -1307,7 +1307,7 @@ impl<'core> Machine<'core> {
     /// every other part what its own comparison costs.
     ///
     /// Recursion is bounded by the depth of types: a tuple holds arrays and
-    /// scalars, and an array holds scalars or scalar rows.
+    /// scalars, and an array holds scalars or rows, at most four dimensions deep.
     fn equal_values(&mut self, ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
         match (ty, left, right) {
             (CoreType::Array(array), Value::Array(left), Value::Array(right)) => {
@@ -1849,6 +1849,104 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)
     }
 
+    /// Evaluates an update of one element of a row, `x with [i][j] = v`:
+    /// the array of type `ty`, then `indices` positions from the outermost
+    /// dimension in, then the new element, lie above `floor`. Each row on
+    /// the way is copied with its one changed element, at one step for
+    /// each 64 elements copied, or part of 64; the other rows are shared.
+    #[inline(never)]
+    fn update_path(&mut self, ty: &CoreType, indices: u32, floor: usize) -> Result<(), Stop> {
+        const LEVELS: usize = 4;
+        const _: () = assert!(crate::core::MAX_ARRAY_DIMENSIONS == 4);
+        let outer = ty.as_array().ok_or(Stop::InconsistentCore)?;
+        let count = usize::try_from(indices).map_err(|_| Stop::InconsistentCore)?;
+        if !(2..=LEVELS).contains(&count) {
+            return Err(Stop::InconsistentCore);
+        }
+        // The array type at each level, from the outermost in.
+        let mut levels = [outer; LEVELS];
+        let mut cost = 0_usize;
+        let mut current = outer;
+        for level in 0..count {
+            *levels.get_mut(level).ok_or(Stop::InconsistentCore)? = current;
+            let length = usize::try_from(current.length()).map_err(|_| Stop::InconsistentCore)?;
+            cost = cost.saturating_add(bulk_cost(length));
+            if level.saturating_add(1) < count {
+                current = current.element().as_array().ok_or(Stop::InconsistentCore)?;
+            }
+        }
+        self.charge(cost)?;
+        if self
+            .stack
+            .len()
+            .checked_sub(count.saturating_add(2))
+            .is_none_or(|below| below < floor)
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        let value = self.pop()?;
+        if !has_type(&value, &current.element()) {
+            return Err(Stop::InconsistentCore);
+        }
+        let mut positions = [0_usize; LEVELS];
+        for level in (0..count).rev() {
+            let length = levels
+                .get(level)
+                .map(|array| array.length())
+                .ok_or(Stop::InconsistentCore)?;
+            let length = usize::try_from(length).map_err(|_| Stop::InconsistentCore)?;
+            *positions.get_mut(level).ok_or(Stop::InconsistentCore)? = self.pop_position(length)?;
+        }
+        let Value::Array(base) = self.pop()? else {
+            return Err(Stop::InconsistentCore);
+        };
+        if base.ty != outer {
+            return Err(Stop::InconsistentCore);
+        }
+        // The row at each level on the way to the replaced element.
+        let mut rows: [Option<Rc<ArrayValue>>; LEVELS] = [const { None }; LEVELS];
+        let mut row = base;
+        for level in 0..count {
+            let position = *positions.get(level).ok_or(Stop::InconsistentCore)?;
+            let next = if level.saturating_add(1) < count {
+                match row.elements.get(position) {
+                    Some(Value::Array(next)) => Some(Rc::clone(next)),
+                    _ => return Err(Stop::InconsistentCore),
+                }
+            } else {
+                None
+            };
+            *rows.get_mut(level).ok_or(Stop::InconsistentCore)? = Some(row);
+            if let Some(next) = next {
+                row = next;
+            } else {
+                break;
+            }
+        }
+        let mut replacement = value;
+        for level in (0..count).rev() {
+            let row = rows
+                .get_mut(level)
+                .and_then(Option::take)
+                .ok_or(Stop::InconsistentCore)?;
+            let position = *positions.get(level).ok_or(Stop::InconsistentCore)?;
+            let mut elements = Vec::new();
+            if !(self.reservations.array)(&mut elements, row.elements.len()) {
+                return Err(Stop::Allocation(
+                    "evaluation array storage could not be reserved",
+                ));
+            }
+            elements.extend(row.elements.iter().cloned());
+            let slot = elements.get_mut(position).ok_or(Stop::InconsistentCore)?;
+            *slot = replacement;
+            replacement = Value::Array(Rc::new(ArrayValue {
+                ty: row.ty,
+                elements,
+            }));
+        }
+        self.push(replacement)
+    }
+
     /// Pops the `Int` end and then the `Int` start of a slice of `length`
     /// elements, which analysis proved to lie `length` apart from 0 up.
     /// The end is checked against the array when the run is taken.
@@ -2326,6 +2424,7 @@ impl<'core> Machine<'core> {
                 *slot = value;
                 self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
             }
+            CoreNodeKind::UpdatePath { indices } => self.update_path(&node.ty, *indices, floor),
             CoreNodeKind::Fill => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
@@ -2945,8 +3044,8 @@ fn result_value(
                     "evaluated tuple storage could not be reserved",
                 ));
             }
-            // A tuple holds scalars and arrays of rank at most two, so
-            // recursion descends through at most three aggregate levels.
+            // A tuple holds scalars and arrays of at most four dimensions,
+            // so recursion descends through at most five aggregate levels.
             for (element, element_type) in tuple.elements.iter().zip(tuple_type.elements()) {
                 if matches!(element, Value::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
@@ -6470,6 +6569,131 @@ mod tests {
             let first = evaluate(&core);
             assert_eq!(first, evaluate(&core), "case {index}");
             assert_eq!(first.values(), None, "case {index}");
+            assert_eq!(
+                first.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    fn byte_cube(planes: &[&[&[u8]]]) -> CoreValue {
+        let elements = planes
+            .iter()
+            .map(|plane| byte_matrix(plane))
+            .collect::<Vec<_>>();
+        let ty = ArrayType::new(&elements[0].ty(), u32::try_from(planes.len()).unwrap()).unwrap();
+        CoreValue::Array(CoreArray::new(ty, elements).unwrap())
+    }
+
+    const PATHS: &str = concat!(
+        "edition 2026; module paths {\n",
+        "  type Row = Word[8]^2; type Plane = Row^2; type Cube = Plane^2; type Hyper = Cube^1;\n",
+        "  spec put(c: Cube) -> Cube { c with [1][0][1] = 9 }\n",
+        "  spec row(c: Cube) -> Cube { c with [0][1] = [7, 7] }\n",
+        "  spec deep(h: Hyper) -> Hyper { h with [0][1][1][0] = 5 }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn update_paths_rebuild_each_level_and_charge_its_copies() {
+        let core = core(PATHS);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let original = byte_cube(&[&[&[1, 2], &[3, 4]], &[&[5, 6], &[7, 8]]]);
+        let hyper = |cube: CoreValue| {
+            let ty = ArrayType::new(&cube.ty(), 1).unwrap();
+            CoreValue::Array(CoreArray::new(ty, vec![cube]).unwrap())
+        };
+        // The base, each index literal, and the value cost what they cost
+        // alone; the path adds one step for each array of at most 64
+        // elements it copies.
+        for (name, argument, expected, steps) in [
+            (
+                "put",
+                original.clone(),
+                byte_cube(&[&[&[1, 2], &[3, 4]], &[&[5, 9], &[7, 8]]]),
+                1 + 3 + 1 + 3,
+            ),
+            (
+                "row",
+                original.clone(),
+                byte_cube(&[&[&[1, 2], &[7, 7]], &[&[5, 6], &[7, 8]]]),
+                1 + 2 + 4 + 2,
+            ),
+            (
+                "deep",
+                hyper(original.clone()),
+                hyper(byte_cube(&[&[&[1, 2], &[3, 4]], &[&[5, 6], &[5, 8]]])),
+                1 + 4 + 1 + 4,
+            ),
+        ] {
+            let function = evaluator.function(name).unwrap();
+            let result = evaluator
+                .call(function, std::slice::from_ref(&argument), 100)
+                .unwrap();
+            assert_eq!(result.diagnostics(), [], "{name}");
+            assert_eq!(result.value(), Some(&expected), "{name}");
+            assert_eq!(result.steps(), steps, "{name}");
+            // The exact budget suffices, and one step fewer stops.
+            let exact = evaluator
+                .call(function, std::slice::from_ref(&argument), steps)
+                .unwrap();
+            assert_eq!(exact.value(), Some(&expected), "{name}");
+            let short = evaluator
+                .call(function, std::slice::from_ref(&argument), steps - 1)
+                .unwrap();
+            assert_eq!(short.value(), None, "{name}");
+        }
+        // The argument keeps its value.
+        assert_eq!(
+            original,
+            byte_cube(&[&[&[1, 2], &[3, 4]], &[&[5, 6], &[7, 8]]])
+        );
+    }
+
+    #[test]
+    fn inconsistent_update_paths_fail_without_partial_values() {
+        let base = core(PATHS);
+        let original = byte_cube(&[&[&[1, 2], &[3, 4]], &[&[5, 6], &[7, 8]]]);
+        let mutations: [fn(&mut CoreFunction); 5] = [
+            |function| {
+                function.body.nodes.last_mut().unwrap().kind =
+                    CoreNodeKind::UpdatePath { indices: 1 };
+            },
+            |function| {
+                function.body.nodes.last_mut().unwrap().kind =
+                    CoreNodeKind::UpdatePath { indices: 5 };
+            },
+            |function| {
+                function.body.nodes.last_mut().unwrap().kind =
+                    CoreNodeKind::UpdatePath { indices: 2 };
+            },
+            |function| {
+                function.body.nodes.last_mut().unwrap().kind =
+                    CoreNodeKind::UpdatePath { indices: 4 };
+            },
+            |function| {
+                let row = CoreType::Array(ArrayType::new(&CoreType::Word8, 2).unwrap());
+                let plane = CoreType::Array(ArrayType::new(&row, 2).unwrap());
+                let node = function.body.nodes.last_mut().unwrap();
+                node.ty = CoreType::Array(ArrayType::new(&plane, 1).unwrap());
+                function.result_type = node.ty.clone();
+            },
+        ];
+        for (index, mutate) in mutations.into_iter().enumerate() {
+            let mut core = base.clone();
+            let function = core
+                .functions
+                .iter_mut()
+                .find(|function| function.name == "put")
+                .unwrap();
+            mutate(function);
+            let mut evaluator = Evaluator::new(&core).unwrap();
+            let put = evaluator.function("put").unwrap();
+            let first = evaluator
+                .call(put, std::slice::from_ref(&original), 100)
+                .unwrap();
+            assert_eq!(first.value(), None, "case {index}");
             assert_eq!(
                 first.diagnostics()[0].message(),
                 "reference evaluation received inconsistent Core",

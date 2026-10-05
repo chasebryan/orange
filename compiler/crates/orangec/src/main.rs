@@ -36,7 +36,7 @@ const MAX_SELECTED_SPECS: usize = 64;
 const MAX_REPLAY_INSTANCE_VALUES: usize = orange_compiler::parser::MAX_SIZES_PER_FUNCTION;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 /// The latest implemented language slice, not an acceptance or release status.
-const IMPLEMENTED_SLICE: &str = "S3t";
+const IMPLEMENTED_SLICE: &str = "S3u";
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
     "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",

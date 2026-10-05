@@ -1,0 +1,12 @@
+// S3u conformance: rows form at most four dimensions, and every shape,
+// whatever its rank, holds at most 65536 scalars. Each limit is checked
+// where the type is formed, including each instance of a size parameter.
+edition 2026;
+module shapes {
+  type Row = Word[8]^16; type Plane = Row^16; type Cube = Plane^16; type Hyper = Cube^16;
+  type Five = Hyper^1;
+  type Wide = Plane^257;
+  type Deep = Cube^17;
+  spec stack[n in 16..18](c: Cube) -> Cube^n { [c; n] }
+  spec more[n in 1..3](h: Hyper) -> Hyper^n { [h; n] }
+}

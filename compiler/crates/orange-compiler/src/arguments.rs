@@ -311,16 +311,18 @@ fn failed(source: &SourceFile, failure: Failure) -> ArgumentDecodeResult {
     }
 }
 
+/// The argument vector, a tuple, and at most four array dimensions.
+const MAX_ARGUMENT_FRAMES: usize = 6;
+
 fn scalar_array_nodes(ty: &CoreType) -> Option<usize> {
     match ty {
+        // An array is one node and `length` copies of its element's nodes,
+        // so the recursion is at most four arrays deep.
         CoreType::Array(array) => {
-            let leaves = usize::try_from(array.scalar_length()).ok()?;
-            let rows = if matches!(array.element(), CoreType::Array(_)) {
-                usize::try_from(array.length()).ok()?
-            } else {
-                0
-            };
-            leaves.checked_add(rows)?.checked_add(1)
+            let length = usize::try_from(array.length()).ok()?;
+            scalar_array_nodes(&array.element())?
+                .checked_mul(length)?
+                .checked_add(1)
         }
         CoreType::Tuple(_) => None,
         _ => Some(1),
@@ -365,7 +367,7 @@ fn decode(decoder: &mut Decoder<'_>, expected: &[CoreType]) -> Result<Vec<CoreVa
     }
     decoder.take(b'[')?;
     let mut frames = Vec::new();
-    frames.try_reserve_exact(4).map_err(|_| {
+    frames.try_reserve_exact(MAX_ARGUMENT_FRAMES).map_err(|_| {
         decoder.failure(
             FailureKind::Resource,
             "argument frame storage could not be reserved",
@@ -487,7 +489,7 @@ fn decode(decoder: &mut Decoder<'_>, expected: &[CoreType]) -> Result<Vec<CoreVa
                     "argument element count is unrepresentable",
                 )
             })?;
-            if frames.len() >= 4 {
+            if frames.len() >= MAX_ARGUMENT_FRAMES {
                 return Err(decoder.failure(
                     FailureKind::Resource,
                     "argument aggregate depth exceeds checked Core types",
@@ -816,6 +818,54 @@ mod tests {
                 .iter()
                 .all(|value| value.ty() == CoreType::Mod(modulus(7)))
         );
+    }
+
+    #[test]
+    fn three_and_four_dimensional_arguments_keep_every_axis_and_node_count() {
+        let row = ArrayType::new(&CoreType::Word8, 2).unwrap();
+        let plane = ArrayType::new(&CoreType::Array(row), 2).unwrap();
+        let cube = ArrayType::new(&CoreType::Array(plane), 2).unwrap();
+        let hyper = ArrayType::new(&CoreType::Array(cube), 2).unwrap();
+        assert_eq!(scalar_array_nodes(&CoreType::Array(cube)), Some(15));
+        assert_eq!(scalar_array_nodes(&CoreType::Array(hyper)), Some(31));
+        let tuple = TupleType::new(&[CoreType::Array(hyper), CoreType::Bool]).unwrap();
+        let cube_input = "[[[0x01, 0x02], [0x03, 0x04]], [[0x05, 0x06], [0x07, 0x08]]]";
+        let input = format!("[{cube_input}, ([{cube_input}, {cube_input}], true)]");
+        let types = [CoreType::Array(cube), CoreType::Tuple(tuple.clone())];
+        let arguments = decoded(&input, &types);
+        assert_eq!(vector(arguments.values()), input);
+        assert_eq!(arguments.values()[0].ty(), CoreType::Array(cube));
+        assert_eq!(arguments.values()[1].ty(), CoreType::Tuple(tuple));
+        let CoreValue::Array(planes) = &arguments.values()[0] else {
+            panic!()
+        };
+        assert!(
+            planes
+                .elements()
+                .iter()
+                .all(|value| value.ty() == CoreType::Array(plane))
+        );
+        let short = cube_input.replacen("[0x07, 0x08]", "[0x07]", 1);
+        error(
+            &format!("[{short}]"),
+            &[CoreType::Array(cube)],
+            DiagnosticCode::ArgumentValueMismatch,
+        );
+        with_source(format!("[{cube_input}]"), |source| {
+            for (nodes, accepted) in [(15, true), (14, false)] {
+                let result = decode_with_limits(
+                    source,
+                    &[CoreType::Array(cube)],
+                    Limits {
+                        nodes,
+                        limbs: 1,
+                        work: 10_000,
+                    },
+                    Reservations::DEFAULT,
+                );
+                assert_eq!(!result.has_errors(), accepted, "{nodes}");
+            }
+        });
     }
 
     #[test]

@@ -7,8 +7,8 @@ use std::fmt;
 use crate::core::{
     ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
     CoreFunctionId, CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue,
-    ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS,
-    Magnitude, Modulus, Residue, TupleType,
+    ExactInteger, MAX_ARRAY_DIMENSIONS, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND,
+    MAX_MODULUS_BITS, Magnitude, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
@@ -342,6 +342,10 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                 belongs(update.keyword_span)
                     && expression_belongs(&update.base, belongs)
                     && expression_belongs(&update.index, belongs)
+                    && update
+                        .path
+                        .iter()
+                        .all(|index| expression_belongs(index, belongs))
                     && expression_belongs(&update.value, belongs)
             }
             ExpressionKind::Loop(r#loop) => {
@@ -2598,19 +2602,71 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return false;
         }
-        let index = self.check_static_index(&update.index, array, context, scope, output);
+        let mut indices = self.check_static_index(&update.index, array, context, scope, output);
         if self.halted {
             return false;
         }
-        let value = self.check_expression(&update.value, &array.element(), context, scope, output);
-        base && index
-            && value
-            && self.push_node(
-                output,
-                expression.span,
-                expected.clone(),
-                CoreNodeKind::Update,
+        // Each further index selects within the element the one before it
+        // reached: `x with [i][j] = v` replaces element j of row i.
+        let mut element = array.element();
+        for index in &update.path {
+            let Some(row) = element.as_array() else {
+                // A base of the wrong type is reported already, and its
+                // path was read against the type required instead.
+                if base {
+                    self.report_path_past_scalars(update, index, &element);
+                }
+                return false;
+            };
+            indices &= self.check_static_index(index, row, context, scope, output);
+            if self.halted {
+                return false;
+            }
+            element = row.element();
+        }
+        let value = self.check_expression(&update.value, &element, context, scope, output);
+        let kind = if update.path.is_empty() {
+            CoreNodeKind::Update
+        } else {
+            let Some(count) = u32::try_from(update.path.len())
+                .ok()
+                .and_then(|count| count.checked_add(1))
+            else {
+                self.resource_limit(expression.span, "update path exceeds the u32 limit");
+                return false;
+            };
+            CoreNodeKind::UpdatePath { indices: count }
+        };
+        base && indices && value && self.push_node(output, expression.span, expected.clone(), kind)
+    }
+
+    /// Reports an index of an update path that selects within `element`,
+    /// which is not an array.
+    #[cold]
+    #[inline(never)]
+    fn report_path_past_scalars(
+        &mut self,
+        update: &UpdateExpression,
+        index: &Expression,
+        element: &CoreType,
+    ) {
+        if !self.begin_report(index.span) {
+            return;
+        }
+        let indices = 1_usize.saturating_add(update.path.len());
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::NotAnArray,
+                format!("only an array can be indexed, but this selects within `{element}`"),
+                index.span,
             )
+            .with_label(format!("`{element}` has no elements"))
+            .with_secondary_span(update.base.span, "this array has fewer dimensions")
+            .with_note(format!(
+                "an update names one index per dimension it reaches; these {indices} indices \
+                 reach past the array's scalars"
+            )),
+        );
     }
 
     /// Checks `[element; n]` against `expected`, which must be an array type
