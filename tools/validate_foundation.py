@@ -1263,13 +1263,30 @@ _DBM = {
         ): (2, "github-actions", "/", "weekly", 7, 5),
     },
 }
+
+
+def _markdownlint_md033_clause(elements: Sequence[str]) -> str:
+    """Name the enforced MD033 allowlist so the prose cannot stay narrower than the config."""
+    quoted = [f"`{element}`" for element in elements]
+    if len(quoted) != len(set(quoted)) or any(not element for element in elements):
+        return "permits no reviewed MD033 HTML elements."
+    if len(quoted) == 1:
+        return f"permits only the {quoted[0]} HTML element under MD033."
+    if len(quoted) == 2:
+        return f"permits only the {quoted[0]} and {quoted[1]} HTML elements under MD033."
+    listed = ", ".join(quoted[:-1]) + f", and {quoted[-1]}"
+    return f"permits only the {listed} HTML elements under MD033."
+
+
+_ML_ALLOWED_ELEMENTS = tuple(json.loads(_MLC)["config"]["MD033"]["allowed_elements"])
+_ML_MD033_CLAUSE = _markdownlint_md033_clause(_ML_ALLOWED_ELEMENTS)
 _MLM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
             "Markdown lint ignores only `compiler/target/**`; disables line-length rule MD013;\n"
             "applies duplicate-heading rule MD024 only to siblings; disables front-matter title\n"
-            "matching for MD025; and permits only the `img` HTML element under MD033."
-        ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", "img"),
+            "matching for MD025; and " + _ML_MD033_CLAUSE
+        ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", *_ML_ALLOWED_ELEMENTS),
     },
 }
 _PM = {

@@ -87,7 +87,7 @@ update pull requests.
 
 Markdown lint ignores only `compiler/target/**`; disables line-length rule MD013;
 applies duplicate-heading rule MD024 only to siblings; disables front-matter title
-matching for MD025; and permits only the `img` HTML element under MD033.
+matching for MD025; and permits only the `img`, `picture`, and `source` HTML elements under MD033.
 
 `ci.yml` and `dependency-review.yml` supply the two required merge checks bound
 to GitHub Actions by ruleset `18810248`; effective rules still require separate
