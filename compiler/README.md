@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3u proposed under OEP-0005 through OEP-0021 and OEP-0023 through OEP-0025, in owner review
+S3t proposed under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -209,7 +209,7 @@ that differs, and 2 for invalid command usage. Validation finishes before any
 formatted bytes are written; an output failure can leave a prefix already
 accepted by the host and returns status 1.
 
-This permanent W3 frontend tool does not change the S3u language marker,
+This permanent W3 frontend tool does not change the S3t language marker,
 accept a semantic OEP, complete S8, or create a release.
 
 ## Generating source documentation
@@ -242,7 +242,7 @@ prefix. Usage errors return status 2, and successful generation returns 0.
 
 This is parsed-source documentation. It does not supply resolved interfaces,
 ABI/claim matrices, source-bound evidence identity, semantic acceptance, S8
-closure or release authority. The S3u language marker is unchanged.
+closure or release authority. The S3t language marker is unchanged.
 
 ## Replaying a local witness
 
@@ -274,7 +274,7 @@ host failure returns 1 even if the stream accepted a prefix.
 
 This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
-proof/evidence identity or release authority. The S3u language marker remains.
+proof/evidence identity or release authority. The S3t language marker remains.
 
 ## Sealing files
 
@@ -375,8 +375,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3u are implemented and await owner review under OEP-0005 through OEP-0021 and
-OEP-0023 through OEP-0025, both
+S3o are implemented and await owner review under OEP-0005 through OEP-0018, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
