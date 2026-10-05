@@ -6,7 +6,7 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-04
+Snapshot: 2026-10-05
 
 Manuscript version: 0.27
 
@@ -4887,15 +4887,20 @@ in owner review.
 The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
 implement OEP-0022 P2: reconstruction, abstraction and tight/loose/canonical
 predicates, followed by addition, carrying and canonicalization. Partial P4
-mathematical preparation adds multiplication. Five exact `Int` accumulators hold the
+mathematical preparation adds multiplication, biased subtraction, dedicated
+squaring and multiplication by a24. Five exact `Int` accumulators hold the
 folded products, and three normalization passes expose each digit array and
-top carry before canonicalization. Boundary and generated binary-reference
-tests check coefficients and every carry stage; the third pass can be needed
-to keep every output digit below 2^51. These definitions supply no native wide
-multiplication primitive and do not complete P4. Transparent type aliases do
-not enforce the predicates, and these tests are not P3 checked refinement proofs.
-The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
-later proof, compiler, corpus and release obligations explicit.
+top carry before canonicalization. Biased subtraction adds the limb form of
+2p and carries limbs below 4B on its own schedule; dedicated squaring doubles
+off-diagonal pairs; a24 coefficients are kept in `Int` because they exceed
+`Word[64]`. Boundary and generated binary-reference tests check coefficients,
+differences, squares, a24 products and every carry stage; the third product
+pass can be needed to keep every output digit below 2^51. These definitions
+supply no native wide multiplication primitive and do not complete P4.
+Transparent type aliases do not enforce the predicates, and these tests are
+not P3 checked refinement proofs. The
+[complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those later
+proof, compiler, corpus and release obligations explicit.
 
 ### Four dimensions, one index each
 
@@ -7270,7 +7275,9 @@ Version 0.26 adds partial P4 mathematical product preparation alongside the
 existing P2 representation definitions, with exact accumulators and three
 normalization passes; it adds no P3 proof or P4 completion claim.
 Version 0.27 adds the [array dimensions specification](DIMENSIONS_2026.md) and
-[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md), and
+extends that partial P4 preparation with biased subtraction, dedicated squaring
+and a24 multiplication schedules; it adds no P3 proof or P4 completion claim.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7462,8 +7469,10 @@ marker, the status ledger and Appendix D for the S3u dimension slice, and adds
 the Chapter 8 section "Four dimensions, one index each". It was drafted with
 Claude Code under Chase Bryan's direction on 2026-10-04, and every Orange
 example it adds was run against the compiler at the revision that introduced
-it. That check is not independent review, and the same authorship, review,
-evidence, and provenance boundaries apply.
+it. The same version also records biased subtraction, dedicated squaring and
+a24 multiplication in the partial P4 preparation on 2026-10-05. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.
