@@ -373,6 +373,7 @@ compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
+compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
 compiler/crates/orangec/tests/s3h_conformance.rs
@@ -612,6 +613,9 @@ docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/NOVICE_OPENING.md
+docs/book/NOVICE_PROGRAMMING.md
+docs/book/README.md
 docs/governance/adrs/ADR-0000-template.md
 docs/governance/adrs/README.md
 docs/governance/oeps/OEP-0000-template.md
@@ -681,6 +685,8 @@ tools/d004_run.py
 tools/d004_v08_adapter.py
 tools/d004_v08_run.py
 tools/fs_sandbox.c
+tools/test_book_foundations.py
+tools/tests/test_book_foundations.py
 tools/tests/test_d004_archive.py
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d004_reviewed_protocol.py
