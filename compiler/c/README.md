@@ -1,7 +1,7 @@
 # Standalone C compiler
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
-binding, conversion, array, bounded-loop, conditional, and lookup fragment. It does
+binding, conversion, array, bounded-loop, conditional, lookup, and module fragment. It does
 not amend D-008, does not select a D-010 output path, and does not replace
 the Rust frontend.
 
@@ -14,8 +14,13 @@ programs this slice admits.
 
 ## What it implements
 
-The admitted source is edition 2026 with one module of `spec` and `impl`
-functions. A typed `spec` may have parameters, `let` bindings, and one result
+The admitted source is edition 2026. A program is a root module plus every
+module it reaches through `use`. `orangec check` and `orangec eval` read
+module `m` of `use m;` from `m.or` beside the root (`lex` reads only the file
+it is given). A module names each used module once, before its functions, and
+calls that module's functions as `m::f(...)`. The module graph is acyclic and
+is checked before any module. Each module is then checked on its own, after
+the modules it uses. A typed `spec` may have parameters, `let` bindings, and one result
 expression. The scalar types are `Int`, `Bool`, `Word[8]`, `Word[16]`,
 `Word[32]`, and `Word[64]`. A fixed-length array `T^n` holds n values of one
 of those scalars, with n a decimal integer from 1 through 256. Expressions are
@@ -35,7 +40,9 @@ chosen branch is evaluated. `for`, `in`, `with`,
 `Bool` values where no parameter or binding of that spelling is in scope.
 Empty `spec` and `impl` declarations parse and have no value.
 
-`eval` prints one line for each parameterless typed `spec`, in source order:
+`eval` prints one line for each parameterless typed `spec` of the root, in
+source order. Functions of a used module run only when the root calls them.
+The whole program shares one step budget:
 
 ```text
 module::name: Type = value
@@ -51,7 +58,7 @@ An index follows a name, a call, or an accumulator. Operators and conversions
 apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
-Later slices are outside this frontend. Multiple modules, `Mod`, tuples, byte
+Later slices are outside this frontend. `Mod`, tuples, byte
 strings, size parameters, byte order, type parameters, tests, lengths above
 256, and computed shift amounts are rejected rather than given a new meaning.
 The Rust `orangec` remains the frontend for those slices.
@@ -73,8 +80,9 @@ compiler/c/out/orangec eval path/to/file.or
 
 `make -C compiler/c test` builds an address-sanitized binary, runs the
 exact-integer self-test, and compares `check`, `eval`, and `lex` with the Rust
-`orangec` on the S3a through S3g fixtures, including ChaCha20, SHA-256,
-Poly1305, X25519, ChaCha20-Poly1305, and AES-128. The Rust binary is only a
+`orangec` on the S3a through S3h fixtures, including ChaCha20, SHA-256,
+Poly1305, X25519, ChaCha20-Poly1305, AES-128, and the HMAC/HKDF program rooted
+at `valid-vectors.or`. The Rust binary is only a
 test oracle. Running the C compiler does not require it.
 
 ## Limits
@@ -84,7 +92,9 @@ The frontend fails closed. A source is at most 16 MiB. Lexing keeps at most
 A function has at most 64 parameters, 256 bindings, and a call has at most 256
 arguments. An array literal or fill has at most 256 elements. A loop takes at
 most 65,536 steps. An `Int` magnitude has at most 16,384 significant bits.
-Reference evaluation shares 1,048,576 steps and 256 call frames. An update or
+A program reaches at most 64 modules, and each module has at most 64 `use`
+declarations. Reference evaluation of the whole program shares 1,048,576 steps
+and 256 call frames. An update or
 fill of n elements costs one step per 64 elements. Arrays are released once no
 live value holds them. Printing uses as much text as the value's spelling
 needs, including an array of 256 full-width integers. Exhausting a limit, or
