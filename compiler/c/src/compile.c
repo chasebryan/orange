@@ -1807,17 +1807,26 @@ static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_sc
             return;
         }
     }
-    for (index = 0; index < locals_in_scope; index++) {
-        const Local *local = &c->locals[func->local0 + index];
-        if (local->duplicate) {
-            continue;
+    /* nlocals is uint16_t and at most MAX_BINDINGS, so the visible count
+       fits the slot. Compare equal-width counters so a wide count cannot
+       wrap the loop. */
+    {
+        uint32_t visible = locals_in_scope;
+        if (visible > func->nlocals) {
+            visible = func->nlocals;
         }
-        if (same_span(c, local->name_start, local->name_end, start, end)) {
-            *res = local->type_ok ? NAME_LOCAL : NAME_BAD;
-            *slot = index;
-            *type = local->type;
-            *type_ok = local->type_ok;
-            return;
+        for (uint32_t local_index = 0; local_index < visible; local_index++) {
+            const Local *local = &c->locals[func->local0 + local_index];
+            if (local->duplicate) {
+                continue;
+            }
+            if (same_span(c, local->name_start, local->name_end, start, end)) {
+                *res = local->type_ok ? NAME_LOCAL : NAME_BAD;
+                *slot = (uint16_t)local_index;
+                *type = local->type;
+                *type_ok = local->type_ok;
+                return;
+            }
         }
     }
     for (index = 0; index < func->nlocals; index++) {
