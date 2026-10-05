@@ -949,6 +949,75 @@ $$\mathcal{C} = \langle \Sigma, \Theta, \Delta, \Gamma \rangle$$
    $$\Gamma : \text{VarIdent} \to \tau$$
    Maps local variable bindings and function parameters to their concrete types.
 
+The four names are the manual's. The checker in
+`compiler/crates/orange-compiler/src/semantics.rs` keeps them as separate
+tables. A body is checked only after its function's instances exist.
+
+#### Name Resolution
+
+`BodyContext::resolve` tries a bare name in this order, and stops at the
+first hit. Later tables are not consulted.
+
+| Order | Table | Resolution | Type |
+| :--- | :--- | :--- | :--- |
+| 1 | the instance's size parameters ($\Theta$) | `Size` | `Int` |
+| 2 | the function's parameters | `Parameter` | the parameter's type |
+| 3 | `let` bindings of the body whose `;` has been passed, source order | `Binding` | the binding's type, or one element of a tuple pattern |
+| 4 | bindings of the blocks being checked, innermost block first | `BlockBinding` | the same |
+| 5 | loop indices and accumulators in scope, innermost loop first; the index is tried before the accumulator | `LoopIndex` or `Accumulator` | the index is `Int`; the accumulator has the `with` type |
+| 6 | the spellings `true` and `false`, and only when no earlier table bound them | `BoolLiteral` | `Bool` |
+
+A binding that exists later in the same body, but whose `;` has not been
+passed, is `LaterBinding`. The diagnostic is `ORC0211`, message
+`` `{name}` is used before it is bound ``, with the note that a binding is
+in scope after its own `;`. A name that matches nothing is also `ORC0211`.
+If the name is a finished block's binding, the message is
+`` `{name}` is not in scope here ``. Otherwise it is
+`` `{name}` is not a parameter or binding of `{function}` ``, or, when the
+body has no bindings,
+`` `{name}` is not a parameter of `{function}` ``. A type parameter used
+where a value is required is the same code, with a note that the name is a
+type. A `spec` name used without a call is the same code, with a note to
+write the call.
+
+#### No Shadowing
+
+A parameter that repeats a name is `ORC0218`. A binding that repeats a size
+parameter, a parameter, an earlier binding, or an earlier name of the same
+pattern is `ORC0219`. The note on `ORC0219` is: each parameter and binding
+of a function has its own name; Orange has no shadowing. A type parameter
+names a type, not a value, so a parameter or a binding may use that
+spelling. That exception is the comment on the binding check, not a second
+value binding.
+
+#### Signature Lookup
+
+An unqualified call looks up a `spec` in the calling module. A call
+`NAME::f` looks up `f` in a module this module `use`s. A qualifier that is
+not such a module is `ORC0229`. A name that is not a typed `spec` is
+`ORC0212`. Two `spec` declarations of one name in one module are `ORC0201`.
+`spec` and `impl` are separate declaration namespaces, which is the note on
+`ORC0201`. A typed body on `impl` is `ORC0202` and is not given a signature.
+
+#### Worked Lookup
+
+Take the instance $n = 1$ of
+
+```orange
+spec f[n in 1..3](x: Word[8]^n) -> Int {
+  let y: Int = n;
+  y
+}
+```
+
+$\Theta$ holds $n \mapsto 1$. $\Gamma$ holds $x : \mathrm{Word}[8]^{1}$ before
+the binding, and also $y : \mathrm{Int}$ after `y`'s `;`. The occurrence of
+`n` in `let y` hits row 1 and has type `Int`. The occurrence of `y` in the
+result hits row 3. An occurrence of `y` in the right-hand side of its own
+binding is `LaterBinding` and is `ORC0211`. An occurrence of `n` as a type,
+as in the parameter, is the size parameter of the instance, not a value
+lookup.
+
 ### §33. Subtyping, Coercion Freedom, and Structural Type Equality
 
 1. **Coercion Freedom:**
