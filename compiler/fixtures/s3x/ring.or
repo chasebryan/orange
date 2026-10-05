@@ -1,0 +1,17 @@
+// The list stays in this module. Callers name a concrete type.
+edition 2026;
+module ring {
+  type P = Mod[7];
+
+  type Q = Mod[11];
+
+  types Rings = {P, Q};
+
+  spec twice[K in Rings](x: K) -> K {
+    x + x
+  }
+
+  spec zero[K in Rings]() -> K {
+    0
+  }
+}

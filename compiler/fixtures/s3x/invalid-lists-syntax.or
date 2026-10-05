@@ -1,0 +1,16 @@
+// S3x rejection: a type list is written `types NAME = {TYPE, ...};` before
+// the functions, and `use` stays first.
+edition 2026;
+module syntax {
+  types Fields = {};
+
+  types trailing = {Int,};
+
+  types bare = Int;
+
+  spec after() -> Int {
+    1
+  }
+
+  types late = {Int};
+}

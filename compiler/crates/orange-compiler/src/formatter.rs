@@ -36,6 +36,10 @@ pub struct FormatResult {
     diagnostics: FormatDiagnostics,
 }
 
+// `Syntax` holds a whole parse result. The tree gained a type-list vector in
+// S3x, so this variant exceeds clippy's size budget. Boxing it would allocate
+// on the diagnostic path.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 enum FormatDiagnostics {
     None,
@@ -224,6 +228,16 @@ impl Plan {
         for declaration in &tree.module.types {
             planner.declaration(declaration.span)?;
             planner.push(Work::Type(&declaration.ty))?;
+        }
+        for declaration in &tree.module.type_lists {
+            planner.declaration(declaration.span)?;
+            let start = planner.index(declaration.open_span)?;
+            let end = planner.index(declaration.close_span)?;
+            planner.role(start)?.domain = true;
+            planner.role(end)?.domain = true;
+            for ty in &declaration.types {
+                planner.push(Work::Type(ty))?;
+            }
         }
         for function in &tree.module.functions {
             planner.declaration(function.span)?;

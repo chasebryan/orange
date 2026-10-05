@@ -110,8 +110,13 @@ arguments. Module aliases and type-parameter lists remain concrete. The S3u
 slice, proposed in [`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md) and
 in owner review under OEP-0025, admits arrays of up to four dimensions, each a
 `type` declaration over the one before it, and update paths
-`x with [i][j][k] = v` that mean the nested updates they abbreviate. All
-twenty-one lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+`x with [i][j][k] = v` that mean the nested updates they abbreviate. The S3x
+slice, proposed in [`docs/TYPE_LISTS_2026.md`](../docs/TYPE_LISTS_2026.md) and
+in owner review under OEP-0028, names one finite list of types for several
+functions, as `types Fields = {F, L};` and `spec pow[K in Fields]`. Each
+function is checked once for each listed type, the same way an inline list
+is. These slices lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -155,7 +160,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3x)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
@@ -274,7 +279,7 @@ host failure returns 1 even if the stream accepted a prefix.
 
 This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
-proof/evidence identity or release authority. The S3u language marker remains.
+proof/evidence identity or release authority. The S3x language marker remains.
 
 ## Sealing files
 
@@ -1831,6 +1836,25 @@ differences, replay rank-three and rank-four witnesses, and confirm that
 conversions, arrays of tuples, and repeated `^` types stay refused. They
 establish implementation behavior and do not accept OEP-0025 or prove ML-KEM,
 transformation, leakage, or refinement properties.
+
+## S3x type-list conformance
+
+`fixtures/s3x/` contains an exact five-program corpus for the proposed S3x
+behavior. The accepted programs share one list of two residue types and one
+list of `Word[32]` and `Word[64]` across addition, Ch, and Maj, and call a
+list from another module by the resolved type. The rejected programs cover a
+built-in or repeated list name, a type listed twice, an unknown list, a type
+used as a list, a list used as a type, a type parameter that takes a list's
+name, an empty or trailing list, a list that is not braced, and a list after
+a function.
+
+`crates/orangec/tests/s3x_conformance.rs` parses the 8-rule index in
+`docs/TYPE_LISTS_2026.md` and runs every fixture twice through `check`,
+`eval`, `test`, and, where the source parses, `fmt --check`. Generated
+programs admit 256 moduli and reject 257, reject a product of 512 instances,
+keep an inline type list, reject `use` after a list, and render each list
+from `orangec doc`. They establish implementation behavior and do not accept
+OEP-0028 or prove a field, SHA-2, leakage, or refinement property.
 
 ## Layout
 

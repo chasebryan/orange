@@ -390,6 +390,7 @@ compiler/crates/orangec/tests/s3s_conformance.rs
 compiler/crates/orangec/tests/field25519_limbs.rs
 compiler/crates/orangec/tests/s3t_conformance.rs
 compiler/crates/orangec/tests/s3u_conformance.rs
+compiler/crates/orangec/tests/s3x_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -548,6 +549,11 @@ compiler/fixtures/s3u/valid-aes-state.or
 compiler/fixtures/s3u/valid-keccak-state.or
 compiler/fixtures/s3u/valid-mlkem-matrix.or
 compiler/fixtures/s3u/valid-shapes.or
+compiler/fixtures/s3x/caller.or
+compiler/fixtures/s3x/invalid-lists-syntax.or
+compiler/fixtures/s3x/invalid-lists.or
+compiler/fixtures/s3x/ring.or
+compiler/fixtures/s3x/valid-lists.or
 compiler/fixtures/typed-answer.or
 compiler/schemes/README.md
 compiler/schemes/ascon_aead128.or
@@ -609,6 +615,7 @@ docs/BLOCKS_2026.md
 docs/BYTES_2026.md
 docs/SIZES_2026.md
 docs/ORDER_2026.md
+docs/TYPE_LISTS_2026.md
 docs/TYPE_PARAMETERS_2026.md
 docs/LENGTHS_2026.md
 docs/TESTS_2026.md
@@ -619,6 +626,7 @@ docs/STATIC_MODULI_2026.md
 docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md
 docs/DIMENSIONS_2026.md
 docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md
+docs/governance/oeps/OEP-0028-orange-2026-type-lists.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
@@ -921,7 +929,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9a1d29ee2a9fe43d2a0c1e5b3981342ef7b68f2b29bc76b2f0cbb491caa15d4e"
+_PHD = "d2283f783859af3c702629583f1935f3d1ee532ff32d6ffe3360234d52aed3fc"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"

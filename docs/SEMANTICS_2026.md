@@ -68,7 +68,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > evaluates own finite size names in modulus expressions for each eagerly
 > checked instance, retaining exact concrete residue-domain types, and the S3u
 > slice proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under OEP-0025,
-> which adds arrays of up to four dimensions and update paths.
+> which adds arrays of up to four dimensions and update paths, and the S3x
+> slice proposed in [`TYPE_LISTS_2026.md`](TYPE_LISTS_2026.md) under OEP-0028,
+> which names one finite list of types for several functions.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

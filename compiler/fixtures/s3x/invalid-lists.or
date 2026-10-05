@@ -1,0 +1,42 @@
+// S3x rejection: a type list's name is not a built-in, a type, or another
+// list; it lists each type once; a parameter names the list or writes the
+// types in braces; and a list is not itself a type. A list that failed is
+// not reported again at the function that uses it.
+edition 2026;
+module lists {
+  type P = Mod[7];
+
+  type G = Mod[7];
+
+  types Int = {Word[8]};
+
+  types P = {Word[8]};
+
+  types Rings = {P, G};
+
+  types Fields = {Int, Bool};
+
+  types Again = {Int};
+
+  types Again = {Bool};
+
+  spec gone[K in Gone](x: Int) -> Int {
+    x
+  }
+
+  spec alias[K in P](x: P) -> P {
+    x
+  }
+
+  spec as_type(x: Fields) -> Int {
+    1
+  }
+
+  spec named[Fields in {Int}](x: Int) -> Int {
+    x
+  }
+
+  spec uses_rings[K in Rings](x: K) -> K {
+    x
+  }
+}

@@ -494,6 +494,9 @@ struct Analyzer<'source, 'ast> {
     reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
     reserve_call_edge_slot: fn(&mut Vec<CallEdge>) -> bool,
     types: TypeTable<'ast>,
+    /// Named type lists, in source order, including those whose entries
+    /// failed. A duplicate name is not entered.
+    lists: Vec<ResolvedTypeList<'ast>>,
 }
 
 struct PendingFunction {
@@ -1071,6 +1074,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             reserve_core_node_slot,
             reserve_call_edge_slot,
             types: TypeTable::new(),
+            lists: Vec::new(),
         }
     }
 
@@ -1378,7 +1382,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .sizes
                         .iter()
                         .map(|size| {
-                            size.types
+                            parameter_type_syntax(&self.ast.module, size)
                                 .iter()
                                 .map(|ty| silent_type(self.source, &self.types, ty))
                                 .collect()
@@ -1388,11 +1392,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     // twice, is reported at the declaration; like malformed
                     // sizes, it leaves the function no instances, so that
                     // its callers are not reported again.
-                    let ranges = SizeRanges::of(self.source, function)
+                    let ranges = SizeRanges::of(self.source, &self.ast.module, function)
                         .filter(|_| listed.iter().all(|types| distinct_types(types)));
                     let count = ranges.map_or(0, |ranges| ranges.instances());
                     next_id = next_id.saturating_add(count);
-                    let spellings = type_spellings(self.source, &function.sizes);
+                    let spellings = type_spellings(self.source, &self.ast.module, &function.sizes);
                     let mut instances = Vec::new();
                     if instances.try_reserve_exact(count).is_err() {
                         self.resource_limit(function.span, "semantic signature allocation failed");
@@ -1578,9 +1582,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         sizes.extend_from_slice(context.instance.values());
-        let instance = context
-            .instance
-            .suffix(&type_spellings(self.source, &function.sizes));
+        let instance = context.instance.suffix(&type_spellings(
+            self.source,
+            &self.ast.module,
+            &function.sizes,
+        ));
         Some(PendingFunction {
             span: function.span,
             name,
