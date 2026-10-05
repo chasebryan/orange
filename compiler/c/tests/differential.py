@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the standalone C compiler with the Rust frontend on the S3a–S3d fixtures."""
+"""Compare the standalone C compiler with the Rust frontend on the S3a–S3e fixtures."""
 
 import re
 import subprocess
@@ -30,6 +30,9 @@ VALID = [
     "s3d/valid-arrays.or",
     "s3d/valid-chacha20-block.or",
     "s3d/valid-sha256-rounds.or",
+    "s3e/valid-chacha20.or",
+    "s3e/valid-loops.or",
+    "s3e/valid-sha256.or",
 ]
 INVALID = [
     "s3b/invalid-call-cycles.or",
@@ -51,6 +54,10 @@ INVALID = [
     "s3d/invalid-array-syntax.or",
     "s3d/invalid-array-types.or",
     "s3d/invalid-indices.or",
+    "s3e/invalid-indices.or",
+    "s3e/invalid-loop-syntax.or",
+    "s3e/invalid-loops.or",
+    "s3e/invalid-updates.or",
 ]
 
 

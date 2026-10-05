@@ -304,6 +304,18 @@ int big_neg(const Big *value, Big *out) {
     return 1;
 }
 
+int big_cmp(const Big *left, const Big *right) {
+    int magnitude;
+    if (left->negative != right->negative) {
+        if (left->nlimbs == 0 && right->nlimbs == 0) {
+            return 0;
+        }
+        return left->negative ? -1 : 1;
+    }
+    magnitude = cmp_mag(left, right);
+    return left->negative ? -magnitude : magnitude;
+}
+
 int big_sub(Arena *arena, const Big *left, const Big *right, Big *out) {
     Big negated;
     big_neg(right, &negated);
