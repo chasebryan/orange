@@ -39,6 +39,7 @@ int big_add(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_sub(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_mul(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_neg(const Big *value, Big *out);
+int big_cmp(const Big *left, const Big *right);
 
 /* Mathematical residue of value modulo 2^width, for width in 1..=64. */
 int big_mod_pow2(const Big *value, uint32_t width, uint64_t *out);

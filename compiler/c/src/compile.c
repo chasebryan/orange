@@ -22,6 +22,8 @@
 #define MAX_CALL_DEPTH 256
 #define MAX_ARRAY_LENGTH 256u
 #define MAX_ARRAY_ELEMENTS 256u
+#define MAX_LOOP_BOUND 65536u
+#define MAX_OPEN_LOOPS 64
 #define ARENA_BYTES (16u * 1024u * 1024u)
 
 typedef enum TokenKind {
@@ -145,7 +147,13 @@ typedef enum ExprKind {
     EX_CONV,
     EX_GROUP,
     EX_ARRAY,
-    EX_INDEX
+    EX_INDEX,
+    EX_SELECT,
+    EX_UPDATE,
+    EX_FILL,
+    EX_LOOP,
+    EX_LOOP_INDEX,
+    EX_ACCUM
 } ExprKind;
 
 typedef struct DeclaredType {
@@ -232,6 +240,38 @@ typedef struct Edge {
     uint32_t end;
 } Edge;
 
+typedef struct LoopDesc {
+    uint32_t index_start;
+    uint32_t index_end;
+    uint32_t acc_start;
+    uint32_t acc_end;
+    uint32_t a_start;
+    uint32_t a_end;
+    uint32_t b_start;
+    uint32_t b_end;
+    TypeKind acc_type;
+    uint32_t acc_len;
+    int acc_ok;
+    int acc_length_bad;
+    uint32_t type_start;
+    uint32_t type_end;
+    uint32_t length_start;
+    uint32_t length_end;
+    uint32_t init_expr;
+    uint32_t step_expr;
+    int bounds_ok;
+    uint32_t bound_a;
+    uint32_t bound_b;
+} LoopDesc;
+
+typedef struct OpenLoop {
+    uint32_t id;
+    uint32_t index_start;
+    uint32_t index_end;
+    uint32_t acc_start;
+    uint32_t acc_end;
+} OpenLoop;
+
 typedef struct Func {
     int is_impl;
     int typed;
@@ -315,6 +355,15 @@ typedef struct Compiler {
     Value *elems;
     uint32_t nelems;
     size_t elem_cap;
+    LoopDesc *loops;
+    uint32_t nloops;
+    size_t loop_cap;
+    OpenLoop open_loops[MAX_OPEN_LOOPS];
+    int nopen;
+    uint32_t active_loops[MAX_OPEN_LOOPS];
+    int nactive;
+    uint32_t *loop_k;
+    Value *loop_acc;
     uint64_t steps;
     int failed;
 } Compiler;
@@ -888,7 +937,7 @@ static void lex_source(Compiler *c) {
 static int enter_nest(Compiler *c, uint32_t start, uint32_t end) {
     if (c->nesting >= MAX_NESTING) {
         resource_diag(c, "ORC0106", start, end,
-                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, and prefix operators");
+                      "expression exceeds the nesting limit of 64 for groups, calls, arrays, indices, loops, updates, and prefix operators");
         return 0;
     }
     c->nesting++;
@@ -941,9 +990,20 @@ static int is_as(const Compiler *c) {
     return ident_token_is(c, peek_token(c), "as");
 }
 
+static int is_with_update(const Compiler *c) {
+    if (!ident_token_is(c, peek_token(c), "with")) {
+        return 0;
+    }
+    return c->at + 1 < c->ntokens && c->tokens[c->at + 1].kind == TK_LBRACKET;
+}
+
 static int is_binary_kind(TokenKind kind) {
     return kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR || kind == TK_AMP || kind == TK_PIPE ||
            kind == TK_CARET || kind == TK_LSHIFT || kind == TK_RSHIFT || kind == TK_ROL || kind == TK_ROR;
+}
+
+static int trailing_joiner(const Compiler *c) {
+    return is_binary_kind(peek_kind(c)) || is_as(c) || is_with_update(c);
 }
 
 static int group_of(TokenKind kind) {
@@ -1202,23 +1262,63 @@ static int ungrouped(Compiler *c, Token token, Token previous) {
     return 1;
 }
 
+static int finish_index_node(Compiler *c, uint32_t base, uint32_t end, ExprKind kind, uint32_t child, uint32_t lit_start,
+                             uint32_t lit_end, uint32_t *out) {
+    int height = height_of(c, base);
+    if (kind == EX_SELECT) {
+        int index_height = height_of(c, child);
+        if (index_height > height) {
+            height = index_height;
+        }
+    }
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = kind;
+    c->exprs[*out].left = base;
+    c->exprs[*out].right = child;
+    c->exprs[*out].start = c->exprs[base].start;
+    c->exprs[*out].end = end;
+    c->exprs[*out].lit_start = lit_start;
+    c->exprs[*out].lit_end = lit_end;
+    c->exprs[*out].height = 1 + height;
+    return note_height(c, *out);
+}
+
 static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
-    Token open;
     Token index;
     Token close;
+    uint32_t child = UINT32_MAX;
     if (peek_kind(c) != TK_LBRACKET) {
         *out = base;
         return 1;
     }
-    open = peek_token(c);
     advance_token(c);
-    index = peek_token(c);
-    if (index.kind != TK_INT) {
-        add_diag(c, "ORC0101", index.start, index.end, "expected a literal index", "expected an integer index",
-                 "an index in this slice is one integer literal", 1);
+    if (peek_kind(c) == TK_RBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an index after `[`", "empty index",
+                 "an index is an integer literal or an expression", 1);
         return 0;
     }
-    advance_token(c);
+    index = peek_token(c);
+    if (index.kind == TK_INT && c->at + 1 < c->ntokens && c->tokens[c->at + 1].kind == TK_RBRACKET) {
+        advance_token(c);
+        close = peek_token(c);
+        advance_token(c);
+        if (peek_kind(c) == TK_LBRACKET) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected one index", "repeated index",
+                     "an element is not an array, so it cannot be indexed again", 1);
+            return 0;
+        }
+        return finish_index_node(c, base, close.end, EX_INDEX, UINT32_MAX, index.start, index.end, out);
+    }
+    if (!enter_nest(c, index.start, index.end)) {
+        return 0;
+    }
+    if (!parse_expr(c, &child)) {
+        leave_nest(c);
+        return 0;
+    }
+    leave_nest(c);
     close = peek_token(c);
     if (close.kind != TK_RBRACKET) {
         add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed index", NULL, 1);
@@ -1230,18 +1330,7 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
                  "an element is not an array, so it cannot be indexed again", 1);
         return 0;
     }
-    if (!new_expr(c, out)) {
-        return 0;
-    }
-    c->exprs[*out].kind = EX_INDEX;
-    c->exprs[*out].left = base;
-    c->exprs[*out].start = c->exprs[base].start;
-    c->exprs[*out].end = close.end;
-    c->exprs[*out].lit_start = index.start;
-    c->exprs[*out].lit_end = index.end;
-    c->exprs[*out].height = 1 + height_of(c, base);
-    (void)open;
-    return note_height(c, *out);
+    return finish_index_node(c, base, close.end, EX_SELECT, child, 0, 0, out);
 }
 
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
@@ -1258,7 +1347,48 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         leave_nest(c);
         return 0;
     }
-    for (;;) {
+    if (!parse_expr(c, &local_elems[0])) {
+        leave_nest(c);
+        return 0;
+    }
+    count = 1;
+    if (peek_kind(c) == TK_SEMI) {
+        Token length;
+        uint32_t element = local_elems[0];
+        advance_token(c);
+        length = peek_token(c);
+        if (length.kind != TK_INT) {
+            add_diag(c, "ORC0101", length.start, length.end, "expected a fill length", "expected an integer length",
+                     "a fill literal is `[element; length]`", 1);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        close = peek_token(c);
+        if (close.kind != TK_RBRACKET) {
+            add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed fill literal", NULL, 1);
+            leave_nest(c);
+            return 0;
+        }
+        advance_token(c);
+        leave_nest(c);
+        if (!new_expr(c, out)) {
+            return 0;
+        }
+        c->exprs[*out].kind = EX_FILL;
+        c->exprs[*out].left = element;
+        c->exprs[*out].start = open.start;
+        c->exprs[*out].end = close.end;
+        c->exprs[*out].lit_start = length.start;
+        c->exprs[*out].lit_end = length.end;
+        c->exprs[*out].height = 1 + height_of(c, element);
+        return note_height(c, *out);
+    }
+    while (peek_kind(c) == TK_COMMA) {
+        advance_token(c);
+        if (peek_kind(c) == TK_RBRACKET) {
+            break;
+        }
         if (count >= MAX_ARRAY_ELEMENTS) {
             resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
                           "array literal exceeds the 256-element limit");
@@ -1270,14 +1400,6 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
             return 0;
         }
         count++;
-        if (peek_kind(c) == TK_COMMA) {
-            advance_token(c);
-            if (peek_kind(c) == TK_RBRACKET) {
-                break;
-            }
-            continue;
-        }
-        break;
     }
     leave_nest(c);
     close = peek_token(c);
@@ -1307,6 +1429,216 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         }
     }
     c->exprs[*out].height = height;
+    return note_height(c, *out);
+}
+
+static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
+    Token index;
+    Token bound_a;
+    Token bound_b;
+    Token acc;
+    DeclaredType declared;
+    uint32_t init = UINT32_MAX;
+    uint32_t step = UINT32_MAX;
+    Token close;
+    uint32_t id;
+    int height;
+    if (c->nloops >= MAX_EXPRS || c->nopen >= MAX_OPEN_LOOPS) {
+        resource_diag(c, "ORC0106", for_token.start, for_token.end, "source exceeds the loop limit");
+        return 0;
+    }
+    if (!ensure_cap((void **)&c->loops, &c->loop_cap, c->nloops + 1, sizeof(LoopDesc), MAX_EXPRS)) {
+        resource_diag(c, "ORC0106", for_token.start, for_token.end, "parser could not retain a loop");
+        return 0;
+    }
+    id = c->nloops++;
+    memset(&c->loops[id], 0, sizeof c->loops[id]);
+    c->loops[id].init_expr = UINT32_MAX;
+    c->loops[id].step_expr = UINT32_MAX;
+    advance_token(c);
+    index = peek_token(c);
+    if (index.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", index.start, index.end, "expected a loop index", "expected `for name in ...`", NULL, 1);
+        return 0;
+    }
+    c->loops[id].index_start = index.start;
+    c->loops[id].index_end = index.end;
+    advance_token(c);
+    if (!ident_token_is(c, peek_token(c), "in")) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `in`", "expected `for name in a..b`",
+                 NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    bound_a = peek_token(c);
+    if (bound_a.kind != TK_INT) {
+        add_diag(c, "ORC0101", bound_a.start, bound_a.end, "expected a loop bound", "a loop bound is an integer literal",
+                 NULL, 1);
+        return 0;
+    }
+    c->loops[id].a_start = bound_a.start;
+    c->loops[id].a_end = bound_a.end;
+    advance_token(c);
+    if (peek_kind(c) != TK_DOTDOT) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..`", "a loop range is `a..b`", NULL,
+                 1);
+        return 0;
+    }
+    advance_token(c);
+    bound_b = peek_token(c);
+    if (bound_b.kind != TK_INT) {
+        add_diag(c, "ORC0101", bound_b.start, bound_b.end, "expected a loop bound", "a loop bound is an integer literal",
+                 NULL, 1);
+        return 0;
+    }
+    c->loops[id].b_start = bound_b.start;
+    c->loops[id].b_end = bound_b.end;
+    advance_token(c);
+    if (!ident_token_is(c, peek_token(c), "with")) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `with`",
+                 "a loop names its accumulator", "write `for i in a..b with s: T = start { step }`", 1);
+        return 0;
+    }
+    advance_token(c);
+    acc = peek_token(c);
+    if (acc.kind != TK_IDENT) {
+        add_diag(c, "ORC0101", acc.start, acc.end, "expected an accumulator name", "expected a name after `with`", NULL,
+                 1);
+        return 0;
+    }
+    c->loops[id].acc_start = acc.start;
+    c->loops[id].acc_end = acc.end;
+    advance_token(c);
+    if (peek_kind(c) != TK_COLON) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `:`", "an accumulator states its type",
+                 NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!parse_type(c, &declared, 1)) {
+        return 0;
+    }
+    store_declared(&declared, &c->loops[id].acc_type, &c->loops[id].acc_len, &c->loops[id].acc_ok,
+                   &c->loops[id].acc_length_bad, &c->loops[id].type_start, &c->loops[id].type_end,
+                   &c->loops[id].length_start, &c->loops[id].length_end);
+    if (peek_kind(c) != TK_EQUAL) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "expected the accumulator's start",
+                 NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!enter_nest(c, for_token.start, for_token.end)) {
+        return 0;
+    }
+    if (!parse_expr(c, &init)) {
+        leave_nest(c);
+        return 0;
+    }
+    c->loops[id].init_expr = init;
+    if (peek_kind(c) != TK_LBRACE) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{`", "expected the loop step", NULL,
+                 1);
+        leave_nest(c);
+        return 0;
+    }
+    advance_token(c);
+    if (c->nopen >= MAX_OPEN_LOOPS) {
+        resource_diag(c, "ORC0106", for_token.start, for_token.end, "expression exceeds the nesting limit of 64");
+        leave_nest(c);
+        return 0;
+    }
+    c->open_loops[c->nopen].id = id;
+    c->open_loops[c->nopen].index_start = c->loops[id].index_start;
+    c->open_loops[c->nopen].index_end = c->loops[id].index_end;
+    c->open_loops[c->nopen].acc_start = c->loops[id].acc_start;
+    c->open_loops[c->nopen].acc_end = c->loops[id].acc_end;
+    c->nopen++;
+    if (!parse_expr(c, &step)) {
+        c->nopen--;
+        leave_nest(c);
+        return 0;
+    }
+    c->nopen--;
+    c->loops[id].step_expr = step;
+    close = peek_token(c);
+    if (close.kind != TK_RBRACE) {
+        add_diag(c, "ORC0101", close.start, close.end, "expected `}`", "a loop step ends at `}`", NULL, 1);
+        leave_nest(c);
+        return 0;
+    }
+    advance_token(c);
+    leave_nest(c);
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = EX_LOOP;
+    c->exprs[*out].arg0 = id;
+    c->exprs[*out].start = for_token.start;
+    c->exprs[*out].end = close.end;
+    height = height_of(c, init);
+    if (height_of(c, step) > height) {
+        height = height_of(c, step);
+    }
+    c->exprs[*out].height = 1 + height;
+    return note_height(c, *out);
+}
+
+static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
+    Token with_token = peek_token(c);
+    uint32_t index = UINT32_MAX;
+    uint32_t value = UINT32_MAX;
+    int height;
+    advance_token(c);
+    if (peek_kind(c) != TK_LBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `[`", "an update is `with [index] = value`",
+                 NULL, 1);
+        return 0;
+    }
+    advance_token(c);
+    if (!enter_nest(c, with_token.start, with_token.end)) {
+        return 0;
+    }
+    if (!parse_expr(c, &index)) {
+        leave_nest(c);
+        return 0;
+    }
+    if (peek_kind(c) != TK_RBRACKET) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `]`", "unclosed update index", NULL, 1);
+        leave_nest(c);
+        return 0;
+    }
+    advance_token(c);
+    if (peek_kind(c) != TK_EQUAL) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=`", "an update assigns one element",
+                 NULL, 1);
+        leave_nest(c);
+        return 0;
+    }
+    advance_token(c);
+    if (!parse_expr(c, &value)) {
+        leave_nest(c);
+        return 0;
+    }
+    leave_nest(c);
+    if (!new_expr(c, out)) {
+        return 0;
+    }
+    c->exprs[*out].kind = EX_UPDATE;
+    c->exprs[*out].left = base;
+    c->exprs[*out].right = index;
+    c->exprs[*out].callee = value;
+    c->exprs[*out].start = c->exprs[base].start;
+    c->exprs[*out].end = c->exprs[value].end;
+    c->exprs[*out].op_start = with_token.start;
+    c->exprs[*out].op_end = with_token.end;
+    height = height_of(c, base);
+    if (height_of(c, index) > height) {
+        height = height_of(c, index);
+    }
+    if (height_of(c, value) > height) {
+        height = height_of(c, value);
+    }
+    c->exprs[*out].height = 1 + height;
     return note_height(c, *out);
 }
 
@@ -1418,7 +1750,33 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
     }
     if (token.kind == TK_IDENT) {
         Token name = token;
+        int open_index;
+        if (span_is(c, token.start, token.end, "for") && c->at + 1 < c->ntokens &&
+            c->tokens[c->at + 1].kind == TK_IDENT) {
+            return parse_loop(c, token, out);
+        }
         advance_token(c);
+        if (peek_kind(c) != TK_LPAREN) {
+            for (open_index = c->nopen - 1; open_index >= 0; open_index--) {
+                OpenLoop *open = &c->open_loops[open_index];
+                int is_index = same_span(c, open->index_start, open->index_end, name.start, name.end);
+                int is_acc = same_span(c, open->acc_start, open->acc_end, name.start, name.end);
+                if (!is_index && !is_acc) {
+                    continue;
+                }
+                if (!new_expr(c, out)) {
+                    return 0;
+                }
+                c->exprs[*out].kind = is_index ? EX_LOOP_INDEX : EX_ACCUM;
+                c->exprs[*out].arg0 = open->id;
+                c->exprs[*out].start = name.start;
+                c->exprs[*out].end = name.end;
+                c->exprs[*out].name_start = name.start;
+                c->exprs[*out].name_end = name.end;
+                c->exprs[*out].height = 1;
+                return parse_index(c, *out, out);
+            }
+        }
         if (peek_kind(c) == TK_LPAREN) {
             uint32_t arg0 = 0;
             uint16_t argc = 0;
@@ -1522,7 +1880,7 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         if (!parse_type(c, &type, 0)) {
             return 0;
         }
-        if (is_binary_kind(peek_kind(c)) || is_as(c)) {
+        if (trailing_joiner(c)) {
             ungrouped(c, peek_token(c), as_token);
         }
         if (!new_expr(c, out)) {
@@ -1541,6 +1899,9 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         c->exprs[*out].height = 1 + height_of(c, left);
         return note_height(c, *out);
     }
+    if (is_with_update(c)) {
+        return parse_update(c, left, out);
+    }
     if (!is_binary_kind(peek_kind(c))) {
         *out = left;
         return 1;
@@ -1554,7 +1915,7 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         if (!parse_prefixed(c, &amount)) {
             return 0;
         }
-        if (is_binary_kind(peek_kind(c)) || is_as(c)) {
+        if (trailing_joiner(c)) {
             ungrouped(c, peek_token(c), op);
         }
         if (!new_expr(c, out)) {
@@ -1585,7 +1946,7 @@ static int parse_expr(Compiler *c, uint32_t *out) {
                 return 0;
             }
         }
-        if (is_binary_kind(peek_kind(c)) || is_as(c)) {
+        if (trailing_joiner(c)) {
             ungrouped(c, peek_token(c), first_op);
         }
         *out = left;
@@ -1599,7 +1960,7 @@ static int parse_expr(Compiler *c, uint32_t *out) {
             return 0;
         }
     }
-    if (is_binary_kind(peek_kind(c)) || is_as(c)) {
+    if (trailing_joiner(c)) {
         ungrouped(c, peek_token(c), first_op);
     }
     *out = left;
@@ -2145,6 +2506,16 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         *length = c->funcs[callee].result_len;
         return 1;
     }
+    if (expr->kind == EX_ACCUM || expr->kind == EX_LOOP) {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        if (!loop->acc_ok) {
+            *silent = 1;
+            return -1;
+        }
+        *type = loop->acc_type;
+        *length = loop->acc_len;
+        return 1;
+    }
     return 0;
 }
 
@@ -2212,7 +2583,35 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         *length = c->funcs[callee].result_len;
         return 1;
     }
-    case EX_INDEX: {
+    case EX_LOOP_INDEX:
+        *type = TY_INT;
+        *length = 0;
+        return 1;
+    case EX_ACCUM: {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        if (!loop->acc_ok) {
+            *silent = 1;
+            return -1;
+        }
+        *type = loop->acc_type;
+        *length = loop->acc_len;
+        return 1;
+    }
+    case EX_LOOP: {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        if (!loop->acc_ok) {
+            *silent = 1;
+            return -1;
+        }
+        *type = loop->acc_type;
+        *length = loop->acc_len;
+        return 1;
+    }
+    case EX_FILL:
+    case EX_UPDATE:
+        return 2;
+    case EX_INDEX:
+    case EX_SELECT: {
         int state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
         if (state != 1 || *length == 0) {
             if (state < 0) {
@@ -2282,6 +2681,269 @@ static int record_edge(Compiler *c, uint32_t func_index, uint32_t callee, uint32
     c->edges[c->nedges].end = end;
     c->nedges++;
     func->nedges++;
+    return 1;
+}
+
+static int name_is_active_loop(const Compiler *c, uint32_t start, uint32_t end) {
+    int index;
+    for (index = 0; index < c->nactive; index++) {
+        const LoopDesc *loop = &c->loops[c->active_loops[index]];
+        if (same_span(c, loop->index_start, loop->index_end, start, end) ||
+            same_span(c, loop->acc_start, loop->acc_end, start, end)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int report_duplicate_loop_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start,
+                                      uint32_t end) {
+    const Func *func = &c->funcs[func_index];
+    uint16_t index;
+    int duplicate = name_is_active_loop(c, start, end);
+    for (index = 0; index < func->nparams && !duplicate; index++) {
+        const Param *param = &c->params[func->param0 + index];
+        if (!param->duplicate && same_span(c, param->name_start, param->name_end, start, end)) {
+            duplicate = 1;
+        }
+    }
+    if (locals_in_scope > func->nlocals) {
+        locals_in_scope = func->nlocals;
+    }
+    for (index = 0; index < locals_in_scope && !duplicate; index++) {
+        const Local *local = &c->locals[func->local0 + index];
+        if (!local->duplicate && same_span(c, local->name_start, local->name_end, start, end)) {
+            duplicate = 1;
+        }
+    }
+    if (!duplicate) {
+        return 0;
+    }
+    add_diag(c, "ORC0219", start, end, "duplicate name", "this name is already in scope",
+             "a loop index and accumulator are new names", 2);
+    return 1;
+}
+
+static int bound_above(Compiler *c, uint32_t start, uint32_t end, int *above, uint32_t *value) {
+    Big magnitude = big_zero();
+    *above = 0;
+    *value = 0;
+    if (!big_from_digits(&c->arena, c->text + start, (size_t)(end - start), 0, &magnitude) || magnitude.negative ||
+        magnitude.nlimbs > 1 || (magnitude.nlimbs == 1 && magnitude.limbs[0] > MAX_LOOP_BOUND)) {
+        *above = 1;
+        return 1;
+    }
+    if (magnitude.nlimbs == 1) {
+        *value = magnitude.limbs[0];
+    }
+    return 1;
+}
+
+static int static_index(Compiler *c, uint32_t index, uint32_t *bad) {
+    const Expr *expr = &c->exprs[index];
+    switch (expr->kind) {
+    case EX_LIT:
+    case EX_LOOP_INDEX:
+        return 1;
+    case EX_GROUP:
+        return static_index(c, expr->left, bad);
+    case EX_UNARY:
+        if (expr->op != TK_MINUS) {
+            *bad = index;
+            return 0;
+        }
+        return static_index(c, expr->left, bad);
+    case EX_BINARY:
+        if (expr->op != TK_PLUS && expr->op != TK_MINUS && expr->op != TK_STAR) {
+            *bad = index;
+            return 0;
+        }
+        if (!static_index(c, expr->left, bad)) {
+            return 0;
+        }
+        return static_index(c, expr->right, bad);
+    default:
+        *bad = index;
+        return 0;
+    }
+}
+
+static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi);
+
+static int range_combine(Compiler *c, TokenKind op, const Big *left_lo, const Big *left_hi, const Big *right_lo,
+                         const Big *right_hi, Big *lo, Big *hi) {
+    if (op == TK_PLUS) {
+        return big_add(&c->arena, left_lo, right_lo, lo) && big_add(&c->arena, left_hi, right_hi, hi);
+    }
+    if (op == TK_MINUS) {
+        return big_sub(&c->arena, left_lo, right_hi, lo) && big_sub(&c->arena, left_hi, right_lo, hi);
+    }
+    if (op == TK_STAR) {
+        const Big *lefts[2] = {left_lo, left_hi};
+        const Big *rights[2] = {right_lo, right_hi};
+        Big product = big_zero();
+        int first = 1;
+        int i;
+        int j;
+        for (i = 0; i < 2; i++) {
+            for (j = 0; j < 2; j++) {
+                if (!big_mul(&c->arena, lefts[i], rights[j], &product)) {
+                    return 0;
+                }
+                if (first || big_cmp(&product, lo) < 0) {
+                    *lo = product;
+                }
+                if (first || big_cmp(&product, hi) > 0) {
+                    *hi = product;
+                }
+                first = 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int range_of(Compiler *c, uint32_t index, Big *lo, Big *hi) {
+    const Expr *expr = &c->exprs[index];
+    if (expr->kind == EX_LIT) {
+        if (!decode_literal(c, expr, lo)) {
+            return 0;
+        }
+        *hi = *lo;
+        return 1;
+    }
+    if (expr->kind == EX_GROUP) {
+        return range_of(c, expr->left, lo, hi);
+    }
+    if (expr->kind == EX_LOOP_INDEX) {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        if (!loop->bounds_ok || loop->bound_b == 0) {
+            return 0;
+        }
+        return big_from_u64(&c->arena, loop->bound_a, lo) && big_from_u64(&c->arena, loop->bound_b - 1u, hi);
+    }
+    if (expr->kind == EX_UNARY && expr->op == TK_MINUS) {
+        Big inner_lo = big_zero();
+        Big inner_hi = big_zero();
+        if (!range_of(c, expr->left, &inner_lo, &inner_hi)) {
+            return 0;
+        }
+        return big_neg(&inner_hi, lo) && big_neg(&inner_lo, hi);
+    }
+    if (expr->kind == EX_BINARY &&
+        (expr->op == TK_PLUS || expr->op == TK_MINUS || expr->op == TK_STAR)) {
+        Big left_lo = big_zero();
+        Big left_hi = big_zero();
+        Big right_lo = big_zero();
+        Big right_hi = big_zero();
+        if (!range_of(c, expr->left, &left_lo, &left_hi) || !range_of(c, expr->right, &right_lo, &right_hi)) {
+            return 0;
+        }
+        return range_combine(c, expr->op, &left_lo, &left_hi, &right_lo, &right_hi, lo, hi);
+    }
+    return 0;
+}
+
+static int big_below_u32(const Big *value, uint32_t limit) {
+    if (value->negative && value->nlimbs != 0) {
+        return 0;
+    }
+    if (value->nlimbs == 0) {
+        return 1;
+    }
+    if (value->nlimbs > 1) {
+        return 0;
+    }
+    return value->limbs[0] < limit;
+}
+
+static int check_index_expr(Compiler *c, uint32_t index_expr, uint32_t length, uint32_t func_index,
+                            uint32_t locals_in_scope) {
+    uint32_t bad = index_expr;
+    Big lo = big_zero();
+    Big hi = big_zero();
+    const Expr *expr = &c->exprs[index_expr];
+    if (!check_expr(c, index_expr, TY_INT, 0, func_index, locals_in_scope)) {
+        return 0;
+    }
+    if (!static_index(c, index_expr, &bad)) {
+        add_diag(c, "ORC0226", c->exprs[bad].start, c->exprs[bad].end,
+                 "an index may use only integer literals and loop indices", "index is not static",
+                 "build the index from literals and enclosing loop indices with +, -, and *", 2);
+        return 1;
+    }
+    if (!range_of(c, index_expr, &lo, &hi) || (lo.negative && lo.nlimbs != 0) || !big_below_u32(&hi, length)) {
+        add_diag(c, "ORC0223", expr->start, expr->end, "index range is not inside the array", "index out of range",
+                 "every value of a static index must select an element", 2);
+    }
+    return 1;
+}
+
+static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
+                      uint32_t locals_in_scope) {
+    Expr *expr = &c->exprs[index];
+    LoopDesc *loop = &c->loops[expr->arg0];
+    int a_above = 0;
+    int b_above = 0;
+    uint32_t a_value = 0;
+    uint32_t b_value = 0;
+    int index_dup;
+    int acc_dup;
+    bound_above(c, loop->a_start, loop->a_end, &a_above, &a_value);
+    bound_above(c, loop->b_start, loop->b_end, &b_above, &b_value);
+    if (a_above) {
+        add_diag(c, "ORC0225", loop->a_start, loop->a_end, "a loop bound must be at most 65536", "loop bound",
+                 "a loop runs over a nonempty range within 0 through 65536", 2);
+    } else if (b_above || a_value >= b_value) {
+        add_diag(c, "ORC0225", loop->b_start, loop->b_end, "a loop range must be nonempty and within 0 through 65536",
+                 "loop bounds", "write a..b with 0 <= a < b <= 65536", 2);
+    } else {
+        loop->bounds_ok = 1;
+        loop->bound_a = a_value;
+        loop->bound_b = b_value;
+    }
+    index_dup = report_duplicate_loop_name(c, func_index, locals_in_scope, loop->index_start, loop->index_end);
+    if (same_span(c, loop->index_start, loop->index_end, loop->acc_start, loop->acc_end)) {
+        acc_dup = 1;
+        add_diag(c, "ORC0219", loop->acc_start, loop->acc_end, "duplicate name", "this name is already in scope",
+                 "the accumulator must differ from the loop index", 2);
+    } else {
+        acc_dup = report_duplicate_loop_name(c, func_index, locals_in_scope, loop->acc_start, loop->acc_end);
+    }
+    (void)index_dup;
+    (void)acc_dup;
+    if (!loop->acc_ok) {
+        reject_declared(c, loop->acc_type, loop->acc_length_bad, loop->type_start, loop->type_end, loop->length_start,
+                        loop->length_end);
+        return 1;
+    }
+    if (loop->acc_type != expected || loop->acc_len != expected_len) {
+        char message[192];
+        char expected_text[64];
+        char found_text[64];
+        write_type(expected_text, sizeof expected_text, expected, expected_len);
+        write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
+        snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+        add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                 "a loop has its accumulator's type", 2);
+    }
+    if (loop->init_expr != UINT32_MAX &&
+        !check_expr(c, loop->init_expr, loop->acc_type, loop->acc_len, func_index, locals_in_scope)) {
+        return 0;
+    }
+    if (loop->bounds_ok && loop->step_expr != UINT32_MAX) {
+        if (c->nactive >= MAX_OPEN_LOOPS) {
+            resource_diag(c, "ORC0209", expr->start, expr->end, "semantic analysis could not retain loop scopes");
+            return 0;
+        }
+        c->active_loops[c->nactive++] = expr->arg0;
+        if (!check_expr(c, loop->step_expr, loop->acc_type, loop->acc_len, func_index, locals_in_scope)) {
+            c->nactive--;
+            return 0;
+        }
+        c->nactive--;
+    }
     return 1;
 }
 
@@ -2580,6 +3242,128 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
+    }
+    case EX_LOOP:
+        return check_loop(c, index, expected, expected_len, func_index, locals_in_scope);
+    case EX_LOOP_INDEX:
+        if (expected != TY_INT || expected_len != 0) {
+            char message[192];
+            char expected_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "expected %s, found Int", expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "a loop index has type Int", 2);
+        }
+        return 1;
+    case EX_ACCUM: {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        if (!loop->acc_ok) {
+            return 1;
+        }
+        if (loop->acc_type != expected || loop->acc_len != expected_len) {
+            char message[192];
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, loop->acc_type, loop->acc_len);
+            snprintf(message, sizeof message, "expected %s, found %s", expected_text, found_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "an accumulator has its declared type", 2);
+        }
+        return 1;
+    }
+    case EX_SELECT: {
+        TypeKind base_kind = TY_NONE;
+        uint32_t base_len = 0;
+        int silent = 0;
+        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        if (state != 1) {
+            if (silent) {
+                return 1;
+            }
+            return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
+        }
+        if (base_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "only an array can be indexed, but this has type %s",
+                     type_spelling(base_kind));
+            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
+                     "an index selects one element of a value of type T^n", 2);
+            return check_expr(c, expr->left, base_kind, 0, func_index, locals_in_scope);
+        }
+        if (base_kind != expected || expected_len != 0) {
+            char message[192];
+            char expected_text[64];
+            char found_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            write_type(found_text, sizeof found_text, base_kind, 0);
+            snprintf(message, sizeof message, "this element has type %s, but %s is required here", found_text,
+                     expected_text);
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "Orange does not convert between types implicitly", 2);
+        }
+        if (!check_expr(c, expr->left, base_kind, base_len, func_index, locals_in_scope)) {
+            return 0;
+        }
+        return check_index_expr(c, expr->right, base_len, func_index, locals_in_scope);
+    }
+    case EX_UPDATE: {
+        TypeKind leaf_type = TY_NONE;
+        uint32_t leaf_len = 0;
+        uint32_t leaf = index;
+        int silent = 0;
+        int state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        if (state == 1 && leaf_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "only an array can be updated, but this has type %s",
+                     type_spelling(leaf_type));
+            add_diag(c, "ORC0224", c->exprs[expr->left].start, c->exprs[expr->left].end, message, "not an array",
+                     "an update replaces one element of an array", 2);
+            if (!silent) {
+                return check_expr(c, expr->left, leaf_type, 0, func_index, locals_in_scope);
+            }
+            return 1;
+        }
+        if (expected_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "an update cannot have type %s", type_spelling(expected));
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "an update has the type of the array it updates", 2);
+            return 1;
+        }
+        if (!check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope) ||
+            !check_index_expr(c, expr->right, expected_len, func_index, locals_in_scope)) {
+            return 0;
+        }
+        return check_expr(c, expr->callee, expected, 0, func_index, locals_in_scope);
+    }
+    case EX_FILL: {
+        uint32_t length = 0;
+        int admitted;
+        if (expected_len == 0) {
+            char message[192];
+            snprintf(message, sizeof message, "a fill literal cannot have type %s", type_spelling(expected));
+            add_diag(c, "ORC0214", expr->start, expr->end, message, "type mismatch",
+                     "a fill literal is written where an array type is required", 2);
+            return 1;
+        }
+        admitted = canonical_array_length(c->text, expr->lit_start, expr->lit_end, &length);
+        if (!admitted) {
+            char message[128];
+            snprintf(message, sizeof message, "array length must be a decimal integer from 1 through %u",
+                     MAX_ARRAY_LENGTH);
+            add_diag(c, "ORC0221", expr->lit_start, expr->lit_end, message, "unsupported fill length",
+                     "write the length in decimal without a prefix, separator, or leading zero", 2);
+        } else if (length != expected_len) {
+            char message[192];
+            char expected_text[64];
+            write_type(expected_text, sizeof expected_text, expected, expected_len);
+            snprintf(message, sizeof message, "this fill has length %u, but %s has %u", length, expected_text,
+                     expected_len);
+            add_diag(c, "ORC0222", expr->start, expr->end, message, "array length mismatch",
+                     "a fill literal states its type's length", 2);
+        }
+        return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
     }
     default:
         return 1;
@@ -3104,6 +3888,150 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
         *out = c->elems[base.elem0 + position];
         return 1;
     }
+    case EX_SELECT: {
+        Value base;
+        Value index_value;
+        uint32_t position = 0;
+        if (!eval_expr(c, expr->left, params, locals, depth, &base) ||
+            !eval_expr(c, expr->right, params, locals, depth, &index_value)) {
+            return 0;
+        }
+        if (index_value.type != TY_INT || index_value.big.negative || index_value.big.nlimbs > 1 ||
+            !charge(c, expr->start, expr->end, 1)) {
+            c->failed = 1;
+            return 0;
+        }
+        if (index_value.big.nlimbs > 0) {
+            position = index_value.big.limbs[0];
+        }
+        if (position >= base.length || base.elem0 > UINT32_MAX - position || base.elem0 + position >= c->nelems) {
+            c->failed = 1;
+            return 0;
+        }
+        *out = c->elems[base.elem0 + position];
+        return 1;
+    }
+    case EX_UPDATE: {
+        Value base;
+        Value index_value;
+        Value element;
+        uint32_t position = 0;
+        uint32_t first = 0;
+        uint32_t slot;
+        uint64_t cost;
+        if (!eval_expr(c, expr->left, params, locals, depth, &base) ||
+            !eval_expr(c, expr->right, params, locals, depth, &index_value) ||
+            !eval_expr(c, expr->callee, params, locals, depth, &element)) {
+            return 0;
+        }
+        if (base.length == 0 || index_value.type != TY_INT || index_value.big.negative ||
+            index_value.big.nlimbs > 1) {
+            c->failed = 1;
+            return 0;
+        }
+        if (index_value.big.nlimbs > 0) {
+            position = index_value.big.limbs[0];
+        }
+        cost = ((uint64_t)base.length + 63u) / 64u;
+        if (position >= base.length || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+            c->failed = 1;
+            return 0;
+        }
+        for (slot = 0; slot < base.length; slot++) {
+            Value copied;
+            uint32_t stored;
+            if (base.elem0 > UINT32_MAX - slot || base.elem0 + slot >= c->nelems) {
+                c->failed = 1;
+                return 0;
+            }
+            copied = c->elems[base.elem0 + slot];
+            if (slot == position) {
+                copied = element;
+            }
+            if (!push_elem(c, copied, &stored)) {
+                return 0;
+            }
+            if (slot == 0) {
+                first = stored;
+            }
+        }
+        out->type = base.type;
+        out->length = base.length;
+        out->elem0 = first;
+        return 1;
+    }
+    case EX_FILL: {
+        Value element;
+        uint32_t count = expr->ty_len;
+        uint32_t first = 0;
+        uint32_t slot;
+        uint64_t cost;
+        if (count == 0 || !eval_expr(c, expr->left, params, locals, depth, &element)) {
+            c->failed = count == 0;
+            return 0;
+        }
+        cost = ((uint64_t)count + 63u) / 64u;
+        if (!charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+            return 0;
+        }
+        for (slot = 0; slot < count; slot++) {
+            uint32_t stored;
+            if (!push_elem(c, element, &stored)) {
+                return 0;
+            }
+            if (slot == 0) {
+                first = stored;
+            }
+        }
+        out->type = element.type;
+        out->length = count;
+        out->elem0 = first;
+        return 1;
+    }
+    case EX_LOOP: {
+        const LoopDesc *loop = &c->loops[expr->arg0];
+        Value acc;
+        uint32_t step_index;
+        if (!loop->bounds_ok || c->loop_k == NULL || c->loop_acc == NULL || loop->init_expr == UINT32_MAX ||
+            loop->step_expr == UINT32_MAX) {
+            c->failed = 1;
+            return 0;
+        }
+        if (!eval_expr(c, loop->init_expr, params, locals, depth, &acc) ||
+            !charge(c, expr->start, expr->end, 1)) {
+            return 0;
+        }
+        for (step_index = loop->bound_a; step_index < loop->bound_b; step_index++) {
+            if (!charge(c, expr->start, expr->end, 1)) {
+                return 0;
+            }
+            c->loop_k[expr->arg0] = step_index;
+            c->loop_acc[expr->arg0] = acc;
+            if (!eval_expr(c, loop->step_expr, params, locals, depth, &acc)) {
+                return 0;
+            }
+        }
+        *out = acc;
+        return 1;
+    }
+    case EX_LOOP_INDEX: {
+        if (c->loop_k == NULL || !charge(c, expr->start, expr->end, 1) ||
+            !big_from_u64(&c->arena, c->loop_k[expr->arg0], &out->big)) {
+            c->failed = 1;
+            return 0;
+        }
+        out->type = TY_INT;
+        out->length = 0;
+        return 1;
+    }
+    case EX_ACCUM: {
+        if (c->loop_acc == NULL || !charge(c, expr->start, expr->end, 1)) {
+            c->failed = 1;
+            return 0;
+        }
+        *out = c->loop_acc[expr->arg0];
+        return 1;
+    }
     default:
         c->failed = 1;
         return 0;
@@ -3261,6 +4189,15 @@ static int evaluate_source(Compiler *c, FILE *out) {
     size_t used = 0;
     size_t cap = 0;
     uint32_t index;
+    if (c->nloops > 0) {
+        c->loop_k = calloc(c->nloops, sizeof *c->loop_k);
+        c->loop_acc = calloc(c->nloops, sizeof *c->loop_acc);
+        if (c->loop_k == NULL || c->loop_acc == NULL) {
+            resource_diag(c, "ORC0106", 0, 0, "evaluation could not retain loop state");
+            free(buffer);
+            return 1;
+        }
+    }
     for (index = 0; index < c->nfuncs && !c->failed; index++) {
         Func *func = &c->funcs[index];
         Value result;
@@ -3341,6 +4278,9 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.locals);
         free(compiler.edges);
         free(compiler.elems);
+        free(compiler.loops);
+        free(compiler.loop_k);
+        free(compiler.loop_acc);
         return status;
     }
     if (compiler.lex_diags > 0 || compiler.resource) {
@@ -3354,6 +4294,9 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         free(compiler.locals);
         free(compiler.edges);
         free(compiler.elems);
+        free(compiler.loops);
+        free(compiler.loop_k);
+        free(compiler.loop_acc);
         return 1;
     }
     parse_source(&compiler);
@@ -3383,6 +4326,9 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     free(compiler.locals);
     free(compiler.edges);
     free(compiler.elems);
+    free(compiler.loops);
+    free(compiler.loop_k);
+    free(compiler.loop_acc);
     return status;
 }
 
@@ -3485,7 +4431,7 @@ static void print_usage(FILE *out) {
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
-        "conversion, and fixed-length array fragment. It does not use the\n"
+        "conversion, array, and bounded-loop fragment. It does not use the\n"
         "Rust compiler.\n"
         "\n"
         "Commands:\n"
@@ -3512,7 +4458,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3d\n", stdout);
+            fputs("orangec (standalone C) slice S3e\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
