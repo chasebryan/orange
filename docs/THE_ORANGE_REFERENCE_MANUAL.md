@@ -64,7 +64,7 @@ Edition: `2026`
   - [§27. Byte Arrays (`Byte` and `Word[8]^n`)](#27-byte-arrays-byte-and-word8n)
   - [§28. Explicit Value Conversions (`expr as T`) and Typing Judgments](#28-explicit-value-conversions-expr-as-t-and-typing-judgments)
   - [§29. Endianness Homomorphisms and Bit-Preserving Packing (`as big T`, `as little T`)](#29-endianness-homomorphisms-and-bit-preserving-packing-as-big-t-as-little-t)
-  - [§30. Dependent Finite Size Parameters ($[n \in \text{low}..\text{high}]$) and Monomorphization](#30-dependent-finite-size-parameters-n-in-textlowtextfield-and-monomorphization)
+  - [§30. Dependent Finite Size Parameters and Monomorphization](#30-dependent-finite-size-parameters-and-monomorphization)
   - [§31. Finite Type Parameter Domains ($[K \in \{T_1, \dots, T_m\}]$)](#31-finite-type-parameter-domains-k-in-t_1-dots-t_m)
 
 - [Part IV: Static Semantics (Typing Rules & Judgments)](#part-iv-static-semantics-typing-rules--judgments)
@@ -99,7 +99,7 @@ Edition: `2026`
 - [Part VIII: Implementation Stratum (`impl`) & Memory Model](#part-viii-implementation-stratum-impl--memory-model)
   - [§53. Imperative Execution Semantics and Place Logic](#53-imperative-execution-semantics-and-place-logic)
   - [§54. Structured Memory Model: Heap-Freedom, Regions, and Stack Layout](#54-structured-memory-model-heap-freedom-regions-and-stack-layout)
-  - [§55. Affine Ownership, Move Semantics, and Capability Borrowing ($\&T, \&\text{mut } T$)](#55-affine-ownership-move-semantics-and-capability-borrowing-t-mut-t)
+  - [§55. Affine Ownership, Move Semantics, and Capability Borrowing (`&T`, `&mut T`)](#55-affine-ownership-move-semantics-and-capability-borrowing-t-mut-t)
   - [§56. Separation Logic Foundation and Non-Aliasing Invariants](#56-separation-logic-foundation-and-non-aliasing-invariants)
   - [§57. In-Place Mutable Slicing and Disjointness Proof Obligations](#57-in-place-mutable-slicing-and-disjointness-proof-obligations)
   - [§58. Two-State Contracts: Preconditions (`requires`), Postconditions (`ensures`), and `old(...)`](#58-two-state-contracts-preconditions-requires-postconditions-ensures-and-old)
@@ -129,9 +129,9 @@ Edition: `2026`
 
 - [Part XII: Deductive Proof System & Metatheory (`proof`)](#part-xii-deductive-proof-system--metatheory-proof)
   - [§76. Propositions as Types and the $\text{Prop}$ Universe](#76-propositions-as-types-and-the-textprop-universe)
-  - [§77. Functional Refinement Relations ($\text{impl } P \sqsubseteq \text{spec } S$)](#77-functional-refinement-relations-textimpl-p-sqsubseteq-textspec-s)
+  - [§77. Functional Refinement Relations](#77-functional-refinement-relations)
   - [§78. Proof IR: Canonical Encoding, De Bruijn Terms, and Cryptographic Fingerprints](#78-proof-ir-canonical-encoding-de-bruijn-terms-and-cryptographic-fingerprints)
-  - [§79. Weakest Precondition Calculus $\text{wp}(S, Q)$ and Verification Conditions](#79-weakest-precondition-calculus-textsps-q-and-verification-conditions)
+  - [§79. Weakest Precondition Calculus and Verification Conditions](#79-weakest-precondition-calculus-and-verification-conditions)
   - [§80. Certificate-Producing Automation: LRAT/DRAT and LFSC/SMT-LIB Reconstruction](#80-certificate-producing-automation-lratdrat-and-lfscsmt-lib-reconstruction)
   - [§81. Authoritative Offline Checker: `orange-check` Kernel and TCB Boundary](#81-authoritative-offline-checker-orange-check-kernel-and-tcb-boundary)
 
@@ -782,7 +782,7 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{TotalBits}(\tau_{\text{s
    - **Little-Endian:**
      $$W = \sum_{i=0}^{k-1} B[i] \cdot 2^{8i}$$
 
-### §30. Dependent Finite Size Parameters ($[n \in \text{low}..\text{high}]$) and Monomorphization
+### §30. Dependent Finite Size Parameters and Monomorphization
 
 1. A specification function may declare finite size parameters:
    ```orange
@@ -950,9 +950,9 @@ $$\frac{\mathcal{C} \vdash \text{init} : \tau_{\text{acc}} \quad 0 \le \text{low
 $$\frac{\text{low} < 0 \lor \text{low} > \text{high} \lor \text{high} > 65,536}{\mathcal{C} \vdash (\text{for } i \text{ in } \text{low}..\text{high} \dots) : \text{Error}(\text{ORC0225})} \quad (\text{T-For-Range-Err})$$
 
 #### 12. Function Application and Monomorphization
-Let $f$ have declared signature $[n_1 \in \Theta_1, \dots][K_1 \in \Delta_1, \dots](p_0 : \tau_0, \dots, p_{k-1} : \tau_{k-1}) \to \tau_{\text{ret}} \in \Sigma$:
+Let $f$ have declared signature $[n_1 \in \Theta_1, \dots][K_1 \in \Delta_1, \dots]\,(p_0 : \tau_0, \dots, p_{k-1} : \tau_{k-1}) \to \tau_{\text{ret}} \in \Sigma$:
 
-$$\frac{\forall j.\ k_j \in \Theta_j \quad \forall m.\ U_m \in \Delta_m \quad \sigma = [\vec{n} \mapsto \vec{k}, \vec{K} \mapsto \vec{U}] \quad \forall i \in [0, k-1].\ \mathcal{C} \vdash e_i : \sigma(\tau_i)}{\mathcal{C} \vdash f[\vec{k}][\vec{U}](e_0, \dots, e_{k-1}) : \sigma(\tau_{\text{ret}})} \quad (\text{T-App})$$
+$$\frac{\forall j.\ k_j \in \Theta_j \quad \forall m.\ U_m \in \Delta_m \quad \sigma = [\vec{n} \mapsto \vec{k}, \vec{K} \mapsto \vec{U}] \quad \forall i \in [0, k-1].\ \mathcal{C} \vdash e_i : \sigma(\tau_i)}{\mathcal{C} \vdash f[\vec{k}][\vec{U}]\,(e_0, \dots, e_{k-1}) : \sigma(\tau_{\text{ret}})} \quad (\text{T-App})$$
 
 ### §35. Expression Grouping Envelopes and Syntactic Ambiguity Rejection
 
@@ -1641,7 +1641,7 @@ $$\text{TotalStackDepth} = \sum_{P \in \text{CallPath}_{\max}} \text{FrameSize}(
 
 Stack overflow is provably impossible at compile time.
 
-### §55. Affine Ownership, Move Semantics, and Capability Borrowing ($\&T, \&\text{mut } T$)
+### §55. Affine Ownership, Move Semantics, and Capability Borrowing (`&T`, `&mut T`)
 
 Memory safety and data-race freedom are enforced statically via an affine capability calculus.
 
@@ -2106,7 +2106,7 @@ $$\text{Propositions-as-Types} \qquad \text{Proofs-as-Terms}$$
    $$\forall \pi_1, \pi_2 : P.\ \pi_1 \equiv \pi_2 \quad (\text{for } P : \text{Prop})$$
    Proof terms are erased during native code generation, leaving zero footprint.
 
-### §77. Functional Refinement Relations ($\text{impl } P \sqsubseteq \text{spec } S$)
+### §77. Functional Refinement Relations
 
 #### Definition 1 (Functional Refinement)
 *An imperative procedure $P$ functionally refines a mathematical specification $S$ ($P \sqsubseteq S$) under precondition $\text{Pre}$ and postcondition $\text{Post}$ if for all initial stores $\sigma_0$ such that $\sigma_0 \models \text{Pre}$:*
@@ -2125,7 +2125,7 @@ $$\text{Propositions-as-Types} \qquad \text{Proofs-as-Terms}$$
    Every verified lemma receives an immutable content-addressed cryptographic fingerprint:
    $$\text{Fingerprint}(\text{Thm}) = \text{SHA-256}\Big(\text{Term} \mathbin{\Vert} \text{Axioms} \mathbin{\Vert} \text{Edition} \mathbin{\Vert} \text{TargetProfile}\Big)$$
 
-### §79. Weakest Precondition Calculus $\text{wp}(S, Q)$ and Verification Conditions
+### §79. Weakest Precondition Calculus and Verification Conditions
 
 Verification conditions (VCs) are generated via Dijkstra's weakest precondition transformer:
 
