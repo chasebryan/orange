@@ -921,7 +921,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "be845899742c21d44c8addfcff4dbd22fa6716127184ed9add20dc93574bff31"
+_PHD = "9a1d29ee2a9fe43d2a0c1e5b3981342ef7b68f2b29bc76b2f0cbb491caa15d4e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1263,15 +1263,37 @@ _DBM = {
         ): (2, "github-actions", "/", "weekly", 7, 5),
     },
 }
+
+
+def _markdownlint_md033_clause(elements: Sequence[str]) -> str:
+    """Name the enforced MD033 allowlist so the prose cannot stay narrower than the config."""
+    quoted = [f"`{element}`" for element in elements]
+    if not quoted or len(quoted) != len(set(quoted)) or any(not element for element in elements):
+        return "permits no reviewed MD033 HTML elements."
+    if len(quoted) == 1:
+        return f"permits only the {quoted[0]} HTML element under MD033."
+    if len(quoted) == 2:
+        return f"permits only the {quoted[0]} and {quoted[1]} HTML elements under MD033."
+    listed = ", ".join(quoted[:-1]) + f", and {quoted[-1]}"
+    return f"permits only the {listed} HTML elements under MD033."
+
+
+_ML_ALLOWED_ELEMENTS = tuple(json.loads(_MLC)["config"]["MD033"]["allowed_elements"])
+_ML_MD033_CLAUSE = _markdownlint_md033_clause(_ML_ALLOWED_ELEMENTS)
 _MLM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
             "Markdown lint ignores only `compiler/target/**`; disables line-length rule MD013;\n"
             "applies duplicate-heading rule MD024 only to siblings; disables front-matter title\n"
-            "matching for MD025; and permits only the `img` HTML element under MD033."
-        ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", "img"),
+            "matching for MD025; and " + _ML_MD033_CLAUSE
+        ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", *_ML_ALLOWED_ELEMENTS),
     },
 }
+_CI_IMAGE_DIGEST_SECTION_POINTERS = (
+    "separately admitted OCI image recorded in section 5",
+    "whose image digest is recorded in section 5",
+    "to the digest recorded in section 5",
+)
 _PM = {
     "policy/README.md": {
         "ordinary text files at\n512 KiB (`512 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
@@ -4008,6 +4030,17 @@ class FoundationValidator:
                             specification,
                             f"{description} must state the exact {expected} budget marker {marker!r}",
                         )
+        inventory_path = self.root / "docs/operations/CI_DEPENDENCIES.md"
+        inventory_text = self._rt(inventory_path)
+        if inventory_text is not None:
+            for phrase in _CI_IMAGE_DIGEST_SECTION_POINTERS:
+                wrong_section = phrase.replace("section 5", "section 4")
+                if inventory_text.count(phrase) != 1 or wrong_section in inventory_text:
+                    self.add(
+                        "ci.image_digest_section",
+                        inventory_path,
+                        "image-digest prose must point at section 5, where those digests are recorded",
+                    )
 
     def _validate_tree_encoding_and_format(self) -> None:
         if not self._preflight_repository_resources():

@@ -175,6 +175,14 @@ folder, and `aes::cipher(...)` calls it), so the files of one entry could
 share one copy of their cipher. A module in another folder is still out of
 reach, so an entry that needs another entry's algorithm keeps its own copy.
 
+**An array held 256 elements.** Through S3o an array held at most 256
+elements. S3p ([`LENGTHS_2026.md`](../docs/LENGTHS_2026.md)) admits 1 through
+65,536. Where a note gave that old bound as the reason a message was split
+or a schedule packed, the source still has that shape and the language no
+longer requires it. Two recorded cases stay beyond one array: Crypto++'s
+131,072-byte Salsa20 digests, and CCM's 10-byte associated-data length
+encoding, which is for `a >= 2^32`.
+
 ## Sources reachable from the build
 
 The READMEs cite standards by their canonical locations (the RFC Editor,

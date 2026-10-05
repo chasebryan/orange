@@ -3,14 +3,16 @@
 // 128-bit segment, OFB and CTR, written as the equations of section 6 for
 // two-block messages, with the encryption vectors of Appendix F. The forward
 // cipher of FIPS 197 (https://doi.org/10.6028/NIST.FIPS.197-upd1) is carried
-// in full, since a module has no imports; aes.or is its home and holds the
-// inverse cipher and the FIPS 197 examples. The file reproduces the first two
+// in full. A module may name the modules it uses; this file repeats the
+// cipher. aes.or is its home and holds the inverse cipher and the FIPS 197
+// examples. The file reproduces the first two
 // blocks of the examples F.1.1, F.2.1, F.3.13, F.4.1, F.5.1 and F.5.5; two
 // blocks of each of the six is what one file's evaluation budget holds.
 edition 2026;
 module aes_modes {
-  // Section 5.1.1: SubBytes is a table. Indices in Orange are static, so a
-  // lookup selects the word holding the entry and then the byte in it.
+  // Section 5.1.1: SubBytes is a table. A byte may index a table of 256
+  // entries; this rendering selects the word holding the entry and then the
+  // byte in it.
   // The byte at position k of a word holding eight table entries.
   spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
     if k == 0 { (w >> 56) as Word[8] }
@@ -201,8 +203,9 @@ module aes_modes {
   // Section 5.1, Algorithm 1: Cipher(in, Nr, w). Round 0 adds the first round
   // key; rounds 1 through Nr - 1 apply SubBytes, ShiftRows, MixColumns and
   // AddRoundKey; round Nr omits MixColumns. The loop runs to the 14 rounds of
-  // AES-256 and the rounds above Nr leave the state alone, since the round
-  // index must be static to select the round key.
+  // AES-256 and the rounds above Nr leave the state alone. `nr` is an `Int`,
+  // and an `Int` is not an index, so the round key is selected by the loop
+  // index.
   spec cipher(input: Word[8]^16, nr: Int, w: Word[32]^60) -> Word[8]^16 {
     let s: Word[64]^32 = sbox();
     let start: Word[8]^16 = add_round_key(input, [w[0], w[1], w[2], w[3]]);
