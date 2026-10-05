@@ -4,7 +4,7 @@
 
    orange_main returns 0 when the command succeeds, 1 when a source is
    rejected or a self-test fails, and 2 when the invocation itself is not
-   accepted. Admitted sources are the Orange 2026 fragment through S3k. */
+   accepted. Admitted sources are the Orange 2026 fragment through S3l. */
 
 #ifndef ORANGE_COMPILE_H
 #define ORANGE_COMPILE_H

@@ -3,7 +3,7 @@
    CLI behind orange_main. Exact integer magnitudes live in bigint.c.
    src/main.c only forwards the process arguments.
 
-   Slice boundary: S3a through S3k. The admitted source is edition 2026.
+   Slice boundary: S3a through S3l. The admitted source is edition 2026.
    A program is a root module plus every module it reaches through use.
    check and eval read module m of `use m;` from m.or beside the root.
    lex reads only the file it is given. A module names each used module
@@ -58,6 +58,21 @@
    the loop is ORC0211. `p.01`, `p.0.1`, and `x[0].1` are each one
    ORC0101. A tuple inside a tuple, and an array of tuples, are rejected
    even through a `type` alias. Whole-tuple `==` and `!=` stay rejected.
+   A byte string "..." or hex"..." is the array Word[8]^n of its bytes,
+   with n from 1 through 256. Characters are printable ASCII, from a
+   space through `~`, or an escape; a non-printable or non-ASCII byte is
+   ORC0235. An empty "" is ORC0221. A hex string is pairs of hex digits,
+   and a space may separate bytes. A lexical error is ORC0009 at the
+   first bad character. An unterminated hex string is ORC0003. hex "00"
+   with a space before the quote is ORC0101. ++ joins two arrays of one
+   element type, and a join longer than 256 bytes is ORC0222. A slice
+   `x[a..b]` holds the b - a elements from index a, and
+   `x with [a..b] = v` replaces that run. At least one bound is written.
+   Bounds are integer literals and loop indices with +, -, and * by a
+   constant, proved in range before evaluation. A runtime bound, such as
+   the parameter in `data`, or a non-linear bound, such as `i * i` in
+   `squared`, is ORC0226. A length that changes from step to step is
+   ORC0236. A last step that leaves the array is ORC0223.
    `for`, `in`, `with`, `if`, and `else` are names outside those
    positions. `true` and `false` are Bool values where no parameter or
    binding of that spelling is in scope. Empty spec and impl
@@ -73,12 +88,11 @@
    lex output can be compared with the Rust frontend. `let` and `as` stay
    identifiers there, and they stay identifiers here.
 
-   Fail closed. Byte strings, size parameters, byte order, type
-   parameters, tests, lengths above 256, computed shift amounts, and
-   whole-tuple equality are rejected rather than given a new meaning.
-   The lexer still produces the Rust token names for those forms. The
-   parser or the checker rejects them. This file does not implement S3l
-   or any later slice.
+   Fail closed. Size parameters, byte order, type parameters, tests,
+   lengths above 256, computed shift amounts, and whole-tuple equality
+   are rejected rather than given a new meaning. The lexer still produces
+   the Rust token names for those forms. The parser or the checker
+   rejects them. This file does not implement S3m or any later slice.
 
    Layout:
      limits, token kinds, and the Rust token-name table
@@ -1163,8 +1177,11 @@ static int starts_with(const Compiler *c, size_t cursor, const char *word) {
 /* Scan c->text into c->tokens, including a final TK_EOF.
    Block comments nest. A line comment ends at the line break.
    Integer well-formedness is checked here; the magnitude limit is not.
-   hex"..." and ordinary strings are tokens even though this slice does
-   not evaluate them. An unrecognized byte is ORC0001 and is skipped. */
+   A hex string is hex"..." with the quote immediately after hex. An
+   unterminated hex string is ORC0003. A bad character, or a hex digit
+   with no partner, is ORC0009 at that character. Ordinary "..." strings
+   are tokens here; printable ASCII and escapes are checked later. An
+   unrecognized byte is ORC0001 and is skipped. */
 static void lex_source(Compiler *c) {
     size_t cursor = 0;
     while (cursor < c->length && !c->resource) {
@@ -1553,9 +1570,9 @@ static int trailing_joiner(const Compiler *c) {
 
 /* Operator groups that must not be mixed without parentheses:
    1 arithmetic (+, -, *), 2 &, 3 |, 4 ^, 5 shifts and rotations,
-   6 comparisons, 7 &&, 8 ||, 9 Euclidean / and %.
-   In group 1, `*` folds inside `+` and `-`. Groups 2 through 4, 7, and 8
-   chain only with the same operator. Groups 5, 6, and 9 take one
+   6 comparisons, 7 &&, 8 ||, 9 Euclidean / and %, 10 concatenation (++).
+   In group 1, `*` folds inside `+` and `-`. Groups 2 through 4, 7, 8,
+   and 10 chain only with the same operator. Groups 5, 6, and 9 take one
    right-hand operand and do not chain. */
 static int group_of(TokenKind kind) {
     if (kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR) {
@@ -2365,8 +2382,9 @@ static int finish_slice_expr(Compiler *c, uint32_t base, uint32_t start_expr, ui
     return note_height(c, *out);
 }
 
-/* One index in brackets. A lone integer literal is EX_INDEX. Any other
-   index expression is EX_SELECT. A following `[` is parsed by parse_index. */
+/* One bracket suffix. A lone integer literal is EX_INDEX. Any other
+   index expression is EX_SELECT. `a..b`, with either bound omitted but
+   not both, is EX_SLICE. A following `[` is parsed by parse_index. */
 static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
     Token open;
     Token index;
@@ -2442,7 +2460,8 @@ static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
 }
 
 /* A second `[` is another index, not a syntax error. Indexing the resulting
-   scalar is ORC0224. Arrays of arrays stay outside this slice. */
+   scalar is ORC0224. A slice is taken once: a following `[` or `.` is
+   ORC0101. Arrays of arrays stay outside this slice. */
 static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
     if (peek_kind(c) != TK_LBRACKET) {
         *out = base;
@@ -3726,12 +3745,12 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
 }
 
 /* Operand: literal, name, call, parenthesized expression, array literal,
-   fill, loop, conditional, unary minus, or bitwise complement. A name,
-   call, or accumulator may then take one index, and an array may take
-   one `with [` update. A minus immediately before an integer is that
-   literal's sign, matching the S3a body rule. `for` starts a loop only
-   when the next token is an identifier. `if` starts a conditional only
-   in that same position. */
+   fill, loop, conditional, byte string, hex string, unary minus, or
+   bitwise complement. A name, call, or accumulator may then take one
+   index or slice, and an array may take one `with [` update. A minus
+   immediately before an integer is that literal's sign, matching the
+   S3a body rule. `for` starts a loop only when the next token is an
+   identifier. `if` starts a conditional only in that same position. */
 static int parse_prefixed(Compiler *c, uint32_t *out) {
     Token token = peek_token(c);
     if (c->resource) {
@@ -4194,8 +4213,8 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
 /* One expression. `as`, shifts, comparisons, and Euclidean `/` and `%`
    take one right-hand operand and do not chain. In group 1, products fold
    first and then `+` and `-` associate to the left. `&`, `|`, `^`, `&&`,
-   and `||` associate to the left only with the same operator. A following
-   operator from another group is rejected. */
+   `||`, and `++` associate to the left only with the same operator. A
+   following operator from another group is rejected. */
 static int parse_expr(Compiler *c, uint32_t *out) {
     uint32_t left;
     Token first_op;
@@ -5013,7 +5032,13 @@ static int parse_source(Compiler *c) {
    A tuple is 2 through 16 scalars or arrays. `.k` selects one element.
    A pattern name that repeats the loop index is ORC0219, and a pattern
    name used outside the loop is ORC0211. Whole-tuple `==` and `!=`
-   stay ORC0215. */
+   stay ORC0215. A byte string is Word[8]^n. ++ joins arrays. A slice's
+   bounds are an affine form of integer literals and loop indices, with
+   one fixed positive length, proved inside the array before evaluation.
+   A runtime or non-linear bound is ORC0226, a varying length is ORC0236,
+   and an out-of-range step is ORC0223. A non-printable or non-ASCII byte
+   is ORC0235, an empty string is ORC0221, and a join past 256 bytes is
+   ORC0222. */
 
 static const char *type_spelling(TypeKind type) {
     switch (type) {
@@ -9166,8 +9191,9 @@ static int operand_passes_branch(const Compiler *c, uint32_t index) {
 
 /* Visit one expression at `expected` with array length `expected_len`.
    A scalar uses length 0. Returns 0 only to stop the walk. Loops, fills,
-   updates, indices, comparisons, division, conditionals, and conversions
-   are checked here too. A chained index of a scalar is ORC0224 once. */
+   updates, indices, slices, concatenation, byte strings, comparisons,
+   division, conditionals, and conversions are checked here too. A
+   chained index of a scalar is ORC0224 once. */
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr;
