@@ -6841,6 +6841,32 @@ the 16 MiB source ceiling are `ORC1003`, outside this range.
      ordinary errors, then one suppression diagnostic: `ORC0007`, `ORC0105`, or
      `ORC0208`.
 
+The record is the struct `Diagnostic` in
+`compiler/crates/orange-compiler/src/diagnostic.rs`. Its fields are
+`severity`, `code`, `message`, `primary_span`, `label`, `secondary_spans`,
+and `notes`. `Severity` has one variant, `Error`, whose stable spelling is
+`error`. `Diagnostic::error` builds one. A rendered diagnostic begins
+`error[CODE]:` and the message. The label is the primary underline. Each
+secondary span carries its own label. Notes are rendered `= note:`.
+
+The ceilings of 100 are three constants:
+
+- Lexing: `MAX_DIAGNOSTICS_PER_SOURCE` in `lexer.rs`, then `ORC0007`.
+- Parsing: `MAX_PARSE_DIAGNOSTICS_PER_SOURCE` in `parser.rs`, then `ORC0105`.
+- Semantics: `MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE` in `semantics.rs`, then
+  `ORC0208`, message
+  `` too many semantic errors; further errors are suppressed ``, note
+  `` at most 100 ordinary semantic diagnostics are retained per source ``.
+
+`begin_report` counts every emission attempt as one semantic event, including
+an attempt the budget then drops. The event ceiling is
+`MAX_SEMANTIC_EVENTS_PER_SOURCE`, 1,048,576. Exhausting it is `ORC0209`.
+
+The codes are the `DiagnosticCode` enum in that file. Its comment says an
+existing meaning must not be silently reused. Sections 94 through 100 name
+those codes. Where a catalog example and a run of `orangec check` differ,
+the run controls (§96, `ORC0202`).
+
 ---
 
 ### §94. Lexical Diagnostics (`ORC0001`–`ORC0009`): Formal Predicates, Triggers, Examples, Fixes
