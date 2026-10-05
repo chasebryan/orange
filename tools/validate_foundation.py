@@ -620,6 +620,7 @@ docs/book/NOVICE_N8_READ_AND_REPAIR.md
 docs/book/NOVICE_OPENING.md
 docs/book/NOVICE_PROBABILITY.md
 docs/book/NOVICE_PROGRAMMING.md
+docs/book/NOVICE_PROTECT.md
 docs/book/README.md
 docs/governance/adrs/ADR-0000-template.md
 docs/governance/adrs/README.md

@@ -99,21 +99,31 @@ understand each operation rather than memorize its notation.
   answers. No Orange listing is included. N10 is a provisional label.
   Final numbering waits on the integration plan. N10 does not use the
   formal vocabulary reserved for Say What You Mean.
+- **N11.** [Protect More Than Appearance](NOVICE_PROTECT.md#n11-protect-more-than-appearance):
+  encoding, encryption, hashing, and authentication as separate claims;
+  the shift, affine, substitution, and Vigenère schemes, each proved
+  correct and then broken under a stated rule; keys, distributions,
+  nonces, and counters; the one-time pad with an elementary proof of
+  perfect secrecy; the two-time pad shown by XOR. Twelve Orange listings,
+  three of them intentionally rejected. Sixteen exercises with worked
+  answers. N11 is a provisional label. It is not manuscript Chapter 11,
+  *Standards as Versioned Inputs*.
 
 The opening was approved by the owner before this continuation. Later
 corrections to its worked reversal example, counting argument, and
 hexadecimal answer are in the opening file; this index describes that
-corrected source. Chapters 4–6, N7, N8, N9, and the new executable checks remain
+corrected source. Chapters 4–6, N7, N8, N9, N10, and N11, and the new executable checks remain
 reviewable new work. Across the six chapters there are 52 exercises with
 worked answers. N7 adds twelve further exercises in its own file. N8 adds
 ten further exercises in its own file. N9 adds 20. N10 adds sixteen
-further exercises, numbered N10.1 onward.
+further exercises, numbered N10.1 onward. N11 adds sixteen further
+exercises, numbered N11.1 onward.
 
 ### Remaining teaching sequence
 
 Item 1 is drafted as N7. Item 2 is drafted as N8. Item 3 is drafted as N9
-and listed above. Item 4 is drafted as N10. Items 5 and 6 have not been
-written. Extend the manuscript in the following dependency order:
+and listed above. Item 4 is drafted as N10. Item 5 is drafted as N11.
+Item 6 has not been written. Extend the manuscript in the following dependency order:
 
 1. **Name the Intermediate Step.** Drafted in
    [N7](NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md#n7-name-the-intermediate-step).
@@ -136,10 +146,15 @@ written. Extend the manuscript in the following dependency order:
    choices, powers and logarithms; distinguish key length, distribution
    and adversary uncertainty. The label is provisional. Final numbering
    waits on the integration plan.
-5. **Protect More Than Appearance.** Explicitly educational classical
-   constructions; encoding, encryption, hashing, authentication; keys,
-   randomness, nonces and counters; the conditions of the one-time pad.
-   Do not introduce a practical primitive before its prerequisites.
+5. **Protect More Than Appearance.** Drafted as
+   [N11](NOVICE_PROTECT.md#n11-protect-more-than-appearance).
+   Explicitly educational shift, affine, substitution, and Vigenère
+   constructions, each with a stated break; encoding, encryption,
+   hashing, and authentication; keys, distributions, nonces, and
+   counters; the one-time pad and its exact conditions. The six outcomes
+   in N11 are the finish line. The label is provisional. Final numbering
+   waits on the integration plan. Do not introduce a practical primitive
+   before its prerequisites.
 6. **The First Complete Study.** A supported small Orange construction,
    a hand-derived expected result, documented tests, a deliberate error,
    a repair, and a precisely scoped explanation of what was established.
@@ -302,7 +317,7 @@ python3 tools/test_book_foundations.py
 
 These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
-answers, the 16 lesson-N10 answers, and document structure. Python test
+answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -319,7 +334,9 @@ literal guard. The same test reads the Orange listings in N7 and checks
 their printed results and intended rejections. The same test reads the
 Orange listings in N8 and checks the printed values, the printed
 diagnostics, the failing and passing tests, and the `--spec` and `--steps`
-commands the lesson names. Run it in a build-capable
+commands the lesson names. The same test reads the Orange listings in
+N11 and checks their printed values, their printed diagnostics, and the
+passing known-answer tests. Run it in a build-capable
 checkout:
 
 ```sh
@@ -333,6 +350,7 @@ No native code generation or cryptographic security claim is added.
 New drafting and integration through Chapters 4–6 are AI-assisted with
 ChatGPT (GPT-6 Astra Pro), 2026-10-05, at the owner's direction. Lessons N8 and N9
 are AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. The opening is owner-approved; continuation, N8, and N9 review are
+direction. Lesson N11 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
+at the owner's direction. The opening is owner-approved; continuation, N8, N9, and N11 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

@@ -770,6 +770,155 @@ class N10Probability(unittest.TestCase):
                                 numerator * other_num, denominator * other_den))
 
 
+class N11Protect(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / 'docs' / 'book' / 'NOVICE_PROTECT.md').read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_n11_exercises_label_epigraph_and_anchors(self):
+        exercises = re.findall(r'^\*\*Exercise (N11\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(N11\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'N11.{n}' for n in range(1, 17)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ Chapter (?:7|8|9|10|11|12)\b')
+        self.assertNotRegex(self.text, r'(?m)^#+ N1[02]\b')
+        self.assertRegex(self.text, r'(?m)^## N11: Protect More Than Appearance$')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'In this case, intercepting the message has given the '
+            'cryptanalyst no information.'
+        ])
+        self.assertIn('https://pages.cs.wisc.edu/~rist/642-spring-2014/shannon-secrecy.pdf', self.text)
+        self.assertIn('**N11.**', self.index)
+        self.assertIn('NOVICE_PROTECT.md#n11-protect-more-than-appearance', self.index)
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('n11-protect-more-than-appearance', anchors)
+        for fragment in re.findall(r'NOVICE_PROTECT\.md#([^)\s]+)', self.index):
+            self.assertIn(fragment, anchors)
+        opening = (ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md').read_text(encoding='utf-8')
+        opening_anchors = {github_anchor(h) for h in re.findall(r'^#{1,6} (.+)$', opening, re.M)}
+        for fragment in re.findall(r'NOVICE_OPENING\.md#([^)\s]+)', self.text):
+            self.assertIn(fragment, opening_anchors)
+        probability = (ROOT / 'docs' / 'book' / 'NOVICE_PROBABILITY.md').read_text(encoding='utf-8')
+        probability_anchors = {
+            github_anchor(h) for h in re.findall(r'^#{1,6} (.+)$', probability, re.M)
+        }
+        for fragment in re.findall(r'NOVICE_PROBABILITY\.md#([^)\s]+)', self.text):
+            self.assertIn(fragment, probability_anchors)
+
+    def test_n11_ledger_matches_exact_values(self):
+        block = re.search(r'^```text\nn11-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            num, den = value.split('/')
+            printed[name] = Fraction(int(num), int(den))
+        factorial = 1
+        for n in range(1, 27):
+            factorial *= n
+        units = [a for a in range(26) if math_gcd(a, 26) == 1]
+        expected = {
+            'shift-keys': Fraction(26, 1),
+            'affine-units': Fraction(len(units), 1),
+            'affine-keys': Fraction(len(units) * 26, 1),
+            'excluded-affine-pairs': Fraction(26 * 26 - len(units) * 26, 1),
+            'shift-expected-trials': Fraction(26 + 1, 2),
+            'affine-expected-trials': Fraction(len(units) * 26 + 1, 2),
+            'substitution-keys': Fraction(factorial, 1),
+            'small-substitution-keys': Fraction(120, 1),
+            'uniform-joint-m0-c0': Fraction(1, 4) * Fraction(1, 2),
+            'uniform-joint-m1-c0': Fraction(3, 4) * Fraction(1, 2),
+            'uniform-cipher': Fraction(1, 2),
+            'uniform-posterior-m0': Fraction(1, 4),
+            'biased-joint-m0-c0': Fraction(1, 4) * Fraction(3, 4),
+            'biased-joint-m1-c0': Fraction(3, 4) * Fraction(1, 4),
+            'biased-cipher-0': Fraction(3, 8),
+            'biased-posterior-m0-c0': Fraction(1, 2),
+            'biased-joint-m0-c1': Fraction(1, 4) * Fraction(1, 4),
+            'biased-cipher-1': Fraction(5, 8),
+            'biased-posterior-m0-c1': Fraction(1, 10),
+            'two-time-prior': Fraction(1, 256),
+            'two-time-posterior': Fraction(1, 1),
+            'pad-difference': Fraction(0x41 ^ 0x42, 1),
+            'hello-row': Fraction(3, 1),
+            'inverse-of-5': Fraction(21, 1),
+            'inverse-of-9': Fraction(3, 1),
+            'inverse-of-25': Fraction(25, 1),
+            'known-plaintext-b': Fraction(3, 1),
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(len(units), 12)
+        self.assertEqual((5 * 21) % 26, 1)
+        self.assertEqual((9 * 3) % 26, 1)
+        self.assertEqual((25 * 25) % 26, 1)
+
+    def test_n11_exhaustive_pad_shift_and_affine(self):
+        for q in range(2, 8):
+            for message in range(q):
+                for ciphertext in range(q):
+                    keys = [key for key in range(q) if (message + key) % q == ciphertext]
+                    self.assertEqual(keys, [(ciphertext - message) % q])
+                    self.assertEqual((ciphertext - keys[0]) % q, message)
+        for q, length in ((2, 1), (2, 2), (3, 2), (5, 2)):
+            symbols = range(q)
+            strings = list(product(symbols, repeat=length))
+            for message in strings:
+                for ciphertext in strings:
+                    keys = [
+                        key for key in strings
+                        if all((message[i] + key[i]) % q == ciphertext[i] for i in range(length))
+                    ]
+                    self.assertEqual(len(keys), 1)
+                    self.assertEqual(
+                        tuple((ciphertext[i] - keys[0][i]) % q for i in range(length)),
+                        message,
+                    )
+        for message in range(26):
+            for key in range(26):
+                ciphertext = (message + key) % 26
+                self.assertEqual((ciphertext - key) % 26, message)
+        units = [a for a in range(26) if math_gcd(a, 26) == 1]
+        for multiplier in units:
+            inverse = next(x for x in range(26) if (multiplier * x) % 26 == 1)
+            for addend in range(26):
+                for message in range(26):
+                    ciphertext = (multiplier * message + addend) % 26
+                    recovered = (inverse * ((ciphertext - addend) % 26)) % 26
+                    self.assertEqual(recovered, message)
+        for multiplier in range(26):
+            if math_gcd(multiplier, 26) == 1:
+                continue
+            images = {(multiplier * message) % 26 for message in range(26)}
+            self.assertLess(len(images), 26)
+        for first in range(256):
+            for second in range(256):
+                self.assertEqual(first ^ second ^ second, first)
+                for key in (0x00, 0x3c, 0xff):
+                    self.assertEqual((first ^ key) ^ (second ^ key), first ^ second)
+        prior_message = {0: Fraction(1, 4), 1: Fraction(3, 4)}
+        for key_weights, expected_posterior in (
+            ({0: Fraction(1, 2), 1: Fraction(1, 2)}, Fraction(1, 4)),
+            ({0: Fraction(3, 4), 1: Fraction(1, 4)}, Fraction(1, 2)),
+        ):
+            joint = {}
+            for message in (0, 1):
+                for key in (0, 1):
+                    ciphertext = message ^ key
+                    joint[(message, ciphertext)] = prior_message[message] * key_weights[key]
+            cipher = sum(weight for (message, ciphertext), weight in joint.items() if ciphertext == 0)
+            posterior = joint[(0, 0)] / cipher
+            self.assertEqual(posterior, expected_posterior)
+
+
+def math_gcd(left: int, right: int) -> int:
+    while right:
+        left, right = right, left % right
+    return left
+
+
 def rotate_byte(value: int, amount: int) -> int:
     """Reference mathematical rotation, not an Orange interpreter."""
     if not 0 <= value < 256:

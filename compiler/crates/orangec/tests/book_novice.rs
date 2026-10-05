@@ -483,3 +483,133 @@ fn n8_spec_and_step_budget_match_the_lesson() {
         String::from_utf8_lossy(&misuse.stderr).contains("option `--spec` applies only to eval")
     );
 }
+
+const N11: &str = include_str!("../../../../docs/book/NOVICE_PROTECT.md");
+
+fn n11_sources() -> Vec<&'static str> {
+    fences(N11, "orange")
+}
+
+fn n11_text() -> Vec<&'static str> {
+    fences(N11, "text")
+}
+
+fn n11_source(name: &str) -> &'static str {
+    n11_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing N11 listing {name}"))
+}
+
+fn n11_one(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = n11_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn n11_eval_fence(name: &str) -> &'static str {
+    let prefix = format!("{name}::");
+    n11_one(
+        |text| text.starts_with(&prefix) && text.contains(" = "),
+        name,
+    )
+}
+
+fn n11_test_fence(title: &str) -> &'static str {
+    let prefix = format!("test \"{title}");
+    n11_one(
+        |text| text.starts_with(&prefix) && text.contains("... ok"),
+        title,
+    )
+}
+
+fn n11_diagnostic_fence(marker: &str) -> &'static str {
+    n11_one(
+        |text| text.starts_with("error[") && text.contains(marker),
+        marker,
+    )
+}
+
+#[test]
+fn n11_listings_check_and_evaluate_repeatably() {
+    let sources = n11_sources();
+    assert_eq!(sources.len(), 12, "shift through pad");
+    assert!(!N11.contains("\n## Chapter 11"));
+    assert!(!N11.contains("\n# Chapter 11"));
+    let rejected = ["bad_letter", "wide_key", "residue_xor"];
+    let mut checked = 0;
+    for source in &sources {
+        let name = module_name(source);
+        if rejected.contains(&name) {
+            continue;
+        }
+        let expected = format!("{}\n", n11_eval_fence(name));
+        let check = run("check", source);
+        assert!(
+            check.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&check.stderr)
+        );
+        assert!(check.stdout.is_empty(), "{name}: check printed a value");
+        assert!(check.stderr.is_empty(), "{name}: check diagnostics");
+        let first = run("eval", source);
+        assert!(
+            first.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        assert!(first.stderr.is_empty(), "{name}: eval diagnostics");
+        let second = run("eval", source);
+        assert_eq!(first.status.code(), second.status.code());
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+        checked += 1;
+    }
+    assert_eq!(checked, 9);
+}
+
+#[test]
+fn n11_rejected_listings_match_the_printed_diagnostics() {
+    for (name, marker) in [
+        ("bad_letter", "ORC0207"),
+        ("wide_key", "ORC0223"),
+        ("residue_xor", "ORC0215"),
+    ] {
+        let source = n11_source(name);
+        let expected = format!("{}\n", n11_diagnostic_fence(marker));
+        for command in ["check", "eval"] {
+            let result = run(command, source);
+            assert_eq!(result.status.code(), Some(1), "{name}: {command}");
+            assert!(result.stdout.is_empty(), "no partial values for {name}");
+            assert_eq!(
+                String::from_utf8(result.stderr).expect("UTF-8 diagnostic"),
+                expected,
+                "{name}: {command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn n11_known_answer_tests_pass() {
+    for (name, title) in [
+        ("shift", "shift HELLO round trip"),
+        ("affine", "affine round trip at 7"),
+        ("substitution", "keyword substitution round trip"),
+        ("pad", "two-time pad cancels the key"),
+    ] {
+        let source = n11_source(name);
+        let expected = format!("{}\n", n11_test_fence(title));
+        let first = run("test", source);
+        assert_eq!(first.status.code(), Some(0), "{name}");
+        assert!(first.stderr.is_empty(), "{name}: a test report is not a diagnostic");
+        assert_eq!(first.stdout, expected.as_bytes(), "{name}");
+        let second = run("test", source);
+        assert_eq!(first.stdout, second.stdout);
+        assert_eq!(first.stderr, second.stderr);
+    }
+}
