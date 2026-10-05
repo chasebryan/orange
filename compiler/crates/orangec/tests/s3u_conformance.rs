@@ -597,6 +597,12 @@ fn s3u_rank_and_scalar_limits_are_checked_before_evaluation() {
             "an array shape has 65540 scalar elements, exceeding 65536",
         ),
         (
+            "type Row = Word[8]^2; type Plane = Row^5; type Cube = Plane^2; \
+             type Hyper = Cube^3277;",
+            "ORC0221",
+            "an array shape has 65540 scalar elements, exceeding 65536",
+        ),
+        (
             "type Row = Word[8]^1; type Plane = Row^1; type Cube = Plane^0;",
             "ORC0221",
             "an array length must be a decimal integer from 1 through 65536",
@@ -606,6 +612,12 @@ fn s3u_rank_and_scalar_limits_are_checked_before_evaluation() {
              spec f(x: Hyper^1) -> Int { 0 }",
             "ORC0203",
             "`Hyper` already has 4 array dimensions",
+        ),
+        (
+            "type Row = Word[8]^1; type Plane = Row^1; type Cube = Plane^1; type Hyper = Cube^1; \
+             spec f[n in 1..2, T in {Hyper}](x: T^n) -> Int { 0 }",
+            "ORC0203",
+            "`T` already has 4 array dimensions",
         ),
         (
             "type Row = Word[8]^1; type Plane = Row^1; type Cube = Plane^1; type Hyper = Cube^1; \
@@ -771,6 +783,51 @@ fn s3u_path_cost_is_the_sum_of_the_copied_levels() {
         let copied: u64 = axes.into_iter().map(bulk).sum();
         assert_eq!(updated, base + 4 + copied, "{context}");
         // Exactly that budget suffices; one step fewer stops atomically.
+        let exact = updated.to_string();
+        let output = run_twice(
+            &["eval", "--spec", "path", "--steps", &exact],
+            &path,
+            &context,
+        );
+        assert_eq!(output.status.code(), Some(0), "{context}");
+        let short = (updated - 1).to_string();
+        let output = run_twice(
+            &["eval", "--spec", "path", "--steps", &short],
+            &path,
+            &context,
+        );
+        assert_rejected(
+            &output,
+            "ORC0301",
+            "reference evaluation step limit exceeded",
+            &context,
+        );
+    }
+    // Rank 4, with an outer axis longer than one. 65 is the first length
+    // whose copy costs two steps; 8192 * 2 * 2 * 2 is the admitted scalar limit.
+    for axes in [[65_u64, 2, 2, 2], [8192, 2, 2, 2]] {
+        let [hyper, planes, rows, columns] = axes;
+        let fill = format!("[[[[0; {columns}]; {rows}]; {planes}]; {hyper}]");
+        let last = format!(
+            "[{}][{}][{}][{}]",
+            hyper - 1,
+            planes - 1,
+            rows - 1,
+            columns - 1
+        );
+        fs::write(&path, format!("edition 2026;\nmodule costs {{ type Row = Word[8]^{columns}; type Plane = Row^{rows}; type Cube = Plane^{planes}; type Hyper = Cube^{hyper}; spec base() -> Hyper {{ {fill} }} spec path() -> Hyper {{ {fill} with {last} = 7 }} }}\n")).unwrap();
+        let context = format!("rank 4 {axes:?}");
+        let base = steps(
+            &run_twice(&["eval", "--stats", "--spec", "base"], &path, &context),
+            "base",
+            &context,
+        );
+        let output = run_twice(&["eval", "--stats", "--spec", "path"], &path, &context);
+        let updated = steps(&output, "path", &context);
+        // Four index literals and the value cost a step each; the path
+        // copies one array at each level it passes through.
+        let copied: u64 = axes.into_iter().map(bulk).sum();
+        assert_eq!(updated, base + 5 + copied, "{context}");
         let exact = updated.to_string();
         let output = run_twice(
             &["eval", "--spec", "path", "--steps", &exact],
