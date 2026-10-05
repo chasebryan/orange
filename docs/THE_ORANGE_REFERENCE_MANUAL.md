@@ -2175,32 +2175,130 @@ module curve25519_spec {
 
 ### §52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)
 
+Poly1305 as RFC 8439 section 2.5 writes it. The listing is accepted by
+`orangec test`: section 2.5.2 (the tag of "Cryptographic Forum Research
+Group"), appendix A.3 item 1 (zeros under the zero key), and the clamped $r$
+of the section 2.5.2 key. Section 2.8's AEAD construction, which feeds
+Poly1305 a padded string of additional data, ciphertext, and lengths, is the
+same `mac` on that string. `algorithms/chacha20-poly1305/chacha20-poly1305.or`
+carries those lengths. This section is the field MAC.
+
+#### 1. The Field and the Key (section 2.5)
+
+$$p = 2^{130} - 5, \qquad \mathbb{F}_p = \mathbb{Z}/p\mathbb{Z}.$$
+
+`Mod[(1 << 130) - 5]` is that field. The 32-byte key splits into $r$, the
+first 16 bytes as a little-endian integer, and $s$, the second 16 bytes as a
+little-endian integer. $r$ is clamped by
+
+$$r \leftarrow r \land \mathtt{0x0ffffffc0ffffffc0ffffffc0fffffff}.$$
+
+On the bytes, that clears the top four bits of bytes 3, 7, 11, and 15, and
+the bottom two bits of bytes 4, 8, and 12. $s$ is not clamped. `clamped_r`
+and `s_word` are those two values. The mask in the listing is the same
+integer split into little-endian 64-bit halves, `0x0ffffffc0fffffff` and
+`0x0ffffffc0ffffffc`.
+
+#### 2. The Accumulator (section 2.5.1)
+
+The message is read in 16-byte blocks. Block $j$ becomes the integer $n$:
+its bytes, little-endian, with a `0x01` byte immediately above the bytes that
+belong to the message. A full block has the `0x01` at $2^{128}$. A final
+block of $k$ bytes, $1 \le k \le 16$, has it at $2^{8k}$. `weight(k)` is
+$256^k$, which is that place. The accumulator starts at 0 and each block
+updates it by
+
+$$a \leftarrow r \cdot (a + n) \bmod p.$$
+
+After the last block the tag is the 16 little-endian bytes of
+
+$$(a + s) \bmod 2^{128}.$$
+
+`mac` is that function for 1 through 5 blocks (a message of at most 80
+bytes). The caller pads the array with zeros out to a whole number of blocks
+and passes `held`, the number of message bytes in the last block. A longer
+message is the same function with a larger finite `blocks` range. One `spec`
+does not cover every length: a size parameter has at most 256 instances
+(§30).
+
+#### 3. The Section 2.5.2 Key, Worked
+
+The key's first 16 bytes, before clamping, are
+
+`85 d6 be 78 57 55 6d 33 7f 44 52 fe 42 d5 06 a8`.
+
+After the mask they are
+
+`85 d6 be 08 54 55 6d 03 7c 44 52 0e 40 d5 06 08`.
+
+The message "Cryptographic Forum Research Group" is 34 bytes, so two full
+blocks and a final block of 2 bytes. Its tag is
+
+`a8 06 1d c1 30 51 36 c6 c2 2b 8b af 0c 01 27 a9`.
+
+Appendix A.3 item 1 is the tag of 64 zero bytes under the zero key, which is
+16 zero bytes: $r = 0$, so the accumulator stays 0, and $s = 0$.
+
+#### 4. Compiler-Checked Transcription
+
 ```orange
+// RFC 8439 Poly1305, section 2.5. The prime is 2^130 - 5. r is the first 16
+// key bytes, little-endian, clamped by the RFC's mask. Each block is a
+// little-endian number with the byte 0x01 immediately above the bytes that
+// belong to the message, then a = r * (a + n) mod p. s, the second 16 key
+// bytes, is added once, and the sum is reduced modulo 2^128.
 edition 2026;
-
 module poly1305_spec {
-    // Prime Field of Poly1305: 2^130 - 5
-    type Fe = Mod[(1 << 130) - 5];
+  type P = Mod[(1 << 130) - 5];
 
-    // Key Clamping: clears specific bits of r (RFC 8439 Section 2.5)
-    spec clamp_r(r_bytes: Word[8]^16) -> Fe {
-        let r_words: Word[32]^4 = r_bytes as little Word[32]^4;
-        let c0 = r_words[0] & 0x0fffffff;
-        let c1 = r_words[1] & 0x0ffffffc;
-        let c2 = r_words[2] & 0x0ffffffc;
-        let c3 = r_words[3] & 0x0ffffffc;
-        let clamped: Word[8]^16 = [c0, c1, c2, c3] as little Word[8]^16;
-        clamped as little Fe
-    }
+  // 256^k for 0 <= k <= 16: the place of the byte 0x01 above k message bytes.
+  spec weight(k: Int) -> P {
+    for i in 0..16 with w: P = 1 { if i < k { w * 256 } else { w } }
+  }
 
-    // Accumulator Block Multiplication
-    spec poly1305_block(acc: Fe, r: Fe, block_val: Fe) -> Fe {
-        (acc + block_val) * r
-    }
+  // Section 2.5: clamp(r). The mask 0x0ffffffc0ffffffc0ffffffc0fffffff, split
+  // into little-endian 64-bit halves.
+  spec clamped_r(key: Word[8]^32) -> P {
+    let half: Word[64]^2 = key[..16] as little Word[64]^2;
+    [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P
+  }
+
+  spec s_word(key: Word[8]^32) -> Int { key[16..] as little Int }
+
+  // Section 2.5.1 for a message padded with zeros out to `blocks` blocks of
+  // 16 bytes. The last block holds `held` message bytes; every earlier block
+  // holds 16. `held` is 16 when the message fills its last block.
+  spec mac[blocks in 1..5](key: Word[8]^32, m: Word[8]^(16 * blocks), held: Int) -> Word[8]^16 {
+    let r: P = clamped_r(key);
+    let a: P = for j in 0..blocks with a: P = 0 {
+      let k: Int = if j == (blocks - 1) { held } else { 16 };
+      (a + (m[16 * j..16 * j + 16] as little P) + weight(k)) * r
+    };
+    ((a as Int) + s_word(key)) as little Word[8]^16
+  }
+
+  spec forum_key() -> Word[8]^32 {
+    hex"85 d6 be 78 57 55 6d 33 7f 44 52 fe 42 d5 06 a8" ++
+      hex"01 03 80 8a fb 0d b2 fd 4a bf f6 af 41 49 f5 1b"
+  }
+
+  test "RFC 8439 section 2.5.2 Poly1305 of the Forum name" {
+    let message: Word[8]^34 = "Cryptographic Forum Research Group";
+    mac(forum_key(), message ++ [0; 14], 2)
+      == hex"a8 06 1d c1 30 51 36 c6 c2 2b 8b af 0c 01 27 a9"
+  }
+
+  test "RFC 8439 appendix A.3 item 1 Poly1305 of zeros" {
+    mac([0; 32], [0; 64], 16) == [0; 16]
+  }
+
+  test "section 2.5: the Forum r keeps the clamped bits" {
+    clamped_r(forum_key()) == (
+      hex"85 d6 be 08 54 55 6d 03 7c 44 52 0e 40 d5 06 08" as little P
+    )
+  }
 }
 ```
-
----
 
 ## Part VIII: Implementation Stratum (`impl`) & Memory Model
 
