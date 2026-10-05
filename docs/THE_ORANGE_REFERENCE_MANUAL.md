@@ -997,7 +997,8 @@ An unqualified call looks up a `spec` in the calling module. A call
 not such a module is `ORC0229`. A name that is not a typed `spec` is
 `ORC0212`. Two `spec` declarations of one name in one module are `ORC0201`.
 `spec` and `impl` are separate declaration namespaces, which is the note on
-`ORC0201`. A typed body on `impl` is `ORC0202` and is not given a signature.
+`ORC0201`. A typed body on `impl` does not reach that lookup: the parser
+rejects the `->` with `ORC0101` (§55).
 
 #### Worked Lookup
 
@@ -5679,7 +5680,24 @@ Stack overflow is provably impossible at compile time.
 
 ### §55. Affine Ownership, Move Semantics, and Capability Borrowing (`&T`, `&mut T`)
 
-Memory safety and data-race freedom are enforced statically via an affine capability calculus.
+**Status: Proposed** (D-004). The Current compiler does not enforce an
+ownership calculus. `orangec check` accepts `impl f() {}` and does not
+evaluate it. `impl f() -> Int { 1 }` is `ORC0101`, message
+`` typed bodies are allowed only on `spec` functions ``, label
+`` an `impl` function cannot have a typed body ``.
+`impl compute(x: Word[32]) -> Word[32] { x + 1 }` is two `ORC0101`
+diagnostics: `` `impl` functions have an empty parameter list ``, then the
+same typed-body rejection. The semantic code `ORC0202` is the gate in
+`semantics.rs` for a typed body whose kind is not `spec`. The parser does
+not build that body, so `orangec check` of these programs does not emit
+`ORC0202`. `&` is the bitwise operator `And` in the lexer, not a borrow.
+`spec f(x: &Int)` is `ORC0101`, `expected an identifier for the parameter
+type`, because the token is `AMPERSAND`. There is no type `&T` and no type
+`&mut T`, and no diagnostic that rejects a use after a move, because a
+`spec` binding is not a place that can be moved. The judgments below are
+the proposed calculus for `impl`. They are not checks `orangec` runs.
+
+The proposed rule is an affine capability calculus for memory safety.
 
 #### 1. Capability Modalities
 
