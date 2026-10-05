@@ -114,10 +114,12 @@ carried RC5's data-dependent rotation into the AES generation.
 
 ### What the Orange rendering shows
 
-The one data-dependent choice in RC6 is the rotation amount, and Orange
-makes it visible: a rotation amount must be a literal, so `rotate_left_by`
-and `rotate_right_by` are a 32-arm selection on the low five bits of the
-amount word, and each such rotation costs about 78 evaluation steps
+The one data-dependent choice in RC6 is the rotation amount. A computed
+amount checks. `x <<< amount` and `x >>> amount`, with the amount a
+`Word[32]` or an `Int`, turn by that amount modulo 32. A literal amount is
+still only 0 through 31 (`ORC0216`). This file still writes `rotate_left_by` and
+`rotate_right_by` as a 32-arm selection on the low five bits of the amount
+word, and each such rotation costs about 78 evaluation steps
 (measured by the loop-and-binary-search method of the folder's brief).
 Everything else is 32-bit arithmetic: `f` is a multiplication, an addition
 and a rotation by the literal 5, about 16 steps, and one round, with two
@@ -127,18 +129,19 @@ and forty of the block's 128 rotations, two per round, are the
 data-dependent ones.
 
 The key schedule costs about ten times the block, 52,000 to 55,000 steps,
-and nearly all of it is bookkeeping rather than arithmetic. S, L, A and B
-travel through the mixing loop as one `Word[32]^54` (S in positions 0
-through 43, L in 44 through 51, A at 52 and B at 53), because a loop has one
-accumulator; a loop step is one expression with no bindings, so each of the
-paper's 132 iterations is two steps of an inner loop, the first computing A
-and B into their slots (`mix`), the second storing them into S[i] and
-L[j]; and each of the four 54-word updates costs 54 steps, about 220 of the
-roughly 370 steps an iteration takes. The modulus c of the index j is a
-literal, so each key length has its own copy of the mixing loop
-(`key_schedule_128`, `_192`, `_256`) around the shared `mix`, and L is
-carried as eight words for every length with zero beyond c, which the
-schedule never reads. The register rotation (A, B, C, D) = (B, C, D, A) and
+and nearly all of it is bookkeeping rather than arithmetic. A loop may
+carry a tuple of accumulators, and a step may begin with `let`, so one
+step can compute A and B and store them into S[i] and L[j]. This file
+still carries S, L, A and B through the mixing loop as one `Word[32]^54`
+(S in positions 0 through 43, L in 44 through 51, A at 52 and B at 53) and
+splits each of the paper's 132 iterations into two steps of an inner loop,
+the first computing A and B into their slots (`mix`), the second storing
+them into S[i] and L[j]; each of the four 54-word updates costs 54 steps,
+about 220 of the roughly 370 steps an iteration takes. The modulus c of
+the index j is a literal, so each key length has its own copy of the
+mixing loop (`key_schedule_128`, `_192`, `_256`) around the shared `mix`,
+and L is carried as eight words for every length with zero beyond c, which
+the schedule never reads. The register rotation (A, B, C, D) = (B, C, D, A) and
 the whitening are array literals, `[x[1], c, x[3], a]` and
 `[x[0], x[1] + s[0], x[2], x[3] + s[1]]`, and decryption walks the round
 keys with the static index `s[40 - 2 * i]`.
@@ -235,17 +238,18 @@ Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented any planned vector. The language limits met, and what
-they cost:
+None that prevented any planned vector. What this file's shape costs, and
+the limit that remains:
 
-- A rotation amount is a literal, so the data-dependent rotation is a
-  32-arm selection (`rotate_left_by`, `rotate_right_by`) at about 78 steps
-  instead of one operation; it is the cipher's defining step, and this is
-  the form in which Orange can express it.
-- A loop step is one expression and admits no `let`, and the two words a
-  key-schedule iteration writes go to indices that only the loop knows, so
-  each iteration is two steps of an inner loop (compute, then store) over a
-  54-word state; the four 54-word updates per iteration make the key
-  schedule about ten times the cost of a block.
+- A computed rotation amount checks, including `(l + a + b) <<< (a + b)`.
+  This source still writes the data-dependent rotation as a 32-arm
+  selection (`rotate_left_by`, `rotate_right_by`) at about 78 steps
+  instead of one operation. A literal amount on `Word[32]` is still only
+  0 through 31.
+- A loop step may begin with `let`, and a loop may carry a tuple of
+  accumulators, so one step can compute A and B and store both. This
+  source still splits each iteration into two steps of an inner loop
+  (compute, then store) over a 54-word state; the four 54-word updates
+  per iteration make the key schedule about ten times the cost of a block.
 - An index modulus must be a literal, so `j = (j + 1) mod c` is written
   once per key length: three `key_schedule` specs around one `mix`.
