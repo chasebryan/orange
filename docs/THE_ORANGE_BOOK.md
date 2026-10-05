@@ -1003,7 +1003,8 @@ the syntax tree in source order and does five things:
 2. It resolves each typed specification's signature. The scalar types are
    `Int` and `Bool`, with no width; `Word[8]`, `Word[16]`, `Word[32]`, and
    `Word[64]`, with the width written as a plain decimal token; and `Mod[m]`,
-   whose modulus is a constant. `T^n` is an array of any of them, and a name
+   a constant modulus, or one that a sized function computes from its own
+   sizes. `T^n` is an array of any of them, and a name
    declared by `type` stands for its type. `Word[08]`, `Word[0x8]`,
    `Word[12]`, `Int[8]`, and every other form are errors. Parameter names must
    be distinct within one function.
@@ -1030,9 +1031,12 @@ like any other call, and because uses have no cycle, the call graph of the
 whole program is acyclic when each module's own is.
 
 Within a module, types come before functions. The analyzer first evaluates
-every modulus the module writes, once each: a modulus is built from integer
-literals with `+`, `-`, `*`, `<<`, and parentheses, and must lie from 2
-through 2^521 − 1. It then resolves the `type` declarations in source order,
+every modulus a module-level `type` declaration writes, once each: that
+modulus is built from integer literals with `+`, `-`, `*`, `<<`, and
+parentheses, and must lie from 2 through 2^521 − 1. A sized function may
+use that same vocabulary and its own size names; each of its instances is
+checked with the exact modulus those sizes give, still from 2 through
+2^521 − 1. It then resolves the `type` declarations in source order,
 each against the names declared before it, and only then the signatures. A
 declared name is another spelling of its type, so a module that writes `F`
 and one that writes `Mod[(1 << 255) - 19]` mean the same thing, and the name
