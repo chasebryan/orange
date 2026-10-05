@@ -6097,7 +6097,20 @@ below.
 
 ### §67. The Information Flow Lattice ($\text{public} \sqsubseteq \text{secret}$)
 
-Confidentiality is formalized via a two-point security lattice:
+**Status: Proposed.** No OEP in this checkout implements the lattice, and
+`orangec` emits no diagnostic for it. `public` and `secret` are not reserved
+words: `orangec check` accepts `spec public(secret: Int) -> Int { secret }`.
+A `spec` conditional evaluates one branch (§23). That is a control-flow fact
+of `begin_branch`, and it is not a secrecy check. OEP-0022, section P5, says
+secrecy qualifiers are orthogonal to arithmetic representation and that a
+secret-dependent branch or address cannot pass merely because arithmetic
+refinement succeeds; it does not define a checker. The Book's section
+"Secrecy in the type system" is the same proposal: labels on values, a type
+error for a branch or an index computed from a secret, and an explicit
+declassification. The two-point lattice below is that proposal. It is not a
+judgment of the S3t compiler.
+
+The proposed lattice is:
 
 $$\mathcal{L} = \langle \{\text{public}, \text{secret}\}, \sqsubseteq, \sqcup, \sqcap \rangle$$
 
