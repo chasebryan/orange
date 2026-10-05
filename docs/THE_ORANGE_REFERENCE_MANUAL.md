@@ -1412,6 +1412,17 @@ every well-typed expression normalizes in unbounded arithmetic.
 a judgment in Parts III or IV produces diagnostics and no value. Progress and
 subject reduction are not theorems of this manual.
 
+The driver classifies each phase with `classify_phase_result` in
+`compiler/crates/orangec/src/main.rs`. A nonempty diagnostic slice is
+`Diagnosed`. An empty slice with an artifact is `Complete`. An empty slice
+with no artifact is `Missing`, reported as `ORC1006`, and is not a value.
+Semantic analysis is that classification of `analyze_program`. `Diagnosed`
+sets the compilation failure and moves to the next input. The evaluator, the
+test runner, and witness replay are reached only from `Complete`. A file that
+failed lexing, parsing, or module loading never reaches analysis. One file's
+diagnostics are not a value for that file, and they are not copied into
+another file's result.
+
 ### §46. Determinism of the Reference Evaluator
 
 The reference evaluator is a function of the source text, the step budget, and,
