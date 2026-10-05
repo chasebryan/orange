@@ -1925,38 +1925,213 @@ module sha256_spec {
 
 ### §50. Complete Reference Specification: RFC 8439 ChaCha20
 
+ChaCha20 as RFC 8439 (2018) writes it: the quarter round of section 2.1, the
+block function of section 2.3, and the encryption step of section 2.4 for one
+64-byte block. The listing is accepted by `orangec test`: section 2.1.1 with
+its eight intermediate words, section 2.3.2, appendix A.1 item 1, and the
+section 2.4 identity that a block of zero plaintext is the key stream.
+
+#### 1. The Quarter Round (section 2.1)
+
+On four words $a, b, c, d \in \mathbb{Z}/2^{32}\mathbb{Z}$ the RFC assigns, in
+order:
+
+$$a \leftarrow a + b,\quad d \leftarrow (d \oplus a) \lll 16,$$
+
+$$c \leftarrow c + d,\quad b \leftarrow (b \oplus c) \lll 12,$$
+
+$$a \leftarrow a + b,\quad d \leftarrow (d \oplus a) \lll 8,$$
+
+$$c \leftarrow c + d,\quad b \leftarrow (b \oplus c) \lll 7.$$
+
+Addition is `Word[32]` addition. `<<<` is the left rotation. The listing names
+the eight results $a_1, d_1, c_1, b_1, a_2, d_2, c_2, b_2$ and returns
+$(a_2, b_2, c_2, d_2)$.
+
+Section 2.1.1 starts from $a = \mathtt{0x11111111}$, $b = \mathtt{0x01020304}$,
+$c = \mathtt{0x9b8d6f43}$, $d = \mathtt{0x01234567}$.
+
+| Name | Value |
+| :--- | :--- |
+| $a_1$ | `0x12131415` |
+| $d_1$ | `0x51721330` |
+| $c_1$ | `0xecff8273` |
+| $b_1$ | `0xd8177edf` |
+| $a_2$ | `0xea2a92f4` |
+| $d_2$ | `0x5881c4bb` |
+| $c_2$ | `0x4581472e` |
+| $b_2$ | `0xcb1cf8ce` |
+
+The returned quarter round is $(a_2, b_2, c_2, d_2) = (\mathtt{0xea2a92f4}, \mathtt{0xcb1cf8ce}, \mathtt{0x4581472e}, \mathtt{0x5881c4bb})$, the vector section 2.1.1 prints.
+
+#### 2. The Block Function (sections 2.2 and 2.3)
+
+The 16-word state is laid out as the RFC's matrix. Words 0 through 3 are the
+constants for the string "expand 32-byte k":
+
+| Index | Word |
+| :--- | :--- |
+| 0 | `0x61707865` |
+| 1 | `0x3320646e` |
+| 2 | `0x79622d32` |
+| 3 | `0x6b206574` |
+
+Words 4 through 11 are the 256-bit key as eight little-endian words. Word 12
+is the 32-bit block counter. Words 13 through 15 are the 96-bit nonce as three
+little-endian words. Bernstein's ChaCha kept a 64-bit counter and a 64-bit
+nonce; RFC 8439 is the 32-bit counter and the 96-bit nonce.
+
+One inner block is a column round and then a diagonal round. The quarter-round
+index tuples are:
+
+| Round | Index tuples |
+| :--- | :--- |
+| Column | $(0, 4, 8, 12)$, $(1, 5, 9, 13)$, $(2, 6, 10, 14)$, $(3, 7, 11, 15)$ |
+| Diagonal | $(0, 5, 10, 15)$, $(1, 6, 11, 12)$, $(2, 7, 8, 13)$, $(3, 4, 9, 14)$ |
+
+The block function runs that pair ten times (20 rounds), adds the initial
+state word by word, and serializes the 16 words as little-endian bytes.
+`block` is that function. Section 2.3.2's key, counter 1, and 12-byte nonce,
+and appendix A.1 item 1 (the all-zero key, counter, and nonce at block 0), are
+the tests.
+
+#### 3. Encryption (section 2.4)
+
+For a 64-byte block, ciphertext byte $i$ is plaintext byte $i$ XOR keystream
+byte $i$. `encrypt_block` is that XOR. A message of $j$ further whole blocks
+uses `block` at counter $+ j$. A partial final block uses the prefix of the
+next keystream block and discards the rest. Each concrete length is its own
+array type. The 114-byte message of section 2.4.2 is that function at length
+114; `algorithms/chacha20/chacha20.or` carries `encrypt_114` and the other
+lengths of the RFC's examples. This section's listing checks the one-block
+case, including the identity that a zero plaintext block equals the key stream.
+
+#### 4. Compiler-Checked Transcription
+
 ```orange
+// RFC 8439 ChaCha20: the quarter round (section 2.1), the block function
+// (section 2.3), and the keystream tests of sections 2.1.1, 2.3.2, and
+// appendix A.1 item 1. Encryption (section 2.4) is the XOR of that keystream;
+// a message of several blocks is the same block at counter + j, which a
+// single array length does not range over here.
 edition 2026;
-
 module chacha20_spec {
-    // 1. ChaCha20 Quarter-Round (RFC 8439 Section 2.1)
-    spec quarter_round(
-        a: Word[32],
-        b: Word[32],
-        c: Word[32],
-        d: Word[32]
-    ) -> (Word[32], Word[32], Word[32], Word[32]) {
-        let a1 = a + b;
-        let d1 = (d ^ a1) <<< 16;
-        let c1 = c + d1;
-        let b1 = (b ^ c1) <<< 12;
-        let a2 = a1 + b1;
-        let d2 = (d1 ^ a2) <<< 8;
-        let c2 = c1 + d2;
-        let b2 = (b1 ^ c2) <<< 7;
-        (a2, b2, c2, d2)
-    }
+  type Quad = (Word[32], Word[32], Word[32], Word[32]);
 
-    // 2. Executable Conformance Test Vector (RFC 8439 Section 2.1.1)
-    test "RFC 8439 Section 2.1.1 ChaCha20 Quarter-Round" {
-        let (a, b, c, d) = quarter_round(
-            0x11111111,
-            0x01020304,
-            0x9b8d6f43,
-            0x01234567
-        );
-        (a == 0xea2a92f4) && (b == 0xcb1cf8ce) && (c == 0x4581472e) && (d == 0x5881c4bb)
-    }
+  // Section 2.1. The names are the RFC's successive assignments:
+  // a += b; d ^= a; d <<<= 16; c += d; b ^= c; b <<<= 12;
+  // a += b; d ^= a; d <<<= 8;  c += d; b ^= c; b <<<= 7.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  // Section 2.1.1, the eight words the example assigns, in order.
+  spec example_211_steps() -> (Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32]) {
+    let a: Word[32] = 0x11111111;
+    let b: Word[32] = 0x01020304;
+    let c: Word[32] = 0x9b8d6f43;
+    let d: Word[32] = 0x01234567;
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a1, d1, c1, b1, a2, d2, c2, b2)
+  }
+
+  // Section 2.3. Ten iterations of a column round and a diagonal round, then
+  // the word-wise sum with the initial state, serialized little-endian.
+  // Column indices are (0, 4, 8, 12), (1, 5, 9, 13), (2, 6, 10, 14),
+  // (3, 7, 11, 15). Diagonal indices are (0, 5, 10, 15), (1, 6, 11, 12),
+  // (2, 7, 8, 13), (3, 4, 9, 14).
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let (x0: Word[32], x1: Word[32], x2: Word[32], x3: Word[32],
+         x4: Word[32], x5: Word[32], x6: Word[32], x7: Word[32],
+         x8: Word[32], x9: Word[32], x10: Word[32], x11: Word[32],
+         x12: Word[32], x13: Word[32], x14: Word[32], x15: Word[32]) =
+      for round in 0..10 with (
+        s0: Word[32], s1: Word[32], s2: Word[32], s3: Word[32],
+        s4: Word[32], s5: Word[32], s6: Word[32], s7: Word[32],
+        s8: Word[32], s9: Word[32], s10: Word[32], s11: Word[32],
+        s12: Word[32], s13: Word[32], s14: Word[32], s15: Word[32]
+      ) = (
+        initial[0], initial[1], initial[2], initial[3],
+        initial[4], initial[5], initial[6], initial[7],
+        initial[8], initial[9], initial[10], initial[11],
+        initial[12], initial[13], initial[14], initial[15]
+      ) {
+        let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+        let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+        let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+        let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+        let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+        let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+        let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+        let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+        (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15)
+      };
+    let working: Word[32]^16 = [
+      x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15,
+    ];
+    let state: Word[32]^16 =
+      for i in 0..16 with out: Word[32]^16 = working { out with [i] = out[i] + initial[i] };
+    state as little Word[8]^64
+  }
+
+  // Section 2.4 for one 64-byte block: ciphertext byte i is plaintext byte i
+  // XOR keystream byte i. A longer message repeats `block` at counter + j.
+  spec encrypt_block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12, plaintext: Word[8]^64) -> Word[8]^64 {
+    let key_stream: Word[8]^64 = block(key, counter, nonce);
+    for i in 0..64 with c: Word[8]^64 = plaintext { c with [i] = plaintext[i] ^ key_stream[i] }
+  }
+
+  test "RFC 8439 section 2.1.1 quarter round" {
+    let steps: (Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32], Word[32]) =
+      example_211_steps();
+    (quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+      == (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb))
+      && (steps == (
+        0x12131415, 0x51721330, 0xecff8273, 0xd8177edf,
+        0xea2a92f4, 0x5881c4bb, 0x4581472e, 0xcb1cf8ce
+      ))
+  }
+
+  test "RFC 8439 section 2.3.2 block function" {
+    let key: Word[8]^32 =
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f";
+    let serialized: Word[8]^64 =
+      hex"10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4" ++
+        hex"c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e" ++
+        hex"d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2" ++
+        hex"b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e";
+    block(key, 1, hex"00 00 00 09 00 00 00 4a 00 00 00 00") == serialized
+  }
+
+  test "RFC 8439 appendix A.1 item 1 zero key stream" {
+    block([0; 32], 0, [0; 12]) == (
+      hex"76 b8 e0 ad a0 f1 3d 90 40 5d 6a e5 53 86 bd 28" ++
+        hex"bd d2 19 b8 a0 8d ed 1a a8 36 ef cc 8b 77 0d c7" ++
+        hex"da 41 59 7c 51 57 48 8d 77 24 e0 3f b8 d8 4a 37" ++
+        hex"6a 43 b8 f4 15 18 a1 1c c3 87 b6 69 b2 ee 65 86"
+    )
+  }
+
+  test "section 2.4: one block of zeros is the key stream" {
+    encrypt_block([0; 32], 0, [0; 12], [0; 64]) == block([0; 32], 0, [0; 12])
+  }
 }
 ```
 
