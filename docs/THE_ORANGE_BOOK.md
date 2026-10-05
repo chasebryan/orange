@@ -6851,7 +6851,7 @@ included.
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
 | `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
 | `T^n` | Sequences of exactly n values of a scalar type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
-| `A^n`, where `type A` names an array of rank 1, 2, or 3 | n elements of that exact array, giving rank 2, 3, or 4; each axis is from 1 through 65,536 and the product of the axes is at most 65,536 scalars | The outer elements in order, each spelled as its type |
+| `A^n`, where a `type` name or a type parameter specialized to an array names an array of rank 1, 2, or 3 | n elements of that exact array, giving rank 2, 3, or 4; each axis is from 1 through 65,536 and the product of the axes is at most 65,536 scalars | The outer elements in order, each spelled as its type |
 | `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
 No other type, width, or length is accepted; a name declared by `type` stands
@@ -6878,8 +6878,8 @@ evaluation step per 64 elements of the array it builds, or part of 64, and a
 byte string costs one. A path of several indices costs that charge for each
 array it copies. No operator but `++`, and no conversion without a byte
 order, applies to a whole array. An array's elements are scalars or, through
-a `type` name, arrays of lower rank, up to four dimensions; they are never
-tuples. A byte string `"..."`
+a `type` name or a type parameter specialized to an array, arrays of lower rank,
+up to four dimensions; they are never tuples. A byte string `"..."`
 of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
 `\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
 of its bytes. `a ++ b` is the elements of a followed by those of b, of one
