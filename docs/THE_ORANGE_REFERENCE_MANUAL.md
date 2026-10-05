@@ -1829,10 +1829,35 @@ module sha256_spec {
 ### §50. Complete Reference Specification: RFC 8439 ChaCha20
 
 ChaCha20 as RFC 8439 (2018) writes it: the quarter round of section 2.1, the
-block function of section 2.3, and the encryption step of section 2.4 for one
-64-byte block. The listing is accepted by `orangec test`: section 2.1.1 with
-its eight intermediate words, section 2.3.2, appendix A.1 item 1, and the
-section 2.4 identity that a block of zero plaintext is the key stream.
+quarter round on the state of section 2.2, the block function of section 2.3,
+and the encryption function of section 2.4. Bernstein's original ChaCha, with
+a 64-bit counter and a 64-bit nonce, is not this RFC. XChaCha20
+(draft-irtf-cfrg-xchacha) is not this section.
+
+#### Status
+
+**Current** for the listing in this section. `orangec test` on that listing,
+with the S3t binary described in §49, accepts four tests and fails none:
+section 2.1.1 with its eight intermediate words, section 2.3.2, appendix A.1
+item 1, and the section 2.4 identity that a 64-byte block of zero plaintext
+equals the key stream. The listing uses `Word[32]`, tuples, fixed arrays,
+`for`/`with`, byte strings, `hex"..."`, and `as little`. It does not use a
+size parameter. A message whose length is not 64 bytes is not a parameter of
+`encrypt_block`.
+
+`algorithms/chacha20/chacha20.or` is the same quarter round and block
+function, plus encryption at the concrete lengths the RFC's examples use.
+That file declares no `test` member: `orangec test` on it reports zero tests.
+`orangec eval` of each `rfc8439_*` spec below equals the matching
+`rfc8439_*_expected` spec. Fourteen pairs, zero mismatches. The XChaCha20
+specs in that file were not part of the comparison and are not Current here.
+
+| Text | Status | What is missing |
+| :--- | :--- | :--- |
+| The listing: quarter round, one block, 64-byte XOR | Current | The four tests above |
+| Section 2.2.1, appendix A.1 items 2 through 5, appendix A.2, section 2.4.2 | Checked by `orangec eval` of `algorithms/chacha20/chacha20.or` | Not a `test` in this listing. The bytes are that file's `*_expected` specs, not copied here |
+| A length other than the lengths that file defines | Same algorithm, another array length | Each length is its own `Word[8]^n`. The file defines 64, 114, 119, 127, and 256 |
+| XChaCha20 | Not this section | A different draft. Not labeled Current here |
 
 #### 1. The Quarter Round (section 2.1)
 
@@ -1867,6 +1892,31 @@ $c = \mathtt{0x9b8d6f43}$, $d = \mathtt{0x01234567}$.
 
 The returned quarter round is $(a_2, b_2, c_2, d_2) = (\mathtt{0xea2a92f4}, \mathtt{0xcb1cf8ce}, \mathtt{0x4581472e}, \mathtt{0x5881c4bb})$, the vector section 2.1.1 prints.
 
+The RFC writes the quarter round as eight statements. Each right-hand side
+uses the value the previous statement stored. The listing binds those eight
+results and returns the final four, in the order $(a, b, c, d)$:
+
+| RFC 8439 section 2.1 | Orange in `quarter_round` |
+| :--- | :--- |
+| `a += b` | `a1 = a + b` |
+| `d ^= a; d <<<= 16` | `d1 = (d ^ a1) <<< 16` |
+| `c += d` | `c1 = c + d1` |
+| `b ^= c; b <<<= 12` | `b1 = (b ^ c1) <<< 12` |
+| `a += b` | `a2 = a1 + b1` |
+| `d ^= a; d <<<= 8` | `d2 = (d1 ^ a2) <<< 8` |
+| `c += d` | `c2 = c1 + d2` |
+| `b ^= c; b <<<= 7` | `b2 = (b1 ^ c2) <<< 7` |
+| the four final words | `(a2, b2, c2, d2)` |
+
+`+` is addition in `Word[32]`, the RFC's 32-bit wrap. `<<<` is the RFC's
+`<<<=`. `^` is the RFC's `^=`. `example_211_steps` is the same eight bindings
+on the section 2.1.1 inputs, so the test checks the intermediate words and
+not only the returned tuple. Section 2.2.1 applies one quarter round,
+`QUARTERROUND(2, 7, 8, 13)`, to a sample state and changes only those four
+positions. That state is `rfc8439_2_2_1` in `algorithms/chacha20/chacha20.or`.
+The four results the RFC prints are `0xbdb886dc`, `0xcfacafd2`, `0xe46bea80`,
+and `0xccc07c79`, written back at indices 2, 7, 8, and 13.
+
 #### 2. The Block Function (sections 2.2 and 2.3)
 
 The 16-word state is laid out as the RFC's matrix. Words 0 through 3 are the
@@ -1894,20 +1944,76 @@ index tuples are:
 
 The block function runs that pair ten times (20 rounds), adds the initial
 state word by word, and serializes the 16 words as little-endian bytes.
-`block` is that function. Section 2.3.2's key, counter 1, and 12-byte nonce,
-and appendix A.1 item 1 (the all-zero key, counter, and nonce at block 0), are
-the tests.
+`block` is that function. A little-endian word of four bytes
+$B[0], B[1], B[2], B[3]$ is the §29 sum
+
+$$W = B[0] + 256\,B[1] + 256^{2}\,B[2] + 256^{3}\,B[3].$$
+
+The listing builds the 64-byte input and loads it with one cast:
+
+`"expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce`,
+
+then `as little Word[32]^16`. The 16 ASCII bytes of `"expand 32-byte k"` are
+the four constants: little-endian loads of `expa`, `nd 3`, `2-by`, and `te k`
+are `0x61707865`, `0x3320646e`, `0x79622d32`, and `0x6b206574`. The key's
+first four bytes are word 4, the next four are word 5, and so on through
+word 11. The counter is word 12. The nonce's three little-endian words are
+words 13, 14, and 15.
+
+| RFC 8439 section 2.3 | Orange in `block` |
+| :--- | :--- |
+| `state = constants \| key \| counter \| nonce` | the `initial` array, loaded as above |
+| `working_state = state` | the `with` tuple of the `for round in 0..10` loop |
+| `for i = 1 upto 10` | `for round in 0..10`, ten iterations |
+| column `QUARTERROUND` on $(0,4,8,12)$, $(1,5,9,13)$, $(2,6,10,14)$, $(3,7,11,15)$ | the four `quarter_round` calls bound to `c0`..`c15` |
+| diagonal `QUARTERROUND` on $(0,5,10,15)$, $(1,6,11,12)$, $(2,7,8,13)$, $(3,4,9,14)$ | the four calls bound to `d0`..`d15` |
+| `inner_block` returns the state in index order | the 16-tuple `(d0, d1, ..., d15)` |
+| `state[i] += working_state[i]` for each $i$ | `for i in 0..16`, `out[i] + initial[i]`, where `initial` was not modified |
+| `serialize`, little-endian | `state as little Word[8]^64` |
+
+Section 2.3.2's key, counter 1, and 12-byte nonce, and appendix A.1 item 1
+(the all-zero key, counter, and nonce at block 0), are the tests in the
+listing. After the ten double-rounds and the word-wise sum, section 2.3.2's
+state words are the array `rfc8439_2_3_2_state_expected` in
+`algorithms/chacha20/chacha20.or`, beginning `0xe4e7f110`, `0x15593bd1`,
+`0x1fdd0f50`, `0xc47120a3`. The serialized block is the 64 bytes in the
+listing's section 2.3.2 test.
 
 #### 3. Encryption (section 2.4)
 
-For a 64-byte block, ciphertext byte $i$ is plaintext byte $i$ XOR keystream
-byte $i$. `encrypt_block` is that XOR. A message of $j$ further whole blocks
-uses `block` at counter $+ j$. A partial final block uses the prefix of the
-next keystream block and discards the rest. Each concrete length is its own
-array type. The 114-byte message of section 2.4.2 is that function at length
-114; `algorithms/chacha20/chacha20.or` carries `encrypt_114` and the other
-lengths of the RFC's examples. This section's listing checks the one-block
-case, including the identity that a zero plaintext block equals the key stream.
+Section 2.4's `chacha20_encrypt` walks the plaintext in 64-byte blocks.
+For each $j$ from 0 through $\lfloor \mathrm{len}/64 \rfloor - 1$, the
+keystream block is `chacha20_block(key, counter + j, nonce)` and the
+ciphertext block is the plaintext block XOR that keystream. A leftover of
+$r = \mathrm{len} \bmod 64$ bytes, $r \ne 0$, uses the next block at counter
+$+ \lfloor \mathrm{len}/64 \rfloor$ and keeps the first $r$ ciphertext bytes.
+`+` on the counter is `Word[32]` addition. The RFC requires the caller not to
+reuse a block counter under one key and nonce; the listing does not add a
+separate check.
+
+`encrypt_block` is that XOR for one 64-byte block, the $j = 0$ case when
+$\mathrm{len} = 64$. The listing checks it on a zero plaintext, which equals
+the key stream. The other example lengths live in
+`algorithms/chacha20/chacha20.or` and were the `orangec eval` pairs in the
+status table:
+
+| RFC 8439 | Inputs | Spec |
+| :--- | :--- | :--- |
+| A.1 item 1 | key 0, counter 0, nonce 0 | `rfc8439_a1_1`, also the listing |
+| A.1 item 2 | key 0, counter 1, nonce 0 | `rfc8439_a1_2` |
+| A.1 item 3 | key byte 31 is 1, counter 1, nonce 0 | `rfc8439_a1_3` |
+| A.1 item 4 | key byte 1 is `0xff`, counter 2, nonce 0 | `rfc8439_a1_4` |
+| A.1 item 5 | key 0, counter 0, nonce byte 11 is 2 | `rfc8439_a1_5` |
+| A.2 item 1 | 64 zero bytes, key 0, counter 0, nonce 0 | `rfc8439_a2_1` |
+| 2.4.2 | 114-byte sunscreen text, key `00..1f`, counter 1, nonce `000000000000004a00000000` | `rfc8439_2_4_2` via `encrypt_114` |
+| A.2 item 2 | 375-byte text, key byte 31 is 1, counter 1, nonce byte 11 is 2 | `rfc8439_a2_2_head` (bytes 0..255, counters 1..4) and `rfc8439_a2_2_tail` (bytes 256..374, counter 5) |
+| A.2 item 3 | 127-byte text, the key printed in A.2, counter 42, nonce byte 11 is 2 | `rfc8439_a2_3` via `encrypt_127` |
+
+The 375-byte message is two calls because that file's `encrypt` is written
+at length 256 and the tail at length 119. The language array bound is
+65,536 (§24), so the split is the file's, not a type-system limit. The
+serialized keystream and ciphertext bytes are the `*_expected` specs in that
+file.
 
 #### 4. Compiler-Checked Transcription
 
