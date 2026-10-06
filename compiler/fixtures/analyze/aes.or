@@ -6,6 +6,12 @@
 // `orangec analyze --function aes::sbox` reports the properties its
 // designers chose it for: differential uniformity 4, nonlinearity 112,
 // algebraic degree 7, and no fixed points.
+//
+// The linear layer of a round follows, section 5.1.2 and 5.1.3: ShiftRows,
+// and MixColumns, the product of each column with a circulant matrix over
+// GF(2^8). `orangec analyze --linear --function aes::mix_column` reads the
+// matrix back from the function and finds it maximum distance separable,
+// branch number 5, over the field of section 4.2.
 edition 2026;
 module aes {
   // Section 4.2: multiplication by x.
@@ -33,13 +39,53 @@ module aes {
 
   // Section 5.1.1: the affine map, b' = b + (b <<< 1) + (b <<< 2) + (b <<< 3)
   // + (b <<< 4) + 0x63, applied to the inverse.
-  spec sbox(x: Word[8]) -> Word[8] {
-    let b: Word[8] = inverse(x);
+  spec affine(b: Word[8]) -> Word[8] {
     b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+  }
+
+  spec sbox(x: Word[8]) -> Word[8] { affine(inverse(x)) }
+
+  // Section 5.1.3: one column, a0 through a3, times the circulant matrix
+  // with first row 02 03 01 01, where 03 a = 02 a + a.
+  spec mix_column(a: Word[8]^4) -> Word[8]^4 {
+    let d: Word[8]^4 = [xtime(a[0]), xtime(a[1]), xtime(a[2]), xtime(a[3])];
+    [
+      d[0] ^ d[1] ^ a[1] ^ a[2] ^ a[3],
+      a[0] ^ d[1] ^ d[2] ^ a[2] ^ a[3],
+      a[0] ^ a[1] ^ d[2] ^ d[3] ^ a[3],
+      d[0] ^ a[0] ^ a[1] ^ a[2] ^ d[3],
+    ]
+  }
+
+  // Sections 5.1.2 and 5.1.3 on the whole state, byte r + 4 c holding row r
+  // of column c: ShiftRows turns row r left by r columns, then MixColumns
+  // mixes each column.
+  spec linear(s: Word[8]^16) -> Word[8]^16 {
+    let c0: Word[8]^4 = mix_column([s[0], s[5], s[10], s[15]]);
+    let c1: Word[8]^4 = mix_column([s[4], s[9], s[14], s[3]]);
+    let c2: Word[8]^4 = mix_column([s[8], s[13], s[2], s[7]]);
+    let c3: Word[8]^4 = mix_column([s[12], s[1], s[6], s[11]]);
+    [
+      c0[0], c0[1], c0[2], c0[3], c1[0], c1[1], c1[2], c1[3],
+      c2[0], c2[1], c2[2], c2[3], c3[0], c3[1], c3[2], c3[3],
+    ]
   }
 
   test "Table 4 begins 63 7c 77 7b and maps 53 to ed" {
     let first: Word[8]^5 = [sbox(0x00), sbox(0x01), sbox(0x02), sbox(0x03), sbox(0x53)];
     first == [0x63, 0x7c, 0x77, 0x7b, 0xed]
+  }
+
+  test "round 1 of appendix B: d4 bf 5d 30 mixes to 04 66 81 e5" {
+    mix_column([0xd4, 0xbf, 0x5d, 0x30]) == [0x04, 0x66, 0x81, 0xe5]
+  }
+
+  test "round 1 of appendix B: ShiftRows and MixColumns after SubBytes" {
+    let after_sub_bytes: Word[8]^16 = [
+      0xd4, 0x27, 0x11, 0xae, 0xe0, 0xbf, 0x98, 0xf1, 0xb8, 0xb4, 0x5d, 0xe5, 0x1e, 0x41, 0x52, 0x30,
+    ];
+    linear(after_sub_bytes) == [
+      0x04, 0x66, 0x81, 0xe5, 0xe0, 0xcb, 0x19, 0x9a, 0x48, 0xf8, 0xd3, 0x7a, 0x28, 0x06, 0x26, 0x4c,
+    ]
   }
 }

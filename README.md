@@ -1189,6 +1189,7 @@ cryptography.
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Typed local argument decoding and Boolean witness replay (`orangec replay`) | Working; [tool contract](docs/WITNESS_REPLAY_2026.md) |
 | Exact S-box and Boolean function analysis: differences, correlations, degrees, equations, boomerangs (`orangec analyze`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md) |
+| Exact linear-layer analysis: matrix read back from the function, branch numbers, MDS, field (`orangec analyze --linear`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md#linear-layers) |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
@@ -1253,8 +1254,8 @@ Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                       --witness <FILE> [--steps <N>] [--stats] <SOURCE>
        orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
-                       [--bits <N[,M]>] [--table <TABLE>]
-                       [--steps <N>] [--stats] <SOURCE>
+                       [--bits <N[,M]> | --linear [--word <W>]]
+                       [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1302,7 +1303,12 @@ input and prints what a cryptanalyst first asks of it: differential uniformity
 quadratic equations for the AES S-box computed from its definition in
 [`compiler/fixtures/analyze`](compiler/fixtures/analyze). `--bits N[,M]`
 analyzes a 4-bit, 5-bit or 6-to-4-bit S-box held in a wider word, and `--table`
-prints its difference, linear, boomerang or algebraic normal form table. The
+prints its difference, linear, boomerang or algebraic normal form table. With
+`--linear`, `orangec analyze --linear --function aes::mix_column aes.or` reads
+the matrix of a linear layer back from the function and reports its rank,
+fixed points, XOR count, and differential and linear branch numbers: 5 of 5
+for AES MixColumns, maximum distance separable, the circulant matrix
+02 03 01 01 over GF(2^8). The
 [cryptanalysis contract](docs/CRYPTANALYSIS_2026.md) defines every property.
 Each number is exact for the function as written; none is a security claim.
 

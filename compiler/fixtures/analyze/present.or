@@ -1,10 +1,25 @@
 // The 4-bit S-box of PRESENT (Bogdanov et al., CHES 2007, table 1), held in
 // the low four bits of a byte. `orangec analyze --function present::sbox
 // --bits 4` analyzes it as the 4-bit permutation it is.
+//
+// The linear layer of PRESENT, pLayer (section 3, table 2), moves bit i of
+// the 64-bit state to bit 16 i mod 63, and bit 63 to itself. `orangec
+// analyze --linear --word 4 --function present::player` reads it back as a
+// permutation of bits, branch number 2 over the S-boxes' nibbles.
 edition 2026;
 module present {
   spec sbox(x: Word[8]) -> Word[8] {
     let table: Word[8]^16 = [0xc, 0x5, 0x6, 0xb, 0x9, 0x0, 0xa, 0xd, 0x3, 0xe, 0xf, 0x8, 0x4, 0x7, 0x1, 0x2];
     table[x & 0x0f]
+  }
+
+  spec player(x: Word[64]) -> Word[64] {
+    for i in 0..64 with y: Word[64] = 0 {
+      y | (((x >> i) & 1) << (if i == 63 { 63 } else { (16 * i) % 63 }))
+    }
+  }
+
+  test "pLayer moves bit 1 to bit 16, bit 4 to bit 1 and keeps bit 63" {
+    (player(0x2) == 0x10000) && (player(0x10) == 0x2) && (player(0x8000000000000000) == 0x8000000000000000)
   }
 }

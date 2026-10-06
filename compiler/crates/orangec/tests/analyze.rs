@@ -114,7 +114,7 @@ boomerang uniformity      6
     );
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "aes::sbox[]: 256 calls, 843008 steps\nlargest call: 3356 of 1048576 steps\n"
+        "aes::sbox[]: 256 calls, 843264 steps\nlargest call: 3357 of 1048576 steps\n"
     );
 }
 
@@ -616,7 +616,7 @@ fn malformed_analysis_options_are_usage_errors() {
             "walsh",
             "present.or",
         ],
-        "orangec: option `--table` takes values, ddt, lat, bct, or anf\n",
+        "orangec: option `--table` takes values, ddt, lat, bct, anf, or matrix\n",
     );
     usage(
         &["check", "--bits", "4", "present.or"],
@@ -690,4 +690,412 @@ fn malformed_analysis_options_are_usage_errors() {
         &["analyze", "--function", "present::sbox"],
         "orangec: command `analyze` requires at least one source file\n",
     );
+}
+
+#[test]
+fn aes_mix_columns_is_mds_over_the_aes_field() {
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "aes::mix_column",
+            "--linear",
+            "aes.or"
+        ])),
+        "aes::mix_column[]  32 bits as 4 words of 8 bits
+
+checked                   the 529 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+form                      linear
+rank                      32 of 32, invertible
+fixed points              2^8
+involution                no
+xor count, row by row     152
+
+differential branch       5 of at most 5 (MDS)
+linear branch             5 of at most 5 (MDS)
+
+field                     GF(2^8) modulo 0x11b
+field matrix              02 03 01 01
+                          01 02 03 01
+                          01 01 02 03
+                          03 01 01 02
+"
+    );
+    let output = analyze(&[
+        "--function=aes::mix_column",
+        "--linear",
+        "--stats",
+        "aes.or",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "aes::mix_column[]: 529 calls, 61364 steps\nlargest call: 116 of 1048576 steps\n"
+    );
+    let matrix = success(&analyze(&[
+        "--function",
+        "aes::mix_column",
+        "--linear",
+        "--table",
+        "matrix",
+        "aes.or",
+    ]));
+    assert_eq!(matrix.lines().count(), 32);
+    assert!(matrix.starts_with(
+        "y0  00000001 10000001 10000000 10000000\ny1  10000001 11000001 01000000 01000000\n"
+    ));
+    assert!(matrix.ends_with("y31 00000011 00000001 00000001 00000010\n"));
+}
+
+#[test]
+fn the_aes_round_layer_has_branch_number_five_of_seventeen() {
+    let summary = success(&analyze(&[
+        "--function",
+        "aes::linear",
+        "--linear",
+        "aes.or",
+    ]));
+    assert!(summary.starts_with(
+        "aes::linear[]  128 bits as 16 words of 8 bits
+
+checked                   the 8257 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+form                      linear
+rank                      128 of 128, invertible
+fixed points              2^16
+involution                no
+xor count, row by row     608
+
+differential branch       5 of at most 17
+linear branch             5 of at most 17
+
+field                     GF(2^8) modulo 0x11b
+field matrix              02 00 00 00 00 03 00 00 00 00 01 00 00 00 00 01
+                          01 00 00 00 00 02 00 00 00 00 03 00 00 00 00 01
+"
+    ));
+    assert!(
+        summary.ends_with(
+            "                          00 01 00 00 00 00 01 00 00 00 00 02 03 00 00 00\n"
+        )
+    );
+    assert_eq!(summary.lines().count(), 29);
+}
+
+#[test]
+fn bit_permutations_and_binary_layers() {
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "present::player",
+            "--linear",
+            "--word",
+            "4",
+            "present.or"
+        ])),
+        "present::player[]  64 bits as 16 words of 4 bits
+
+checked                   the 2081 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+form                      linear
+rank                      64 of 64, invertible
+fixed points              2^24
+involution                no
+xor count, row by row     0
+
+differential branch       2 of at most 17
+linear branch             2 of at most 17
+
+field                     none: some block is not a product in any GF(2^4)
+"
+    );
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "ascon::sigma0",
+            "--linear",
+            "--word=1",
+            "ascon.or"
+        ])),
+        "ascon::sigma0[]  64 bits as 64 words of 1 bit
+
+checked                   the 2081 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+form                      linear
+rank                      64 of 64, invertible
+fixed points              2^1
+involution                no
+xor count, row by row     128
+
+differential branch       4 of at most 65
+linear branch             4 of at most 65
+"
+    );
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "midori::mix_column",
+            "--linear",
+            "--word",
+            "4",
+            "midori.or"
+        ])),
+        "midori::mix_column[]  16 bits as 4 words of 4 bits
+
+checked                   all 65536 inputs
+form                      linear
+rank                      16 of 16, invertible
+fixed points              2^12
+involution                yes
+xor count, row by row     32
+
+differential branch       4 of at most 5
+linear branch             4 of at most 5
+
+field                     every GF(2^4): each block is 0 or 1
+field matrix              0 1 1 1
+                          1 0 1 1
+                          1 1 0 1
+                          1 1 1 0
+"
+    );
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "midori::mix_column",
+            "--linear",
+            "--word",
+            "4",
+            "--table",
+            "matrix",
+            "midori.or"
+        ])),
+        "y0  0000 1000 1000 1000
+y1  0000 0100 0100 0100
+y2  0000 0010 0010 0010
+y3  0000 0001 0001 0001
+y4  1000 0000 1000 1000
+y5  0100 0000 0100 0100
+y6  0010 0000 0010 0010
+y7  0001 0000 0001 0001
+y8  1000 1000 0000 1000
+y9  0100 0100 0000 0100
+y10 0010 0010 0000 0010
+y11 0001 0001 0000 0001
+y12 1000 1000 1000 0000
+y13 0100 0100 0100 0000
+y14 0010 0010 0010 0000
+y15 0001 0001 0001 0000
+"
+    );
+}
+
+#[test]
+fn affine_singular_and_wide_word_layers() {
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "aes::affine",
+            "--linear",
+            "--word",
+            "1",
+            "aes.or"
+        ])),
+        "aes::affine[]  8 bits as 8 words of 1 bit
+
+checked                   all 256 inputs
+form                      affine, constant 0x63
+rank                      8 of 8, invertible
+fixed points              none
+involution                no
+xor count, row by row     32
+
+differential branch       4 of at most 9
+linear branch             4 of at most 9
+"
+    );
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "shapes::fold",
+            "--linear",
+            "shapes.or"
+        ])),
+        "shapes::fold[]  16 bits as 2 words of 8 bits
+
+checked                   all 65536 inputs
+form                      linear
+rank                      8 of 16, singular
+fixed points              1
+involution                no
+xor count, row by row     16
+
+differential branch       2 of at most 3
+linear branch             2 of at most 3
+
+field                     every GF(2^8): each block is 0 or 1
+field matrix              01 01
+                          01 01
+"
+    );
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "shapes::wide",
+            "--linear",
+            "--word",
+            "32",
+            "shapes.or"
+        ])),
+        "shapes::wide[]  32 bits as 1 word of 32 bits
+
+checked                   the 529 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+form                      linear
+rank                      32 of 32, invertible
+fixed points              2^3
+involution                no
+xor count, row by row     29
+
+differential branch       not computed: about 2^34 operations, over the limit of 2^32
+linear branch             not computed: about 2^34 operations, over the limit of 2^32
+
+field                     not searched for words of more than 8 bits
+"
+    );
+}
+
+#[test]
+fn layers_that_are_not_affine_or_not_layers_are_refused() {
+    assert_eq!(
+        failure(
+            &analyze(&["--function", "shapes::spill", "--linear", "shapes.or"]),
+            1
+        ),
+        "error[ORC1017]: `shapes::spill[]` is not affine over GF(2): at input 0x30 it is 0x40, but its values at 0 and at single bits give 0x00
+  = note: `--linear` analyzes a map x -> M x + c; analyze an S-box without `--linear`
+"
+    );
+    assert!(
+        failure(
+            &analyze(&["--function", "aes::sbox", "--linear", "aes.or"]),
+            1
+        )
+        .starts_with(
+            "error[ORC1017]: `aes::sbox[]` is not affine over GF(2): at input 0x03 it is 0x7b, but its values at 0 and at single bits give 0x68\n"
+        )
+    );
+    for name in ["shapes::pair", "shapes::count"] {
+        assert_eq!(
+            failure(&analyze(&["--function", name, "--linear", "shapes.or"]), 1),
+            "error[ORC1016]: linear analysis requires one parameter of a word or array type and a result of the same type
+  = note: select a function such as `spec mix(a: Word[8]^4) -> Word[8]^4`
+"
+        );
+    }
+    assert_eq!(
+        failure(
+            &analyze(&["--function", "shapes::state", "--linear", "shapes.or"]),
+            1
+        ),
+        "error[ORC1017]: `Word[64]^4` has 256 bits, too wide for a linear layer
+  = note: a linear layer is analyzed over at most 128 bits
+"
+    );
+    assert_eq!(
+        failure(
+            &analyze(&[
+                "--function",
+                "present::sbox",
+                "--linear",
+                "--word",
+                "16",
+                "present.or"
+            ]),
+            1
+        ),
+        "error[ORC1017]: words of 16 bits do not divide the 8 bits of `Word[8]`
+  = note: `--word W` groups the bits of a layer into words of W bits, a power of two dividing its width
+"
+    );
+    let stopped = failure(
+        &analyze(&[
+            "--function",
+            "aes::mix_column",
+            "--linear",
+            "--steps",
+            "10",
+            "aes.or",
+        ]),
+        1,
+    );
+    assert!(stopped.starts_with("error[ORC0301]: reference evaluation step limit exceeded\n"));
+    assert!(
+        stopped.ends_with("  = note: the analysis stopped at input [0x00, 0x00, 0x00, 0x00]\n")
+    );
+}
+
+#[test]
+fn malformed_linear_options_are_usage_errors() {
+    for value in ["0", "3", "128", "08", "+8", "8 ", ""] {
+        let stderr = failure(
+            &analyze(&[
+                "--function",
+                "aes::mix_column",
+                "--linear",
+                "--word",
+                value,
+                "aes.or",
+            ]),
+            2,
+        );
+        assert!(
+            stderr.starts_with("orangec: option `--word` takes 1, 2, 4, 8, 16, 32, or 64\n"),
+            "--word {value:?}: {stderr}"
+        );
+    }
+    for (arguments, message) in [
+        (
+            &["--linear", "--bits", "4"][..],
+            "orangec: option `--bits` does not apply with `--linear`\n",
+        ),
+        (
+            &["--linear", "--table", "ddt"][..],
+            "orangec: with `--linear`, option `--table` takes only matrix\n",
+        ),
+        (
+            &["--word", "8"][..],
+            "orangec: option `--word` applies only with `--linear`\n",
+        ),
+        (
+            &["--table", "matrix"][..],
+            "orangec: table `matrix` requires `--linear`\n",
+        ),
+        (
+            &["--linear", "--linear"][..],
+            "orangec: option `--linear` may be specified at most once\n",
+        ),
+        (
+            &["--linear", "--word", "8", "--word=8"][..],
+            "orangec: option `--word` may be specified at most once\n",
+        ),
+    ] {
+        let mut all = vec!["--function", "aes::mix_column"];
+        all.extend_from_slice(arguments);
+        all.push("aes.or");
+        let stderr = failure(&analyze(&all), 2);
+        assert!(stderr.starts_with(message), "{arguments:?}: {stderr}");
+    }
+    for (option, value) in [("--linear", None), ("--word", Some("8"))] {
+        let mut arguments = vec!["check", option];
+        arguments.extend(value);
+        arguments.push("aes.or");
+        let output = Command::new(env!("CARGO_BIN_EXE_orangec"))
+            .current_dir(fixtures())
+            .args(&arguments)
+            .output()
+            .unwrap();
+        let stderr = failure(&output, 2);
+        assert!(
+            stderr.starts_with(&format!(
+                "orangec: option `{option}` applies only to analyze\n"
+            )),
+            "{arguments:?}: {stderr}"
+        );
+    }
 }
