@@ -34,6 +34,7 @@ pub use core::{
 pub use cryptanalysis::{
     AnalysisError, BitFunction, Computed, MAX_ANALYSIS_BITS, MAX_ANALYSIS_OPERATIONS,
     MAX_TABLE_BITS,
+    linear::{LinearMap, MAX_LAYER_BITS},
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use documentation::{

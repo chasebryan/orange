@@ -5,6 +5,7 @@
 //! property from the resulting table. The contract is
 //! `docs/CRYPTANALYSIS_2026.md`.
 
+use std::ffi::OsStr;
 use std::fmt::{self, Write as _};
 
 use orange_compiler::cryptanalysis::{Cycles, Monomial, Summary};
@@ -21,6 +22,8 @@ use super::{
 /// Width of the label column of a report.
 const LABEL_WIDTH: usize = 26;
 
+mod linear;
+
 /// What `analyze` analyzes and prints.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct Analysis {
@@ -32,6 +35,102 @@ pub(crate) struct Analysis {
     pub(crate) bits: Option<(u32, Option<u32>)>,
     /// The one complete table to print instead of the summary.
     pub(crate) table: Option<Table>,
+    /// Whether the function is analyzed as a linear layer.
+    pub(crate) linear: bool,
+    /// The bits of a word of a linear layer, when given.
+    pub(crate) word: Option<u32>,
+}
+
+/// The options only `analyze` takes, as the command line gives them.
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(crate) struct AnalysisOptions {
+    bits: Option<(u32, Option<u32>)>,
+    table: Option<Table>,
+    linear: bool,
+    word: Option<u32>,
+}
+
+impl AnalysisOptions {
+    /// Records `--bits`, `--word` or `--table`, each at most once.
+    pub(crate) fn set(&mut self, name: &str, value: &OsStr) -> Result<(), String> {
+        let duplicate = match name {
+            "--bits" => self.bits.is_some(),
+            "--word" => self.word.is_some(),
+            _ => self.table.is_some(),
+        };
+        if duplicate {
+            return Err(format!("option `{name}` may be specified at most once"));
+        }
+        let text = value.to_str().unwrap_or_default();
+        match name {
+            "--bits" => self.bits = Some(parse_bits(text)?),
+            "--word" => self.word = Some(parse_word(text)?),
+            _ => {
+                self.table = Some(Table::parse(text).ok_or_else(|| {
+                    String::from("option `--table` takes values, ddt, lat, bct, anf, or matrix")
+                })?);
+            }
+        }
+        Ok(())
+    }
+
+    /// Records `--linear`, at most once.
+    pub(crate) fn set_linear(&mut self) -> Result<(), String> {
+        if self.linear {
+            return Err(String::from(
+                "option `--linear` may be specified at most once",
+            ));
+        }
+        self.linear = true;
+        Ok(())
+    }
+
+    /// Returns the first analysis option given, if any.
+    pub(crate) const fn present(&self) -> Option<&'static str> {
+        if self.bits.is_some() {
+            Some("--bits")
+        } else if self.linear {
+            Some("--linear")
+        } else if self.word.is_some() {
+            Some("--word")
+        } else if self.table.is_some() {
+            Some("--table")
+        } else {
+            None
+        }
+    }
+
+    /// Returns the analysis of `function` at `instance` these options ask
+    /// for, refusing options that do not go together.
+    pub(crate) fn analysis(self, function: String, instance: Vec<u32>) -> Result<Analysis, String> {
+        if self.linear {
+            if self.bits.is_some() {
+                return Err(String::from(
+                    "option `--bits` does not apply with `--linear`",
+                ));
+            }
+            if self.table.is_some_and(|table| table != Table::Matrix) {
+                return Err(String::from(
+                    "with `--linear`, option `--table` takes only matrix",
+                ));
+            }
+        } else {
+            if self.word.is_some() {
+                return Err(String::from("option `--word` applies only with `--linear`"));
+            }
+            if self.table == Some(Table::Matrix) {
+                return Err(String::from("table `matrix` requires `--linear`"));
+            }
+        }
+        Ok(Analysis {
+            function,
+            instance,
+            bits: self.bits,
+            table: self.table,
+            linear: self.linear,
+            word: self.word,
+        })
+    }
 }
 
 /// A complete table `analyze --table` prints.
@@ -42,6 +141,7 @@ pub(crate) enum Table {
     Lat,
     Bct,
     Anf,
+    Matrix,
 }
 
 impl Table {
@@ -52,6 +152,7 @@ impl Table {
             "lat" => Self::Lat,
             "bct" => Self::Bct,
             "anf" => Self::Anf,
+            "matrix" => Self::Matrix,
             _ => return None,
         })
     }
@@ -85,6 +186,22 @@ pub(crate) fn parse_bits(text: &str) -> Result<(u32, Option<u32>), String> {
     }
 }
 
+/// Reads `--word W`: a power of two from 1 through 64, in canonical
+/// decimal.
+pub(crate) fn parse_word(text: &str) -> Result<u32, String> {
+    if text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(word_usage());
+    }
+    text.parse::<u32>()
+        .ok()
+        .filter(|bits| bits.is_power_of_two() && *bits <= 64)
+        .ok_or_else(word_usage)
+}
+
+fn word_usage() -> String {
+    String::from("option `--word` takes 1, 2, 4, 8, 16, 32, or 64")
+}
+
 /// Evaluates the selected function at every input and renders its summary,
 /// or the one table asked for, before any byte is written.
 pub(crate) fn prepare(
@@ -101,6 +218,9 @@ pub(crate) fn prepare(
     };
     let analysis = options.analysis.as_ref().ok_or_else(missing)?;
     let selected = select(core, analysis)?;
+    if analysis.linear {
+        return linear::prepare(options, core, sources, analysis, selected);
+    }
     let (input_bits, output_bits) = domain(selected, analysis.bits)?;
     let steps = options.evaluation.steps;
 
@@ -184,6 +304,7 @@ pub(crate) fn prepare(
                 .map_err(|error| failure(error, &missing))?;
             write_forms(&mut output, &forms)
         }
+        Some(Table::Matrix) => return Err(missing()),
     };
     if rendered.is_err() {
         return Err(output.failure());
@@ -603,7 +724,7 @@ impl fmt::Display for CycleType<'_> {
 }
 
 /// Returns x in hexadecimal with enough digits for `bits` bits.
-fn hex(x: impl Into<u64>, bits: u32) -> String {
+fn hex(x: impl Into<u128>, bits: u32) -> String {
     let digits = usize::try_from(bits.div_ceil(4)).unwrap_or(1);
     format!("{:0digits$x}", x.into())
 }

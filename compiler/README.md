@@ -291,9 +291,21 @@ most 10 bits. `--instance`, `--steps` and `--stats` keep their `replay`
 meanings, with the step budget applying to each call. The analysis library is
 `orange_compiler::cryptanalysis`; the command only evaluates and prints.
 
+`--linear` analyzes a linear layer instead: a function from a word or a
+one-dimensional array of words, at most 128 bits, to the same type. The
+command reads the constant and the matrix over GF(2) from the values at 0 and
+at each single bit, checks the function against them at every input up to 16
+bits and at every input of two bits beyond, and prints the rank, fixed
+points, involution, row-by-row XOR count, differential and linear branch
+numbers over words (`--word W`, by default the element width or 8), whether
+the layer is maximum distance separable, and the field GF(2^w) whose
+products its blocks are. `--table matrix` prints the matrix itself. The
+library is `orange_compiler::cryptanalysis::linear`.
+
 ```sh
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function aes::sbox compiler/fixtures/analyze/aes.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --table ddt compiler/fixtures/analyze/present.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --linear --function aes::mix_column compiler/fixtures/analyze/aes.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test analyze --locked --offline
 ```
 
@@ -302,9 +314,11 @@ property, the output format and the limits. A function of the wrong shape, or
 one that does not exist at the selected instance, is `ORC1016`; a width beyond
 its type or beyond 16 bits, a result outside the analyzed output bits, a table
 over 10 bits, or a boomerang table of a function that is not a permutation is
-`ORC1017`. A property whose computation would exceed 2^32 elementary
-operations is reported as not computed, with its cost. Every number is exact
-for the function under the reference evaluator; none is a security claim.
+`ORC1017`, and so is a layer wider than 128 bits, a word width that does not
+divide it, or a function that is not affine over GF(2). A property whose
+computation would exceed 2^32 elementary operations is reported as not
+computed, with its cost. Every number is exact for the function under the
+reference evaluator; none is a security claim.
 
 ## Sealing files
 

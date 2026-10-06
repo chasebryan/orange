@@ -1,10 +1,15 @@
 // Functions `orangec analyze` refuses or narrows: two parameters, an `Int`
 // result, a byte that leaves the low four bits when only four output bits
-// are analyzed, and a Word[32] too wide to analyze without `--bits`.
+// are analyzed, and a Word[32] too wide to analyze without `--bits`. With
+// `--linear`, the byte sum is not affine over GF(2), the Word[32] map is a
+// linear layer, x + (x <<< 8) is a singular one, and a state of 256 bits is
+// too wide.
 edition 2026;
 module shapes {
   spec pair(x: Word[8], y: Word[8]) -> Word[8] { x ^ y }
   spec count(x: Word[8]) -> Int { x as Int }
   spec spill(x: Word[8]) -> Word[8] { x + 0x10 }
   spec wide(x: Word[32]) -> Word[32] { x ^ (x >> 3) }
+  spec fold(x: Word[16]) -> Word[16] { x ^ (x <<< 8) }
+  spec state(x: Word[64]^4) -> Word[64]^4 { x }
 }

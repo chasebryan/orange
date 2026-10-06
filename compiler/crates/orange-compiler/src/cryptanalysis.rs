@@ -15,6 +15,8 @@
 
 use std::fmt;
 
+pub mod linear;
+
 /// Most input or output bits of an analyzed function.
 pub const MAX_ANALYSIS_BITS: u32 = 16;
 

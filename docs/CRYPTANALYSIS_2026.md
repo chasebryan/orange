@@ -11,20 +11,27 @@ Snapshot: 2026-10-06
 the exact properties a cryptanalyst first asks of an S-box or a Boolean
 function: how differences propagate, how far it is from every linear
 function, its algebraic degree, the boomerang connectivity of a permutation,
-the implicit equations its graph satisfies, and its cycle structure. The
-function is the Orange source itself, so the numbers describe the function
-the program computes, not a table copied beside it.
+the implicit equations its graph satisfies, and its cycle structure. With
+`--linear` it reads the matrix of a linear layer back from the function and
+reports its branch numbers, whether it is maximum distance separable, and the
+field its blocks multiply in. The function is the Orange source itself, so
+the numbers describe the function the program computes, not a table copied
+beside it.
 
-Every property is computed by complete enumeration of the function's values,
-so every reported number is exact for that function. None is sampled,
-estimated or bounded, and none is a claim about the security of a cipher
-that uses the function. The implemented language marker remains S3u; this
+Every property of an S-box or Boolean function is computed by complete
+enumeration of the function's values, and every property of a layer from its
+exact matrix, so every reported number is exact for that function. None is
+sampled, estimated or bounded, and none is a claim about the security of a
+cipher that uses the function. The one statement that is not complete is
+named as such: a layer of more than 16 bits is checked to be affine only up
+to its terms of degree 2. The implemented language marker remains S3u; this
 tool adds no syntax and changes no meaning of any program.
 
 ## Command
 
 ```text
 orangec analyze --function MODULE::NAME [--instance N[,N...]] [--bits N[,M]] [--table TABLE] [--steps N] [--stats] SOURCE|-
+orangec analyze --function MODULE::NAME [--instance N[,N...]] --linear [--word W] [--table matrix] [--steps N] [--stats] SOURCE|-
 ```
 
 The source and its imported modules must pass complete lexical, syntactic
@@ -38,16 +45,19 @@ does not exist at that instance is `ORC1016`. Named tests are never selected.
 (default 1,048,576); each input is a fresh call with the whole budget.
 `--stats` writes the number of calls, the total steps and the steps of the
 largest call to standard error. `--edition 2026` and `--` keep their
-ordinary meanings. `--bits` and `--table` belong to `analyze` alone, and each
-of them, like `--function`, `--instance` and `--steps`, may appear at most
-once; a malformed or misplaced option is a usage error with exit status 2.
+ordinary meanings. `--bits`, `--linear`, `--word` and `--table` belong to
+`analyze` alone, and each of them, like `--function`, `--instance` and
+`--steps`, may appear at most once. `--bits` does not combine with `--linear`,
+`--word` requires it, and with it `--table` takes only `matrix`, which in turn
+requires it. A malformed, misplaced or conflicting option is a usage error
+with exit status 2.
 
 ## Analyzed functions
 
-A function can be analyzed when it has exactly one parameter, of type
-`Word[8]`, `Word[16]`, `Word[32]` or `Word[64]`, and its result is a word of
-one of those widths or `Bool`. Any other shape is `ORC1016`, "analysis
-requires one word parameter and a word or Bool result".
+Without `--linear`, a function can be analyzed when it has exactly one
+parameter, of type `Word[8]`, `Word[16]`, `Word[32]` or `Word[64]`, and its
+result is a word of one of those widths or `Bool`. Any other shape is
+`ORC1016`, "analysis requires one word parameter and a word or Bool result".
 
 The function is read as F from n input bits to m output bits.
 
@@ -190,6 +200,109 @@ summarized without its boomerang uniformity, and a 16-bit function is
 summarized without its correlations either. Evaluation is bounded by
 `--steps` per call and by the 2^16 calls at most that one analysis makes.
 
+## Linear layers
+
+`--linear` analyzes the selected function as a linear layer: a map over
+GF(2) from n bits to the same n bits.
+
+### Analyzed layers
+
+A function can be analyzed as a layer when it has exactly one parameter, of a
+word type or a one-dimensional array of words, and its result has the same
+type. Any other shape is `ORC1016`, "linear analysis requires one parameter
+of a word or array type and a result of the same type". n is the number of
+bits of that type, at most 128; a wider type is `ORC1017`. Element i of an
+array of w0-bit words holds bits i w0 through i w0 + w0 - 1, its bit 0 being
+bit i w0 of the layer.
+
+The n bits are grouped into k = n / w words of w bits, word c holding bits
+c w through c w + w - 1. `--word W` sets w to 1, 2, 4, 8, 16, 32 or 64,
+written in canonical decimal. Without it, w is the width of an array's
+elements, or 8 for a single word. A w that does not divide n is `ORC1017`. So
+AES MixColumns on `Word[8]^4` is four words of 8 bits, PRESENT's pLayer on a
+`Word[64]` is analyzed over its sixteen nibbles with `--word 4`, and
+`--word 1` counts single bits.
+
+### Reading the matrix
+
+The layer is evaluated at 0 and at each e_j, the input whose only set bit is
+bit j. Its constant is c = F(0), and column j of its matrix M is
+F(e_j) + c, so M x is the sum of the columns of the bits set in x. F is
+affine exactly when F(x) = c + M x at every input x, and analysis checks
+that, in increasing order of x:
+
+- at every input, when n is at most 16;
+- otherwise at every input of exactly two set bits. F(e_i + e_j) + F(e_i) +
+  F(e_j) + F(0) is the coefficient of x_i x_j in the algebraic normal form of
+  F, so this shows exactly that F has no term of degree 2, and nothing about
+  terms of degree 3 or more. The summary says so.
+
+The first input at which F differs from c + M x is `ORC1017`, naming the
+input, F's value there and c + M x, each written as a value of the layer's
+type, an array as its words in index order. A call that exhausts its steps
+is `ORC0301`, with the same notes as above.
+
+### Layer properties
+
+Below, wt(x) is the number of nonzero words of x, and x + y adds over GF(2),
+bit by bit.
+
+- **checked**: `all N inputs` with N = 2^n, or `the N inputs of at most 2
+  bits: no term of degree 2, higher degrees unchecked` with
+  N = 1 + n + n(n - 1) / 2.
+- **form**: `linear` when c = 0, otherwise `affine` and the constant c in
+  hexadecimal.
+- **rank**: the rank of M over GF(2), and whether M is invertible or
+  singular.
+- **fixed points**: the number of x with F(x) = x, the solutions of
+  (M + I) x = c: `none`, `1`, or `2^d`.
+- **involution**: whether F(F(x)) = x for every x, that is M M = I and
+  M c = c.
+- **xor count, row by row**: the sum over the n rows of M of one less than
+  the row's weight, a zero row counting 0: the XOR gates of computing each
+  output bit on its own, the naive count of the literature. Implementations
+  that share terms between rows need fewer.
+- **differential branch**: the least wt(x) + wt(M x) over x ≠ 0, the fewest
+  active words on both sides of the layer. It is at most k + 1, and a layer
+  that reaches k + 1 is maximum distance separable, marked `(MDS)`.
+- **linear branch**: the least wt(b) + wt(M^T b) over b ≠ 0. Since
+  b · (M x) = (M^T b) · x, these are the output mask b and input mask M^T b
+  of the linear approximations of the layer.
+- **field**, for 2 ≤ w ≤ 8: each irreducible polynomial p of degree w over
+  GF(2), written with bit i the coefficient of x^i, such that every w x w
+  block of M, the map from input word c to output word r, commutes with
+  multiplication by x modulo p. Such a block is multiplication by a constant
+  of GF(2^w), the polynomials over GF(2) modulo p: its image of 1. The line
+  reads `GF(2^w) modulo p`, or `modulo each of` several, `every GF(2^w): each
+  block is 0 or 1` when every constant is 0 or 1, or `none` when no p fits.
+  The **field matrix** follows: the k x k constants in hexadecimal, row r
+  and column c. For w over 8 the line reads `not searched for words of more
+  than 8 bits`; for w = 1 it is left out, M being itself the matrix over
+  GF(2).
+
+The summary starts with `MODULE::NAME[INSTANCE]  n bits as k words of w bits`
+and prints the first six properties, the two branch numbers and the field
+lines in groups separated by one blank line. `--table matrix` prints M
+instead: one line per output bit i, `yi`, then the coefficient of each input
+bit x0, x1, … as `0` or `1`, a space before each word.
+
+### Branch number search
+
+Inputs are searched by their number t of nonzero words, t = 1, 2, …, each
+word taking every nonzero value. For an invertible M, the pairs (x, M x) are
+also found from the output side, by searching M^-1 at the same t: after
+weights 1 through t on both sides, every pair not yet seen has more than t
+nonzero words in x and in M x, so the search stops once 2 (t + 1) reaches
+the least sum found. For a singular M it stops once t + 1 does. An MDS
+layer of k words is thereby settled by inputs of at most k / 2 nonzero words.
+The linear branch searches M^T and its inverse the same way.
+
+Each side costs k 2^w operations for the tables of word images and
+C(k, t) (2^w - 1)^t for the inputs of weight t. A branch number whose search
+would exceed 2^32 operations is reported as not computed, with its cost, as
+above. So a 128-bit layer of 16 bytes is searched to weight 2 in about 2^24
+operations, while words of 32 or more bits are out of reach.
+
 ## Published values
 
 The fixtures in [`compiler/fixtures/analyze`](../compiler/fixtures/analyze)
@@ -204,6 +317,10 @@ values their designers and analysts published.
 | Keccak χ on 5 bits | `--function ascon::chi --bits 5` | the same spectra as Ascon's S-box, branches 2 |
 | DES S1 | `--function des::s1 --bits 6,4` | balanced; differential uniformity 16, the entry DDT(0x34, 0x2) of Biham and Shamir's pairs table (CRYPTO 1990) |
 | Bent function x0x1 + x2x3 | `--function boolean::bent --bits 4` | nonlinearity 6, the largest of any 4-bit Boolean function, and absolute indicator 0 |
+| AES MixColumns, one column | `--linear --function aes::mix_column` | branch number 5, maximum distance separable, the circulant matrix 02 03 01 01 over GF(2^8) modulo 0x11b (Daemen and Rijmen); naive XOR count 152 (Kranz, Leander, Stoffelen and Wiemer, ToSC 2017) |
+| AES ShiftRows then MixColumns | `--linear --function aes::linear` | branch number 5 over the 16 bytes of the state, the bound of 5 active S-boxes in any two rounds (Daemen and Rijmen) |
+| PRESENT pLayer | `--linear --word 4 --function present::player` | a permutation of bits (Bogdanov et al.): no XOR gate, branch number 2 over the S-boxes' nibbles |
+| Midori64 MixColumn | `--linear --word 4 --function midori::mix_column` | an involutive binary matrix, almost MDS with branch number 4 (Banik et al., ASIACRYPT 2015) |
 
 Each number in the tests was also recomputed, while the tool was built, by
 an independent implementation of the definitions above that shares no code
@@ -220,9 +337,9 @@ designer asks for, not evidence that a design is secure.
 
 ## Later slices
 
-This is the first slice of a cryptanalysis track. Later slices may add the
-branch number and maximum-distance-separable check of a linear layer over
-words, diffusion and avalanche counts, trail bounds for small
-substitution-permutation networks, and checks of the properties claimed in
-[`algorithms/`](../algorithms). Each will extend this contract and keep its
-rule: exact numbers from complete enumeration, or a reported limit.
+Slice A1 covered S-boxes and Boolean functions, and slice A2 linear layers.
+Later slices may add diffusion and avalanche counts of whole primitives,
+trail bounds for small substitution-permutation networks, and checks of the
+properties claimed in [`algorithms/`](../algorithms). Each will extend this
+contract and keep its rule: exact numbers from complete enumeration, or a
+reported limit.

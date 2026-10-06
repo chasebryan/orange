@@ -48,8 +48,8 @@ const USAGE: &str = concat!(
     "       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]\n",
     "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]\n",
-    "                       [--bits <N[,M]>] [--table <TABLE>]\n",
-    "                       [--steps <N>] [--stats] <SOURCE>\n",
+    "                       [--bits <N[,M]> | --linear [--word <W>]]\n",
+    "                       [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -78,7 +78,9 @@ const USAGE: &str = concat!(
     "      --instance <N,...> Complete numeric size/type-index vector [replay, analyze]\n",
     "      --witness <FILE>  Canonical argument vector; `-` reads stdin [replay only]\n",
     "      --bits <N[,M]>    Analyze the low N input and M output bits [analyze only]\n",
-    "      --table <TABLE>   Print values, ddt, lat, bct or anf in full [analyze only]\n",
+    "      --linear          Analyze a linear layer over GF(2) [analyze only]\n",
+    "      --word <W>        Word width of a --linear layer [default: element or 8]\n",
+    "      --table <TABLE>   Print values, ddt, lat, bct, anf or matrix [analyze only]\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -2360,8 +2362,7 @@ fn parse_arguments_with_path_reservation(
     let mut replay_function = None;
     let mut replay_instance = None;
     let mut replay_witness = None;
-    let mut analysis_bits = None;
-    let mut analysis_table = None;
+    let mut analysis_options = analyze::AnalysisOptions::default();
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -2387,6 +2388,10 @@ fn parse_arguments_with_path_reservation(
                 }
                 Some("--stats") => {
                     evaluation.stats = true;
+                    continue;
+                }
+                Some("--linear") => {
+                    analysis_options.set_linear()?;
                     continue;
                 }
                 Some("--check") => {
@@ -2420,12 +2425,12 @@ fn parse_arguments_with_path_reservation(
                     )?;
                     continue;
                 }
-                Some(name @ ("--bits" | "--table")) => {
+                Some(name @ ("--bits" | "--word" | "--table")) => {
                     let value = arguments
                         .next()
                         .ok_or_else(|| format!("option `{name}` requires a value"))?;
                     charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
-                    set_analysis_option(name, &value, &mut analysis_bits, &mut analysis_table)?;
+                    analysis_options.set(name, &value)?;
                     continue;
                 }
                 Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
@@ -2477,13 +2482,10 @@ fn parse_arguments_with_path_reservation(
                         )?;
                         continue;
                     }
-                    if let Some((name @ ("--bits" | "--table"), value)) = value.split_once('=') {
-                        set_analysis_option(
-                            name,
-                            OsStr::new(value),
-                            &mut analysis_bits,
-                            &mut analysis_table,
-                        )?;
+                    if let Some((name @ ("--bits" | "--word" | "--table"), value)) =
+                        value.split_once('=')
+                    {
+                        analysis_options.set(name, OsStr::new(value))?;
                         continue;
                     }
                     if value.starts_with('-') && value != "-" {
@@ -2504,6 +2506,7 @@ fn parse_arguments_with_path_reservation(
                     b"--instance=",
                     b"--witness=",
                     b"--bits=",
+                    b"--word=",
                     b"--table=",
                 ]
                 .iter()
@@ -2583,13 +2586,10 @@ fn parse_arguments_with_path_reservation(
     if replay_witness.is_some() && command != CompilerCommand::Replay {
         return Err(String::from("option `--witness` applies only to replay"));
     }
-    for (present, name) in [
-        (analysis_bits.is_some(), "--bits"),
-        (analysis_table.is_some(), "--table"),
-    ] {
-        if present && command != CompilerCommand::Analyze {
-            return Err(format!("option `{name}` applies only to analyze"));
-        }
+    if let Some(name) = analysis_options.present()
+        && command != CompilerCommand::Analyze
+    {
+        return Err(format!("option `{name}` applies only to analyze"));
     }
     if command.seals() {
         return sealing_action(command, edition, scheme, key, output, paths);
@@ -2631,12 +2631,7 @@ fn parse_arguments_with_path_reservation(
         let function = replay_function
             .take()
             .ok_or_else(|| String::from("command `analyze` requires `--function MODULE::NAME`"))?;
-        Some(analyze::Analysis {
-            function,
-            instance: replay_instance.take().unwrap_or_default(),
-            bits: analysis_bits,
-            table: analysis_table,
-        })
+        Some(analysis_options.analysis(function, replay_instance.take().unwrap_or_default())?)
     } else {
         None
     };
@@ -2667,37 +2662,6 @@ fn parse_arguments_with_path_reservation(
         replay,
         analysis,
     }))
-}
-
-/// Records `--bits` or `--table`, each at most once.
-fn set_analysis_option(
-    name: &str,
-    value: &OsStr,
-    bits: &mut Option<(u32, Option<u32>)>,
-    table: &mut Option<analyze::Table>,
-) -> Result<(), String> {
-    let duplicate = if name == "--bits" {
-        bits.is_some()
-    } else {
-        table.is_some()
-    };
-    if duplicate {
-        return Err(format!("option `{name}` may be specified at most once"));
-    }
-    if name == "--bits" {
-        let text = value.to_str().unwrap_or_default();
-        *bits = Some(analyze::parse_bits(text)?);
-    } else {
-        *table = Some(
-            value
-                .to_str()
-                .and_then(analyze::Table::parse)
-                .ok_or_else(|| {
-                    String::from("option `--table` takes values, ddt, lat, bct, or anf")
-                })?,
-        );
-    }
-    Ok(())
 }
 
 fn set_replay_option(

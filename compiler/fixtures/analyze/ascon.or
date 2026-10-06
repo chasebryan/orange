@@ -3,6 +3,11 @@
 // it is built, y_i = x_i + (x_(i+1) + 1) x_(i+2), the indices modulo 5.
 // Both are held in the low five bits of a byte; analyze them with
 // `--bits 5`.
+//
+// The linear layer of Ascon (section 3.4) mixes each 64-bit word of the
+// state with two of its rotations; for word 0, Sigma_0(x) = x + (x >>> 19)
+// + (x >>> 28). `orangec analyze --linear --word 1 --function
+// ascon::sigma0` reads its matrix back and finds branch number 4 over bits.
 edition 2026;
 module ascon {
   spec sbox(x: Word[8]) -> Word[8] {
@@ -19,4 +24,6 @@ module ascon {
     let after: Word[8] = ((a >> 2) | (a << 3)) & 0x1f;
     a ^ ((next ^ 0x1f) & after)
   }
+
+  spec sigma0(x: Word[64]) -> Word[64] { x ^ (x >>> 19) ^ (x >>> 28) }
 }
