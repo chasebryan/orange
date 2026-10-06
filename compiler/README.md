@@ -276,6 +276,36 @@ This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
 proof/evidence identity or release authority. The S3u language marker remains.
 
+## Analyzing a function
+
+`orangec analyze --function MODULE::NAME source.or` validates one source
+program, evaluates the selected function at every input, and prints the exact
+properties a cryptanalyst first asks of an S-box or a Boolean function:
+bijectivity and cycle type, differential uniformity and spectrum, linearity,
+nonlinearity and Walsh spectrum, branch numbers, algebraic and inverse degree,
+implicit quadratic equations, and boomerang uniformity. The function takes one
+`Word[8]`, `Word[16]`, `Word[32]` or `Word[64]` and returns a word or `Bool`.
+`--bits N[,M]` analyzes the low N input and M output bits, at most 16 each;
+`--table values|ddt|lat|bct|anf` prints one complete table for functions of at
+most 10 bits. `--instance`, `--steps` and `--stats` keep their `replay`
+meanings, with the step budget applying to each call. The analysis library is
+`orange_compiler::cryptanalysis`; the command only evaluates and prints.
+
+```sh
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function aes::sbox compiler/fixtures/analyze/aes.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --table ddt compiler/fixtures/analyze/present.or
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test analyze --locked --offline
+```
+
+The [cryptanalysis contract](../docs/CRYPTANALYSIS_2026.md) defines every
+property, the output format and the limits. A function of the wrong shape, or
+one that does not exist at the selected instance, is `ORC1016`; a width beyond
+its type or beyond 16 bits, a result outside the analyzed output bits, a table
+over 10 bits, or a boomerang table of a function that is not a permutation is
+`ORC1017`. A property whose computation would exceed 2^32 elementary
+operations is reported as not computed, with its cost. Every number is exact
+for the function under the reference evaluator; none is a security claim.
+
 ## Sealing files
 
 `orangec keygen`, `enc`, `dec`, and `schemes` seal files with authenticated
@@ -645,7 +675,7 @@ comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
 A source whose module has `use` declarations is the root of a program. For
-`check`, `eval`, `test` and `replay`, each `use m;` reads the module `m` from
+`check`, `eval`, `test`, `replay` and `analyze`, each `use m;` reads the module `m` from
 the file `m.or` in the root file's directory, or in the current directory when the root is `-`.
 A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
@@ -696,7 +726,7 @@ accepted prefix can end without a final limit notice. After any detected stream
 failure, retained buffered standard output is discarded instead of being
 flushed as later command output.
 Compilation standard output is explicitly flushed only after successful token,
-formatted-source, documentation, witness replay or evaluation bytes have been
+formatted-source, documentation, witness replay, analysis or evaluation bytes have been
 queued; untouched output and diagnostic streams are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger

@@ -1,0 +1,45 @@
+// The AES S-box of FIPS 197 (2001; update 1, 2023), section 5.1.1, computed
+// from its definition rather than read from Table 4: the multiplicative
+// inverse in GF(2^8) = GF(2)[x] / (x^8 + x^4 + x^3 + x + 1), the inverse of 0
+// being 0, followed by the affine map
+// b'_i = b_i + b_(i+4) + b_(i+5) + b_(i+6) + b_(i+7) + c_i with c = 0x63.
+// `orangec analyze --function aes::sbox` reports the properties its
+// designers chose it for: differential uniformity 4, nonlinearity 112,
+// algebraic degree 7, and no fixed points.
+edition 2026;
+module aes {
+  // Section 4.2: multiplication by x.
+  spec xtime(a: Word[8]) -> Word[8] {
+    (a << 1) ^ (if (a & 0x80) != 0 { 0x1b } else { 0 })
+  }
+
+  // Section 4.2: the product a b, the sum of a x^i over the bits i of b.
+  spec times(a: Word[8], b: Word[8]) -> Word[8] {
+    let r: (Word[8], Word[8]) = for i in 0..8 with (p: Word[8], q: Word[8]) = (0, a) {
+      (if ((b >> i) & 1) != 0 { p ^ q } else { p }, xtime(q))
+    };
+    r.0
+  }
+
+  // The inverse of x != 0 is x^254 = x^2 x^4 x^8 x^16 x^32 x^64 x^128, since
+  // x^255 = 1; and 0^254 = 0, as the standard asks.
+  spec inverse(x: Word[8]) -> Word[8] {
+    let r: (Word[8], Word[8]) = for i in 0..7 with (p: Word[8], q: Word[8]) = (1, x) {
+      let square: Word[8] = times(q, q);
+      (times(p, square), square)
+    };
+    r.0
+  }
+
+  // Section 5.1.1: the affine map, b' = b + (b <<< 1) + (b <<< 2) + (b <<< 3)
+  // + (b <<< 4) + 0x63, applied to the inverse.
+  spec sbox(x: Word[8]) -> Word[8] {
+    let b: Word[8] = inverse(x);
+    b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+  }
+
+  test "Table 4 begins 63 7c 77 7b and maps 53 to ed" {
+    let first: Word[8]^5 = [sbox(0x00), sbox(0x01), sbox(0x02), sbox(0x03), sbox(0x53)];
+    first == [0x63, 0x7c, 0x77, 0x7b, 0xed]
+  }
+}

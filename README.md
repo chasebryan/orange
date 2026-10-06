@@ -1188,6 +1188,7 @@ cryptography.
 | Shift and rotation amounts computed from data, `x <<< r` or `x >> (i % 8)`, with a value at every amount | Working; specification in review ([OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Typed local argument decoding and Boolean witness replay (`orangec replay`) | Working; [tool contract](docs/WITNESS_REPLAY_2026.md) |
+| Exact S-box and Boolean function analysis: differences, correlations, degrees, equations, boomerangs (`orangec analyze`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md) |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
@@ -1251,6 +1252,9 @@ Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec doc <FILE>
        orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                       --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+       orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                       [--bits <N[,M]>] [--table <TABLE>]
+                       [--steps <N>] [--stats] <SOURCE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1263,6 +1267,7 @@ Commands:
   fmt      Format one source, or check source formatting with --check
   doc      Document one parsed source as standalone HTML
   replay   Replay one exact Boolean function instance on typed witness values
+  analyze  Compute exact cryptanalytic properties of one function at every input
   keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
   enc      Seal a file with the scheme its key belongs to
   dec      Open a sealed file, writing nothing unless all of it is authentic
@@ -1290,6 +1295,16 @@ one selected function's concrete parameter types, and reports `falsified` or
 instance selection, canonical local values and resource boundary. A completed
 result describes that supplied witness; it supplies no proof or solver-trust
 decision evidence.
+
+`orangec analyze --function aes::sbox aes.or` evaluates one function at every
+input and prints what a cryptanalyst first asks of it: differential uniformity
+4, nonlinearity 112, algebraic degree 7, boomerang uniformity 6, and 39
+quadratic equations for the AES S-box computed from its definition in
+[`compiler/fixtures/analyze`](compiler/fixtures/analyze). `--bits N[,M]`
+analyzes a 4-bit, 5-bit or 6-to-4-bit S-box held in a wider word, and `--table`
+prints its difference, linear, boomerang or algebraic normal form table. The
+[cryptanalysis contract](docs/CRYPTANALYSIS_2026.md) defines every property.
+Each number is exact for the function as written; none is a security claim.
 
 `orangec enc FILE` seals any file with an authenticated cipher written in
 Orange, and `orangec dec FILE.orange` opens it again. XChaCha20-Poly1305 (the

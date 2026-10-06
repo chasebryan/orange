@@ -17,6 +17,7 @@ use orange_compiler::{
     evaluate_selected, format_source, lex, parse, render_diagnostics, replay_witness, run_tests,
 };
 
+mod analyze;
 mod crypt;
 
 const SUCCESS: u8 = 0;
@@ -46,6 +47,9 @@ const USAGE: &str = concat!(
     "       orangec doc <FILE>\n",
     "       orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]\n",
     "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
+    "       orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]\n",
+    "                       [--bits <N[,M]>] [--table <TABLE>]\n",
+    "                       [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -58,6 +62,7 @@ const USAGE: &str = concat!(
     "  fmt      Format one source, or check source formatting with --check\n",
     "  doc      Document one parsed source as standalone HTML\n",
     "  replay   Replay one exact Boolean function instance on typed witness values\n",
+    "  analyze  Compute exact cryptanalytic properties of one function at every input\n",
     "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
     "  enc      Seal a file with the scheme its key belongs to\n",
     "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
@@ -69,9 +74,11 @@ const USAGE: &str = concat!(
     "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
     "      --stats           Report the steps each function or test used, on stderr\n",
     "      --check           Check formatting without source changes [fmt only]\n",
-    "      --function <M::N> Select exactly this module and function [replay only]\n",
-    "      --instance <N,...> Complete numeric size/type-index vector [replay only]\n",
+    "      --function <M::N> Select exactly this module and function [replay, analyze]\n",
+    "      --instance <N,...> Complete numeric size/type-index vector [replay, analyze]\n",
     "      --witness <FILE>  Canonical argument vector; `-` reads stdin [replay only]\n",
+    "      --bits <N[,M]>    Analyze the low N input and M output bits [analyze only]\n",
+    "      --table <TABLE>   Print values, ddt, lat, bct or anf in full [analyze only]\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -121,6 +128,7 @@ define_cli_diagnostic_codes! {
     NotAuthentic => "ORC1014",
     Randomness => "ORC1015",
     EntryPoint => "ORC1016",
+    AnalysisDomain => "ORC1017",
 }
 
 fn main() -> ExitCode {
@@ -713,6 +721,7 @@ fn compile_with_limits(
                 | CompilerCommand::Eval
                 | CompilerCommand::Test
                 | CompilerCommand::Replay
+                | CompilerCommand::Analyze
         ) {
             let parsed = parse(source, &result);
             let ast = match classify_phase_result(parsed.ast(), parsed.diagnostics()) {
@@ -818,14 +827,22 @@ fn compile_with_limits(
                 }
             };
 
-            if options.command == CompilerCommand::Replay {
-                let report = match prepare_replay(
-                    options,
-                    core,
-                    &mut sources,
-                    standard_input,
-                    &mut remaining_source_bytes,
-                ) {
+            if matches!(
+                options.command,
+                CompilerCommand::Replay | CompilerCommand::Analyze
+            ) {
+                let prepared = if options.command == CompilerCommand::Replay {
+                    prepare_replay(
+                        options,
+                        core,
+                        &mut sources,
+                        standard_input,
+                        &mut remaining_source_bytes,
+                    )
+                } else {
+                    analyze::prepare(options, core, &sources)
+                };
+                let report = match prepared {
                     Ok(report) => report,
                     Err(group) => {
                         compilation_failed = true;
@@ -1169,7 +1186,9 @@ fn formatting_required(source: &SourceFile, formatted: &str) -> Option<Diagnosti
     )
 }
 
-struct ReplayReport {
+/// The complete output and statistics of `replay` or `analyze`, built
+/// before any byte is written.
+struct PreparedReport {
     output: String,
     statistics: String,
 }
@@ -1183,7 +1202,7 @@ fn prepare_replay(
     sources: &mut SourceMap,
     standard_input: &mut impl Read,
     remaining_source_bytes: &mut usize,
-) -> Result<ReplayReport, String> {
+) -> Result<PreparedReport, String> {
     let missing = || {
         render_cli_error(
             CliDiagnosticCode::MissingPhaseArtifact,
@@ -1313,7 +1332,7 @@ fn prepare_replay(
             return Err(statistics.failure());
         }
     }
-    Ok(ReplayReport {
+    Ok(PreparedReport {
         output: output.text,
         statistics: statistics.text,
     })
@@ -1693,6 +1712,7 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
             CompilerCommand::Fmt => "orangec: could not write formatted source\n",
             CompilerCommand::Doc => "orangec: could not write documentation output\n",
             CompilerCommand::Replay => "orangec: could not write witness replay output\n",
+            CompilerCommand::Analyze => "orangec: could not write analysis output\n",
             _ => "orangec: could not write token output\n",
         })),
     }
@@ -2249,6 +2269,7 @@ define_compiler_commands! {
     Fmt => "fmt",
     Doc => "doc",
     Replay => "replay",
+    Analyze => "analyze",
     Keygen => "keygen",
     Enc => "enc",
     Dec => "dec",
@@ -2271,6 +2292,7 @@ struct Options {
     /// Check every source without printing its formatted representation.
     formatting_check: bool,
     replay: Option<Replay>,
+    analysis: Option<analyze::Analysis>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -2338,6 +2360,8 @@ fn parse_arguments_with_path_reservation(
     let mut replay_function = None;
     let mut replay_instance = None;
     let mut replay_witness = None;
+    let mut analysis_bits = None;
+    let mut analysis_table = None;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -2396,6 +2420,14 @@ fn parse_arguments_with_path_reservation(
                     )?;
                     continue;
                 }
+                Some(name @ ("--bits" | "--table")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_analysis_option(name, &value, &mut analysis_bits, &mut analysis_table)?;
+                    continue;
+                }
                 Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
                     let value = arguments
                         .next()
@@ -2445,6 +2477,15 @@ fn parse_arguments_with_path_reservation(
                         )?;
                         continue;
                     }
+                    if let Some((name @ ("--bits" | "--table"), value)) = value.split_once('=') {
+                        set_analysis_option(
+                            name,
+                            OsStr::new(value),
+                            &mut analysis_bits,
+                            &mut analysis_table,
+                        )?;
+                        continue;
+                    }
                     if value.starts_with('-') && value != "-" {
                         return Err(format!("unknown option `{}`", escape_display_text(value)));
                     }
@@ -2462,6 +2503,8 @@ fn parse_arguments_with_path_reservation(
                     b"--function=",
                     b"--instance=",
                     b"--witness=",
+                    b"--bits=",
+                    b"--table=",
                 ]
                 .iter()
                 .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
@@ -2508,11 +2551,14 @@ fn parse_arguments_with_path_reservation(
     // selects functions, which only `eval` runs.
     let evaluates = matches!(
         command,
-        CompilerCommand::Eval | CompilerCommand::Test | CompilerCommand::Replay
+        CompilerCommand::Eval
+            | CompilerCommand::Test
+            | CompilerCommand::Replay
+            | CompilerCommand::Analyze
     );
     if !evaluates && steps_seen {
         return Err(String::from(
-            "option `--steps` applies only to eval, test, and replay",
+            "option `--steps` applies only to eval, test, replay, and analyze",
         ));
     }
     if command != CompilerCommand::Eval && !evaluation.specs.is_empty() {
@@ -2520,16 +2566,29 @@ fn parse_arguments_with_path_reservation(
     }
     if !evaluates && evaluation.stats {
         return Err(String::from(
-            "option `--stats` applies only to eval, test, and replay",
+            "option `--stats` applies only to eval, test, replay, and analyze",
         ));
     }
+    let selects = matches!(command, CompilerCommand::Replay | CompilerCommand::Analyze);
     for (present, name) in [
         (replay_function.is_some(), "--function"),
         (replay_instance.is_some(), "--instance"),
-        (replay_witness.is_some(), "--witness"),
     ] {
-        if present && command != CompilerCommand::Replay {
-            return Err(format!("option `{name}` applies only to replay"));
+        if present && !selects {
+            return Err(format!(
+                "option `{name}` applies only to replay and analyze"
+            ));
+        }
+    }
+    if replay_witness.is_some() && command != CompilerCommand::Replay {
+        return Err(String::from("option `--witness` applies only to replay"));
+    }
+    for (present, name) in [
+        (analysis_bits.is_some(), "--bits"),
+        (analysis_table.is_some(), "--table"),
+    ] {
+        if present && command != CompilerCommand::Analyze {
+            return Err(format!("option `{name}` applies only to analyze"));
         }
     }
     if command.seals() {
@@ -2568,6 +2627,19 @@ fn parse_arguments_with_path_reservation(
             "command `fmt` requires exactly one source file unless `--check` is given",
         ));
     }
+    let analysis = if command == CompilerCommand::Analyze {
+        let function = replay_function
+            .take()
+            .ok_or_else(|| String::from("command `analyze` requires `--function MODULE::NAME`"))?;
+        Some(analyze::Analysis {
+            function,
+            instance: replay_instance.take().unwrap_or_default(),
+            bits: analysis_bits,
+            table: analysis_table,
+        })
+    } else {
+        None
+    };
     let replay = if command == CompilerCommand::Replay {
         let function = replay_function
             .ok_or_else(|| String::from("command `replay` requires `--function MODULE::NAME`"))?;
@@ -2593,7 +2665,39 @@ fn parse_arguments_with_path_reservation(
         evaluation,
         formatting_check,
         replay,
+        analysis,
     }))
+}
+
+/// Records `--bits` or `--table`, each at most once.
+fn set_analysis_option(
+    name: &str,
+    value: &OsStr,
+    bits: &mut Option<(u32, Option<u32>)>,
+    table: &mut Option<analyze::Table>,
+) -> Result<(), String> {
+    let duplicate = if name == "--bits" {
+        bits.is_some()
+    } else {
+        table.is_some()
+    };
+    if duplicate {
+        return Err(format!("option `{name}` may be specified at most once"));
+    }
+    if name == "--bits" {
+        let text = value.to_str().unwrap_or_default();
+        *bits = Some(analyze::parse_bits(text)?);
+    } else {
+        *table = Some(
+            value
+                .to_str()
+                .and_then(analyze::Table::parse)
+                .ok_or_else(|| {
+                    String::from("option `--table` takes values, ddt, lat, bct, or anf")
+                })?,
+        );
+    }
+    Ok(())
 }
 
 fn set_replay_option(
@@ -2940,6 +3044,7 @@ mod tests {
         let expected = [
             "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
             "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015", "ORC1016",
+            "ORC1017",
         ];
 
         assert_eq!(actual, expected);
@@ -2987,6 +3092,7 @@ mod tests {
             evaluation: Evaluation::default(),
             formatting_check: false,
             replay: None,
+            analysis: None,
         };
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
@@ -3041,6 +3147,7 @@ mod tests {
             evaluation: Evaluation::default(),
             formatting_check: false,
             replay: None,
+            analysis: None,
         };
         let mut input = b"abcd".as_slice();
         let mut output = Vec::new();
@@ -3083,6 +3190,7 @@ mod tests {
             evaluation: Evaluation::default(),
             formatting_check: false,
             replay: None,
+            analysis: None,
         };
         let mut input = b"".as_slice();
         let mut output = Vec::new();
@@ -3136,8 +3244,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "check", "eval", "lex", "test", "fmt", "doc", "replay", "keygen", "enc", "dec",
-                "schemes"
+                "check", "eval", "lex", "test", "fmt", "doc", "replay", "analyze", "keygen", "enc",
+                "dec", "schemes"
             ]
         );
         assert_eq!(
@@ -4014,6 +4122,7 @@ mod tests {
                 evaluation: Evaluation::default(),
                 formatting_check: false,
                 replay: None,
+                analysis: None,
             }))
         );
         assert_eq!(
@@ -4025,6 +4134,7 @@ mod tests {
                 evaluation: Evaluation::default(),
                 formatting_check: false,
                 replay: None,
+                analysis: None,
             }))
         );
         assert_eq!(
@@ -4036,6 +4146,7 @@ mod tests {
                 evaluation: Evaluation::default(),
                 formatting_check: false,
                 replay: None,
+                analysis: None,
             }))
         );
     }
@@ -4640,11 +4751,11 @@ mod tests {
         for (arguments, message) in [
             (
                 &["check", "--steps", "5", "one.or"][..],
-                "`--steps` applies only to eval, test, and replay",
+                "`--steps` applies only to eval, test, replay, and analyze",
             ),
             (
                 &["check", "--steps", "1048576", "one.or"][..],
-                "`--steps` applies only to eval, test, and replay",
+                "`--steps` applies only to eval, test, replay, and analyze",
             ),
             (
                 &["lex", "--spec", "f", "one.or"][..],
@@ -4652,11 +4763,11 @@ mod tests {
             ),
             (
                 &["check", "--stats", "one.or"][..],
-                "`--stats` applies only to eval, test, and replay",
+                "`--stats` applies only to eval, test, replay, and analyze",
             ),
             (
                 &["--steps=5", "--spec=f", "--stats", "check", "one.or"][..],
-                "`--steps` applies only to eval, test, and replay",
+                "`--steps` applies only to eval, test, replay, and analyze",
             ),
             (
                 &["--spec=f", "--stats", "check", "one.or"][..],
@@ -4664,7 +4775,7 @@ mod tests {
             ),
             (
                 &["enc", "--stats", "one.or"][..],
-                "`--stats` applies only to eval, test, and replay",
+                "`--stats` applies only to eval, test, replay, and analyze",
             ),
             (
                 &["--steps=5", "--spec=f", "--stats", "test", "one.or"][..],

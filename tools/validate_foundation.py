@@ -304,6 +304,7 @@ compiler/Cargo.toml
 compiler/README.md
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
+compiler/crates/orange-compiler/src/cryptanalysis.rs
 compiler/crates/orange-compiler/src/diagnostic.rs
 compiler/crates/orange-compiler/src/edition.rs
 compiler/crates/orange-compiler/src/eval.rs
@@ -360,9 +361,11 @@ compiler/crates/orange-compiler/tests/d010_support/packet.rs
 compiler/crates/orange-compiler/tests/d010_support/runner.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/crypt.rs
+compiler/crates/orangec/src/analyze.rs
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
 compiler/crates/orangec/tests/witness_replay.rs
+compiler/crates/orangec/tests/analyze.rs
 compiler/crates/orangec/tests/documentation.rs
 compiler/crates/orangec/tests/formatting.rs
 compiler/crates/orangec/tests/crypt.rs
@@ -391,6 +394,12 @@ compiler/crates/orangec/tests/field25519_limbs.rs
 compiler/crates/orangec/tests/s3t_conformance.rs
 compiler/crates/orangec/tests/s3u_conformance.rs
 compiler/fixtures/hello.or
+compiler/fixtures/analyze/aes.or
+compiler/fixtures/analyze/ascon.or
+compiler/fixtures/analyze/boolean.or
+compiler/fixtures/analyze/des.or
+compiler/fixtures/analyze/present.or
+compiler/fixtures/analyze/shapes.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
 compiler/fixtures/s3a/invalid-negative-word.or
@@ -596,6 +605,7 @@ docs/ROADMAP.md
 docs/SEMANTIC_STRATA_DECISION_SUITE.md
 docs/EXPRESSIONS_2026.md
 docs/WITNESS_REPLAY_2026.md
+docs/CRYPTANALYSIS_2026.md
 docs/DOCUMENTATION_2026.md
 docs/FORMATTER_2026.md
 docs/BINDINGS_2026.md
@@ -855,7 +865,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "9938546d5429c00efa124635411fa1e97018e06e8904017c7e287f4c1207932d"
+_RDC = "0ff2385d2753e8bbd4c9f90d6b054a2785f9eb44976f43853af86465c6f1df83"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -921,7 +931,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9a1d29ee2a9fe43d2a0c1e5b3981342ef7b68f2b29bc76b2f0cbb491caa15d4e"
+_PHD = "33ed8b1dde9e2b052e2bb637113a9c0ec04dfb5656985f97842701f6c8a381ee"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
