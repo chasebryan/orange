@@ -272,12 +272,13 @@ bit by bit.
   GF(2), written with bit i the coefficient of x^i, such that every w x w
   block of M, the map from input word c to output word r, commutes with
   multiplication by x modulo p. Such a block is multiplication by a constant
-  of GF(2^w) = GF(2)[x] / (p), its image of 1. The line reads `GF(2^w)
-  modulo p`, or `modulo each of` several, `every GF(2^w): each block is 0 or
-  1` when every constant is 0 or 1, or `none` when no p fits. The **field
-  matrix** follows: the k x k constants in hexadecimal, row r and column c.
-  For w over 8 the line reads `not searched for words of more than 8 bits`;
-  for w = 1 it is left out, M being itself the matrix over GF(2).
+  of GF(2^w), the polynomials over GF(2) modulo p: its image of 1. The line
+  reads `GF(2^w) modulo p`, or `modulo each of` several, `every GF(2^w): each
+  block is 0 or 1` when every constant is 0 or 1, or `none` when no p fits.
+  The **field matrix** follows: the k x k constants in hexadecimal, row r
+  and column c. For w over 8 the line reads `not searched for words of more
+  than 8 bits`; for w = 1 it is left out, M being itself the matrix over
+  GF(2).
 
 The summary starts with `MODULE::NAME[INSTANCE]  n bits as k words of w bits`
 and prints the first six properties, the two branch numbers and the field
