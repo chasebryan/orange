@@ -676,4 +676,18 @@ fn malformed_analysis_options_are_usage_errors() {
         ],
         "orangec: option `--witness` applies only to replay\n",
     );
+    usage(
+        &[
+            "analyze",
+            "--function",
+            "present::sbox",
+            "present.or",
+            "des.or",
+        ],
+        "orangec: command `analyze` requires exactly one source file\n",
+    );
+    usage(
+        &["analyze", "--function", "present::sbox"],
+        "orangec: command `analyze` requires at least one source file\n",
+    );
 }
