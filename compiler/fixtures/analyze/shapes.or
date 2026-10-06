@@ -1,0 +1,10 @@
+// Functions `orangec analyze` refuses or narrows: two parameters, an `Int`
+// result, a byte that leaves the low four bits when only four output bits
+// are analyzed, and a Word[32] too wide to analyze without `--bits`.
+edition 2026;
+module shapes {
+  spec pair(x: Word[8], y: Word[8]) -> Word[8] { x ^ y }
+  spec count(x: Word[8]) -> Int { x as Int }
+  spec spill(x: Word[8]) -> Word[8] { x + 0x10 }
+  spec wide(x: Word[32]) -> Word[32] { x ^ (x >> 3) }
+}

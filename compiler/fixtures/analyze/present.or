@@ -1,0 +1,10 @@
+// The 4-bit S-box of PRESENT (Bogdanov et al., CHES 2007, table 1), held in
+// the low four bits of a byte. `orangec analyze --function present::sbox
+// --bits 4` analyzes it as the 4-bit permutation it is.
+edition 2026;
+module present {
+  spec sbox(x: Word[8]) -> Word[8] {
+    let table: Word[8]^16 = [0xc, 0x5, 0x6, 0xb, 0x9, 0x0, 0xa, 0xd, 0x3, 0xe, 0xf, 0x8, 0x4, 0x7, 0x1, 0x2];
+    table[x & 0x0f]
+  }
+}
