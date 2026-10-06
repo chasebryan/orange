@@ -25,6 +25,9 @@ pub const MAX_ANALYSIS_OPERATIONS: u64 = 1 << 32;
 /// Most input or output bits for which complete tables are produced.
 pub const MAX_TABLE_BITS: u32 = 10;
 
+/// Words of the bitmap that marks the values of a 2^16-input function.
+const PERMUTATION_WORDS: usize = 1 << (MAX_ANALYSIS_BITS - 6);
+
 /// A function from n-bit inputs to m-bit outputs, given by its value at
 /// every input.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -227,9 +230,21 @@ impl BitFunction {
     }
 
     /// Returns whether the function is a permutation of its n-bit space.
+    /// The answer needs no allocation: values seen are marked in a fixed
+    /// bitmap of 2^16 bits.
     #[must_use]
     pub fn is_permutation(&self) -> bool {
-        self.input_bits == self.output_bits && self.inverse_values().is_some()
+        if self.input_bits != self.output_bits {
+            return false;
+        }
+        let mut seen = [0_u64; PERMUTATION_WORDS];
+        for &value in &self.values {
+            if bit(&seen, value) {
+                return false;
+            }
+            set_bit(&mut seen, value);
+        }
+        true
     }
 
     /// Computes every summary property whose cost is within
@@ -244,11 +259,7 @@ impl BitFunction {
         let m = u64::from(self.output_bits);
         let inputs = 1_u64.checked_shl(self.input_bits).unwrap_or(u64::MAX);
         let outputs = 1_u64.checked_shl(self.output_bits).unwrap_or(u64::MAX);
-        let inverse = if self.input_bits == self.output_bits {
-            self.inverse_values()
-        } else {
-            None
-        };
+        let inverse = self.inverse_values()?;
 
         let mut counts = filled(0_usize, size(self.output_bits))?;
         for &value in &self.values {
@@ -376,12 +387,9 @@ impl BitFunction {
     /// [`MAX_TABLE_BITS`], or [`AnalysisError::Allocation`].
     pub fn boomerang_table(&self) -> Result<Vec<u32>, AnalysisError> {
         self.check_table_size()?;
-        let inverse = if self.input_bits == self.output_bits {
-            self.inverse_values()
-        } else {
-            None
-        };
-        let inverse = inverse.ok_or(AnalysisError::NotPermutation)?;
+        let inverse = self
+            .inverse_values()?
+            .ok_or(AnalysisError::NotPermutation)?;
         let inputs = self.values.len();
         let mut table = filled(0_u32, inputs.saturating_mul(inputs))?;
         for (a, row) in table.chunks_exact_mut(inputs).enumerate() {
@@ -441,17 +449,23 @@ impl BitFunction {
     }
 
     /// Returns the inverse table when the function is a permutation of an
-    /// n-bit space.
-    fn inverse_values(&self) -> Option<Vec<usize>> {
-        let mut inverse = filled(usize::MAX, self.values.len()).ok()?;
-        for (x, &value) in self.values.iter().enumerate() {
-            let slot = inverse.get_mut(value)?;
-            if *slot != usize::MAX {
-                return None;
-            }
-            *slot = x;
+    /// n-bit space, and `None` when it is not.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AnalysisError::Allocation`] when the table of a permutation
+    /// cannot be reserved; that failure is never read as "not a permutation".
+    fn inverse_values(&self) -> Result<Option<Vec<usize>>, AnalysisError> {
+        if !self.is_permutation() {
+            return Ok(None);
         }
-        Some(inverse)
+        let mut inverse = filled(0_usize, self.values.len())?;
+        for (x, &value) in self.values.iter().enumerate() {
+            if let Some(slot) = inverse.get_mut(value) {
+                *slot = x;
+            }
+        }
+        Ok(Some(inverse))
     }
 
     fn cycles(&self) -> Result<Cycles, AnalysisError> {
