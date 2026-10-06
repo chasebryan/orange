@@ -4,6 +4,13 @@ Status: proposed S3g semantics under OEP-0010, in owner review; not accepted
 
 Edition: `2026`
 
+> S3y, proposed in [`COMPUTED_POSITIONS_2026.md`](COMPUTED_POSITIONS_2026.md)
+> under OEP-0029, bounds a remainder by a divisor that is never zero whatever
+> it divides, and gives a `let` of one `Int` or word name the range of its
+> value. Its rules extend the index forms and replace the `ORC0226` and
+> `ORC0223` messages, labels, and notes below. Section 11's leakage obligation
+> then also covers positions that depend on data through a name.
+
 Snapshot: 2026-09-30
 
 This document defines slice S3g of Orange 2026: indices that depend on data,

@@ -27,8 +27,9 @@ acyclic multi-module programs. Its proposed S3 slices include exact integers,
 fixed-width words, residues, arrays and rectangular scalar rows, tuples,
 conditions, bounded folds, conversions, slices, and finite size and type
 specialization. S3t extends those finite size instances to modulus expressions,
-and S3u extends arrays to four dimensions with update paths. S3b through S3u
-remain in owner review; the accepted semantic boundary is S3a.
+S3u extends arrays to four dimensions with update paths, and S3y proves
+positions computed from data in range. S3b through S3u and S3y remain in owner
+review; the accepted semantic boundary is S3a.
 
 The algorithm directories contain executable mathematical specifications and
 tested vectors. The P2 five-limb field definitions supply representation

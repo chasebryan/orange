@@ -1146,6 +1146,41 @@ as FIPS 197, 202, and 203 write them, and reproduces their examples. S3u is impl
 [specification](docs/DIMENSIONS_2026.md) in review as
 [OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
 
+### Positions computed from data
+
+A position may come from the data and still be proved in range before the
+program runs:
+
+```orange
+edition 2026;
+module positions {
+  type Row = Word[8]^8;
+
+  // A rotation by an amount from data: a window of the row joined to itself.
+  spec rotate(r: Row, k: Word[8]) -> Row {
+    let by: Int = (k as Int) % 8;
+    let twice: Word[8]^16 = r ++ r;
+    twice[by..by + 8]
+  }
+
+  test "a rotation by 11 is a rotation by 3" {
+    rotate([0, 1, 2, 3, 4, 5, 6, 7], 11) == [3, 4, 5, 6, 7, 0, 1, 2]
+  }
+}
+```
+
+`(k as Int) % 8` lies from 0 through 7 whatever the key is, because Orange's
+remainder is Euclidean; `by` keeps that range, so `twice[by..by + 8]` is
+eight elements inside the array for every key. A position may also count what
+the data accept: the S3y corpus runs
+[SampleNTT from FIPS 203](compiler/fixtures/s3y/valid-mlkem-sample.or) and
+[SampleInBall from FIPS 204](compiler/fixtures/s3y/valid-mldsa-ball.or), each
+writing at a count taken modulo 256. A window's length never depends on data;
+its position may, and a position from a secret is an access pattern Orange
+makes no timing claim about. S3y is implemented and tested, with its
+[specification](docs/COMPUTED_POSITIONS_2026.md) in review as
+[OEP-0029](docs/governance/oeps/OEP-0029-orange-2026-computed-positions.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1174,6 +1209,7 @@ cryptography.
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
+| Positions computed from data: remainders that bound any `Int`, ranged `let` bindings, and windows at computed places | Working; specification in review ([OEP-0029](docs/governance/oeps/OEP-0029-orange-2026-computed-positions.md)) |
 | Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
 | Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
 | Modulus expressions over own finite size parameters, with eagerly checked exact domains | Working; specification in review ([OEP-0024](docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md)) |

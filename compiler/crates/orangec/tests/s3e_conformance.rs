@@ -276,11 +276,12 @@ const CASES: [Case; 7] = [
                 "ORC0223",
             ],
             locations: &[
-                "5:55", "6:61", "7:42", "9:82", "10:86", "11:90", "12:83", "13:46",
+                "7:55", "8:69", "9:42", "11:82", "12:86", "13:90", "14:83", "15:46",
             ],
             messages: &[
-                "an `Int` index may use only integer literals, loop indices, and words converted",
+                "an `Int` index may use only integer literals, loop indices, words converted with",
                 "this `Int` has no bound",
+                "this binding's value has no range",
                 "this index runs from 0 through 4, out of range for `Word[8]^4`",
                 "this index runs from -1 through 2, out of range for `Word[8]^4`",
                 "this index runs from -3 through 3, out of range for `Word[8]^4`",

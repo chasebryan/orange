@@ -155,6 +155,13 @@ unresolved.
 > dimensions, each a `type` declaration over the one before it, and update
 > targets of two to four indices, as `x with [i][j][k] = v`. It adds no token
 > or reserved word; repeated `^` type syntax remains rejected.
+>
+> The S3y slice proposed in
+> [`COMPUTED_POSITIONS_2026.md`](COMPUTED_POSITIONS_2026.md) under OEP-0029,
+> also in review, builds on S3u with positions computed from data: a
+> remainder by a divisor that is never zero bounds any `Int`, a `let` of one
+> `Int` or word name gives the name its value's range, and a slice's bounds
+> may name such bindings, as `x[at..at + 4]`. It adds no syntax.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

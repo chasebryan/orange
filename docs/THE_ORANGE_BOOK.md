@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-10-05
 
-Manuscript version: 0.27
+Manuscript version: 0.28
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -125,6 +125,8 @@ designers write them. S3s adds tables of scalar rows, S3t lets each finite
 size instance compute its own exact modulus, and S3u carries arrays to four
 dimensions, so that ML-KEM's matrix of polynomials is one type, with updates
 that name one index per dimension, as AES and Keccak update their states.
+S3y lets a position be computed from data and still be proved in range, so
+that ML-KEM and ML-DSA write their samples at a count of what the data accept.
 None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
@@ -1188,7 +1190,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The twenty-one current slices complete bounded parts of the roadmap's S3 stage:
+The twenty-two current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1211,7 +1213,8 @@ table whose axes are checked separately, then modulus expressions over a
 function's own finite sizes, each instance checked with its exact residue
 domain, then arrays of three and four dimensions and update paths, so that a
 matrix of polynomials is one type and a state is updated one index per
-dimension.
+dimension, then positions computed from data, proved in range through
+remainders and named values, so that a sampler writes where its count says.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
@@ -1772,9 +1775,11 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [tests specification](TESTS_2026.md) of S3q, and the
 [computed amounts specification](AMOUNTS_2026.md) of S3r, the
 [nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, the
-[static moduli specification](STATIC_MODULI_2026.md) of S3t, and the
-[array dimensions specification](DIMENSIONS_2026.md) of S3u. S3b through
-S3u are implemented and tested, but their specifications are **proposed**:
+[static moduli specification](STATIC_MODULI_2026.md) of S3t, the
+[array dimensions specification](DIMENSIONS_2026.md) of S3u, and the
+[computed positions specification](COMPUTED_POSITIONS_2026.md) of S3y. S3b
+through S3u and S3y are implemented and tested, but their specifications are
+**proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1793,8 +1798,9 @@ S3u are implemented and tested, but their specifications are **proposed**:
 [OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md),
 [OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md),
 [OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md),
-[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), and
-[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md) are in
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md),
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md), and
+[OEP-0029](governance/oeps/OEP-0029-orange-2026-computed-positions.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -2232,7 +2238,7 @@ error[ORC0223]: this index runs from -1 through 46, out of range for `Word[32]^6
   |
 4 | ... ith v: Word[32]^64 = w { v with [t] = w[t - 17] }
   |                                             ^^^^^^ indices run from 0 through 63
-  = note: every value an index can take, over every loop index and word in it, must select an element
+  = note: every value an index can take, over every loop index, word, and ranged binding in it, must select an element
 ```
 
 The check is deliberately simple. It bounds each side of an operator
@@ -2247,13 +2253,17 @@ check to trust. The price is that an index must have a bound the checker can
 see. An `Int` parameter has none, so a lookup keyed by one is refused:
 
 ```text
-error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int`
+error[ORC0226]: an `Int` index may use only integer literals, loop indices, words converted with `as Int`, and ranged bindings
  --> <stdin>:4:10
   |
 4 |     sbox[k]
   |          ^ this `Int` has no bound
-  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
+  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, words converted with `as Int`, and ranged bindings, using `+`, `-`, `*`, `/`, `%`, and conditionals; a `let` gives its name its value's range, and `x % 16` lies from 0 through 15 whatever x is
 ```
+
+Since S3y, `sbox[k % 256]` is accepted: a remainder by 256 lies from 0
+through 255 whatever `k` is, as
+[Positions the data choose](#positions-the-data-choose) explains.
 
 A byte does have a bound, 0 through 255, and a lookup keyed by a byte is how
 [Tables keyed by data](#tables-keyed-by-data) writes AES.
@@ -2371,7 +2381,7 @@ error[ORC0223]: this index runs from 0 through 7, out of range for `Word[8]^4`
   |
 4 | ... r i in 0..8 with s: Word[8] = 0 { s ^ k[i % 0] }
   |                                             ^^^^^ indices run from 0 through 3
-  = note: every value an index can take, over every loop index and word in it, must select an element
+  = note: every value an index can take, over every loop index, word, and ranged binding in it, must select an element
 ```
 
 The [X25519 fixture](../compiler/fixtures/s3f/valid-x25519.or) computes the
@@ -2434,7 +2444,7 @@ error[ORC0223]: this index runs from 1 through 16, out of range for `Word[8]^16`
   |
 4 |     t[(x & 15) + 1]
   |       ^^^^^^^^^^^^ indices run from 0 through 15
-  = note: every value an index can take, over every loop index and word in it, must select an element
+  = note: every value an index can take, over every loop index, word, and ranged binding in it, must select an element
 ```
 
 An `Int` index is still built from literals and loop indices, and it may now
@@ -3149,10 +3159,10 @@ aead::verified: Bool = true
 
 Here `tag` is `sealed()[114..]`, the last sixteen bytes.
 
-A slice's position never depends on data. Its bounds are built from integer
-literals and loop indices, with `+`, `-`, and `*` by a constant, and the
-analyzer proves, before anything runs, that the distance between them is the
-same positive number at every step, because that number is the slice's
+A slice's length never depends on data. Its bounds are built from integer
+literals and loop indices, and since S3y ranged bindings, with `+`, `-`, and
+`*` by a constant, and the analyzer proves, before anything runs, that the
+distance between them is the same positive number at every step, because that number is the slice's
 length and so part of its type, and that every element the slice can take,
 at every step, exists. A slice therefore needs no check when it runs, and the
 compiler points at the part it cannot prove:
@@ -3166,12 +3176,12 @@ spec accent() -> Word[8]^5 { "café" }
 ```
 
 ```text
-error[ORC0226]: a slice's bounds may use only integer literals and loop indices
+error[ORC0226]: a slice's bounds may use only integer literals, loop indices, and ranged bindings
  --> <stdin>:3:54
   |
 3 | ... (x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
-  |                                             ^ this is neither
-  = note: a slice's position never depends on data: its bounds are built from integer literals and loop indices with `+`, `-`, and `*` by a constant
+  |                                             ^ this has no range
+  = note: a slice's length never depends on data: its bounds are built from integer literals, loop indices, and ranged bindings with `+`, `-`, and `*` by a constant, and differ by the same number for every value they can take
 ```
 
 ```text
@@ -3180,7 +3190,7 @@ error[ORC0223]: this slice reaches elements 2 through 9, out of range for `Word[
   |
 5 | ...  in 0..2 with w: Word[8]^4 = [0; 4] { x[4 * i + 2..4 * i + 6] }
   |                                             ^^^^^^^^^^^^^^^^^^^^ indices run from 0 through 7
-  = note: every element a slice can take, over every loop index in its bounds, must be an element of the array
+  = note: every element a slice can take, over every loop index and ranged binding in its bounds, must be an element of the array
 ```
 
 ```text
@@ -3192,8 +3202,11 @@ error[ORC0235]: U+00E9 is not a printable ASCII character
   = note: a byte string's characters are its bytes, so each is printable ASCII, from ` ` through `~`; write any other byte as an escape, or in a hex string joined with `++`
 ```
 
-The second error names the whole range the slice sweeps: its last step, i =
-1, would take elements 6 through 9 of an array of eight. The third writes the
+The first error is about `n`, a parameter, which has no range; written
+`let at: Int = n % 5;` and `x[at..at + 4]`, the window is accepted, as
+[Positions the data choose](#positions-the-data-choose) shows. The second
+error names the whole range the slice sweeps: its last step, i = 1, would
+take elements 6 through 9 of an array of eight. The third writes the
 source line with the character escaped, and its label gives the bytes a
 program would write in its place.
 
@@ -3207,7 +3220,7 @@ operands, with a bound left out recorded as the literal it stands for. Every
 source S3k accepted has the same Core, values, and output under S3l, since it
 writes no string, `++`, or range in brackets.
 
-That leaves new seams. A slice's position never depends on data, so a message
+That leaves new seams. A slice's length never depends on data, so a message
 of variable length, or a format that reads a length and then that many bytes,
 cannot be written yet. A byte string holds printable ASCII, so text in
 another script is written in hex, and until S3p an array held at most 256
@@ -4709,7 +4722,7 @@ source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3y)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4967,6 +4980,93 @@ and [OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md)
 record S3u in owner review. The corpus tests representation and arithmetic;
 it makes no complete ML-KEM claim.
 
+### Positions the data choose
+
+Rejection sampling decides where a value lands by what it rejected before.
+FIPS 203's SampleNTT reads 12-bit candidates from a stream and keeps each one
+below q as the next coefficient, so the position of a coefficient counts the
+candidates accepted so far. Through S3u an `Int` index had to be built from
+literals, loop indices, and words converted with `as Int`, and a count is
+none of them. S3y proves such a position in range anyway:
+
+```orange
+edition 2026;
+module sample {
+  type Zq = Mod[3329];
+
+  type Poly = Zq^4;
+
+  // FIPS 203 Algorithm 7 in miniature: two 12-bit candidates from each
+  // three bytes, and each below q kept as the next coefficient.
+  spec sample_ntt(c: Word[8]^9) -> (Poly, Int) {
+    for g in 0..3 with (a: Poly, j: Int) = ([0; 4], 0) {
+      let at: Int = 3 * g;
+      let d1: Int = (c[at] as Int) + 256 * ((c[at + 1] as Int) % 16);
+      let d2: Int = ((c[at + 1] as Int) / 16) + 16 * (c[at + 2] as Int);
+      let (b: Poly, k: Int) = if (d1 < 3329) && (j < 4) {
+        (a with [j % 4] = d1 as Zq, j + 1)
+      } else {
+        (a, j)
+      };
+      if (d2 < 3329) && (k < 4) {
+        (b with [k % 4] = d2 as Zq, k + 1)
+      } else {
+        (b, k)
+      }
+    }
+  }
+
+  test "a rejected candidate moves the next one down" {
+    sample_ntt(hex"01 00 ff ff ff 00 02 30 00") == ([1, 15, 2, 3], 4)
+  }
+}
+```
+
+`j` is an accumulator and has no range of its own, but `j % 4` lies from 0
+through 3 whatever `j` is, because Orange's remainder is Euclidean: never
+negative, and less than the divisor's magnitude. The guard `j < 4` is the
+algorithm's; the remainder is what proves the position, before the program
+runs. `at` is a `let`, and a `let` of one `Int` or word name now has the
+range of its value: `3 * g` lies from 0 through 6, so `c[at + 2]` is in range
+at every step. The S3y corpus runs SampleNTT on 504 bytes of SHAKE128 output
+and FIPS 204's SampleInBall, which places τ signs by an inside-out shuffle,
+on 136 bytes of SHAKE256 output.
+
+A slice's bounds may name ranged bindings too, so a window of fixed length
+slides to a place the data choose. A rotation by an amount from data is a
+window of a row joined to itself:
+
+```orange
+let by: Int = (k as Int) % 8;
+let twice: Word[8]^16 = r ++ r;
+twice[by..by + 8]
+```
+
+Both ends must lie in the array for every value `by` can take, and the
+bounds must differ by the same number for every value, so a window's length
+never depends on data. Bounds are compared by name: with
+`let j: Int = k + 2`, the slice `x[k..j]` is rejected, though the two differ
+by 2, and `x[k..k + 2]` is not. A reader sees a window's length in its
+bounds, as the checker does.
+
+Some names have no range: a parameter, an accumulator, a name of a tuple
+pattern, and a binding of a value that has none, such as `let k: Int = n * 2`
+for a parameter `n`. A condition narrows nothing, so `if n < 16 { t[n] }` is
+still rejected. When an index uses a binding without a range, the diagnostic
+points at the index and, with a second label, at the binding: "this
+binding's value has no range".
+
+A name can now carry data into a position. A selection at a position computed
+from a secret is the access pattern that cache-timing attacks observe, and
+Orange makes no timing claim about it; a later strata and target decision
+must say what code generation does with such a position. S3y changes what the
+checker proves, not what a program means: every value and every step count is
+what S3u gives. The
+[computed positions specification](COMPUTED_POSITIONS_2026.md) and
+[OEP-0029](governance/oeps/OEP-0029-orange-2026-computed-positions.md) record
+S3y in owner review. The corpus tests positions and selection; it makes no
+complete ML-KEM or ML-DSA claim.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
@@ -4978,7 +5078,7 @@ functions, sizes fitted outside the finite argument and expected-result
 types, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of rank five or more, tuples of tuples, arrays of
 tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
-narrowed by conditions, slices at positions computed from data, empty arrays,
+narrowed by conditions, ranges of parameters and accumulators, empty arrays,
 arrays of more than 65,536 elements, step budgets written in a source,
 an order on arrays or tuples, tests with parameters or expected failures,
 text beyond printable ASCII, conversions of
@@ -5012,7 +5112,8 @@ which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
 through OEP-0023, and S3t's, which builds on S3s, through OEP-0024, and
-S3u's, which builds on S3t, through OEP-0025.
+S3u's, which builds on S3t, through OEP-0025, and S3y's, which builds on
+S3u, through OEP-0029.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
 documented migration. All twenty migrations so far are small: every source
@@ -5042,7 +5143,10 @@ under S3s; rank-two type aliases and chained indices are newly admitted.
 S3t retains S3s values and costs and admits own finite size names in modulus
 expressions, while rejecting invalid concrete instances before evaluation.
 S3u retains S3t values and costs; a third and fourth dimension and update
-paths, both rejected before, are newly admitted.
+paths, both rejected before, are newly admitted. S3y retains S3u values and
+costs; indices and windows at positions computed from data, rejected before,
+are newly admitted, and the diagnostics of positions that remain rejected
+name ranged bindings.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6395,7 +6499,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u and S3y in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -7128,6 +7232,7 @@ part are listed here so a reader can move from explanation to authority.
   [nested arrays](NESTED_ARRAYS_2026.md) under OEP-0023 and
   [static moduli](STATIC_MODULI_2026.md) under OEP-0024,
   [array dimensions](DIMENSIONS_2026.md) under OEP-0025,
+  [computed positions](COMPUTED_POSITIONS_2026.md) under OEP-0029,
   the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
@@ -7268,6 +7373,8 @@ Version 0.27 adds the [array dimensions specification](DIMENSIONS_2026.md) and
 [OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md), and
 extends that partial P4 preparation with biased subtraction, dedicated squaring
 and a24 multiplication schedules; it adds no P3 proof or P4 completion claim.
+Version 0.28 adds the [computed positions specification](COMPUTED_POSITIONS_2026.md)
+and [OEP-0029](governance/oeps/OEP-0029-orange-2026-computed-positions.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7463,6 +7570,14 @@ it. The same version also records biased subtraction, dedicated squaring and
 a24 multiplication in the partial P4 preparation on 2026-10-05. That check is
 not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
+
+Manuscript version 0.28 revises the preface, Chapter 8, the current slice
+marker, the status ledger and Appendix D for the S3y computed-position slice,
+and adds the Chapter 8 section "Positions the data choose". It was drafted
+with Claude Code under Chase Bryan's direction on 2026-10-06, and every
+Orange example it adds was run against the compiler at the revision that
+introduced it. That check is not independent review, and the same authorship,
+review, evidence, and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

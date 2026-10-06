@@ -1,0 +1,20 @@
+// S3y conformance: positions without a range. A parameter, an accumulator,
+// and a name of a tuple pattern have none, nor has a binding of a value
+// without one, and the diagnostic points at where such a binding is made.
+// A remainder by a divisor that may be zero is no bound; a ranged binding
+// must still select in range for every value it can take; and a condition
+// does not narrow a range.
+edition 2026;
+module positions_invalid {
+  spec parameter(x: Word[8]^4, n: Int) -> Word[8] { x[n] }
+  spec doubled(x: Word[8]^4, n: Int) -> Word[8] { let k: Int = n * 2; x[k] }
+  spec chained(x: Word[8]^4, n: Int) -> Word[8] { let k: Int = n; let j: Int = k + 1; x[j] }
+  spec pattern(x: Word[8]^4) -> Word[8] { let (k: Int, j: Int) = (1, 2); x[k] }
+  spec counted(x: Word[8]^4) -> Int { for i in 0..4 with k: Int = 0 { k + (x[k] as Int) } }
+  spec zero(x: Word[8]^4, n: Int) -> Word[8] { x[n % 0] }
+  spec maybe_zero(x: Word[8]^4, n: Int, d: Word[8]) -> Word[8] { x[n % (d as Int)] }
+  spec wide(x: Word[8]^4, n: Int) -> Word[8] { let k: Int = n % 5; x[k] }
+  spec shifted(x: Word[8]^4, n: Int) -> Word[8] { let k: Int = n % 4; x[k + 1] }
+  spec word(x: Word[8]^4, b: Word[8]) -> Word[8] { let w: Word[8] = b | 3; x[w] }
+  spec narrowed(x: Word[8]^16, n: Int) -> Word[8] { if (n >= 0) && (n < 16) { x[n] } else { 0 } }
+}

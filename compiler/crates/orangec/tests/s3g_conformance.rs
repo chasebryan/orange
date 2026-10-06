@@ -62,8 +62,8 @@ struct TestEvidence {
     rules: &'static [&'static str],
 }
 
-const RANGE_NOTE: &str = "every value an index can take, over every loop index and word in it, \
-                          must select an element";
+const RANGE_NOTE: &str = "every value an index can take, over every loop index, word, and ranged \
+                          binding in it, must select an element";
 
 const CASES: [Case; 4] = [
     Case {
@@ -181,8 +181,8 @@ const CASES: [Case; 4] = [
             ],
             locations: &["6:55", "7:77", "8:55", "10:42", "11:57", "12:57"],
             messages: &[
-                "an `Int` index may use only integer literals, loop indices, and words converted \
-                 with `as Int`",
+                "an `Int` index may use only integer literals, loop indices, words converted \
+                 with `as Int`, and ranged bindings",
                 "this `Int` has no bound",
                 "a word index ranges over its type",
                 "this index runs from 1 through 256, out of range for `Word[8]^256`",

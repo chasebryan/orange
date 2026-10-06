@@ -1,0 +1,113 @@
+// S3y conformance: SampleNTT, Algorithm 7 of FIPS 203 ("Module-Lattice-
+// Based Key-Encapsulation Mechanism Standard", August 2024). It reads an
+// output of SHAKE128 three bytes at a time, forms two 12-bit candidates
+// from each three, and keeps each candidate below q = 3329 as the next
+// coefficient of a polynomial in the NTT domain, until it has 256. Where a
+// coefficient lands depends on how many candidates were rejected before
+// it, so its position j is data: here j is an accumulator, which has no
+// range, and `j % 256` names the coefficient it selects. The guard
+// `j < 256` is Algorithm 7's; the remainder is what proves the position in
+// range. The stream is a fixed 504 bytes, three blocks of SHAKE128's
+// 168-byte rate, computed with Python's hashlib; a stream that ran short
+// would leave j below 256, and the count is returned with the polynomial.
+edition 2026;
+module sample {
+  type Zq = Mod[3329];
+  type Poly = Zq^256;
+  type Stream = Word[8]^504;
+
+  // Algorithm 7, lines 5 to 15, over 168 groups of three bytes.
+  spec sample_ntt(c: Stream) -> (Poly, Int) {
+    for g in 0..168 with (a: Poly, j: Int) = ([0; 256], 0) {
+      let at: Int = 3 * g;
+      let d1: Int = (c[at] as Int) + 256 * ((c[at + 1] as Int) % 16);
+      let d2: Int = ((c[at + 1] as Int) / 16) + 16 * (c[at + 2] as Int);
+      let (b: Poly, k: Int) =
+        if (d1 < 3329) && (j < 256) { (a with [j % 256] = d1 as Zq, j + 1) } else { (a, j) };
+      if (d2 < 3329) && (k < 256) { (b with [k % 256] = d2 as Zq, k + 1) } else { (b, k) }
+    }
+  }
+
+  // The first 504 bytes of SHAKE128(rho || 1 || 0), where rho is the bytes
+  // 0x00 through 0x1f: the input from which Algorithm 13, line 6, samples
+  // the entry A[0, 1] of the matrix, SampleNTT(rho || j || i).
+  spec stream_0_1() -> Stream {
+    hex"1d133ea180f20600a351a9e83058a68c96d0f7809856a127c2206220ab3dacc2"
+    ++ hex"c4888cf65e2f7e5f018f642257aa105fbcffc23a70fa54d2820d56ed99c1868e"
+    ++ hex"276c2c4518bef1dfa2716b9a487162b03f11fdf741f9eed6b0a81c305f081b11"
+    ++ hex"9231b5f6200d08f535941a0b04dc152c503b56b355bd4312c61965dde50f0710"
+    ++ hex"6e15ea895fba4b75a24f360933ce3a84a9eb3e53bef7818935248ac701205629"
+    ++ hex"392c63576818524cc6f29c7880494201e36967d3053925863b49218373b702b6"
+    ++ hex"74b578e7ff6e9d8eb57db39c1297b3fd905f1774a3c07f693f6358c553f561fc"
+    ++ hex"75f192ffae1c7973c0e889ab242192d6553668736c672c4d7c4107ef00724dc3"
+    ++ hex"2438bc2ec2e57f1833458b61ac246cd93400c30996e21d9d86a43d229887d60a"
+    ++ hex"c9c3167fc6f68d7af87968dcb4dd32e8f35bd042dd7f79e1e299c526de2d9bf6"
+    ++ hex"204afa141a9094ab76e2ffc2bcb6631faa214788fca201edf85589e42ce05470"
+    ++ hex"e5916b1383ad106a673ef67f2ea1ae9371ced348256b7a9d4be6d2bce70f414d"
+    ++ hex"8d668b6b1d2a120606f2106cd679eb5c078e4760569cf370c7af64c8c147af89"
+    ++ hex"86ee008a949d91c9a2e997c44af56243761cc6c4d2c26edff4e9ae091e7d6d1f"
+    ++ hex"9fc99b4e559a70011a1b458bf5fe4f5000ddf756b5f55dd2937a54e62c35327c"
+    ++ hex"e746a737b2736d6807218b9790285a2d85246acadc1b95f1"
+  }
+
+  // The first 504 bytes of SHAKE128(rho || 0 || 0), for A[0, 0].
+  spec stream_0_0() -> Stream {
+    hex"e1a1f8aafe779a759347a142b9cbf789d2409b5b2989cf47902d646023d12da1"
+    ++ hex"df2b372062afbc7b90b4570952ee1565df3b50ff81a8d90f45e797555c566cb7"
+    ++ hex"a779b346f63f029a9ba8efc8ec2e0c76abafa409fe8c9c74e7c93db39dd6131b"
+    ++ hex"986da72bf9e1f984da1384cd6fc4c7bd35f2b4917b29d633374f143972b616e4"
+    ++ hex"911edc1c1fbf0d6e3f2cad26a381f52d75c68973dc8ae1bb9d8b9c5f9e6a2f77"
+    ++ hex"70bb0af61674fe372844df7757ef1fad0d121c57ce6e5278c074d23dd6603414"
+    ++ hex"9743e93b451c591b3d83ead51be22d36cc938a307fa57d60379899ed5af8be2b"
+    ++ hex"02bec912eab9e137863b58001698cf9d4cd7e775f6723445f6708cbe0f3a05a8"
+    ++ hex"26798a5382a879122b78599d52c177af0c07651fa2b8d75e05662fa5d59e1ca5"
+    ++ hex"ed2ff2920bbc2a83eeebd614a8f78f9b75eaa630fe074ec5b75cd1f5825c33bc"
+    ++ hex"7ea51c6a288a883992ca5a76f376a8b766971b214c0f2dc045e713b41d753610"
+    ++ hex"082e04941fb70f251fa9af167471fa70bfe2061a323ac04110b79ff689a5d02c"
+    ++ hex"7133a652fb2dcd90cd92ddd9638dab95c65673ae47ffddd0819eb4a56626c746"
+    ++ hex"933b6d4f160dfdc7caaa2efe5b50b28eef9621a534814ac50b679cffc8d4742f"
+    ++ hex"02456966d8fa2f39b180c9a343707efecbc3ab5586179d3f09c9ccd72fcdd66f"
+    ++ hex"b344b69696482c07fabc28d2da264c408aef89b8ed567f36"
+  }
+
+  test "A[0, 1]: every coefficient" {
+    let (a: Poly, j: Int) = sample_ntt(stream_0_1());
+    (j == 256) && (a ==
+      [797, 993, 161, 6, 2608, 2385, 2096, 2661, 1676, 247, 2440, 342, 634, 194,
+       1570, 2848, 986, 684, 3148, 3208, 2018, 351, 2288, 612, 1394, 170, 1521,
+       3119, 58, 596, 2093, 1549, 409, 2156, 1934, 1730, 1324, 388, 446, 418, 1719,
+       2202, 1812, 98, 1019, 2369, 214, 2699, 28, 1523, 2824, 273, 402, 2899, 246,
+       210, 1288, 863, 2708, 177, 3076, 349, 44, 949, 854, 1371, 957, 292, 2502,
+       1617, 1501, 254, 7, 1761, 2581, 2206, 2655, 1211, 629, 1274, 2358, 816, 2766,
+       2115, 2985, 1006, 2433, 856, 2596, 3192, 1, 1378, 2345, 707, 1891, 1669, 536,
+       1221, 710, 2511, 120, 1176, 322, 1897, 2309, 595, 2950, 1171, 801, 1848, 695,
+       2912, 1396, 1931, 1775, 2904, 893, 2507, 1810, 2873, 253, 1529, 1047, 2615,
+       1687, 831, 1414, 965, 3169, 1887, 753, 3246, 1937, 115, 2953, 586, 545, 1621,
+       1667, 3187, 1654, 1988, 1857, 512, 1239, 1219, 898, 3106, 391, 1331, 2228,
+       3169, 586, 2412, 845, 768, 156, 662, 478, 1693, 2632, 573, 2434, 1671, 173,
+       969, 364, 1663, 2701, 2169, 813, 1000, 1471, 720, 2431, 2530, 3161, 733,
+       1691, 527, 2634, 335, 26, 2377, 1707, 767, 3020, 950, 502, 426, 1138, 3208,
+       2607, 2389, 44, 1358, 1392, 2334, 875, 2097, 173, 1697, 2578, 942, 1817, 974,
+       1165, 2853, 1958, 2973, 3282, 271, 1236, 1677, 2230, 673, 1554, 96, 242,
+       1729, 2518, 1884, 2272, 71, 1382, 924, 1807, 1610, 456, 1148, 2479, 2152,
+       238, 2208, 2329, 713, 1175, 1196, 757, 1078, 3190, 3169, 708, 3117, 154,
+       1751, 3225, 1364, 154, 23, 2842, 1105, 1419, 79, 5, 2013])
+  }
+
+  test "A[0, 0]: the first eight and the last four coefficients" {
+    let (a: Poly, j: Int) = sample_ntt(stream_0_0());
+    (j == 256) && (a[0..8] == [481, 1919, 1434, 2359, 327, 1066, 3001, 649])
+      && (a[252..256] == [1926, 2513, 2367, 3216])
+  }
+
+  test "A[0, 1]: the last coefficient comes from bytes 465 through 467" {
+    let (a: Poly, j: Int) = sample_ntt(stream_0_1()[0..468] ++ [0xff; 36]);
+    let (b: Poly, k: Int) = sample_ntt(stream_0_1()[0..465] ++ [0xff; 39]);
+    (j == 256) && (a == sample_ntt(stream_0_1()).0) && (k == 255)
+  }
+
+  test "a stream of rejected candidates leaves the count short" {
+    let (a: Poly, j: Int) = sample_ntt([0xff; 504]);
+    (j == 0) && (a == [0; 256])
+  }
+}

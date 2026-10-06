@@ -18,10 +18,11 @@ const SLICE_UPDATE_NOTE: &str = "`x with [a..b] = v` is the array `x` with its e
 const SLICE_LENGTH_NOTE: &str = "a slice `x[a..b]` holds the b - a elements from index a, and b - a \
      must be the same positive number at every step, as in `x[16 * i..16 * i + 16]`";
 
-/// The note of a slice bound that is not built from literals and loop
-/// indices.
-const STATIC_SLICE_NOTE: &str = "a slice's position never depends on data: its bounds are built \
-     from integer literals and loop indices with `+`, `-`, and `*` by a constant";
+/// The note of a slice bound that is not built from literals, loop indices,
+/// and ranged bindings.
+const STATIC_SLICE_NOTE: &str = "a slice's length never depends on data: its bounds are built \
+     from integer literals, loop indices, and ranged bindings with `+`, `-`, and `*` by a constant, \
+     and differ by the same number for every value they can take";
 
 /// A byte string that cannot be decoded, and why.
 /// What is known of an array expression's type without reporting.
@@ -164,20 +165,65 @@ fn hex_byte(high: char, low: char) -> Result<u8, ByteStringError> {
         .ok_or(ByteStringError::Storage)
 }
 
-/// An `Int` expression built from integer literals and loop indices with
-/// `+`, `-`, and `*` by a constant: a constant plus a sum of loop indices,
-/// each with a nonzero coefficient.
+/// An `Int` expression built from integer literals, loop indices, and
+/// ranged bindings with `+`, `-`, and `*` by a constant: a constant plus a
+/// sum of variables, each with a nonzero coefficient.
 pub(super) struct Affine {
     constant: ExactInteger,
-    /// Loop-scope positions and their nonzero coefficients, by position.
-    terms: Vec<(usize, ExactInteger)>,
+    /// Variables and their nonzero coefficients, in variable order.
+    terms: Vec<(Variable, ExactInteger)>,
+}
+
+/// A variable of an affine slice bound: a loop index, or a name that a
+/// binding gives a range.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Variable {
+    /// The index of the loop scope at this position.
+    Loop(usize),
+    /// The binding at this index of the body.
+    Binding(usize),
+    /// The binding at `index` of the block at `block` in the block scopes.
+    BlockBinding { block: usize, index: usize },
+}
+
+/// Why a part of a slice bound is reported as not static.
+#[derive(Clone, Copy)]
+enum NonStaticBound {
+    /// A `*` multiplies two variables.
+    Product,
+    /// The part is the name of a binding without a range, bound where the
+    /// span is, for the reason given.
+    Binding((Span, &'static str)),
+    /// The part has a range but is not a literal, a loop index, or a name.
+    Unnamed,
+    /// The part has no range.
+    Unbounded,
+}
+
+/// Returns the part of `bound` at `span`, where its affine form stopped:
+/// `bound` itself or a part reached through parentheses and operators.
+///
+/// Parser-established expression height bounds this recursion.
+fn bound_part(bound: &Expression, span: Span) -> Option<&Expression> {
+    if bound.span == span {
+        return Some(bound);
+    }
+    match &bound.kind {
+        ExpressionKind::Parenthesized(inner) => bound_part(inner, span),
+        ExpressionKind::Unary(unary) => bound_part(&unary.operand, span),
+        ExpressionKind::Binary(binary) => {
+            bound_part(&binary.left, span).or_else(|| bound_part(&binary.right, span))
+        }
+        _ => None,
+    }
 }
 
 /// Why a slice bound has no affine form.
 pub(super) enum BoundError {
-    /// This part is neither an integer literal nor a loop index.
+    /// This part is not an integer literal, a loop index, or a ranged
+    /// binding.
     NotStatic(Span),
-    /// This `*` multiplies two loop indices.
+    /// This `*` multiplies two variables.
     IndexProduct(Span),
     /// A part of the bound, at some step, exceeds the significant-bit limit
     /// of `Int`.
@@ -198,7 +244,7 @@ impl Affine {
             terms: self
                 .terms
                 .into_iter()
-                .map(|(position, coefficient)| (position, coefficient.negated()))
+                .map(|(variable, coefficient)| (variable, coefficient.negated()))
                 .collect(),
         }
     }
@@ -1110,8 +1156,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !(start && end) {
             return None;
         }
-        let start = self.bound_form((range.start.as_ref(), range.span), 0, context)?;
-        let end = self.bound_form((range.end.as_ref(), range.span), u64::from(length), context)?;
+        let start = self.bound_form((range.start.as_ref(), range.span), 0, context, scope)?;
+        let end = self.bound_form(
+            (range.end.as_ref(), range.span),
+            u64::from(length),
+            context,
+            scope,
+        )?;
         let reserve = self.reserve_range_limbs;
         let Some(difference) = end.combine(&start, true, reserve) else {
             self.resource_limit(range.span, "slice bound storage allocation failed");
@@ -1161,6 +1212,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         (bound, range_span): (Option<&Expression>, Span),
         omitted: u64,
         context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
     ) -> Option<Affine> {
         let Some(bound) = bound else {
             let Some(value) = ExactInteger::from_u64(omitted, self.reserve_range_limbs) else {
@@ -1194,11 +1246,23 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 None
             }
             Err(BoundError::NotStatic(span)) => {
-                self.report_non_static_bound(span, false);
+                let binding = self.unranged_binding(span, context);
+                // A part with a range that is not a name, such as `n % 4`,
+                // enters a bound through a binding.
+                let ranged = bound_part(bound, span).is_some_and(|part| {
+                    !matches!(part.kind, ExpressionKind::Name(_))
+                        && matches!(self.static_range(part, context, scope), Ok(Some(_)))
+                });
+                let reason = match binding {
+                    Some(binding) => NonStaticBound::Binding(binding),
+                    None if ranged => NonStaticBound::Unnamed,
+                    None => NonStaticBound::Unbounded,
+                };
+                self.report_non_static_bound(span, reason);
                 None
             }
             Err(BoundError::IndexProduct(span)) => {
-                self.report_non_static_bound(span, true);
+                self.report_non_static_bound(span, NonStaticBound::Product);
                 None
             }
         }
@@ -1206,26 +1270,37 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_non_static_bound(&mut self, span: Span, product: bool) {
+    fn report_non_static_bound(&mut self, span: Span, reason: NonStaticBound) {
         if !self.begin_report(span) {
             return;
         }
-        let (message, label) = if product {
-            (
-                "a slice's bound may multiply a loop index only by a constant",
-                "both operands of this `*` use a loop index",
-            )
-        } else {
-            (
-                "a slice's bounds may use only integer literals and loop indices",
-                "this is neither",
-            )
+        let (message, label) = match reason {
+            NonStaticBound::Product => (
+                "a slice's bound may multiply a loop index or a ranged binding only by a constant",
+                "both operands of this `*` vary",
+            ),
+            NonStaticBound::Unnamed => (
+                "a slice's bounds may use only integer literals, loop indices, and ranged bindings",
+                "this has a range, but is not a name",
+            ),
+            NonStaticBound::Binding(_) | NonStaticBound::Unbounded => (
+                "a slice's bounds may use only integer literals, loop indices, and ranged bindings",
+                "this has no range",
+            ),
         };
-        self.diagnostics.push(
-            Diagnostic::error(DiagnosticCode::NonStaticIndex, message, span)
-                .with_label(label)
-                .with_note(STATIC_SLICE_NOTE),
-        );
+        let mut diagnostic =
+            Diagnostic::error(DiagnosticCode::NonStaticIndex, message, span).with_label(label);
+        if let NonStaticBound::Binding((binding, label)) = reason {
+            diagnostic = diagnostic.with_secondary_span(binding, label);
+        }
+        diagnostic = diagnostic.with_note(STATIC_SLICE_NOTE);
+        if matches!(reason, NonStaticBound::Unnamed) {
+            diagnostic = diagnostic.with_note(
+                "a computed position enters a slice's bounds through a name: bind it with \
+                 `let`, as in `let at: Int = n % 4;`, and write both bounds with `at`",
+            );
+        }
+        self.diagnostics.push(diagnostic);
     }
 
     /// Returns the affine form of a well-typed `Int` slice bound: integer
@@ -1256,9 +1331,34 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .zip(ExactInteger::from_u64(1, reserve))
                     .map(|(constant, one)| Affine {
                         constant,
-                        terms: vec![(position, one)],
+                        terms: vec![(Variable::Loop(position), one)],
                     }),
-                _ => return Err(BoundError::NotStatic(name.span)),
+                resolution => {
+                    let variable = match resolution {
+                        NameResolution::Binding(index, None) => Variable::Binding(index),
+                        NameResolution::BlockBinding {
+                            block,
+                            index,
+                            element: None,
+                        } => Variable::BlockBinding { block, index },
+                        _ => return Err(BoundError::NotStatic(name.span)),
+                    };
+                    let Some((low, high)) = context.binding_range(&resolution) else {
+                        return Err(BoundError::NotStatic(name.span));
+                    };
+                    // A binding with one value is that constant.
+                    if low.compare(high) == Ordering::Equal {
+                        low.try_clone_with_reservation(reserve)
+                            .map(Affine::constant)
+                    } else {
+                        ExactInteger::from_u64(0, reserve)
+                            .zip(ExactInteger::from_u64(1, reserve))
+                            .map(|(constant, one)| Affine {
+                                constant,
+                                terms: vec![(variable, one)],
+                            })
+                    }
+                }
             },
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => self
                 .affine_form(&unary.operand, context)?
@@ -1342,16 +1442,41 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     /// Returns the least and greatest values of an affine form over the
-    /// ranges of its loop indices, or `None` when storage cannot be
-    /// reserved.
+    /// ranges of its loop indices and ranged bindings, or `None` when
+    /// storage cannot be reserved.
     fn affine_range(&self, form: &Affine, context: &BodyContext<'ast>) -> Option<IndexRange> {
         let reserve = self.reserve_range_limbs;
         let mut low = form.constant.try_clone_with_reservation(reserve)?;
         let mut high = form.constant.try_clone_with_reservation(reserve)?;
-        for (position, coefficient) in &form.terms {
-            let scope = context.loop_scopes.get(*position)?;
-            let first = ExactInteger::from_u64(u64::from(scope.start), reserve)?;
-            let last = ExactInteger::from_u64(u64::from(scope.end.checked_sub(1)?), reserve)?;
+        for (variable, coefficient) in &form.terms {
+            let (first, last) = match *variable {
+                Variable::Loop(position) => {
+                    let scope = context.loop_scopes.get(position)?;
+                    (
+                        ExactInteger::from_u64(u64::from(scope.start), reserve)?,
+                        ExactInteger::from_u64(u64::from(scope.end.checked_sub(1)?), reserve)?,
+                    )
+                }
+                Variable::Binding(index) => {
+                    let (low, high) =
+                        context.binding_range(&NameResolution::Binding(index, None))?;
+                    (
+                        low.try_clone_with_reservation(reserve)?,
+                        high.try_clone_with_reservation(reserve)?,
+                    )
+                }
+                Variable::BlockBinding { block, index } => {
+                    let (low, high) = context.binding_range(&NameResolution::BlockBinding {
+                        block,
+                        index,
+                        element: None,
+                    })?;
+                    (
+                        low.try_clone_with_reservation(reserve)?,
+                        high.try_clone_with_reservation(reserve)?,
+                    )
+                }
+            };
             let at_first = coefficient.multiply(&first, reserve)?;
             let at_last = coefficient.multiply(&last, reserve)?;
             let (least, greatest) = if at_first.compare(&at_last) == Ordering::Greater {
@@ -1371,6 +1496,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !self.begin_report(range.span) {
             return;
         }
+        let binding = difference
+            .terms
+            .iter()
+            .any(|(variable, _)| !matches!(variable, Variable::Loop(_)));
+        let step = difference
+            .terms
+            .iter()
+            .any(|(variable, _)| matches!(variable, Variable::Loop(_)));
         let (message, label) = if difference.terms.is_empty() {
             match difference.constant.to_i64() {
                 Some(0) => (
@@ -1390,6 +1523,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     String::from("a slice holds at least one element"),
                 ),
             }
+        } else if binding && step {
+            (
+                String::from(
+                    "the length of this slice changes from step to step and with its ranged \
+                     bindings",
+                ),
+                String::from(
+                    "its bounds must differ by the same number at every step and for every value",
+                ),
+            )
+        } else if binding {
+            (
+                String::from("the length of this slice changes with its ranged bindings"),
+                String::from("its bounds must differ by the same number for every value"),
+            )
         } else {
             (
                 String::from("the length of this slice changes from step to step"),
@@ -1399,7 +1547,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         self.diagnostics.push(
             Diagnostic::error(DiagnosticCode::SliceLength, message, range.span)
                 .with_label(label)
-                .with_note(SLICE_LENGTH_NOTE),
+                .with_note(if binding {
+                    "a slice `x[a..b]` holds the b - a elements from index a, and b - a must be \
+                     the same positive number for every value its ranged bindings can take, as \
+                     in `x[at..at + 4]`"
+                } else {
+                    SLICE_LENGTH_NOTE
+                }),
         );
     }
 
@@ -1428,8 +1582,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, range.span)
                 .with_label(format!("indices run from 0 through {highest}"))
                 .with_note(
-                    "every element a slice can take, over every loop index in its bounds, must \
-                     be an element of the array",
+                    "every element a slice can take, over every loop index and ranged binding in \
+                     its bounds, must be an element of the array",
                 ),
         );
     }

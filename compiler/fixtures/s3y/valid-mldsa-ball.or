@@ -1,0 +1,72 @@
+// S3y conformance: SampleInBall, Algorithm 29 of FIPS 204 ("Module-Lattice-
+// Based Digital Signature Standard", August 2024). It turns a hash into a
+// challenge polynomial with tau coefficients of 1 or -1 and the rest 0, by
+// an inside-out Fisher-Yates shuffle: for i from 256 - tau through 255, it
+// reads bytes of SHAKE256 until one, j, is at most i, moves coefficient j
+// to i, and sets coefficient j to the sign the next bit of the first eight
+// bytes gives. How many bytes are rejected decides how far the stream has
+// been read when each i is placed, so i is data here: an accumulator, which
+// has no range, written to through `i % 256`. Each position j is a byte,
+// which ranges over a polynomial's 256 coefficients by its type. The tau of
+// ML-DSA-44, 39, is used, and the stream is the first 136 bytes of
+// SHAKE256, one block of its rate, computed with Python's hashlib.
+edition 2026;
+module ball {
+  type Poly = Int^256;
+  type Stream = Word[8]^136;
+
+  // Lines 4 to 13, with tau = 39: the sign bits are the first eight bytes
+  // read as one little-endian word, and bit i - 217 is h[i + tau - 256].
+  // A byte above i is rejected, and so is every byte after the last
+  // coefficient is placed.
+  spec sample_in_ball(h: Stream) -> (Poly, Int) {
+    let signs: Word[64] = h[0..8] as little Word[64];
+    for p in 8..136 with (c: Poly, i: Int) = ([0; 256], 217) {
+      let j: Word[8] = h[p];
+      if (i < 256) && ((j as Int) <= i) {
+        let at: Int = i % 256;
+        let bit: Int = (i - 217) % 64;
+        let sign: Int = if ((signs >> bit) & 1) == 0 { 1 } else { -1 };
+        let moved: Poly = c with [at] = c[j];
+        (moved with [j] = sign, i + 1)
+      } else {
+        (c, i)
+      }
+    }
+  }
+
+  // The first 136 bytes of SHAKE256(rho), where rho is the 32 bytes 0x00
+  // through 0x1f, the length of ML-DSA-44's commitment hash.
+  spec stream() -> Stream {
+    hex"69f07c8840ce80024db30939882c3d5bbc9c98b3e31e4513ebd2ca9b4503cdd3c9c9"
+      ++ hex"0742452c7173d4a75ac49163e14ee0cc24ef7035b272d19a7af1099b333f617465d6"
+      ++ hex"9b5f5b78ae914e4a1b1cecc921f6d5791830ae3f914bee9b0292b288337cecabc4be"
+      ++ hex"915f1453607bff6f0632ca7f3e8eab53456eba47300ad61fe0dcebf06c17e42bba3c"
+  }
+
+  test "SampleInBall of SHAKE256(0x00..0x1f), tau = 39" {
+    let (c: Poly, i: Int) = sample_in_ball(stream());
+    (i == 256) && (c ==
+      [0, 0, 0, -1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
+       0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+       0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, -1, -1,
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+       0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, -1, 1,
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+       0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, -1, 0, 0, 0,
+       0, 1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, -1, 1, 0, 0, 0, 0, 0,
+       0, 0, -1, 0, 0, 0, 0, 1, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+  }
+
+  test "tau coefficients are 1 or -1, from 48 bytes of the stream" {
+    let (c: Poly, i: Int) = sample_in_ball(stream()[0..48] ++ [0xff; 88]);
+    let weight: Int = for k in 0..256 with w: Int = 0 { w + (c[k] * c[k]) };
+    (i == 256) && (weight == 39) && (c == sample_in_ball(stream()).0)
+  }
+
+  test "a stream of rejected bytes places nothing" {
+    let (c: Poly, i: Int) = sample_in_ball(stream()[0..8] ++ [0xff; 128]);
+    (i == 217) && (c == [0; 256])
+  }
+}

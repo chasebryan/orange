@@ -4,6 +4,13 @@ Status: proposed S3l semantics under OEP-0015, in owner review; not accepted
 
 Edition: `2026`
 
+> S3y, proposed in [`COMPUTED_POSITIONS_2026.md`](COMPUTED_POSITIONS_2026.md)
+> under OEP-0029, lets a slice's bounds also name ranged `let` bindings, so a
+> window of fixed length may sit at a position computed from data. Its window
+> rules replace the bound forms, the slice diagnostics, and the note "a slice's
+> position never depends on data" below; a slice's length still never depends
+> on data.
+
 Snapshot: 2026-09-30
 
 This document defines slice S3l of Orange 2026: **byte strings**, which
