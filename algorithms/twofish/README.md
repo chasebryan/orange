@@ -47,23 +47,30 @@ and with the odd key words Mo on (2i + 1) rho, rotated, added and rotated
 again to give the forty expanded key words K_0 to K_39. Decryption runs the
 same rounds backwards with the same F.
 
-The Orange file follows the paper section by section. A block is
-`Word[8]^16` read as four little-endian words; the result of the key
-schedule is one `Word[32]^44`, the forty K_j followed by the S-box key
-words in the order (S_(k-1), ..., S_0) that g takes them, padded to four; k
-travels as an `Int` parameter and selects the stages of h.
+The file `twofish.or` follows the paper section by section. A block is
+`Word[8]^16`, read as four little-endian words with `as little Word[32]^4`
+and written back the same way. One key schedule serves the three key
+lengths through the size parameter `k` in 2 through 4, the paper's
+k = N / 64: the key is `Word[8]^(8 * k)`, the S-box key words are
+`Word[32]^k`, and h, g, F, the round and the cipher carry the same size,
+so a test picks the key length by the length of its key. The key schedule
+returns a tuple, the forty expanded key words K_0 to K_39 and the S-box
+key words in the order (S_(k-1), ..., S_0) that g takes them. The tables
+of q0 and q1 are a `QTables`, four rows of sixteen bytes, and the MDS and
+RS matrices are 4 x 4 and 4 x 8 arrays of bytes indexed by row and column
+as the paper prints them.
 
 | Paper section | Orange spec |
 | --- | --- |
-| 4, the little-endian words of a block | `load_le32`, `le_bytes`, `block_words`, `block_bytes` |
-| 4, whitening and the sixteen rounds | `encrypt`, `round`; `decrypt`, `inverse_round` |
-| 4.1, the function F with the PHT and the round subkeys | `f` |
-| 4.2, the MDS matrix over GF(2^8) modulo v(x) | `v_polynomial`, `xtime`, `mds_products`, `mds` |
-| 4.2 and 4.3.3, g(X) = h(X, S) | `g` |
-| 4.3, the key words M_i, Me, Mo and the RS matrix modulo w(x) | `key_schedule_128`, `key_schedule_192`, `key_schedule_256`, `w_polynomial`, `gf_mul`, `rs` |
-| 4.3.2, the function h | `h` |
-| 4.3.4, the expanded key words K_j | `expanded_key_words`, `with_sbox_keys` |
-| 4.3.5, q0 and q1 from the 4-bit tables t0 to t3 | `q0_tables`, `q1_tables`, `nibble_at`, `ror4`, `q`, `q0`, `q1` |
+| 4, the little-endian words of a block | `as little Word[32]^4` and `as little Word[8]^16` in `encrypt` and `decrypt` |
+| 4, whitening and the sixteen rounds | `encrypt[k]`, `round[k]`; `decrypt[k]`, `inverse_round[k]` |
+| 4.1, the function F with the PHT and the round subkeys | `f[k]` |
+| 4.2, the MDS matrix over GF(2^8) modulo v(x) | `times_x`, `gf_walk`, `gf_mul`, `mds_matrix`, `mds` |
+| 4.2 and 4.3.3, g(X) = h(X, S) | `g[k]` |
+| 4.3, the key words M_i, Me, Mo and the RS matrix modulo w(x) | `key_schedule[k]`, `rs_matrix`, `rs` |
+| 4.3.2, the function h | `stage`, `h[k]` |
+| 4.3.4, the expanded key words K_j | `key_schedule[k]` |
+| 4.3.5, q0 and q1 from the 4-bit tables t0 to t3 | `q0_tables`, `q1_tables`, `ror4`, `q`, `q0`, `q1` |
 
 ### Security status
 
@@ -110,82 +117,89 @@ depends on the mode and on nonce or IV discipline, not on the cipher.
 
 ### What the Orange rendering shows
 
-Two things in Twofish are data-dependent: the four nibble selections inside
-each q permutation and the key-dependent xors around them. A 4-bit index may
-select a table of 16 entries (`k & 15`). This rendering keeps each 4-bit
-table as one `Word[64]` and `nibble_at` as a sixteen-arm conditional on the
-nibble; a byte through q0 or q1 costs about 242 steps, where a table-driven
-implementation spends one memory access. Nothing is precomputed: an implementation would expand the four
-key-dependent S-boxes, once per key, into 1024 bytes or four 256-word
-tables, whereas here g is written as the paper defines it, as h applied to
-the S-box key words, and every S-box evaluation recomputes its two or
-three fixed permutations and its key xors. That makes the rendering the
-paper's definition rather than the paper's implementation notes, and it
-makes the cost of a block scale with k, which the measurements below show.
+Two things in Twofish are data-dependent: the four nibble lookups inside
+each q permutation and the key-dependent xors around them. The 4-bit
+tables are written as the paper prints them, one entry per byte of a
+`hex"..."` row, and a nibble selects its entry with `t[0][a1 % 16]`: the
+nibbles live in `Word[8]`, and the reduction mod 16, which the paper's
+nibbles already satisfy, is what lets the checker prove each index below
+16. The split of the byte into a0 and b0, ROR4 and 8a mod 16 read as the
+paper writes them (`x / 16`, `x % 16`, `(8 * a0) % 16`), and the byte is
+reassembled as `(16 * b4) + a4`. Nothing is precomputed: an
+implementation would expand the four key-dependent S-boxes, once per key,
+into 1024 bytes or four 256-word tables, whereas here g is written as the
+paper defines it, as h applied to the S-box key words, and every S-box
+evaluation recomputes its two or three fixed permutations and its key
+xors. That makes the rendering the paper's definition rather than the
+paper's implementation notes, and it makes the cost of a block scale with
+k.
 
-The GF(2^8) arithmetic is written out: `xtime` takes the polynomial as a
-parameter, `gf_mul` is an eight-step shift-and-add over `[a, b, product]`
-and serves the RS matrix, whose twenty distinct coefficients make a general
-product natural; the MDS matrix has two coefficients, EF and 5B, and their
-products are written as the sums of a x^i over each coefficient's terms
-from one chain of seven `xtime` calls, which is the same arithmetic at a
-quarter of the cost. The two polynomials are named in `v_polynomial` and
-`w_polynomial`. The whitening, the PHT, the 1-bit rotations and the
-undoing of the last swap read exactly as section 4 writes them.
+The function h runs its stages in a loop from L_(k-1) down to L_0, the
+word `l[k - 1 - s]` at step s, and `stage` holds the four rows of the
+paper's equations, choosing q0 or q1 per byte for the stage of L_3, L_2,
+L_1 or L_0; the paper skips the stages of L_3 and L_2 for shorter keys,
+and the loop's length k does the same. The key schedule writes Me and Mo
+as the even and odd words of `key as little Word[32]^(2 * k)`, S_i as the
+RS product of the slice `key[8 * i..8 * i + 8]`, and K_(2i) and K_(2i+1)
+as section 4.3.4 writes them. Byte orders are stated once each, where the
+paper fixes them: blocks, key words and the outputs of the MDS and RS
+products are little-endian.
 
-Measured under `orangec eval` by bisection with a filler spec: a byte
-through q costs about 242 steps and a general GF(2^8) product 269; h costs
-about 3,470 steps for k = 2, 4,400 for k = 3 and 5,340 for k = 4 (twelve,
-sixteen or twenty q evaluations plus the MDS matrix), and an RS product of
-eight key bytes about 8,600. One block, key schedule included, costs about
-270,000 steps with a 128-bit key, 345,000 with a 192-bit key and 420,000
-with a 256-bit key, encryption and decryption alike, varying by a few
-percent with the data because the length of the sixteen-arm chain depends
-on the nibble. A file's 1,048,576 steps therefore hold three 128-bit
-blocks, two 192-bit blocks or two 256-bit blocks, which is how the vectors
-are split: `twofish.or` uses about 815,000 steps, `twofish-192.or` about
-697,000 and `twofish-256.or` about 849,000, and none has room for another
-block of its size. Not expressed: constant-time behaviour (the selection
-idiom is a specification of a lookup, not a claim about leakage), any mode
-of operation, the paper's implementation options (full, partial, minimal
-and zero keying), and any key size other than the three of the paper.
+The GF(2^8) arithmetic is written out: `times_x` multiplies by x modulo a
+polynomial passed as its full nine-bit value, 0x169 for v(x) and 0x14D
+for w(x), and `gf_mul` adds a x^i for each bit i of b. Both matrices are
+applied by the same row-by-column sum of `gf_mul` products over their
+`hex"..."` rows. The whitening, the PHT, the 1-bit rotations and the
+undoing of the last swap (C_i = R_(16,(i+2) mod 4) xor K_(i+4)) read as
+section 4 writes them.
+
+Measured with `orangec eval --stats` and `orangec test --stats`: a byte
+through q0 or q1 costs about 90 steps and a GF(2^8) product about 264;
+the MDS matrix costs 4,250 steps and an RS product of eight key bytes
+8,588. h costs 5,637 steps for k = 2, 5,985 for k = 3 and 6,436 for
+k = 4, three quarters of it the MDS matrix. The key schedule (forty h
+evaluations and k RS products) costs 242,944, 267,544 and 292,818 steps
+for 128-, 192- and 256-bit keys, and the sixteen rounds (thirty-two g
+evaluations) about 180,000, 194,000 and 207,000 more. One block, key
+schedule included, costs 423,369 to 423,727 steps with a 128-bit key,
+461,199 to 462,185 with a 192-bit key and 499,725 to 500,555 with a
+256-bit key, encryption and decryption alike, varying by a few hundred
+steps with the data because each bit of a GF(2^8) multiplier takes one
+branch or the other. The seven tests together use 3,194,487 steps. Not
+expressed: constant-time behaviour (a lookup is a specification, not a
+claim about leakage), any mode of operation, the paper's implementation
+options (full, partial, minimal and zero keying), and any key length
+other than the three of the paper (the paper pads shorter keys with
+zeros to the next of them).
 
 ## Dissemination
 
 ### Files
 
-- `twofish.or`: the complete cipher (q0 and q1 from their 4-bit tables, the
-  GF(2^8) arithmetic, the MDS and RS matrices, h, g, the key schedule for
-  128-, 192- and 256-bit keys, encryption and decryption) with three vector
-  pairs for 128-bit keys.
-- `twofish-192.or`: the same algorithm text with two vector pairs for
-  192-bit keys.
-- `twofish-256.or`: the same algorithm text with two vector pairs for
-  256-bit keys.
-
-The three files are one file split by the step budget; their algorithm part
-is identical, and only the header's last line and the vector specs differ.
+- `twofish.or`: the complete cipher (q0 and q1 from their 4-bit tables,
+  the GF(2^8) arithmetic, the MDS and RS matrices, h, g, the key schedule
+  for 128-, 192- and 256-bit keys, encryption and decryption) and the
+  seven tests below.
 
 ### Running
 
-```console
-orangec eval algorithms/twofish/twofish.or
-orangec eval algorithms/twofish/twofish-192.or
-orangec eval algorithms/twofish/twofish-256.or
-python3 algorithms/verify.py algorithms/twofish
-```
+    orangec test algorithms/twofish/twofish.or
+    python3 algorithms/verify.py algorithms/twofish
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `twofish.or`, comparing a block with the
+published value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `ecb_tbl_128_i1` | Botan `src/tests/data/block/twofish.vec`, record 1, first block; submission `ecb_tbl.txt`, KEYSIZE=128, I=1 | zero 128-bit key, zero plaintext, ciphertext 9f589f5cf6122c32b6bfec2f2ae8c35a |
-| `ecb_tbl_128_i3` | Botan `twofish.vec`, record 2; `ecb_tbl.txt` KEYSIZE=128, I=3 | key 9f589f5cf6122c32b6bfec2f2ae8c35a, plaintext d491db16e7b1c39e86cb086b789f5419, ciphertext 019f9809de1711858faac3a3ba20fbc3 |
-| `ecb_tbl_128_i3_decrypt` | the same record, decrypted | that ciphertext under that key gives the plaintext back |
-| `ecb_tbl_192_i1` | Botan `twofish.vec`, record 49, first block; `ecb_tbl.txt` KEYSIZE=192, I=1 | zero 192-bit key, zero plaintext, ciphertext efa71f788965bd4453f860178fc19101 |
-| `ecb_tbl_192_i3_decrypt` | Botan `twofish.vec`, record 50; `ecb_tbl.txt` KEYSIZE=192, I=3, decrypted | key efa71f788965bd4453f860178fc19101 followed by eight zero bytes, ciphertext 39da69d6ba4997d585b6dc073ca341b2, plaintext 88b2b2706b105e36b446bb6d731a1e88 |
-| `ecb_tbl_256_i1` | Botan `twofish.vec`, record 97, first block; `ecb_tbl.txt` KEYSIZE=256, I=1 | zero 256-bit key, zero plaintext, ciphertext 57ff739d4dc92c1bd7fc01700cc8216f |
-| `ecb_tbl_256_i3_decrypt` | Botan `twofish.vec`, record 98; `ecb_tbl.txt` KEYSIZE=256, I=3, decrypted | key 57ff739d4dc92c1bd7fc01700cc8216f followed by sixteen zero bytes, ciphertext 90afe91bb288544f2c32dc239b2635e6, plaintext d43bb7556ea32e46f2a282b7d45b4e0d |
+| `ecb_tbl KEYSIZE=128 I=1: encrypt` | Botan `src/tests/data/block/twofish.vec`, record 1, first block; submission `ecb_tbl.txt`, KEYSIZE=128, I=1 | zero 128-bit key, zero plaintext, ciphertext 9f589f5cf6122c32b6bfec2f2ae8c35a |
+| `ecb_tbl KEYSIZE=128 I=3: encrypt` | Botan `twofish.vec`, record 2; `ecb_tbl.txt` KEYSIZE=128, I=3 | key 9f589f5cf6122c32b6bfec2f2ae8c35a, plaintext d491db16e7b1c39e86cb086b789f5419, ciphertext 019f9809de1711858faac3a3ba20fbc3 |
+| `ecb_tbl KEYSIZE=128 I=3: decrypt` | the same record, decrypted | that ciphertext under that key gives the plaintext back |
+| `ecb_tbl KEYSIZE=192 I=1: encrypt` | Botan `twofish.vec`, record 49, first block; `ecb_tbl.txt` KEYSIZE=192, I=1 | zero 192-bit key, zero plaintext, ciphertext efa71f788965bd4453f860178fc19101 |
+| `ecb_tbl KEYSIZE=192 I=3: decrypt` | Botan `twofish.vec`, record 50; `ecb_tbl.txt` KEYSIZE=192, I=3, decrypted | key efa71f788965bd4453f860178fc19101 followed by eight zero bytes, ciphertext 39da69d6ba4997d585b6dc073ca341b2, plaintext 88b2b2706b105e36b446bb6d731a1e88 |
+| `ecb_tbl KEYSIZE=256 I=1: encrypt` | Botan `twofish.vec`, record 97, first block; `ecb_tbl.txt` KEYSIZE=256, I=1 | zero 256-bit key, zero plaintext, ciphertext 57ff739d4dc92c1bd7fc01700cc8216f |
+| `ecb_tbl KEYSIZE=256 I=3: decrypt` | Botan `twofish.vec`, record 98; `ecb_tbl.txt` KEYSIZE=256, I=3, decrypted | key 57ff739d4dc92c1bd7fc01700cc8216f followed by sixteen zero bytes, ciphertext 90afe91bb288544f2c32dc239b2635e6, plaintext d43bb7556ea32e46f2a282b7d45b4e0d |
 
 Every expected value is copied from Botan's `twofish.vec`, which carries the
 submission's `ecb_tbl` set (records 1 to 144, 48 per key size) followed by
@@ -194,7 +208,7 @@ two cases of each key size, which share the zero key, into one two-block
 record, so record 1 is I=1 and I=2 of `ecb_tbl.txt` and record 2 is I=3;
 the chained structure of the set (each plaintext is the previous
 ciphertext, each key the ciphertext before that, padded with zeros) was
-checked by script across the three key sizes. The decryption pairs state
+checked by script across the three key sizes. The decryption tests state
 the record's plaintext as their expected value. A Python reference written
 for this entry (see below) confirms every value; no library oracle exists
 for Twofish among those available here.
@@ -229,33 +243,41 @@ by script, never transcribed by eye or from memory:
   before the shared `xtime` chain replaced `gf_mul` in `mds`.
 
 The Python reference, the table and vector cross-checks, the literal
-generator, the build script that assembles the three `.or` files from one
-algorithm part, and the step-measurement drivers were kept with the work
-record and are not part of the repository.
+generator, the build script that assembled the three `.or` files of the
+first form from one algorithm part, and the step-measurement drivers were
+kept with the work record and are not part of the repository.
+
+The entry was then rewritten in the current language, the three files of
+the first form, which were split only by the step budget, folded into one.
+Every expected value is carried over byte for byte from the first form,
+where each was a `<name>_expected` spec of sixteen bytes: a script
+evaluated the seven old specs and compared each with the `hex"..."`
+literal of its test, and the keys, plaintexts and ciphertexts of the
+inputs were compared the same way. The 4-bit tables, now one byte per
+entry, were printed by script from the first form's packed `Word[64]`
+literals and packed again to compare; the MDS and RS rows were compared
+with the first form's matrices. The MDS matrix is again applied with the
+general GF(2^8) product, whose identity with the first form's shared
+`xtime` chain was checked when that chain was introduced. No vector was
+added or dropped.
 
 This entry is a reference evaluation of the Twofish specification under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim, and it is not a corpus entry in the sense of The
 Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Three features of the language shaped the
-files:
-
-- The step budget of 1,048,576 steps per file holds three 128-bit blocks or
-  two 192- or 256-bit blocks when the S-boxes are computed as the paper
-  defines them, so the seven vectors are three files with an identical
-  algorithm part instead of one; a third 192-bit block would have exceeded
-  the budget by a margin smaller than the data-dependent variation, and
-  was not attempted.
-- A 4-bit index may select a table of 16 entries. Each nibble is still
-  selected by a sixteen-arm conditional (about 35 steps) and a byte through
-  q costs about 242 steps. An `Int` parameter is not an index, and a
-  `Word[32]` runs past a table of 44, so `f` and `round` receive the two
-  round subkeys as parameters and the loops in `encrypt` and `decrypt`
-  index the expanded key with the loop variable.
-- A spec may return a tuple. The key schedule's forty subkeys and the
-  S-box key words still travel in one flat `Word[32]^44` whose layout the
-  comments state, and h's list L is padded to four words with k passed
-  beside it.
+- There is no 4-bit word, and a nibble held in a byte ranges, for the
+  checker, over all 256 values once it is bound to a name (even
+  `let a0: Word[8] = x / 16`), so each lookup in a 4-bit table reduces its
+  index mod 16 (`t[0][a1 % 16]`), a reduction that never changes a value
+  here.
+- Every index is checked in every instance of a sized spec, in branches
+  that the instance never takes as well, so h cannot write the paper's
+  "if k = 4" with `l[3]` in an instance where L has two words. The stages
+  run in a loop over the words L_(k-1) to L_0 instead, and `stage` selects
+  each stage's permutations by its index.
+- GF(2^8) is a field of polynomials over GF(2), not of integers modulo a
+  number, so `Mod[m]` does not express it; the products are written as
+  shift and conditional xor over bytes.

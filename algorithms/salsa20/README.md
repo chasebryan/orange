@@ -92,10 +92,12 @@ first block, an expansion with n = (v, i), reads the counter i back from its
 bytes 32 to 39 (words 8 and 9) as one `Word[64]`, and for block j writes
 i + j there and hashes, so the carry from word 8 into word 9 at counter 2^32
 is the ordinary addition of a 64-bit word; two vectors cross that boundary.
-`encrypt[n]` XORs an n-byte message with the first n bytes of
-`keystream[20, (n + 63) / 64]`, the surplus of the last block discarded.
-HSalsa20 differs from the hash in two lines: no final addition and a
-selection of eight words, written back with `as little Word[8]^32`.
+b runs from 1 to 4 blocks, enough for the 256 bytes of `encrypt`; that is a
+choice of this file, not a limit of the specification. `encrypt[n]` XORs an
+n-byte message with the first n bytes of `keystream[20, (n + 63) / 64]`, the
+surplus of the last block discarded. HSalsa20 differs from the hash in two
+lines: no final addition and a selection of eight words, written back with
+`as little Word[8]^32`.
 `xsalsa20` returns the hash input of XSalsa20's first block, the 32-byte
 expansion of the subkey HSalsa20_k(n[..16]) and (n[16..], 0), which
 `keystream` and `encrypt` take like any other.
@@ -194,17 +196,20 @@ inside n = (v, i) (section 10), and HSalsa20's eight output words. The
 layout of the expansion is one join of strings in `expand_32` and
 `expand_16`, so the diagonal constants, the two key halves and the (v, i)
 block are read directly as the specification writes them, and the
-difference between the 32-byte and 16-byte keys, sigma against tau and k1
-against a second copy of k, is the three middle pieces of the constant and
-one argument. Lengths are sizes: `keystream[r, b]` returns `64 b` bytes, and
-`encrypt[n]` is chosen by the length of the message, takes the
-`(n + 63) / 64` blocks that cover it, and returns n bytes, so a test reads
-as `encrypt(expand_32(k, nonce_counter(v, 0)), m)` against the published
+difference between the 32-byte and 16-byte keys is two of the four pieces of
+the constant ("nd 3" and "2-by" against "nd 1" and "6-by") and the key
+written twice in place of its two halves. Lengths are sizes:
+`keystream[r, b]` returns `64 b` bytes, and `encrypt[n]` is chosen by the
+length of the message, takes the `(n + 63) / 64` blocks that cover it, and
+returns n bytes, so a test reads as
+`encrypt(expand_32(k, nonce_counter(v, 0)), m)` against the published
 ciphertext. Keys, nonces, messages and expected values are `hex"..."`
-literals in the tests, four bytes to a group. HSalsa20's difference from the
-hash function, no final addition and a selection of eight words, is two
-lines, and the reader can see that the selected positions are the ones the
-expansion fills with public bytes.
+literals in the tests, four bytes to a group with a shorter last group where
+the length is not a multiple of four, and the all-zero keys and nonces are
+fills such as `[0; 8]`. HSalsa20's difference from the hash function, no
+final addition and a selection of eight words, is two lines, and the reader
+can see that the selected positions are the ones the expansion fills with
+public bytes.
 
 What the rendering does not express is the constant-time property discussed
 above: `orangec test` evaluates a specification, and its step count measures
@@ -309,8 +314,6 @@ The identification of Botan's first and second cases as eSTREAM set 3,
 vectors 0 and 27, rests on the set's construction (the key bytes are the
 vector number and its successors), which Crypto++'s labelled "Set 3,
 vector#243" case (key f3 f4 f5 ...) exhibits; Botan does not say so.
-
-This entry is a reference evaluation of the Salsa20 specification and of
 
 The entry was then rewritten in the current language. Every expected value
 is carried over byte for byte from the first form, where each was a

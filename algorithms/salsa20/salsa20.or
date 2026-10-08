@@ -85,8 +85,8 @@ module salsa20 {
   spec salsa20[r in 8..21](x: Word[8]^64) -> Word[8]^64 {
     let xw: Word[32]^16 = x as little Word[32]^16;
     let z: Word[32]^16 = doublerounds[r](xw);
-    let h: Word[32]^16 = for i in 0..16 with h: Word[32]^16 = z { h with [i] = z[i] + xw[i] };
-    h as little Word[8]^64
+    let sum: Word[32]^16 = for i in 0..16 with s: Word[32]^16 = z { s with [i] = s[i] + xw[i] };
+    sum as little Word[8]^64
   }
 
   // Section 9: the expansion Salsa20_k(n) = Salsa20(sigma0, k0, sigma1, n,
@@ -119,7 +119,9 @@ module salsa20 {
   // counter, words 8 and 9; block j writes i + j there as one 64-bit
   // integer, so the carry from word 8 into word 9 at counter 2^32 is the
   // specification's addition. The counter wraps modulo 2^64, where the
-  // specification stops.
+  // specification stops. b is limited to 4 blocks, enough for the 256 bytes
+  // of encrypt; that is a choice of this file, not a limit of the
+  // specification.
   spec keystream[r in 8..21, b in 1..5](x: Word[8]^64) -> Word[8]^(64 * b) {
     let i: Word[64] = x[32..40] as little Word[64];
     for j in 0..(b) with z: Word[8]^(64 * b) = [0; (64 * b)] {

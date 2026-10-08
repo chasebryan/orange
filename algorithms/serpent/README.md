@@ -70,7 +70,7 @@ is one let per line of the proposal's ten.
 | The key padding to 256 bits | `pad_key[len]` for keys of 1 through 31 bytes |
 | The prekeys w_i and phi | `prekeys` (the key read with `as little Word[32]^8`), `phi` |
 | The round keys K_i through the S-boxes | `key_schedule`, giving `RoundKeys` |
-| The rounds R_i and the cipher | `xor`, `round`, `encrypt` |
+| The rounds R_i and the cipher, under the padded 256-bit key | `xor`, `round`, `encrypt` |
 | Decryption | `inverse_round`, `decrypt` |
 
 ### Security status
@@ -174,7 +174,8 @@ rather than a transcription from the proposal's tables; each was verified
 against its table on all sixteen inputs, so a reader who trusts the tables
 can trust the formulas, but the formulas are not the proposal's text. The
 linear transformation is the proposal's own sequence of ten updates, each
-a `let` naming the word after its update.
+a `let` naming the word after its update, and its inverse names each
+word by the forward `let` it recovers.
 
 Measured costs under `orangec test --stats` and `orangec eval --stats`:
 a call to one bitsliced S-box costs 67 to 83 steps for all thirty-two
@@ -300,6 +301,7 @@ Orange Book chapter 12.
   the S-box of a round is chosen by an eight-arm conditional on `r % 8`
   in `sbox` and `inverse_sbox` rather than by indexing a list of the eight
   S-boxes.
-- Keys are whole bytes: `pad_key` takes 1 through 31 bytes, and a key
-  whose bit length is not a multiple of 8, which the proposal allows,
-  would need its last byte and its 1 bit placed by hand.
+- This rendering takes keys of whole bytes: `pad_key` takes 1 through 31
+  bytes. The padding of a key whose bit length is not a multiple of 8 is
+  not written, nor that of an empty key, since an array has at least one
+  element.

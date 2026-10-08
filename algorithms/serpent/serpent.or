@@ -415,19 +415,22 @@ module serpent {
   }
 
   // L inverse: the same ten lines undone in reverse order, each rotation
-  // turned the other way and each xor applied again.
+  // turned the other way and each xor applied again. Each name is the word
+  // of linear_transformation that its line recovers: x[0] to x[3] are that
+  // spec's c0, b1, c2 and b3, the lines give back b2, b0, a2, a0, a3 and
+  // a1, and x0 to x3 are the four words L was applied to.
   spec inverse_linear_transformation(x: Block) -> Block {
-    let a2: Word[32] = x[2] >>> 22;
-    let a0: Word[32] = x[0] >>> 5;
-    let b2: Word[32] = a2 ^ x[3] ^ (x[1] << 7);
-    let b0: Word[32] = a0 ^ x[1] ^ x[3];
+    let b2: Word[32] = x[2] >>> 22;
+    let b0: Word[32] = x[0] >>> 5;
+    let a2: Word[32] = b2 ^ x[3] ^ (x[1] << 7);
+    let a0: Word[32] = b0 ^ x[1] ^ x[3];
     let a3: Word[32] = x[3] >>> 7;
     let a1: Word[32] = x[1] >>> 1;
-    let b3: Word[32] = a3 ^ b2 ^ (b0 << 3);
-    let b1: Word[32] = a1 ^ b0 ^ b2;
-    let c2: Word[32] = b2 >>> 3;
-    let c0: Word[32] = b0 >>> 13;
-    [c0, b1, c2, b3]
+    let x3: Word[32] = a3 ^ a2 ^ (a0 << 3);
+    let x1: Word[32] = a1 ^ a0 ^ a2;
+    let x2: Word[32] = a2 >>> 3;
+    let x0: Word[32] = a0 >>> 13;
+    [x0, x1, x2, x3]
   }
 
   // Round i uses S_(i mod 8). The S-box is selected by the round number,
@@ -506,6 +509,8 @@ module serpent {
     linear_transformation(sbox(i, xor(x, k)))
   }
 
+  // key is the 256-bit padded user key: a 128- or 192-bit key goes through
+  // pad_key first, and a 256-bit key is used as it is.
   spec encrypt(key: Word[8]^32, plaintext: Word[8]^16) -> Word[8]^16 {
     let k: RoundKeys = key_schedule(key);
     let b0: Block = plaintext as little Block;
@@ -516,7 +521,8 @@ module serpent {
 
   // Decryption: the inverse rounds in reverse order,
   // R_31^-1(X) = S_7^-1(X ^ K_32) ^ K_31, then
-  // R_i^-1(X) = S_i^-1(L^-1(X)) ^ K_i for i = 30 down to 0.
+  // R_i^-1(X) = S_i^-1(L^-1(X)) ^ K_i for i = 30 down to 0. key is the
+  // padded 256-bit key, as for encrypt.
   spec inverse_round(i: Int, x: Block, k: Block) -> Block {
     xor(inverse_sbox(i, inverse_linear_transformation(x)), k)
   }
