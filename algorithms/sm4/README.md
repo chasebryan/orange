@@ -221,11 +221,17 @@ never transcribed by eye or from memory:
   with the `cryptography` package on 500 random key and block pairs. The
   Orange specs were written from that reference and the fetched sources; the
   six vectors matched on the first evaluation.
-- The clause numbers in the file's comments (6.1 for F, 6.2 for T, tau and
-  L, 7.1 to 7.3 for encryption, decryption and the key expansion, Appendix A
-  for the examples) follow the outline of GB/T 32907-2016 as the IETF draft
-  reproduces it; a reader with the standard should check them against the
-  text.
+- The clause numbers in the file's comments (6.1 for F, 6.2 for T, tau, L
+  and the S-box, 7.1 to 7.3 for encryption, decryption and the key expansion
+  with FK and CK, Appendix A for the examples) were checked against the
+  outline of draft-ribose-cfrg-sm4-10 (April 2018), which states that its
+  sections 1 to 7 map directly to the section numbers of GB/T 32907-2016 and
+  which has examples 1 and 2 of the standard in its Appendix A.1. The text of
+  the standard itself could not be read, so these numbers rest on the draft.
+  One number is not confirmed: the file and the table give clause 7.3 for L'
+  and T', as draft-crypto-sm4-00 does (its section 7.3.1), but
+  draft-ribose-cfrg-sm4-10 defines them in its section 6.2; a reader with the
+  standard should check that one.
 
 The extraction, generation and measurement scripts were kept with the work
 record and are not part of the repository.

@@ -1,19 +1,21 @@
 // Camellia, the 128-bit block cipher of RFC 3713, "A Description of the
-// Camellia Encryption Algorithm" (Matsui, Nakajima, Moriai; NTT and
-// Mitsubishi, 2004), https://www.rfc-editor.org/rfc/rfc3713, written the way
-// the RFC writes it: the key scheduling part of section 2.2 with the Sigma
-// constants and its 128-bit rotations, the data randomizing part of section
-// 2.3 for 128-bit keys (18 rounds, FL and FLINV after rounds 6 and 12, 2.3.1)
-// and for 192- and 256-bit keys (24 rounds, 2.3.2), decryption with the
-// subkeys reversed (2.3.3), and the F-function, the FL- and FLINV-functions
-// and the S-boxes of section 2.4. Encryption and decryption for all three key
-// sizes reproduce the test data of RFC 3713 Appendix A, and encryption two
-// cases of Botan's camellia.vec.
+// Camellia Encryption Algorithm" (Matsui, Nakajima, Moriai; Mitsubishi
+// Electric and Sony Computer Entertainment, April 2004),
+// https://www.rfc-editor.org/rfc/rfc3713, written the way the RFC writes it:
+// the key scheduling part of section 2.2 with the Sigma constants and its
+// 128-bit rotations, the data randomizing part of section 2.3 for 128-bit
+// keys (18 rounds, FL and FLINV after rounds 6 and 12, 2.3.1) and for 192-
+// and 256-bit keys (24 rounds, 2.3.2), decryption with the subkeys reversed
+// (2.3.3), and the F-function, the FL- and FLINV-functions and the S-boxes of
+// section 2.4. Encryption and decryption for all three key sizes reproduce
+// the test data of RFC 3713 Appendix A, and encryption two cases of Botan's
+// camellia.vec.
 edition 2026;
 module camellia {
-  // Section 2.1 (Terminology): a 128-bit value (M, C, KL, KR, KA, KB) is
-  // held as its two 64-bit halves, [v >> 64, v & MASK64]; in the data
-  // randomizing part these are [D1, D2].
+  // Section 2.1 (Terminology) defines >>, &, <<< and MASK64. A 128-bit value
+  // (M, C, KL, KR, KA, KB of sections 2.2 and 2.3) is held as its two 64-bit
+  // halves, [v >> 64, v & MASK64]; in the data randomizing part these are
+  // [D1, D2].
   type U128 = Word[64]^2;
 
   // Section 2.2 (Key Scheduling Part): the subkeys of one key, as the
@@ -23,10 +25,11 @@ module camellia {
   type Subkeys18 = (Word[64]^4, Word[64]^18, Word[64]^4);
   type Subkeys24 = (Word[64]^4, Word[64]^24, Word[64]^6);
 
-  // Section 2.4.3 (S-boxes): SBOX1, entry 16 r + c in row r and column c,
-  // in the RFC's sixteen rows of sixteen. The RFC prints the entries in
-  // decimal (SBOX1[0x3d] = 86); here each row is a hex"..." byte string, so
-  // the table is one byte string of 256 entries, joined row by row with ++.
+  // Section 2.4.1 (F-function), which prints the S-boxes: SBOX1, entry
+  // 16 r + c in row r and column c, in the RFC's sixteen rows of sixteen. The
+  // RFC prints the entries in decimal (SBOX1[0x3d] = 86); here each row is a
+  // hex"..." byte string, so the table is one byte string of 256 entries,
+  // joined row by row with ++.
   spec sbox1() -> Word[8]^256 {
        hex"70 82 2c ec b3 27 c0 e5 e4 85 57 35 ea 0c ae 41"  // 00
     ++ hex"23 ef 6b 93 45 19 a5 21 ed 0e 4f 4e 1d 65 92 bd"  // 10
@@ -46,7 +49,7 @@ module camellia {
     ++ hex"40 28 d3 7b bb c9 43 c1 15 e3 ad f4 77 c7 80 9e"  // f0
   }
 
-  // Section 2.4.3: SBOX2, SBOX3 and SBOX4 are defined from SBOX1, so only
+  // Section 2.4.1: SBOX2, SBOX3 and SBOX4 are defined from SBOX1, so only
   // SBOX1 is a table.
   spec sbox2(x: Word[8]) -> Word[8] { sbox1()[x] <<< 1 }
   spec sbox3(x: Word[8]) -> Word[8] { sbox1()[x] <<< 7 }
