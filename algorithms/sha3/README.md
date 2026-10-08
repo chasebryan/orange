@@ -65,14 +65,16 @@ two sharing a byte (0x86 or 0x9f) when only one is free (Appendix B.2).
 
 `keccak[c, n]` is KECCAK[c] of section 5.2 for a capacity of c lanes (4
 through 16, so 256 through 1024 bits) over a padded string of n blocks of
-8(25 - c) bytes: SHA3-256, KECCAK[512], is `keccak[8, n]`. It runs
+8(25 - c) bytes, n from 1 through 19: SHA3-256, KECCAK[512], is
+`keccak[8, n]`. It runs
 Algorithm 8 on strings, as the standard writes it: each block is joined to
 c lanes of zeros and xored into S, and S = Keccak-p(S); the first block of
 output, Trunc_r(S), is returned, and each function keeps its first d bits
 with a slice. `pad[q]` is Appendix B.2's padding in bytes: q is the number
 of bytes from the end of the message to the end of its last block,
 q = r/8 - (m mod r/8) for a message of m bytes, and the spec takes the
-first byte (0x06 or 0x1f) as its argument. The hash and XOF specs take the
+first byte (0x06 or 0x1f) as its argument; it is sized by q rather than
+by m for the reason given under Gaps. The hash and XOF specs take the
 padded message, `Word[8]^(136 * n)` for SHA3-256, and a test reads
 `sha3_256("abc" ++ pad[136 - 3](0x06))`.
 
@@ -142,8 +144,9 @@ Nothing in SHA-3 depends on the data except the values themselves: no
 branch, no table lookup and no rotation amount depends on the message. The
 only conditional in the file is the feedback of the shift register in `rc`,
 which depends on the register alone. Every index is a literal, a loop index,
-a loop index reduced modulo 5, or a coordinate of rho's walk, and the
-checker proves each in range before evaluation.
+a sum or product of loop indices, a loop index reduced modulo 5, or a
+coordinate of rho's walk, and every slice bound is an expression in the
+sizes and loop indices; the checker proves each in range before evaluation.
 
 The step mappings read as Algorithms 1 through 4. Theta, pi and chi are
 loops over x and y that build the new state with `with [x][y]`, each lane
@@ -173,14 +176,15 @@ Measured costs under `orangec eval --stats` and `orangec test --stats`: one
 Keccak-p[1600, 24] permutation costs 89,719 steps, of which 7,546 build the
 round constants and 24 rounds of 3,388 the rest (theta 661, rho 1,286, pi
 514, chi 921, iota and the call); the two conversions between string and
-state array cost about 420 each. Each block absorbed adds 90,131 steps to
-`keccak[c, n]`, and a call to `pad` costs 26 to 32 steps. A one-block test
-costs 90,161 to 90,182 steps and the two-block SHA3-256 test 180,294. The
-ten tests together use 991,794 steps.
+state array cost about 420 each. Each block absorbed adds 90,108 steps to
+`keccak[c, n]`, and a call to `pad` costs 21 to 27 steps. A one-block test
+costs 90,156 to 90,177 steps and the two-block SHA3-256 test 180,289. The
+ten tests together use 991,744 steps.
 
-Not expressed: a message whose length is not a whole number of bytes, a
-message of more than two blocks, and SHAKE output longer than one rate
-(Gaps).
+Not expressed: a message whose length is not a whole number of bytes, or
+whose padded form is more than 19 blocks (2,584 bytes at the SHA3-256
+rate). Not written, by this entry's choice: SHAKE output longer than one
+rate (Gaps).
 
 ## Dissemination
 
@@ -225,8 +229,8 @@ were not typed from memory. A script derived the offsets from the
 (t + 1)(t + 2) / 2 walk of section 3.2.2, the pi positions from
 A'[x, y] = A[(x + 3y) mod 5, x], and the constants from the LFSR rc(t) of
 Algorithm 5 with bit 2^j - 1 of RC[ir] equal to rc(j + 7 ir); it then
-printed the Orange literals that appear in `rho`, `pi`, `chi`, `theta` and
-`round_constants`. The same script checked the constants against the
+printed the Orange literals that appeared in the first form's `rho`, `pi`,
+`chi`, `theta` and `round_constants`. The same script checked the constants against the
 register of the Keccak team's reference `CompactFIPS202.py` (from the XKCP
 repository) and ran the derived permutation against `KeccakF1600onLanes` on
 20 random states. Every expected digest was produced by Python's `hashlib`
@@ -271,12 +275,21 @@ Book chapter 12.
 - A sized spec with no array parameter needs its size written at the call,
   so each test computes q for its message, `pad[136 - 3]`; the checker
   rejects a wrong q unless it is off by a whole block, but cannot infer it.
+  `pad` is sized by q, not by the message length m, because its result
+  length depends on both m and the rate r, and array lengths come only from
+  sizes, so r cannot be passed as a value; sizes m and r together (lengths
+  0 through 200 at five rates) are far over the 256 instances a function
+  may have.
 - A function has at most 256 instances, counting every combination of its
-  sizes. `keccak` takes 13 capacities, so it could cover at most 19 blocks;
-  this file allows one or two, which every vector here needs.
+  sizes. `keccak` takes 13 capacities, so it covers at most 19 blocks
+  (13 times 19 is 247 instances): 2,584 bytes of message and padding for
+  SHA3-256, 3,192 for SHAKE128. A longer message needs a spec with fewer
+  capacities or a block count of its own.
 - Squeezing stops after one block (Algorithm 8, step 10 is not written), so
-  SHAKE output is at most one rate, 168 or 136 bytes; no vector here needs
-  more.
+  SHAKE output is at most one rate, 168 or 136 bytes. This is a choice of
+  the entry, as the first form made it, not a limit of the language: a
+  further size for the number of output blocks would write step 10. No
+  vector here needs more.
 - FIPS 202 defines the functions on bit strings, and the NIST example values
   include messages of 5, 30, 1605 and 1630 bits; Orange has byte arrays, so
   only whole-byte messages are written and those examples are not

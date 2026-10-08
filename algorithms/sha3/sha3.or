@@ -156,13 +156,15 @@ module sha3 {
   // Sections 4 and 5.2: KECCAK[c] = SPONGE[Keccak-p[1600, 24], pad10*1,
   // 1600 - c], applied to a padded string P of n blocks. The capacity c is
   // counted in lanes of 64 bits, 4 through 16 (256 through 1024 bits), so
-  // the rate r = 1600 - c is 8(25 - c) bytes. Algorithm 8, steps 1 through
-  // 6: P is split into P_0, ..., P_(n-1) of r bits and S = f(S ^ (P_i ||
-  // 0^c)) from S = 0^b. Steps 7 through 9: Z = Trunc_r(S), returned whole;
-  // every caller keeps d <= r bits of it, so step 9 returns and step 10, a
-  // further permutation, is never reached. Padding is the caller's: the
-  // string P = N || pad(r, len(N)) of step 1 arrives already formed.
-  spec keccak[c in 4..17, n in 1..3](p: Word[8]^(8 * (25 - c) * n))
+  // the rate r = 1600 - c is 8(25 - c) bytes, and n is 1 through 19 blocks
+  // (13 capacities times 19 lengths is 247 instances, under the 256 a
+  // function may have). Algorithm 8, steps 1 through 6: P is split into
+  // P_0, ..., P_(n-1) of r bits and S = f(S ^ (P_i || 0^c)) from S = 0^b.
+  // Steps 7 through 9: Z = Trunc_r(S), returned whole; every caller keeps
+  // d <= r bits of it, so step 9 returns and step 10, a further
+  // permutation, is never reached. Padding is the caller's: the string
+  // P = N || pad(r, len(N)) of step 1 arrives already formed.
+  spec keccak[c in 4..17, n in 1..20](p: Word[8]^(8 * (25 - c) * n))
     -> Word[8]^(8 * (25 - c)) {
     let absorbed: Word[8]^200 = for i in 0..(n) with s: Word[8]^200 = [0; 200] {
       let block: Word[8]^(8 * (25 - c)) = p[8 * (25 - c) * i..8 * (25 - c) * (i + 1)];
@@ -176,37 +178,36 @@ module sha3 {
   // bits. The domain suffix (01 for SHA-3, 1111 for SHAKE) and the first 1
   // of pad10*1 form the first byte, 06 or 1f, given as `suffix`; the last 1
   // of pad10*1 is bit 7 of the last byte, 80; between them are zeros. When
-  // q = 1 the two share a byte (86 or 9f, Table 6). The spec returns what is
+  // q = 1 the two share a byte (86 or 9f). The spec returns what is
   // appended rather than the padded message because an array has at least
   // one element: the empty message's padded form is pad[r/8](suffix) alone.
   spec pad[q in 1..169](suffix: Word[8]) -> Word[8]^q {
     let opened: Word[8]^q = [0; q] with [0] = suffix;
-    let last: Word[8]^1 = opened[q - 1..q];
-    opened with [q - 1..q] = [last[0] ^ 0x80]
+    opened with [q - 1] = opened[q - 1] ^ 0x80
   }
 
   // Section 6.1: SHA3-224(M) = KECCAK[448](M || 01, 224); c = 7 lanes,
   // r = 144 bytes, for M and its padding of n blocks.
-  spec sha3_224[n in 1..3](p: Word[8]^(144 * n)) -> Word[8]^28 { keccak[7, n](p)[..28] }
+  spec sha3_224[n in 1..20](p: Word[8]^(144 * n)) -> Word[8]^28 { keccak[7, n](p)[..28] }
 
   // Section 6.1: SHA3-256(M) = KECCAK[512](M || 01, 256); c = 8, r = 136.
-  spec sha3_256[n in 1..3](p: Word[8]^(136 * n)) -> Word[8]^32 { keccak[8, n](p)[..32] }
+  spec sha3_256[n in 1..20](p: Word[8]^(136 * n)) -> Word[8]^32 { keccak[8, n](p)[..32] }
 
   // Section 6.1: SHA3-384(M) = KECCAK[768](M || 01, 384); c = 12, r = 104.
-  spec sha3_384[n in 1..3](p: Word[8]^(104 * n)) -> Word[8]^48 { keccak[12, n](p)[..48] }
+  spec sha3_384[n in 1..20](p: Word[8]^(104 * n)) -> Word[8]^48 { keccak[12, n](p)[..48] }
 
   // Section 6.1: SHA3-512(M) = KECCAK[1024](M || 01, 512); c = 16, r = 72.
-  spec sha3_512[n in 1..3](p: Word[8]^(72 * n)) -> Word[8]^64 { keccak[16, n](p)[..64] }
+  spec sha3_512[n in 1..20](p: Word[8]^(72 * n)) -> Word[8]^64 { keccak[16, n](p)[..64] }
 
   // Section 6.2: SHAKE128(M, d) = KECCAK[256](M || 1111, d); c = 4,
   // r = 168. The spec returns the first block of output, all 168 bytes;
   // SHAKE128(M, d) for d <= 1344 bits is its first d/8 bytes, which each
   // test takes with a slice.
-  spec shake128[n in 1..3](p: Word[8]^(168 * n)) -> Word[8]^168 { keccak[4, n](p) }
+  spec shake128[n in 1..20](p: Word[8]^(168 * n)) -> Word[8]^168 { keccak[4, n](p) }
 
   // Section 6.2: SHAKE256(M, d) = KECCAK[512](M || 1111, d); c = 8,
   // r = 136, likewise for d <= 1088 bits.
-  spec shake256[n in 1..3](p: Word[8]^(136 * n)) -> Word[8]^136 { keccak[8, n](p) }
+  spec shake256[n in 1..20](p: Word[8]^(136 * n)) -> Word[8]^136 { keccak[8, n](p) }
 
   // The vectors. Each test hashes its message followed by pad[q](suffix),
   // q = r/8 - (m mod r/8) for its length m and rate; the empty message's
