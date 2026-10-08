@@ -32,10 +32,10 @@ makes from `N`, `A` and `P`. `B_0` (A.2.1) is `Flags || N || Q`, where the
 flags byte `0 || Adata || [(t - 2) / 2]_3 || [q - 1]_3` records whether
 associated data is present, the tag length `t` in bytes, and the size `q` of
 the length field, and `Q = [Plen / 8]_8q` is the payload length in octets in
-the `q = 15 - n` bytes left by the nonce. The associated data follows (A.2.2) with its
-byte length in front, `[a]_16 || A` for `a < 2^16 - 2^8`, and the payload
-(A.2.3) after it, each padded with zeros to whole blocks. Then
-`Y_0 = CIPH_K(B_0)`, `Y_i = CIPH_K(B_i ^ Y_{i-1})` and `T = MSB_Tlen(Y_r)`.
+the `q = 15 - n` bytes left by the nonce. The associated data follows
+(A.2.2) with its byte length in front, `[a]_16 || A` for `a < 2^16 - 2^8`,
+and the payload (A.2.3) after it, each padded with zeros to whole blocks.
+Then `Y_0 = CIPH_K(B_0)`, `Y_i = CIPH_K(B_i ^ Y_{i-1})` and `T = MSB_Tlen(Y_r)`.
 The second pass (steps 5 to 7) is counter mode over the counter blocks of
 Appendix A.3, `Ctr_i = Flags || N || [i]_8q`, with `S_j = CIPH_K(Ctr_j)`:
 `Ctr_1, Ctr_2, ...` encrypt the payload and `Ctr_0` masks the tag, so that
@@ -58,7 +58,7 @@ the recovered `P`, and accepts only when the two tags agree.
 | Appendix A.2.1, `B_0` (Table 1) | `b_0[n]` |
 | Appendix A.2.2, the associated-data blocks | `associated_data_blocks[a]` |
 | Appendix A.2.3, the payload blocks | `payload_blocks[p]` |
-| Appendix A.2, the formatting function | `b_0(...) ++ associated_data_blocks(a) ++ payload_blocks(p)`, in the two processes |
+| Appendix A.2, the formatting function | `b_0(...) ++ associated_data_blocks(assoc) ++ payload_blocks(payload)` in the processes; `b_0(...) ++ payload_blocks(payload)` in `decryption_verification_without_a` |
 | Appendix A.3, the counter blocks (Table 2) | `ctr[n]` |
 | Section 6.1, steps 2 to 4, the CBC-MAC | `cbc_mac[blocks]` |
 | Section 6.1, steps 5 to 7, the counter blocks and `S` | `keystream[n, m]` |
@@ -91,10 +91,14 @@ A.1, whose flags field `[(t - 2) / 2]_3` is `u - 1`. That is 189
 instances. Each instance calls the sized steps above, which pick their
 own instances from the lengths of its arguments, and the formatting
 function of Appendix A.2 is the join `b_0(...) ++
-associated_data_blocks(a) ++ payload_blocks(p)` passed straight to
+associated_data_blocks(assoc) ++ payload_blocks(payload)` (without the
+middle term in `decryption_verification_without_a`) passed straight to
 `cbc_mac`, whose block count the checker reads off that join; no
 function names the formatted string's length in terms of the listed
-types, which it could not.
+types, which it could not. Since the type parameters carry the
+standard's names `N`, `A` and `P`, the strings themselves are the
+parameters `nonce`, `assoc` and `payload` (and `ciphertext` and `tag` in
+decryption), and `a` and `plen` stay the lengths, as in `b_0`.
 
 The same limit shapes the results. `C = ciphertext || T` has
 `Plen / 8 + t` bytes, a length no type can write when `Plen / 8` comes
@@ -175,15 +179,19 @@ TLS 1.3.
 
 ### What the Orange rendering shows
 
-Every data-dependent choice of the mode is a table lookup inside AES: the
-S-box of FIPS 197 Table 4 is a `hex"..."` string of 256 bytes, sixteen rows
-as the standard prints them, and SubBytes and SubWord read it as `box[x]`
-with the byte itself as the index, 160 lookups per block and 40 in the key
-schedule. The checker proves every such index in range, because a
-`Word[8]` indexes a 256-entry table exactly; the lookups carry no timing
-claim. The state is the 4 x 4 byte array `s[r][c]` of FIPS 197 section
-3.4, and ShiftRows and MixColumns index it with the coordinates the
-standard writes, modulo 4.
+The steps that depend on the data are all inside AES. The data-indexed
+reads are the S-box lookups: the S-box of FIPS 197 Table 4 is a
+`hex"..."` string of 256 bytes, sixteen rows as the standard prints them,
+and SubBytes and SubWord read it as `box[x]` with the byte itself as the
+index, 160 lookups per block and 40 in the key schedule. The checker
+proves every such index in range, because a `Word[8]` indexes a
+256-entry table exactly. The one data-dependent branch is the
+conditional `if (b & 0x80) != 0 { 0x1b } else { 0 }` in `xtime`, the
+multiplication by `x` of FIPS 197 section 4.2, which tests the top bit of
+a state byte each time MixColumns multiplies by `{02}` or `{03}`. Neither
+the lookups nor the `if` carry any timing claim. The state is the 4 x 4
+byte array `s[r][c]` of FIPS 197 section 3.4, and ShiftRows and
+MixColumns index it with the coordinates the standard writes, modulo 4.
 
 Nothing in CCM itself branches on the data. What it does depend on are its
 lengths, and those are now sizes rather than values: the nonce and the
@@ -201,9 +209,10 @@ indices. The one comparison is the tag check of section 6.2, step 10,
 the two differ.
 
 Measured costs under `orangec test --stats` and `orangec eval --stats`:
-`CIPH_K`, AES-128 with its key expansion, is 22,538 steps, of which
-KeyExpansion is 2,927; `ciph` expands the key at every call, as
-`CIPH_K` names the key and not a schedule, at a cost of about 13 percent.
+a call of `ciph`, `CIPH_K` as AES-128 with its key expansion, is 22,537
+steps, of which the call of `key_expansion` is 2,922; `ciph` expands the
+key at every call, as `CIPH_K` names the key and not a schedule, at a cost
+of about 13 percent.
 `B_0` costs 47 steps, a counter block 21, the associated-data blocks 17,
 the payload blocks 8 and a 16-byte `xor` 181, so the formatting is under
 one percent of a CCM call and the block cipher the rest. A call costs
@@ -215,15 +224,19 @@ test case 52 (no associated data). The tests cost 113,540 (C.1), 136,424
 (C.2), 181,839 (C.3), 113,804 (test case 12), 113,543 (C.1 decrypted) and
 91,050 steps (test case 52), 750,200 in all.
 
-Not expressed: associated data of `2^16 - 2^8` bytes or more. A.2.2's length
-encoding for that range is 6 bytes. 65,286 is the minimum size of the
-complete formatted associated-data field, that prefix plus 65,280 bytes of
-`A`. The 10-byte length encoding itself fits in an array; the associated
-data it prefixes, `a >= 2^32`, does not. This entry writes neither. Also not
-expressed: the processes at lengths other than the vectors' (the steps take
-nonces of 7 to 13 bytes and associated data and payloads of 1 to 32, the
-processes only the listed lengths; adding a length is a change to the lists
-in the processes' signatures, within the 256 instances);
+Not written, by this entry's choice: the longer length encodings of
+A.2.2. The entry encodes only `[a]_16`, for `a < 2^16 - 2^8`. The 6-byte
+form `0xff 0xfe || [a]_32`, for `2^16 - 2^8 <= a < 2^32`, would fit an
+array, since its shortest formatted field, the prefix and 65,280 bytes of
+`A`, is 65,286 bytes, but at about 4,080 blocks of some 22,500 steps each
+it would cost about 92 million steps, far over the budget of an entry.
+Only the 10-byte form `0xff 0xff || [a]_64` is beyond the language, since
+its `a >= 2^32` bytes cannot be an array.
+
+Also not expressed: the processes at lengths other than the vectors' (the
+steps take nonces of 7 to 13 bytes and associated data and payloads of 1
+to 32, the processes only the listed lengths; adding a length is a change
+to the lists in the processes' signatures, within the 256 instances);
 generation-encryption with empty associated data, which no vector here
 needs; AES-192 and AES-256 as the block cipher (the Appendix C examples are
 all `Klen = 128`); and the validity requirements on `N`, `A`, `P` and `Tlen`
@@ -311,10 +324,14 @@ inputs (keys, nonces, associated data, payloads, ciphertexts and tags) were
 compared by script with the old specs' literals, and every test's inputs and
 expected value were run again through `cryptography`'s `AESCCM` (encryption,
 the decryption of C.1, and the rejection of test case 52, whose tag with
-bit 0 restored decrypts to the payload 202122...2f). The S-box, now sixteen
-`hex"..."` rows, was compared by script, byte for byte, with the table
-computed from its definition in FIPS 197 section 5.1.1 and with the first
-form's packed `Word[64]` literals; the round constants of Table 5, now one
+bit 0 restored decrypts to the payload 202122...2f). A scratch run of
+`decryption_verification_without_a` on that restored tag returned `true`
+with the same payload, but the source prints no such vector, so no test
+in the entry pins the accepting side of that spec; only the rejection of
+test case 52 exercises it. The S-box, now sixteen `hex"..."` rows, was
+compared by script, byte for byte, with the table computed from its
+definition in FIPS 197 section 5.1.1 and with the first form's packed
+`Word[64]` literals; the round constants of Table 5, now one
 `hex"..."` row, are the leading bytes of the first form's `Rcon` words,
 compared the same way. No vector was added or dropped.
 

@@ -226,23 +226,22 @@ from memory:
 The extraction, generation and measurement scripts were kept with the work
 record and are not part of the repository.
 
-The entry was then rewritten in the current language. Every expected value
-is carried over byte for byte from the first form, where each was a
+The entry was then rewritten in the current language. Every expected value is
+carried over byte for byte from the first form, where each was a
 `<name>_expected` spec of bytes, and every key and plaintext is the first
 form's; a script compared each `hex"..."` literal of the new tests with the
-value the first form's spec evaluates to, and no vector was added or
-dropped. The SBOX1 rows were printed by script from the first form's packed
-words and checked equal to them, entry by entry, by evaluating both forms;
-the Sigma constants are unchanged. The first form cited FLINV, the S-function
-and the P-function as sections 2.4.3, 2.4.4 and 2.4.5. The rewrite follows
-the section layout of RFC 3713 as its authors recall it: 2.3.1 and 2.3.2 for
-encryption with 128-bit and with 192- or 256-bit keys, 2.3.3 for
-decryption, 2.4.1 for the F-function with its S and P steps inside, 2.4.2
-for the FL- and FLINV-functions, and 2.4.3 for the S-boxes. Each citation
-in `camellia.or` names the section's title as well as its number. The RFC
-could not be read from the build machine this time either, so these
-numbers, and the decimal layout of its SBOX1 table, were not checked
-against its text.
+value the first form's spec evaluates to, and no vector was added or dropped.
+The SBOX1 rows were printed by script from the first form's packed words and
+checked equal to them, entry by entry, by evaluating both forms; the Sigma
+constants are unchanged. The first form cited FLINV, the S-function and the
+P-function as sections 2.4.3, 2.4.4 and 2.4.5. The rewrite follows the section
+layout of RFC 3713 as this entry's authors recall it: 2.3.1 and 2.3.2 for
+encryption with 128-bit and with 192- or 256-bit keys, 2.3.3 for decryption,
+2.4.1 for the F-function with its S and P steps inside, 2.4.2 for the FL- and
+FLINV-functions, and 2.4.3 for the S-boxes. The first citation of each section
+in `camellia.or` names its title beside its number. The RFC could not be read
+from the build machine this time either, so these numbers, and the decimal
+layout of its SBOX1 table, were not checked against its text.
 
 This entry is a reference evaluation of RFC 3713 under `orangec test`. It
 makes no constant-time, side-channel, performance or certification claim,

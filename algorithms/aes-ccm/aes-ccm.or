@@ -128,31 +128,37 @@ module aes_ccm {
   // the lengths of its arguments. For the same reason C is returned as the
   // pair (ciphertext, tag), the two halves of C: an Orange type cannot write
   // the length Plen / 8 + t of their join when Plen / 8 is a listed type.
+  // The type parameters N, A and P carry the standard's names, so the
+  // strings themselves are nonce, assoc and payload; a and Plen / 8 remain
+  // their lengths, as in b_0.
   spec generation_encryption[
     N in {Word[8]^7, Word[8]^8, Word[8]^12},
     A in {Word[8]^8, Word[8]^16, Word[8]^20},
     P in {Word[8]^4, Word[8]^16, Word[8]^24},
     u in 2..9
-  ](key: Word[8]^16, nonce: N, a: A, p: P) -> (P, Word[8]^(2 * u)) {
+  ](key: Word[8]^16, nonce: N, assoc: A, payload: P) -> (P, Word[8]^(2 * u)) {
     let y: Block = cbc_mac(
       key,
-      b_0(nonce, octets(a), 2 * u, octets(p)) ++ associated_data_blocks(a) ++ payload_blocks(p),
+      b_0(nonce, octets(assoc), 2 * u, octets(payload))
+        ++ associated_data_blocks(assoc)
+        ++ payload_blocks(payload),
     );
     let t: Word[8]^(2 * u) = y[..2 * u];
     let s_0: Block = ciph(key, ctr(nonce, 0));
-    (counter_mode(key, nonce, p), xor(t, s_0[..2 * u]))
+    (counter_mode(key, nonce, payload), xor(t, s_0[..2 * u]))
   }
 
   // Section 6.2: the decryption-verification process, on C given as its two
-  // halves, c = MSB_(Clen - Tlen)(C) and tag = LSB_Tlen(C), the pair
-  // generation_encryption returns; they are two parameters rather than one
-  // pair because the length of an array inside a tuple does not choose an
-  // instance, and the tag's length is what picks u. Step 1 rejects
-  // Clen <= Tlen; here c has at least one byte by its type, so the step
-  // cannot fail. Steps 2 to 5 recover P by counter mode, step 6 unmasks the
-  // received tag, T = LSB_Tlen(C) ^ MSB_Tlen(S_0), steps 7 to 9 format N, A
-  // and P and recompute the CBC-MAC (the validity checks of step 7 hold by
-  // the listed lengths), and step 10 compares T with MSB_Tlen(Y_r), whole.
+  // halves, ciphertext = MSB_(Clen - Tlen)(C) and tag = LSB_Tlen(C), the
+  // pair generation_encryption returns; they are two parameters rather than
+  // one pair because the length of an array inside a tuple does not choose
+  // an instance, and the tag's length is what picks u. Step 1 rejects
+  // Clen <= Tlen; here the ciphertext has at least one byte by its type, so
+  // the step cannot fail. Steps 2 to 5 recover P (payload) by counter mode,
+  // step 6 unmasks the received tag, T = LSB_Tlen(C) ^ MSB_Tlen(S_0), steps
+  // 7 to 9 format N, A and P and recompute the CBC-MAC (the validity checks
+  // of step 7 hold by the listed lengths), and step 10 compares T with
+  // MSB_Tlen(Y_r), whole.
   // The standard returns either P or INVALID; Orange has no sum type, so the
   // result is the pair (verdict, P), VALID as true, and P counts only when
   // the verdict is true.
@@ -161,31 +167,35 @@ module aes_ccm {
     A in {Word[8]^8, Word[8]^16, Word[8]^20},
     P in {Word[8]^4, Word[8]^16, Word[8]^24},
     u in 2..9
-  ](key: Word[8]^16, nonce: N, a: A, c: P, tag: Word[8]^(2 * u)) -> (Bool, P) {
-    let p: P = counter_mode(key, nonce, c);
+  ](key: Word[8]^16, nonce: N, assoc: A, ciphertext: P, tag: Word[8]^(2 * u)) -> (Bool, P) {
+    let payload: P = counter_mode(key, nonce, ciphertext);
     let s_0: Block = ciph(key, ctr(nonce, 0));
     let t: Word[8]^(2 * u) = xor(tag, s_0[..2 * u]);
     let y: Block = cbc_mac(
       key,
-      b_0(nonce, octets(a), 2 * u, octets(p)) ++ associated_data_blocks(a) ++ payload_blocks(p),
+      b_0(nonce, octets(assoc), 2 * u, octets(payload))
+        ++ associated_data_blocks(assoc)
+        ++ payload_blocks(payload),
     );
-    (t == y[..2 * u], p)
+    (t == y[..2 * u], payload)
   }
 
   // Section 6.2 with a = 0: Adata is 0 in B_0 and the formatting function
   // has no associated-data blocks (A.2.1, A.2.2). An Orange array has at
   // least one element, so the empty A is not a value, and this is the
-  // process above without the parameter A.
+  // process above without the parameter A. Only a rejection (Wycheproof's
+  // test case 52) exercises it here: no published vector in this entry
+  // takes its accepting side.
   spec decryption_verification_without_a[
     N in {Word[8]^7, Word[8]^8, Word[8]^12},
     P in {Word[8]^4, Word[8]^16, Word[8]^24},
     u in 2..9
-  ](key: Word[8]^16, nonce: N, c: P, tag: Word[8]^(2 * u)) -> (Bool, P) {
-    let p: P = counter_mode(key, nonce, c);
+  ](key: Word[8]^16, nonce: N, ciphertext: P, tag: Word[8]^(2 * u)) -> (Bool, P) {
+    let payload: P = counter_mode(key, nonce, ciphertext);
     let s_0: Block = ciph(key, ctr(nonce, 0));
     let t: Word[8]^(2 * u) = xor(tag, s_0[..2 * u]);
-    let y: Block = cbc_mac(key, b_0(nonce, 0, 2 * u, octets(p)) ++ payload_blocks(p));
-    (t == y[..2 * u], p)
+    let y: Block = cbc_mac(key, b_0(nonce, 0, 2 * u, octets(payload)) ++ payload_blocks(payload));
+    (t == y[..2 * u], payload)
   }
 
   // The vectors. Each generation test binds its result to a name whose type
