@@ -1,5 +1,6 @@
 //! Static ranges: proving every index in range before a program runs, from
-//! the ranges of literals, loop indices, words, and their operators.
+//! the ranges of literals, loop indices, words, ranged bindings, and their
+//! operators.
 
 use super::*;
 
@@ -196,7 +197,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// type, and is an `Int` otherwise. A word index ranges over its type,
     /// narrowed by its operators, and is converted to its unsigned `Int`
     /// value in Core; an `Int` index takes its range from its literals, loop
-    /// indices, and converted words.
+    /// indices, converted words, ranged bindings, and remainders.
     pub(super) fn check_static_index(
         &mut self,
         index: &'ast Expression,
@@ -224,16 +225,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             Ok(range) => range,
             Err(span) => {
                 if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::NonStaticIndex,
-                            "an `Int` index may use only integer literals, loop indices, and \
-                             words converted with `as Int`",
-                            span,
-                        )
-                        .with_label("this `Int` has no bound")
-                        .with_note(STATIC_INDEX_NOTE),
-                    );
+                    let mut diagnostic = Diagnostic::error(
+                        DiagnosticCode::NonStaticIndex,
+                        "an `Int` index may use only integer literals, loop indices, words \
+                         converted with `as Int`, and ranged bindings",
+                        span,
+                    )
+                    .with_label("this `Int` has no bound");
+                    if let Some((binding, label)) = self.unranged_binding(span, context) {
+                        diagnostic = diagnostic.with_secondary_span(binding, label);
+                    }
+                    self.diagnostics
+                        .push(diagnostic.with_note(STATIC_INDEX_NOTE));
                 }
                 return false;
             }
@@ -265,8 +268,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
                     .with_label(format!("indices run from 0 through {highest}"))
                     .with_note(
-                        "every value an index can take, over every loop index and word in it, \
-                         must select an element",
+                        "every value an index can take, over every loop index, word, and ranged \
+                         binding in it, must select an element",
                     ),
             );
         }
@@ -283,7 +286,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     /// Returns the least and greatest values of a well-typed `Int` index
     /// built from literals, loop indices, words converted with `as Int`,
-    /// parentheses, negation, `+`, `-`, `*`, `/`, `%`, and conditionals,
+    /// ranged bindings, parentheses, negation, `+`, `-`, `*`, `/`, `%`, and
+    /// conditionals, where a remainder by a divisor that is never zero may
+    /// divide any `Int`,
     /// computed exactly, or `None` when a bound's magnitude exceeds the
     /// integer limit or storage cannot be reserved (which is reported as a
     /// resource limit). Anything else is returned as the span of the first
@@ -318,7 +323,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
                     )
                 }
-                _ => return Err(name.span),
+                // A ranged binding takes the range of its value.
+                resolution => {
+                    let (low, high) = context.binding_range(&resolution).ok_or(name.span)?;
+                    low.try_clone_with_reservation(self.reserve_range_limbs)
+                        .zip(high.try_clone_with_reservation(self.reserve_range_limbs))
+                }
             },
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
                 return Ok(self
@@ -339,9 +349,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
             }
             ExpressionKind::Binary(binary) if binary.operator.is_division() => {
-                let left = self.static_range(&binary.left, context, scope)?;
-                let right = self.static_range(&binary.right, context, scope)?;
-                let (Some(left), Some(right)) = (left, right) else {
+                let left = self.static_range(&binary.left, context, scope);
+                let right = self.static_range(&binary.right, context, scope);
+                // A remainder by a divisor that is never zero lies from 0
+                // through one less than the divisor's greatest magnitude,
+                // whatever it divides.
+                if binary.operator == BinaryOperator::Remainder
+                    && !matches!(left, Ok(Some(_)))
+                    && let Ok(Some(divisor)) = &right
+                    && let Some(range) = self.remainder_range(divisor)
+                {
+                    return Ok(Some(range));
+                }
+                let (Some(left), Some(right)) = (left?, right?) else {
                     return Ok(None);
                 };
                 divide_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
@@ -416,6 +436,80 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         Ok((range.0.magnitude_bits() <= bits && range.1.magnitude_bits() <= bits).then_some(range))
     }
 
+    /// Returns where the binding is named, and why it has no range, when the
+    /// part of an index or slice bound at `span` is the name of a binding
+    /// that has none.
+    pub(super) fn unranged_binding(
+        &self,
+        span: Span,
+        context: &BodyContext<'ast>,
+    ) -> Option<(Span, &'static str)> {
+        let name = self.source.slice(span)?;
+        let (bindings, index, element) = match context.resolve(name) {
+            NameResolution::Binding(index, element) => (context.bindings, index, element),
+            NameResolution::BlockBinding {
+                block,
+                index,
+                element,
+            } => (context.blocks.get(block)?.bindings, index, element),
+            _ => return None,
+        };
+        let typed = pattern_name(&bindings.get(index)?.pattern, name)?;
+        Some((
+            typed.name.span,
+            if element.is_some() {
+                "a name of a tuple pattern has no range"
+            } else {
+                "this binding's value has no range"
+            },
+        ))
+    }
+
+    /// Returns the range of `x % d` for any `x`, from 0 through one less than
+    /// the greatest magnitude of `d`, when `divisor`, the range of `d`, does
+    /// not hold zero; otherwise, or when storage cannot be reserved, `None`.
+    fn remainder_range(&self, (low, high): &IndexRange) -> Option<IndexRange> {
+        let reserve = self.reserve_range_limbs;
+        let zero = ExactInteger::from_u64(0, reserve)?;
+        let positive = low.compare(&zero) == Ordering::Greater;
+        let negative = high.compare(&zero) == Ordering::Less;
+        let greatest = if positive {
+            high.try_clone_with_reservation(reserve)?
+        } else if negative {
+            low.try_clone_with_reservation(reserve)?.negated()
+        } else {
+            return None;
+        };
+        let one = ExactInteger::from_u64(1, reserve)?;
+        Some((zero, greatest.subtract(&one, reserve)?))
+    }
+
+    /// Returns the range a binding gives its name: the range of its value,
+    /// when the binding names one value of type `Int` or a word and that
+    /// value has a range. Nothing is reported.
+    pub(super) fn binding_range(
+        &mut self,
+        binding: &Binding,
+        ty: &CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> Option<IndexRange> {
+        if !matches!(binding.pattern, Pattern::Name(_)) {
+            return None;
+        }
+        match word_maximum(ty) {
+            Some(maximum) => {
+                let range = self.word_range(&binding.value, u128::from(maximum), context, scope);
+                self.exact_word_range(binding.value.span, range)
+            }
+            None if *ty == CoreType::Int => self
+                .static_range(&binding.value, context, scope)
+                .ok()
+                .flatten(),
+            None => None,
+        }
+    }
+
     /// Decodes an index literal exactly, without events or diagnostics; the
     /// literal was already checked as an `Int`. Returns `None` when storage
     /// cannot be reserved.
@@ -468,6 +562,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .filter(|value| *value <= maximum)
                 .map_or(whole, |value| (value, value)),
             ExpressionKind::Parenthesized(inner) => self.word_range(inner, maximum, context, scope),
+            // A ranged binding of a word takes the range of its value.
+            ExpressionKind::Name(name) => context
+                .binding_range(&context.resolve(&name.text))
+                .and_then(|(low, high)| {
+                    let bound = |value: &ExactInteger| u128::try_from(value.to_i64()?).ok();
+                    Some((bound(low)?, bound(high)?))
+                })
+                .filter(|(_, high)| *high <= maximum)
+                .unwrap_or(whole),
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Complement => {
                 let (low, high) = self.word_range(&unary.operand, maximum, context, scope);
                 (maximum.saturating_sub(high), maximum.saturating_sub(low))

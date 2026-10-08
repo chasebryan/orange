@@ -68,7 +68,10 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > evaluates own finite size names in modulus expressions for each eagerly
 > checked instance, retaining exact concrete residue-domain types, and the S3u
 > slice proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under OEP-0025,
-> which adds arrays of up to four dimensions and update paths.
+> which adds arrays of up to four dimensions and update paths, and the S3y
+> slice proposed in [`COMPUTED_POSITIONS_2026.md`](COMPUTED_POSITIONS_2026.md)
+> under OEP-0029, which proves positions computed from data in range through
+> remainders and ranged bindings and changes no meaning.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

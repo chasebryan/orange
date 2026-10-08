@@ -272,7 +272,7 @@ const CASES: [Case; 8] = [
                 "this index runs from 0 through 4, out of range for `Word[8]^4`",
                 "this index runs from 0 through 7, out of range for `Word[8]^4`",
                 "this index runs from -3 through 0, out of range for `Word[8]^4`",
-                "an `Int` index may use only integer literals, loop indices, and words converted",
+                "an `Int` index may use only integer literals, loop indices, words converted with",
                 "using `+`, `-`, `*`, `/`, `%`, and conditionals",
             ],
         },

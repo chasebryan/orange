@@ -1,0 +1,19 @@
+// S3y conformance: windows that do not slide. A window's bounds name
+// ranged bindings a fixed distance apart, so a window whose length changes
+// with a binding, one that leaves the array for some value, one built on a
+// binding without a range or a product of two variables, and one whose
+// position is computed in place rather than named are each rejected.
+edition 2026;
+module windows_invalid {
+  spec varying(x: Word[8]^8, n: Int) -> Word[8]^2 { let k: Int = n % 2; x[k..2] }
+  spec apart(x: Word[8]^8, n: Int) -> Word[8]^2 { let k: Int = n % 4; let j: Int = k + 2; x[k..j] }
+  spec beyond(x: Word[8]^8, n: Int) -> Word[8]^4 { let k: Int = n % 6; x[k..k + 4] }
+  spec unbound(x: Word[8]^8, n: Int) -> Word[8]^2 { let k: Int = n; x[k..k + 2] }
+  spec product(x: Word[8]^8, n: Int) -> Word[8]^1 {
+    let k: Int = n % 2;
+    for i in 0..2 with s: Word[8]^1 = [0] { x[i * k..i * k + 1] }
+  }
+  spec length(x: Word[8]^8, n: Int) -> Word[8]^3 { let k: Int = n % 4; x[k..k + 4] }
+  spec update(x: Word[8]^8, n: Int) -> Word[8]^8 { let k: Int = n % 8; x with [k..k + 2] = [1, 2] }
+  spec unnamed(x: Word[8]^8, n: Int) -> Word[8]^2 { x[n % 4..(n % 4) + 2] }
+}

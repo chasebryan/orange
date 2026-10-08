@@ -87,7 +87,9 @@ const STATIC_MODULUS_NOTE: &str = "a modulus is built from integer literals and,
 const BUILT_IN_TYPE_NAMES: [&str; 4] = ["Int", "Bool", "Word", "Mod"];
 const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program is checked: a \
      word index ranges over its type, and an `Int` index is built from integer literals, loop \
-     indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals";
+     indices, words converted with `as Int`, and ranged bindings, using `+`, `-`, `*`, `/`, `%`, \
+     and conditionals; a `let` gives its name its value's range, and `x % 16` lies from 0 through \
+     15 whatever x is";
 const BOOL_OPERATOR_NOTE: &str = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
 const SHIFT_AMOUNT_NOTE: &str = "an amount written as one integer literal is from 0 through n - 1; \
      any other amount is computed, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`";
@@ -621,6 +623,9 @@ struct BodyContext<'ast> {
     bindings: &'ast [Binding],
     /// Types of the bindings in scope: exactly the first `binding_types.len()`.
     binding_types: Vec<Option<CoreType>>,
+    /// The ranges of the bindings in scope, one for each type: a binding of
+    /// one name of type `Int` or a word gives its name its value's range.
+    binding_ranges: Vec<Option<IndexRange>>,
     /// Loops whose step is being checked, outermost first.
     loop_scopes: Vec<LoopScope<'ast>>,
     /// Loop steps and conditional branches being checked, outermost first,
@@ -656,6 +661,8 @@ struct BlockScope<'ast> {
     /// Types of the bindings in scope: exactly the first
     /// `binding_types.len()`.
     binding_types: Vec<Option<CoreType>>,
+    /// The ranges of the bindings in scope, one for each type.
+    binding_ranges: Vec<Option<IndexRange>>,
 }
 
 /// What holds a block: the step of a loop, or a branch of a conditional,
@@ -806,6 +813,20 @@ impl<'ast> BodyContext<'ast> {
             .map_or(NameResolution::Unknown, |(typed, in_block)| {
                 NameResolution::LaterBinding(typed, in_block)
             })
+    }
+
+    /// Returns the range a binding gives a name in scope, when the name is
+    /// one ranged binding of the body or of a block being checked.
+    fn binding_range(&self, resolution: &NameResolution<'ast>) -> Option<&IndexRange> {
+        match *resolution {
+            NameResolution::Binding(index, None) => self.binding_ranges.get(index)?.as_ref(),
+            NameResolution::BlockBinding {
+                block,
+                index,
+                element: None,
+            } => self.blocks.get(block)?.binding_ranges.get(index)?.as_ref(),
+            _ => None,
+        }
     }
 
     /// Returns the type of a name in scope without reporting.
@@ -1272,6 +1293,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         parameter_types: Vec::new(),
                         bindings: &body.bindings,
                         binding_types: Vec::new(),
+                        binding_ranges: Vec::new(),
                         loop_scopes: Vec::new(),
                         blocks: Vec::new(),
                         finished_blocks: Vec::new(),
@@ -1510,6 +1532,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .binding_types
             .try_reserve_exact(body.bindings.len())
             .is_err()
+            || context
+                .binding_ranges
+                .try_reserve_exact(body.bindings.len())
+                .is_err()
             || locals.try_reserve_exact(body.bindings.len()).is_err()
         {
             self.resource_limit(body.span, "binding storage allocation failed");
@@ -1522,9 +1548,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             if self.halted {
                 return None;
             }
+            let range = match &checked {
+                Some(CheckedBinding { ty, nodes: Some(_) }) => {
+                    self.binding_range(binding, ty, &context, scope)
+                }
+                _ => None,
+            };
+            if self.halted {
+                return None;
+            }
             context
                 .binding_types
                 .push(checked.as_ref().map(|checked| checked.ty.clone()));
+            context.binding_ranges.push(range);
             if let Some(CheckedBinding {
                 ty,
                 nodes: Some(nodes),
@@ -2916,9 +2952,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         output: &mut BodyOutput<'_>,
     ) -> (Option<Vec<CoreBinding>>, bool) {
         let mut binding_types = Vec::new();
+        let mut binding_ranges = Vec::new();
         let mut records = Vec::new();
         if context.blocks.try_reserve(1).is_err()
             || binding_types.try_reserve_exact(bindings.len()).is_err()
+            || binding_ranges.try_reserve_exact(bindings.len()).is_err()
             || records.try_reserve_exact(bindings.len()).is_err()
         {
             self.resource_limit(value.span, "block binding storage allocation failed");
@@ -2928,13 +2966,22 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             owner,
             bindings,
             binding_types,
+            binding_ranges,
         });
         let mut well_formed = true;
         for binding in bindings {
             match self.check_block_binding(binding, context, scope, output) {
                 Some((ty, checked)) => {
+                    let range = match &ty {
+                        Some(ty) if checked => self.binding_range(binding, ty, context, scope),
+                        _ => None,
+                    };
+                    if self.halted {
+                        return (None, false);
+                    }
                     if let Some(block) = context.blocks.last_mut() {
                         block.binding_types.push(ty.clone());
+                        block.binding_ranges.push(range);
                     }
                     let Some(ty) = ty.filter(|_| checked && well_formed) else {
                         well_formed = false;

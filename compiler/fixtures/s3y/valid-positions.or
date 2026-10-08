@@ -1,0 +1,134 @@
+// S3y conformance: positions computed from data. A remainder by a divisor
+// that is never zero lies from 0 through one less than the divisor's
+// greatest magnitude, whatever it divides; a `let` of one name of type
+// `Int` or a word gives its name the range of its value, so a position is
+// named once and used wherever it selects; and a slice's bounds may name
+// ranged bindings, a fixed distance apart, with both ends inside the array
+// for every value the bindings can take.
+edition 2026;
+module positions {
+  type Row = Word[8]^8;
+
+  spec row() -> Row { [10, 11, 12, 13, 14, 15, 16, 17] }
+
+  // Any `Int` modulo 8 selects an element of a row of 8.
+  spec at(r: Row, n: Int) -> Word[8] { r[n % 8] }
+
+  // A negative divisor bounds by its magnitude.
+  spec at_negative(r: Row, n: Int) -> Word[8] { r[n % -8] }
+
+  // Two positions, each named once and used twice.
+  spec swap(r: Row, i: Int, j: Int) -> Row {
+    let a: Int = i % 8;
+    let b: Int = j % 8;
+    let first: Word[8] = r[a];
+    let moved: Row = r with [a] = r[b];
+    moved with [b] = first
+  }
+
+  // A range follows a binding through arithmetic: `next` lies in 1..7.
+  spec neighbour(r: Row, n: Int) -> Word[8] {
+    let here: Int = n % 7;
+    let next: Int = here + 1;
+    r[next]
+  }
+
+  // A word binding keeps the narrowed range of its value.
+  spec nibble(t: Word[8]^16, x: Word[8]) -> Word[8] {
+    let low: Word[8] = x & 15;
+    t[low]
+  }
+
+  // A binding in a loop step ranges over every step.
+  spec rotate_one(r: Row) -> Row {
+    for i in 0..8 with s: Row = r {
+      let from: Int = (i + 1) % 8;
+      s with [i] = r[from]
+    }
+  }
+
+  // And in each branch of a conditional.
+  spec pick(r: Row, low: Bool, n: Int) -> Word[8] {
+    if low { let k: Int = n % 4; r[k] } else { let k: Int = 4 + (n % 4); r[k] }
+  }
+
+  // A window of four at any of the five places it fits.
+  spec window(r: Row, n: Int) -> Word[8]^4 {
+    let from: Int = n % 5;
+    r[from..from + 4]
+  }
+
+  // A rotation by an amount from data: a window of the row joined to itself.
+  spec rotate(r: Row, k: Word[8]) -> Row {
+    let by: Int = (k as Int) % 8;
+    let twice: Word[8]^16 = r ++ r;
+    twice[by..by + 8]
+  }
+
+  // A window update at a computed place.
+  spec stamp(r: Row, n: Int, v: Word[8]^2) -> Row {
+    let from: Int = 2 * (n % 4);
+    r with [from..from + 2] = v
+  }
+
+  // A binding that takes one value is that value.
+  spec middle(r: Row) -> Word[8]^4 {
+    let from: Int = 2;
+    r[from..6]
+  }
+
+  // Loop indices and ranged bindings together.
+  spec pairs(t: Word[8]^16, n: Int) -> Word[8]^8 {
+    let base: Int = n % 2;
+    for i in 0..4 with out: Word[8]^8 = [0; 8] {
+      out with [2 * i..2 * i + 2] = t[base + 4 * i..base + 4 * i + 2]
+    }
+  }
+
+  test "any Int modulo 8 selects an element" {
+    (at(row(), 0) == 10) && (at(row(), 9) == 11) && (at(row(), -1) == 17)
+      && (at(row(), 0x1_0000_0000_0000_0000 + 5) == 15)
+  }
+
+  test "a negative divisor bounds by its magnitude" {
+    (at_negative(row(), 9) == 11) && (at_negative(row(), -1) == 17)
+  }
+
+  test "a named position is the same in every use" {
+    swap(row(), 1, 14) == [10, 16, 12, 13, 14, 15, 11, 17]
+  }
+
+  test "a range follows a binding through arithmetic" {
+    (neighbour(row(), 6) == 17) && (neighbour(row(), 7) == 11)
+  }
+
+  test "a word binding keeps the narrowed range of its value" {
+    nibble("0123456789abcdef", 0x3c) == 0x63
+  }
+
+  test "a binding in a loop step ranges over every step" {
+    rotate_one(row()) == [11, 12, 13, 14, 15, 16, 17, 10]
+  }
+
+  test "each branch has its own ranged bindings" {
+    (pick(row(), true, 6) == 12) && (pick(row(), false, 6) == 16)
+  }
+
+  test "a window slides to any place it fits" {
+    (window(row(), 7) == [12, 13, 14, 15]) && (window(row(), 4) == [14, 15, 16, 17])
+  }
+
+  test "a rotation by an amount from data" {
+    (rotate(row(), 3) == [13, 14, 15, 16, 17, 10, 11, 12]) && (rotate(row(), 11) == rotate(row(), 3))
+  }
+
+  test "a window update at a computed place" {
+    stamp(row(), 5, [0xaa, 0xbb]) == [10, 11, 0xaa, 0xbb, 14, 15, 16, 17]
+  }
+
+  test "a binding with one value is that value" { middle(row()) == [12, 13, 14, 15] }
+
+  test "loop indices and ranged bindings move a window together" {
+    pairs("0123456789abcdef", 3) == "12569ade"
+  }
+}

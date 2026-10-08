@@ -24,8 +24,8 @@ exact matrix, so every reported number is exact for that function. None is
 sampled, estimated or bounded, and none is a claim about the security of a
 cipher that uses the function. The one statement that is not complete is
 named as such: a layer of more than 16 bits is checked to be affine only up
-to its terms of degree 2. The implemented language marker remains S3u; this
-tool adds no syntax and changes no meaning of any program.
+to its terms of degree 2. This tool leaves the implemented language marker
+unchanged, adds no syntax, and changes no meaning of any program.
 
 ## Command
 

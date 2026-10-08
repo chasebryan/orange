@@ -110,8 +110,13 @@ arguments. Module aliases and type-parameter lists remain concrete. The S3u
 slice, proposed in [`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md) and
 in owner review under OEP-0025, admits arrays of up to four dimensions, each a
 `type` declaration over the one before it, and update paths
-`x with [i][j][k] = v` that mean the nested updates they abbreviate. All
-twenty-one lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+`x with [i][j][k] = v` that mean the nested updates they abbreviate. The S3y
+slice, proposed in
+[`docs/COMPUTED_POSITIONS_2026.md`](../docs/COMPUTED_POSITIONS_2026.md) and in
+owner review under OEP-0029, proves positions computed from data in range: a
+remainder by a divisor that is never zero bounds any `Int`, a `let` gives its
+name its value's range, and a window of fixed length slides to such a name, as
+`x[at..at + 4]`. All twenty-two lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -155,7 +160,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3u)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3y)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
@@ -274,7 +279,7 @@ host failure returns 1 even if the stream accepted a prefix.
 
 This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
-proof/evidence identity or release authority. The S3u language marker remains.
+proof/evidence identity or release authority. It leaves the language marker unchanged.
 
 ## Analyzing a function
 
@@ -1188,7 +1193,7 @@ and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3u rules, limits, and non-claims are in
+through S3u and S3y rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -1207,8 +1212,9 @@ through S3u rules, limits, and non-claims are in
 [`docs/TESTS_2026.md`](../docs/TESTS_2026.md),
 [`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md),
 [`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md),
-[`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md), and
-[`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md). None of them defines
+[`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md),
+[`docs/DIMENSIONS_2026.md`](../docs/DIMENSIONS_2026.md), and
+[`docs/COMPUTED_POSITIONS_2026.md`](../docs/COMPUTED_POSITIONS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1876,6 +1882,38 @@ conversions, arrays of tuples, and repeated `^` types stay refused. They
 establish implementation behavior and do not accept OEP-0025 or prove ML-KEM,
 transformation, leakage, or refinement properties.
 
+## S3y position conformance
+
+`fixtures/s3y/` contains an exact five-program corpus for the proposed S3y
+behavior, of which three must evaluate successfully and two must fail closed.
+The accepted programs select at remainders of parameters, by divisors of both
+signs, through named positions in bodies, loop steps, and branches, and word
+bindings with narrowed ranges, and slide, rotate, and update windows at
+computed places; run FIPS 203's SampleNTT on the first 504 bytes of two
+SHAKE128 outputs, writing each accepted coefficient at `j % 256`; and run
+FIPS 204's SampleInBall with τ = 39 on the first 136 bytes of a SHAKE256
+output, writing at `i % 256` for a count of placed coefficients. Their
+expected results come from Python's `hashlib` and an independent
+transcription, not from published vectors. The rejected programs cover names
+without a range, which point at their bindings, remainders by divisors that
+may be zero, ranged positions out of range, and conditions that narrow
+nothing; and windows whose length changes, that leave the array, that are
+built on a product or a name without a range, or whose position is computed
+in place rather than named.
+
+`crates/orangec/tests/s3y_conformance.rs` parses the 11-rule index in
+`docs/COMPUTED_POSITIONS_2026.md` and runs every fixture twice through
+`check`, `eval`, and `test`. Generated programs compare remainders by
+divisors of both signs and from data with Rust's Euclidean remainder for
+dividends up to 2^127 − 1 in magnitude and show each bound tight, compare
+eleven forms of ranged binding with their values written in place, check the
+location of every name without a range and of its binding, slide windows of
+several lengths to every place they fit and refuse one more place, check
+every window-length message, and confirm that conditions, parameters,
+accumulators, quotients without a range, and positions computed in a slice's
+bounds stay refused. They establish implementation behavior and do not accept
+OEP-0029 or prove ML-KEM, ML-DSA, leakage, or refinement properties.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1935,6 +1973,8 @@ transformation, leakage, or refinement properties.
   rule-index, shape-limit, and recursive-cost runner;
 - `crates/orangec/tests/s3u_conformance.rs`: repeatable dimension corpus,
   rule-index, path, path-cost, and witness runner;
+- `crates/orangec/tests/s3y_conformance.rs`: repeatable computed-position
+  corpus, rule-index, remainder, binding, and window runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1959,6 +1999,7 @@ transformation, leakage, or refinement properties.
 - `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
 - `fixtures/s3s/`: nested-array positive, negative, and failed-equality corpus;
 - `fixtures/s3u/`: exact four-positive/three-negative S3u CLI fixture corpus;
+- `fixtures/s3y/`: exact three-positive/two-negative S3y CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

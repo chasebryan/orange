@@ -8,8 +8,8 @@ Edition: `2026`
 Snapshot: 2026-10-02
 
 This tool decodes a local argument file against a checked function's concrete
-parameter types and reference-evaluates its Boolean result. The implemented
-language marker remains S3u. Its result describes one supplied witness under
+parameter types and reference-evaluates its Boolean result. It leaves the
+implemented language marker unchanged. Its result describes one supplied witness under
 that evaluator; it is not a proof or a product atomic claim.
 
 ## Command and checked source

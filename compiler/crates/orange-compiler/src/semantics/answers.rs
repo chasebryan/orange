@@ -97,6 +97,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 parameter_types: Vec::new(),
                 bindings: &body.bindings,
                 binding_types: Vec::new(),
+                binding_ranges: Vec::new(),
                 loop_scopes: Vec::new(),
                 blocks: Vec::new(),
                 finished_blocks: Vec::new(),

@@ -4545,16 +4545,16 @@ fn loop_update_and_fill_errors_are_reported_once_in_checking_order() {
                 DiagnosticCode::NonStaticIndex,
                 "i",
                 String::from(
-                    "an `Int` index may use only integer literals, loop indices, and words \
-                     converted with `as Int`"
+                    "an `Int` index may use only integer literals, loop indices, words \
+                     converted with `as Int`, and ranged bindings"
                 )
             ),
             (
                 DiagnosticCode::NonStaticIndex,
                 "width(x)",
                 String::from(
-                    "an `Int` index may use only integer literals, loop indices, and words \
-                     converted with `as Int`"
+                    "an `Int` index may use only integer literals, loop indices, words \
+                     converted with `as Int`, and ranged bindings"
                 )
             ),
             (
@@ -5354,8 +5354,8 @@ fn index_ranges_follow_euclidean_division_and_its_total_rules() {
             DiagnosticCode::NonStaticIndex,
             "n",
             String::from(
-                "an `Int` index may use only integer literals, loop indices, and words \
-                     converted with `as Int`"
+                "an `Int` index may use only integer literals, loop indices, words \
+                     converted with `as Int`, and ranged bindings"
             )
         )]
     );
@@ -5508,8 +5508,8 @@ fn word_indices_range_over_their_types_and_narrow_through_operators() {
                 DiagnosticCode::NonStaticIndex,
                 part,
                 String::from(
-                    "an `Int` index may use only integer literals, loop indices, and words \
-                     converted with `as Int`"
+                    "an `Int` index may use only integer literals, loop indices, words \
+                     converted with `as Int`, and ranged bindings"
                 )
             )],
             "{index}"
@@ -8369,7 +8369,8 @@ fn slice_bounds_are_static_in_range_and_a_fixed_length_apart() {
         "  spec growing(x: Word[8]^4) -> Word[8]^1 {\n",
         "    for i in 0..2 with y: Word[8]^1 = [0] { x[i..2 * i + 1] }\n",
         "  }\n",
-        "  spec bound(x: Word[8]^4) -> Word[8]^1 { let n: Int = 1; x[n..2] }\n",
+        "  spec varying(x: Word[8]^4) -> Word[8]^1 { let n: Int = (x[0] as Int) % 2; x[n..2] }\n",
+        "  spec bound(x: Word[8]^4, p: Int) -> Word[8]^1 { let n: Int = p; x[n..2] }\n",
         "  spec quotient(x: Word[8]^4) -> Word[8]^1 { x[4 / 2..3] }\n",
         "  spec product(x: Word[8]^4) -> Word[8]^1 {\n",
         "    for i in 0..2 with y: Word[8]^1 = [0] { x[i * i..i * i + 1] }\n",
@@ -8436,19 +8437,33 @@ fn slice_bounds_are_static_in_range_and_a_fixed_length_apart() {
                 String::from("the length of this slice changes from step to step")
             ),
             (
+                DiagnosticCode::SliceLength,
+                "n..2",
+                String::from("the length of this slice changes with its ranged bindings")
+            ),
+            (
                 DiagnosticCode::NonStaticIndex,
                 "n",
-                String::from("a slice's bounds may use only integer literals and loop indices")
+                String::from(
+                    "a slice's bounds may use only integer literals, loop indices, and ranged \
+                     bindings"
+                )
             ),
             (
                 DiagnosticCode::NonStaticIndex,
                 "4 / 2",
-                String::from("a slice's bounds may use only integer literals and loop indices")
+                String::from(
+                    "a slice's bounds may use only integer literals, loop indices, and ranged \
+                     bindings"
+                )
             ),
             (
                 DiagnosticCode::NonStaticIndex,
                 "*",
-                String::from("a slice's bound may multiply a loop index only by a constant")
+                String::from(
+                    "a slice's bound may multiply a loop index or a ranged binding only by a \
+                     constant"
+                )
             ),
             (
                 DiagnosticCode::TypeMismatch,
@@ -8531,7 +8546,10 @@ fn every_part_of_a_slice_bound_is_held_to_the_limit_at_every_step() {
             (
                 DiagnosticCode::NonStaticIndex,
                 "n",
-                String::from("a slice's bounds may use only integer literals and loop indices")
+                String::from(
+                    "a slice's bounds may use only integer literals, loop indices, and ranged \
+                     bindings"
+                )
             ),
         ]
     );
@@ -11437,4 +11455,266 @@ fn update_path_of_a_mistyped_base_uses_the_bases_axes() {
             .collect::<Vec<_>>(),
         [("row", "this array has fewer dimensions")]
     );
+}
+
+#[test]
+fn ranged_bindings_give_their_names_the_range_of_their_values() {
+    let spec = |body: &str| {
+        format!(
+            "  spec f(x: Word[8]^4, y: Word[8]^8, b: Word[8], n: Int) -> Word[8] {{ {body} }}\n"
+        )
+    };
+    for body in [
+        // A remainder by a divisor that is never zero bounds any `Int`.
+        "x[n % 4]",
+        "x[n % -4]",
+        "x[(n * n - 7) % 4]",
+        "x[(n % 2) + 2]",
+        // A binding gives its name the range of its value.
+        "let k: Int = (b as Int) % 4; x[k]",
+        "let k: Int = n % 2; let j: Int = k + 2; x[j]",
+        "let k: Int = (b as Int) / 64; x[k]",
+        "let k: Int = n % 4; let j: Int = 3 - k; x[j] ^ x[k]",
+        "let w: Word[8] = b & 3; x[w]",
+        "let w: Word[8] = b >> 6; let v: Word[8] = w; x[v]",
+        // In loop steps and branches, over every step.
+        "for i in 0..4 with s: Word[8] = 0 { let j: Int = (i + 1) % 4; s ^ x[j] }",
+        "for i in 0..2 with s: Word[8] = 0 { let j: Int = i + 2; s ^ x[j] ^ y[2 * j + 1] }",
+        "if b == 0 { let k: Int = 3; x[k] } else { let k: Int = n % 3; x[k + 1] }",
+    ] {
+        accepted(&spec(body));
+    }
+    for (body, part, message) in [
+        (
+            "let k: Int = (b as Int) % 5; x[k]",
+            "k",
+            "this index runs from 0 through 4, out of range for `Word[8]^4`",
+        ),
+        (
+            "let k: Int = n % -5; x[k]",
+            "k",
+            "this index runs from 0 through 4, out of range for `Word[8]^4`",
+        ),
+        (
+            "let k: Int = n % 4; let j: Int = k - 1; x[j]",
+            "j",
+            "this index runs from -1 through 2, out of range for `Word[8]^4`",
+        ),
+        (
+            "for i in 0..4 with s: Word[8] = 0 { let j: Int = i + 1; s ^ x[j] }",
+            "j",
+            "this index runs from 1 through 4, out of range for `Word[8]^4`",
+        ),
+    ] {
+        let (fixture, result) = rejected(&spec(body));
+        assert_eq!(
+            reported(&fixture, &result),
+            [(DiagnosticCode::IndexOutOfRange, part, String::from(message))],
+            "{body}"
+        );
+        assert_eq!(
+            result.diagnostics[0].notes(),
+            [
+                "every value an index can take, over every loop index, word, and ranged binding in \
+              it, must select an element"
+            ],
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn a_name_without_a_range_is_reported_where_it_is_bound() {
+    let spec = |body: &str| {
+        format!(
+            "  spec f(x: Word[8]^4, y: Word[8]^8, b: Word[8], n: Int) -> Word[8] {{ {body} }}\n"
+        )
+    };
+    let message = "an `Int` index may use only integer literals, loop indices, words converted \
+                   with `as Int`, and ranged bindings";
+    for (body, part, secondary) in [
+        ("x[n]", "n", None),
+        ("x[n % 0]", "n", None),
+        ("x[n % n]", "n", None),
+        ("x[n % (b as Int)]", "n", None),
+        (
+            "let k: Int = n; x[k]",
+            "k",
+            Some(("k", "this binding's value has no range")),
+        ),
+        (
+            "let k: Int = n * 2; let j: Int = k % 4; x[k]",
+            "k",
+            Some(("k", "this binding's value has no range")),
+        ),
+        (
+            "let (k: Int, j: Int) = (1, 2); x[k]",
+            "k",
+            Some(("k", "a name of a tuple pattern has no range")),
+        ),
+        (
+            "let t: Int = for i in 0..4 with k: Int = 0 { k + (x[k] as Int) }; x[0]",
+            "k",
+            None,
+        ),
+        (
+            "for i in 0..4 with s: Word[8] = 0 { let j: Int = n + i; s ^ x[j] }",
+            "j",
+            Some(("j", "this binding's value has no range")),
+        ),
+    ] {
+        let (fixture, result) = rejected(&spec(body));
+        assert_eq!(
+            reported(&fixture, &result),
+            [(DiagnosticCode::NonStaticIndex, part, String::from(message))],
+            "{body}"
+        );
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.notes(), [STATIC_INDEX_NOTE], "{body}");
+        let secondaries = diagnostic
+            .secondary_spans()
+            .iter()
+            .map(|secondary| {
+                (
+                    fixture.source().slice(secondary.span()).unwrap(),
+                    secondary.label(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            secondaries,
+            secondary.into_iter().collect::<Vec<_>>(),
+            "{body}"
+        );
+        // The secondary span names the binding, not its use.
+        if let Some(secondary) = diagnostic.secondary_spans().first() {
+            assert!(
+                secondary.span().start() < diagnostic.primary_span().start(),
+                "{body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn windows_slide_over_ranged_bindings_at_a_fixed_length() {
+    let spec = |result: &str, body: &str| {
+        format!("  spec f(x: Word[8]^8, b: Word[8], n: Int) -> {result} {{ {body} }}\n")
+    };
+    for (result, body) in [
+        ("Word[8]^4", "let k: Int = (b as Int) % 5; x[k..k + 4]"),
+        ("Word[8]^4", "let k: Int = n % 2; x[4 * k..4 * k + 4]"),
+        ("Word[8]^4", "let k: Int = n % 2; x[4 * k..(k + 1) * 4]"),
+        ("Word[8]^2", "let k: Int = 1; x[k..3]"),
+        ("Word[8]^2", "let k: Int = 1; let j: Int = k + 5; x[j..8]"),
+        (
+            "Word[8]^2",
+            "let k: Int = n % 3; for i in 0..4 with s: Word[8]^2 = [0; 2] { x[i + k..k + i + 2] }",
+        ),
+        (
+            "Word[8]^8",
+            "let k: Int = n % 5; x with [k..k + 4] = x[4 - k..8 - k]",
+        ),
+    ] {
+        accepted(&spec(result, body));
+    }
+    for (result, body, code, part, message) in [
+        (
+            "Word[8]^4",
+            "let k: Int = (b as Int) % 6; x[k..k + 4]",
+            DiagnosticCode::IndexOutOfRange,
+            "k..k + 4",
+            "this slice reaches elements 0 through 8, out of range for `Word[8]^8`",
+        ),
+        (
+            "Word[8]^2",
+            "let k: Int = n % 2; x[k..2]",
+            DiagnosticCode::SliceLength,
+            "k..2",
+            "the length of this slice changes with its ranged bindings",
+        ),
+        (
+            "Word[8]^2",
+            "let k: Int = n % 2; let j: Int = k + 2; x[k..j]",
+            DiagnosticCode::SliceLength,
+            "k..j",
+            "the length of this slice changes with its ranged bindings",
+        ),
+        (
+            "Word[8]^2",
+            "let k: Int = n % 2; for i in 0..2 with s: Word[8]^2 = [0; 2] { x[i..k + 3] }",
+            DiagnosticCode::SliceLength,
+            "i..k + 3",
+            "the length of this slice changes from step to step and with its ranged bindings",
+        ),
+        (
+            "Word[8]^1",
+            "let k: Int = n % 2; for i in 0..2 with s: Word[8]^1 = [0] { x[i * k..i * k + 1] }",
+            DiagnosticCode::NonStaticIndex,
+            "*",
+            "a slice's bound may multiply a loop index or a ranged binding only by a constant",
+        ),
+        (
+            "Word[8]^2",
+            "let k: Int = n; x[k..k + 2]",
+            DiagnosticCode::NonStaticIndex,
+            "k",
+            "a slice's bounds may use only integer literals, loop indices, and ranged bindings",
+        ),
+    ] {
+        let (fixture, result) = rejected(&spec(result, body));
+        assert_eq!(
+            reported(&fixture, &result),
+            [(code, part, String::from(message))],
+            "{body}"
+        );
+    }
+    // A bound that names a binding without a range points at the binding.
+    let (fixture, result) = rejected(&spec("Word[8]^2", "let k: Int = n; x[k..k + 2]"));
+    assert_eq!(
+        result.diagnostics[0]
+            .secondary_spans()
+            .iter()
+            .map(|secondary| (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label()
+            ))
+            .collect::<Vec<_>>(),
+        [("k", "this binding's value has no range")]
+    );
+    // A part with a range that is not a name is told to become one.
+    for (body, part) in [
+        ("x[n % 4..(n % 4) + 2]", "n % 4"),
+        ("x[(b as Int) % 3..6]", "(b as Int) % 3"),
+    ] {
+        let (fixture, result) = rejected(&spec("Word[8]^2", body));
+        assert_eq!(
+            reported(&fixture, &result),
+            [(
+                DiagnosticCode::NonStaticIndex,
+                part,
+                String::from(
+                    "a slice's bounds may use only integer literals, loop indices, and ranged \
+                     bindings"
+                )
+            )],
+            "{body}"
+        );
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.label(), "this has a range, but is not a name");
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "a slice's length never depends on data: its bounds are built from integer \
+                 literals, loop indices, and ranged bindings with `+`, `-`, and `*` by a constant, \
+                 and differ by the same number for every value they can take",
+                "a computed position enters a slice's bounds through a name: bind it with `let`, \
+                 as in `let at: Int = n % 4;`, and write both bounds with `at`"
+            ]
+        );
+    }
+    // A part without a range is not.
+    let (_, result) = rejected(&spec("Word[8]^2", "x[n..n + 2]"));
+    assert_eq!(result.diagnostics[0].label(), "this has no range");
+    assert_eq!(result.diagnostics[0].notes().len(), 1);
 }

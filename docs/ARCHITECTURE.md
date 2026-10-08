@@ -69,8 +69,8 @@ re-identifies six subject classes to its seven. That result is
 contributor-produced and unreviewed, and it is not a D-004 recommendation until
 the owner disposes every candidate and hard gate. Integrity parsing and
 structural oracles ratify no semantic boundary. D-004 remains proposed, S3b
-through S3u are implemented and await owner review under OEP-0005 through
-OEP-0021 and OEP-0023 through OEP-0025, and Orange remains at 3 of 10 binary gate closure (30%); that
+through S3u and S3y are implemented and await owner review under OEP-0005
+through OEP-0021, OEP-0023 through OEP-0025, and OEP-0029, and Orange remains at 3 of 10 binary gate closure (30%); that
 mechanical score is not release readiness.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
