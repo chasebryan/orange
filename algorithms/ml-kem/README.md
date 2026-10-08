@@ -83,9 +83,10 @@ types it.
 | FIPS 203 4.1, PRF, H, J, G | `prf`, `hash_h`, `hash_j`, `hash_g` (`ml-kem.or`) |
 | FIPS 203 4.1, XOF | `keccak::shake128` and `keccak::squeeze` in `sample_ntt` |
 | FIPS 203 4.2.1, Algorithms 3, 5 and 6, ByteEncode and ByteDecode | `byte_encode`, `byte_encode_12`, `byte_decode`, `byte_decode_12` |
+| FIPS 203 4.2.1, Algorithm 4, BytesToBits | `bytes_to_bits` |
 | FIPS 203 4.2.1, equations 4.7 and 4.8, Compress and Decompress | `compress`, `decompress` |
 | FIPS 203 4.2.2, Algorithm 7, SampleNTT | `sample_ntt` |
-| FIPS 203 4.2.2, Algorithms 4 and 8, BytesToBits and SamplePolyCBD | `bytes_to_bits`, `sample_poly_cbd` |
+| FIPS 203 4.2.2, Algorithm 8, SamplePolyCBD | `sample_poly_cbd` |
 | FIPS 203 4.3 and Appendix A, zeta^BitRev7(i) | `zetas` |
 | FIPS 203 4.3, Algorithms 9 and 10, NTT and NTT^-1 | `ntt`, `inverse_ntt` |
 | FIPS 203 4.3.1, Algorithms 11 and 12, MultiplyNTTs and BaseCaseMultiply | `multiply_ntts`, `base_case_multiply` |
@@ -96,6 +97,12 @@ types it.
 | FIPS 203 6.1, Algorithm 16, ML-KEM.KeyGen_internal | `keygen_internal` |
 | FIPS 203 6.2, Algorithm 17, ML-KEM.Encaps_internal | `encaps_internal` |
 | FIPS 203 6.3, Algorithm 18, ML-KEM.Decaps_internal | `decaps_internal` |
+
+`shake128` and `shake256` return the sponge state after absorbing, not
+output bytes; `squeeze[lanes, blocks]` reads whole blocks of output from
+that state, so SHAKE128(M, d) is the first d / 8 bytes of
+`squeeze[21, n](shake128(M))` for n blocks of 168 bytes, and SHAKE256 the
+same with `squeeze[17, n]` and blocks of 136 bytes.
 
 The internal algorithms are deterministic: key generation takes the seeds
 d and z, and encapsulation the message m, which ML-KEM.KeyGen and
@@ -125,7 +132,7 @@ deployed hybrids use.
 
 Decryption can fail, because the rounding in decryption can be overwhelmed
 by the error terms; FIPS 203 gives the failure probability of ML-KEM-512 as
-2^-138.8 (Table 1), and the implicit rejection of Algorithm 18 hides a
+2^-138.8, and the implicit rejection of Algorithm 18 hides a
 failure from the sender. The changes FIPS 203 made to Kyber's third-round
 specification are small and visible in this file: the message m is used
 as drawn rather than hashed first, K is the first half of G(m || H(ek))
@@ -136,15 +143,15 @@ encapsulation (every coefficient of ek below q) and decapsulation (the
 hash of ek inside dk).
 
 The attacks on deployed ML-KEM and Kyber have been on implementations.
-KyberSlash (2024) measured secret-dependent timing in the division by q
-that the reference code's compression used, and recovered keys from
-libraries that copied it; a compiler-introduced branch on the message bit
-in the reference code was shown exploitable the same year. Decapsulation
-must compare the two ciphertexts and select the key in constant time, which
-is what Wycheproof's `Strcmp` vector below probes from the other side: a
-comparison that stopped at a zero byte would accept a ciphertext it must
-reject. Masking and fault countermeasures against power and fault analysis
-of the NTT and of the Fujisaki-Okamoto re-encryption are an active
+KyberSlash (2024) measured secret-dependent timing in the division by q that
+the reference code's compression used, and recovered keys from libraries
+that copied it; a compiler-introduced branch on the message bit in the
+reference code was shown exploitable the same year. Decapsulation must
+compare all 768 bytes of the two ciphertexts, and select the key without
+branching on the result. Wycheproof's `Strcmp` vector below checks the
+first: a comparison that stopped at a zero byte would accept a ciphertext it
+must reject. Masking and fault countermeasures against power and fault
+analysis of the NTT and of the Fujisaki-Okamoto re-encryption are an active
 engineering topic. FIPS 203 is the current standard.
 
 ### What the Orange rendering shows
@@ -200,10 +207,18 @@ bytes, as a type parameter over `Word[8]^33` and `Word[8]^64`.
 One departure from the standard's control flow is forced and stated where
 it happens: SampleNTT squeezes three bytes at a time for as long as it
 needs, and this file squeezes a fixed four blocks of SHAKE128, 224 triples,
-where 256 coefficients take about 158 on average. Every matrix in the
-eleven vectors completes within 168 triples, and every ML-KEM-512 case in
-the two ACVP files within 172; a matrix that ran out would keep zeros and
-fail its test.
+where 256 coefficients take about 158 on average. Every ML-KEM-512 case in
+the two ACVP files completes within 172 triples, three blocks being 168;
+keyGen tcId 20 is among the vectors because its matrix needs all 172, so
+its test reads the fourth block and fails if `sample_ntt` squeezes only
+three. A matrix that ran out would keep zeros and fail its test.
+
+The step mappings of `keccak.or` are written out lane by lane, with the
+rho offsets of FIPS 202 Table 2, pi's and chi's coordinates reduced
+modulo 5, and the round constants as a table, rather than as the loops of
+Algorithms 1 to 6: the looped form costs about 96,000 steps a permutation
+against about 21,600 here, and the twelve tests run about 400
+permutations. The tests check every literal.
 
 Measured with `orangec test --stats` and `orangec eval --stats`: one
 Keccak-p[1600, 24] costs about 21,600 steps (about 900 a round), SHA3-512
@@ -212,9 +227,9 @@ SampleNTT 108,000, of which four permutations are 87,000; PRF_3 44,000 and
 SamplePolyCBD_3 a further 37,000; an NTT 51,000, an NTT^-1 57,000 and
 MultiplyNTTs 13,000; ByteEncode_12 6,400. One key generation costs about
 1,220,000 steps, one encapsulation 1,356,000 and one decapsulation
-1,628,000; the permutation accounts for more than half of each (31
-permutations in key generation). The eleven tests use 17,091,100 steps,
-about one second of evaluation.
+1,628,000. The permutation accounts for 55% of key generation (31
+permutations), 48% of encapsulation (30) and 40% of decapsulation (30).
+The twelve tests use 18,311,515 steps, about 1.3 seconds of evaluation.
 
 ## Dissemination
 
@@ -224,7 +239,7 @@ about one second of evaluation.
   pad10*1, SHA3-256, SHA3-512, SHAKE128 and SHAKE256 of FIPS 202. It has no
   tests of its own; the ML-KEM vectors check it.
 - `ml-kem.or`: ML-KEM-512 of FIPS 203, from the hash functions of section
-  4.1 through the internal algorithms of section 6, and the eleven tests.
+  4.1 through the internal algorithms of section 6, and the twelve tests.
 
 ### Running
 
@@ -241,13 +256,16 @@ ML-KEM, revision FIPS203, vector set 42, the files
 `ML-KEM-keyGen-FIPS203/internalProjection.json` and
 `ML-KEM-encapDecap-FIPS203/internalProjection.json`, which carry each
 case's inputs and results together. "Wycheproof" is Project Wycheproof's
-`mlkem_512_test.json`. All cases are ML-KEM-512.
+`mlkem_512_test.json`. All cases are ML-KEM-512. The headers of the two
+ACVP files give vsId 42 and revision FIPS203; the encapDecap file is
+flagged `isSample: true`, the keyGen file `isSample: false`.
 
 | Test | Source | Case |
 | --- | --- | --- |
 | `ACVP keyGen tcId 1: KeyGen_internal(d, z)` | ACVP keyGen, tgId 1 (AFT), tcId 1 | `keygen_internal(d, z)` gives the case's ek and dk |
 | `ACVP keyGen tcId 2: KeyGen_internal(d, z)` | ACVP keyGen, tgId 1, tcId 2 | the same, second case |
 | `ACVP keyGen tcId 3: KeyGen_internal(d, z)` | ACVP keyGen, tgId 1, tcId 3 | the same, third case |
+| `ACVP keyGen tcId 20: KeyGen_internal(d, z)` | ACVP keyGen, tgId 1, tcId 20 | the same; its matrix needs 172 SampleNTT triples, the most of any ML-KEM-512 case in the files |
 | `ACVP encapDecap tcId 1: Encaps_internal(ek, m)` | ACVP encapDecap, tgId 1 (encapsulation, AFT), tcId 1 | `encaps_internal(ek, m)` gives the case's K and c |
 | `ACVP encapDecap tcId 2: Encaps_internal(ek, m)` | ACVP encapDecap, tgId 1, tcId 2 | the same, second case |
 | `ACVP encapDecap tcId 3: Encaps_internal(ek, m)` | ACVP encapDecap, tgId 1, tcId 3 | the same, third case |
@@ -268,26 +286,34 @@ would stop at once, find them equal, and return K' instead of rejecting.
 
 Every expected value in `ml-kem.or` is copied from the named JSON files,
 which the build machine held as data, by a script that printed the
-`hex"..."` lines of each test; none was typed. Before they were written
+`hex"..."` lines of each test; none was typed. The folder and file names of
+the ACVP files are those of the `gen-val/json-files/` folders of NIST's
+`usnistgov/ACVP-Server` repository, and the Wycheproof file has the name and
+format of the files of `C2SP/wycheproof`, but the copies were given to the
+build machine without their upstream commit or release, so which version of
+each repository they come from is not recorded. Before they were written
 down, a second script recomputed every case of the two ACVP files for
 ML-KEM-512 (the 25 keyGen cases, the 25 encapsulation cases and the 10
 decapsulation cases) and Wycheproof's tcId 1 with kyber-py 1.2.0
 (`kyber_py.ml_kem.ML_KEM_512`, its `_keygen_internal`, `_encaps_internal`
-and `_decaps_internal`, an implementation independent of this file), and
-all agreed with the files; for the Wycheproof case the seed was split as
-d = its first 32 bytes and z = its last 32. The same script counted the
-triples SampleNTT consumes for each case's matrix, which fixed the four
-SHAKE128 blocks of `sample_ntt`. The table of `zetas` was printed by a
-script from 17^BitRev7(i) mod 3329 and agrees with kyber-py's table and
-with Appendix A; the 24 round constants of `keccak.or` were printed from
-the register of FIPS 202 Algorithm 5 and agree with the table of the SHA-3
-entry, which was checked against the Keccak team's `CompactFIPS202.py`.
-While the module was written, SHA3-256, SHA3-512, SHAKE128 (four blocks of
-output) and SHAKE256 of `keccak.or` were compared with Python's `hashlib`
-on messages of 33, 34, 64 and 800 bytes; those comparisons are development
-checks, not tests in the file. As a check that the rejection tests can
-fail, a copy of the file whose decapsulation always returned K' failed the
-three implicit-rejection tests and passed the other eight.
+and `_decaps_internal`, an implementation independent of this file), and all
+agreed with the files; for the Wycheproof case the seed was split as d = its
+first 32 bytes and z = its last 32. The same script counted the triples
+SampleNTT consumes for each case's matrix, which fixed the four SHAKE128
+blocks of `sample_ntt`; keyGen tcId 20 was then added to the first three
+keyGen cases because it is the case that needs the most, 172, and a copy of
+the file that squeezed only three blocks failed it alone. The table of
+`zetas` was printed by a script from 17^BitRev7(i) mod 3329 and agrees with
+kyber-py's table (it was not compared with Appendix A on the build machine);
+the 24 round constants of `keccak.or` were printed from the register of FIPS
+202 Algorithm 5 and agree with the table of the SHA-3 entry, which was
+checked against the Keccak team's `CompactFIPS202.py`. While the module was
+written, SHA3-256, SHA3-512, SHAKE128 (four blocks of output) and SHAKE256
+of `keccak.or` were compared with Python's `hashlib` on messages of 33, 34,
+64 and 800 bytes; those comparisons are development checks, not tests in the
+file. As a check that the rejection tests can fail, a copy of the file whose
+decapsulation always returned K' failed the three implicit-rejection tests
+and passed the other nine.
 
 This entry is a new entry, written directly in the current language; it
 has no earlier form whose values it carries over.
@@ -311,13 +337,16 @@ None that prevented a planned vector. What the language still shapes:
   for their 800-byte inputs and G for its 33- and 64-byte inputs.
 - Only ML-KEM-512 is written. ML-KEM-768 and ML-KEM-1024 differ in k,
   eta_1, d_u and d_v; `Vector` and `Matrix` fix k = 2, and the key and
-  ciphertext lengths are written for it. A size parameter for k would make
-  one source of all three.
+  ciphertext lengths are written for it. A `type` declaration cannot take
+  a size, and an array of arrays needs a named row type (`Poly^k^k` is not
+  a type), so `Vector` and `Matrix` cannot be written for a size parameter
+  k; one source for all three parameter sets would need the matrix as a
+  flat `Poly^(k * k)`.
 - The outer algorithms ML-KEM.KeyGen, ML-KEM.Encaps and ML-KEM.Decaps of
   section 7, with their random bit generator and the input checks of
   sections 7.2 and 7.3, are not written; the ACVP `encapsulationKeyCheck`
   and `decapsulationKeyCheck` groups are therefore not reproduced.
 - Cost: one key generation takes about 1.2 million steps and one
-  decapsulation about 1.6 million, so the eleven vectors use 17 million of
-  the 25 million steps an entry should stay under; the remaining ACVP cases
-  would not fit in one file.
+  decapsulation about 1.6 million, so the twelve vectors use 18.3 million
+  of the 25 million steps an entry should stay under; the remaining ACVP
+  cases would not fit in one file.
