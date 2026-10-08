@@ -1,0 +1,147 @@
+// AES-128, the block cipher of FIPS 197, Advanced Encryption Standard (AES)
+// (NIST, November 2001, updated May 2023),
+// https://doi.org/10.6028/NIST.FIPS.197-upd1: the state of section 3.4,
+// multiplication by x of section 4.2, the four transformations of sections
+// 5.1.1 through 5.1.4, the cipher of section 5.1 (Algorithm 1) and the key
+// expansion of section 5.2 (Algorithm 2), for Nk = 4 and Nr = 10. This is the
+// forward cipher only: CCM never inverts the block cipher. The module is
+// read by aes-ccm.or, whose tests exercise it through SP 800-38C's examples;
+// it carries no vectors of its own.
+edition 2026;
+module aes {
+  // Section 3.4: the state is a 4 x 4 array of bytes s[r][c], row r and
+  // column c. A word of the key schedule (section 5.2) is four bytes
+  // [a0, a1, a2, a3], and AddRoundKey adds word c of a round key to
+  // column c.
+  type Row = Word[8]^4;
+  type State = Row^4;
+  type Column = Word[8]^4;
+  type Schedule = Column^44;
+
+  // Section 5.1.1, Table 4: the S-box, one row of the table per line,
+  // SBOX(xy) in row x and column y.
+  spec sbox() -> Word[8]^256 {
+    hex"63 7c 77 7b f2 6b 6f c5 30 01 67 2b fe d7 ab 76" ++
+    hex"ca 82 c9 7d fa 59 47 f0 ad d4 a2 af 9c a4 72 c0" ++
+    hex"b7 fd 93 26 36 3f f7 cc 34 a5 e5 f1 71 d8 31 15" ++
+    hex"04 c7 23 c3 18 96 05 9a 07 12 80 e2 eb 27 b2 75" ++
+    hex"09 83 2c 1a 1b 6e 5a a0 52 3b d6 b3 29 e3 2f 84" ++
+    hex"53 d1 00 ed 20 fc b1 5b 6a cb be 39 4a 4c 58 cf" ++
+    hex"d0 ef aa fb 43 4d 33 85 45 f9 02 7f 50 3c 9f a8" ++
+    hex"51 a3 40 8f 92 9d 38 f5 bc b6 da 21 10 ff f3 d2" ++
+    hex"cd 0c 13 ec 5f 97 44 17 c4 a7 7e 3d 64 5d 19 73" ++
+    hex"60 81 4f dc 22 2a 90 88 46 ee b8 14 de 5e 0b db" ++
+    hex"e0 32 3a 0a 49 06 24 5c c2 d3 ac 62 91 95 e4 79" ++
+    hex"e7 c8 37 6d 8d d5 4e a9 6c 56 f4 ea 65 7a ae 08" ++
+    hex"ba 78 25 2e 1c a6 b4 c6 e8 dd 74 1f 4b bd 8b 8a" ++
+    hex"70 3e b5 66 48 03 f6 0e 61 35 57 b9 86 c1 1d 9e" ++
+    hex"e1 f8 98 11 69 d9 8e 94 9b 1e 87 e9 ce 55 28 df" ++
+    hex"8c a1 89 0d bf e6 42 68 41 99 2d 0f b0 54 bb 16"
+  }
+
+  // Section 4.2: multiplication by x in GF(2^8) modulo
+  // x^8 + x^4 + x^3 + x + 1.
+  spec xtime(b: Word[8]) -> Word[8] {
+    (b << 1) ^ (if (b & 0x80) != 0 { 0x1b } else { 0 })
+  }
+
+  // Section 3.4: the input fills the state column by column,
+  // s[r][c] = in[r + 4c], and the output is read back the same way.
+  spec state(input: Word[8]^16) -> State {
+    for r in 0..4 with s: State = [[0; 4]; 4] {
+      for c in 0..4 with t: State = s { t with [r][c] = input[r + 4 * c] }
+    }
+  }
+
+  spec output(s: State) -> Word[8]^16 {
+    for i in 0..16 with out: Word[8]^16 = [0; 16] { out with [i] = s[i % 4][i / 4] }
+  }
+
+  // Section 5.1.1: SubBytes replaces each byte of the state with its S-box
+  // entry.
+  spec sub_bytes(box: Word[8]^256, s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = box[s[r][c]] }
+    }
+  }
+
+  // Section 5.1.2: ShiftRows, s'[r][c] = s[r][(c + r) mod 4], row r turned
+  // left by r places.
+  spec shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c + r) % 4] }
+    }
+  }
+
+  // Section 5.1.3: MixColumns multiplies each column by the fixed matrix
+  // whose rows are the turns of [02, 03, 01, 01], so that
+  // s'[r][c] = {02}s[r][c] ^ {03}s[r + 1][c] ^ s[r + 2][c] ^ s[r + 3][c],
+  // rows modulo 4, with {02}b = xtime(b) and {03}b = xtime(b) ^ b.
+  spec mix_columns(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t {
+        let b1: Word[8] = s[(r + 1) % 4][c];
+        u with [r][c] = xtime(s[r][c]) ^ (xtime(b1) ^ b1) ^ s[(r + 2) % 4][c] ^ s[(r + 3) % 4][c]
+      }
+    }
+  }
+
+  // Section 5.1.4: AddRoundKey adds word c of the round key to column c.
+  spec add_round_key(s: State, k: Column^4) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][c] ^ k[c][r] }
+    }
+  }
+
+  // Section 5.2: RotWord and SubWord on a word [a0, a1, a2, a3], and the
+  // sum of two words.
+  spec rot_word(a: Column) -> Column { [a[1], a[2], a[3], a[0]] }
+
+  spec sub_word(box: Word[8]^256, a: Column) -> Column {
+    [box[a[0]], box[a[1]], box[a[2]], box[a[3]]]
+  }
+
+  spec xor_word(a: Column, b: Column) -> Column {
+    [a[0] ^ b[0], a[1] ^ b[1], a[2] ^ b[2], a[3] ^ b[3]]
+  }
+
+  // Section 5.2, Table 5: rc_j = x^(j - 1) in GF(2^8) for j = 1 through 10,
+  // and Rcon[j] = [rc_j, 00, 00, 00].
+  spec rcon() -> Word[8]^10 { hex"01 02 04 08 10 20 40 80 1b 36" }
+
+  // Section 5.2, Algorithm 2: KEYEXPANSION(key) for Nk = 4, into 44 words.
+  // The key fills the first four words; each later word w[i] is w[i - 4]
+  // plus a temp that is w[i - 1], put through RotWord, SubWord and
+  // Rcon[i / 4] when i is a multiple of 4.
+  spec key_expansion(key: Word[8]^16) -> Schedule {
+    let box: Word[8]^256 = sbox();
+    let rc: Word[8]^10 = rcon();
+    let first: Schedule = for i in 0..4 with w: Schedule = [[0; 4]; 44] {
+      w with [i] = key[4 * i..4 * i + 4]
+    };
+    for i in 4..44 with w: Schedule = first {
+      let temp: Column = if (i % 4) == 0 {
+        xor_word(sub_word(box, rot_word(w[i - 1])), [rc[(i / 4) - 1], 0, 0, 0])
+      } else {
+        w[i - 1]
+      };
+      w with [i] = xor_word(w[i - 4], temp)
+    }
+  }
+
+  // Section 5.1, Algorithm 1: CIPHER(in, 10, w), round r adding words 4r
+  // through 4r + 3 of the expanded key. The final round has no MixColumns.
+  spec cipher(input: Word[8]^16, w: Schedule) -> Word[8]^16 {
+    let box: Word[8]^256 = sbox();
+    let first: State = add_round_key(state(input), w[0..4]);
+    let middle: State = for round in 1..10 with s: State = first {
+      add_round_key(mix_columns(shift_rows(sub_bytes(box, s))), w[4 * round..4 * round + 4])
+    };
+    output(add_round_key(shift_rows(sub_bytes(box, middle)), w[40..44]))
+  }
+
+  // Section 5: AES-128(in, key) = CIPHER(in, 10, KEYEXPANSION(key)).
+  spec aes128(key: Word[8]^16, input: Word[8]^16) -> Word[8]^16 {
+    cipher(input, key_expansion(key))
+  }
+}
