@@ -11,63 +11,64 @@
 // cases of Botan's camellia.vec.
 edition 2026;
 module camellia {
-  // Section 2.1: a 128-bit value (M, C, KL, KR, KA, KB) is held as its two
-  // 64-bit halves, [v >> 64, v & MASK64]; in the data randomizing part these
-  // are [D1, D2].
+  // Section 2.1 (Terminology): a 128-bit value (M, C, KL, KR, KA, KB) is
+  // held as its two 64-bit halves, [v >> 64, v & MASK64]; in the data
+  // randomizing part these are [D1, D2].
   type U128 = Word[64]^2;
 
-  // Section 2.2: the subkeys of one key, as the three arrays kw1 through
-  // kw4, k1 through k18 (or k24), and ke1 through ke4 (or ke6). The RFC
-  // lists them in the order they are used; the arrays keep each family in
-  // the order of its index.
+  // Section 2.2 (Key Scheduling Part): the subkeys of one key, as the
+  // three arrays kw1 through kw4, k1 through k18 (or k24), and ke1 through
+  // ke4 (or ke6). The RFC lists them in the order they are used; the arrays
+  // keep each family in the order of its index.
   type Subkeys18 = (Word[64]^4, Word[64]^18, Word[64]^4);
   type Subkeys24 = (Word[64]^4, Word[64]^24, Word[64]^6);
 
-  // Section 2.4.3: SBOX1, entry 16 r + c in row r and column c, in decimal
-  // as the RFC prints it.
+  // Section 2.4.3 (S-boxes): SBOX1, entry 16 r + c in row r and column c,
+  // in the RFC's sixteen rows of sixteen. The RFC prints the entries in
+  // decimal (SBOX1[0x3d] = 86); here each row is a hex"..." byte string, so
+  // the table is one byte string of 256 entries, joined row by row with ++.
   spec sbox1() -> Word[8]^256 {
-    [
-      112, 130,  44, 236, 179,  39, 192, 229, 228, 133,  87,  53, 234,  12, 174,  65,  // 00
-       35, 239, 107, 147,  69,  25, 165,  33, 237,  14,  79,  78,  29, 101, 146, 189,  // 10
-      134, 184, 175, 143, 124, 235,  31, 206,  62,  48, 220,  95,  94, 197,  11,  26,  // 20
-      166, 225,  57, 202, 213,  71,  93,  61, 217,   1,  90, 214,  81,  86, 108,  77,  // 30
-      139,  13, 154, 102, 251, 204, 176,  45, 116,  18,  43,  32, 240, 177, 132, 153,  // 40
-      223,  76, 203, 194,  52, 126, 118,   5, 109, 183, 169,  49, 209,  23,   4, 215,  // 50
-       20,  88,  58,  97, 222,  27,  17,  28,  50,  15, 156,  22,  83,  24, 242,  34,  // 60
-      254,  68, 207, 178, 195, 181, 122, 145,  36,   8, 232, 168,  96, 252, 105,  80,  // 70
-      170, 208, 160, 125, 161, 137,  98, 151,  84,  91,  30, 149, 224, 255, 100, 210,  // 80
-       16, 196,   0,  72, 163, 247, 117, 219, 138,   3, 230, 218,   9,  63, 221, 148,  // 90
-      135,  92, 131,   2, 205,  74, 144,  51, 115, 103, 246, 243, 157, 127, 191, 226,  // a0
-       82, 155, 216,  38, 200,  55, 198,  59, 129, 150, 111,  75,  19, 190,  99,  46,  // b0
-      233, 121, 167, 140, 159, 110, 188, 142,  41, 245, 249, 182,  47, 253, 180,  89,  // c0
-      120, 152,   6, 106, 231,  70, 113, 186, 212,  37, 171,  66, 136, 162, 141, 250,  // d0
-      114,   7, 185,  85, 248, 238, 172,  10,  54,  73,  42, 104,  60,  56, 241, 164,  // e0
-       64,  40, 211, 123, 187, 201,  67, 193,  21, 227, 173, 244, 119, 199, 128, 158,  // f0
-    ]
+       hex"70 82 2c ec b3 27 c0 e5 e4 85 57 35 ea 0c ae 41"  // 00
+    ++ hex"23 ef 6b 93 45 19 a5 21 ed 0e 4f 4e 1d 65 92 bd"  // 10
+    ++ hex"86 b8 af 8f 7c eb 1f ce 3e 30 dc 5f 5e c5 0b 1a"  // 20
+    ++ hex"a6 e1 39 ca d5 47 5d 3d d9 01 5a d6 51 56 6c 4d"  // 30
+    ++ hex"8b 0d 9a 66 fb cc b0 2d 74 12 2b 20 f0 b1 84 99"  // 40
+    ++ hex"df 4c cb c2 34 7e 76 05 6d b7 a9 31 d1 17 04 d7"  // 50
+    ++ hex"14 58 3a 61 de 1b 11 1c 32 0f 9c 16 53 18 f2 22"  // 60
+    ++ hex"fe 44 cf b2 c3 b5 7a 91 24 08 e8 a8 60 fc 69 50"  // 70
+    ++ hex"aa d0 a0 7d a1 89 62 97 54 5b 1e 95 e0 ff 64 d2"  // 80
+    ++ hex"10 c4 00 48 a3 f7 75 db 8a 03 e6 da 09 3f dd 94"  // 90
+    ++ hex"87 5c 83 02 cd 4a 90 33 73 67 f6 f3 9d 7f bf e2"  // a0
+    ++ hex"52 9b d8 26 c8 37 c6 3b 81 96 6f 4b 13 be 63 2e"  // b0
+    ++ hex"e9 79 a7 8c 9f 6e bc 8e 29 f5 f9 b6 2f fd b4 59"  // c0
+    ++ hex"78 98 06 6a e7 46 71 ba d4 25 ab 42 88 a2 8d fa"  // d0
+    ++ hex"72 07 b9 55 f8 ee ac 0a 36 49 2a 68 3c 38 f1 a4"  // e0
+    ++ hex"40 28 d3 7b bb c9 43 c1 15 e3 ad f4 77 c7 80 9e"  // f0
   }
 
   // Section 2.4.3: SBOX2, SBOX3 and SBOX4 are defined from SBOX1, so only
-  // SBOX1 is a table. Each takes the table s1 that the F-function reads once.
-  spec sbox2(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x] <<< 1 }
-  spec sbox3(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x] <<< 7 }
-  spec sbox4(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x <<< 1] }
+  // SBOX1 is a table.
+  spec sbox2(x: Word[8]) -> Word[8] { sbox1()[x] <<< 1 }
+  spec sbox3(x: Word[8]) -> Word[8] { sbox1()[x] <<< 7 }
+  spec sbox4(x: Word[8]) -> Word[8] { sbox1()[x <<< 1] }
 
-  // Section 2.4.1: the F-function. The RFC's t1 = x >> 56 through
+  // Section 2.4.1 (F-function). The RFC's t1 = x >> 56 through
   // t8 = x & MASK8 are the eight bytes of x, most significant first, here
   // x[0] through x[7]; its t1 = SBOX1[t1] through t8 = SBOX1[t8] bind t1
   // through t8, and F_OUT = (y1 << 56) | ... | y8 joins y1 through y8 the
-  // same way round.
+  // same way round. The t1 to t8 lookups are the S step and the y1 to y8
+  // equations the P step of F = P(S(x)); the RFC writes both inside F, so
+  // there is no separate S or P spec.
   spec f(f_in: Word[64], ke: Word[64]) -> Word[64] {
-    let s1: Word[8]^256 = sbox1();
     let x: Word[8]^8 = (f_in ^ ke) as big Word[8]^8;
-    let t1: Word[8] = s1[x[0]];
-    let t2: Word[8] = sbox2(s1, x[1]);
-    let t3: Word[8] = sbox3(s1, x[2]);
-    let t4: Word[8] = sbox4(s1, x[3]);
-    let t5: Word[8] = sbox2(s1, x[4]);
-    let t6: Word[8] = sbox3(s1, x[5]);
-    let t7: Word[8] = sbox4(s1, x[6]);
-    let t8: Word[8] = s1[x[7]];
+    let t1: Word[8] = sbox1()[x[0]];
+    let t2: Word[8] = sbox2(x[1]);
+    let t3: Word[8] = sbox3(x[2]);
+    let t4: Word[8] = sbox4(x[3]);
+    let t5: Word[8] = sbox2(x[4]);
+    let t6: Word[8] = sbox3(x[5]);
+    let t7: Word[8] = sbox4(x[6]);
+    let t8: Word[8] = sbox1()[x[7]];
     let y1: Word[8] = t1 ^ t3 ^ t4 ^ t6 ^ t7 ^ t8;
     let y2: Word[8] = t1 ^ t2 ^ t4 ^ t5 ^ t7 ^ t8;
     let y3: Word[8] = t1 ^ t2 ^ t3 ^ t5 ^ t6 ^ t8;
@@ -79,7 +80,8 @@ module camellia {
     [y1, y2, y3, y4, y5, y6, y7, y8] as big Word[64]
   }
 
-  // Section 2.4.2: a 64-bit value as its 32-bit halves, (v >> 32, v & MASK32).
+  // Section 2.4.2 (FL- and FLINV-functions): a 64-bit value as its 32-bit
+  // halves, (v >> 32, v & MASK32).
   spec halves(v: Word[64]) -> (Word[32], Word[32]) {
     let h: Word[32]^2 = v as big Word[32]^2;
     (h[0], h[1])
@@ -231,9 +233,9 @@ module camellia {
     subkeys_192_256(key[0..16] as big U128, key[16..32] as big U128)
   }
 
-  // Section 2.3.1, 128-bit keys: M = (D1 << 64) | D2, prewhitening with kw1
-  // and kw2, 18 rounds with FL and FLINV after rounds 6 and 12,
-  // postwhitening, and C = (D2 << 64) | D1.
+  // Section 2.3.1 (Data Randomizing Part, encryption for 128-bit keys):
+  // M = (D1 << 64) | D2, prewhitening with kw1 and kw2, 18 rounds with FL
+  // and FLINV after rounds 6 and 12, postwhitening, and C = (D2 << 64) | D1.
   spec data_randomizing_128(m: U128, s: Subkeys18) -> U128 {
     let kw: Word[64]^4 = s.0;
     let k: Word[64]^18 = s.1;
@@ -247,8 +249,9 @@ module camellia {
     [d18[1] ^ kw[2], d18[0] ^ kw[3]]
   }
 
-  // Section 2.3.2, 192- and 256-bit keys: the same with 24 rounds and FL
-  // and FLINV after rounds 6, 12 and 18.
+  // Section 2.3.2 (encryption for 192- and 256-bit keys): the same with 24
+  // rounds and FL and FLINV after rounds 6, 12 and 18. The RFC writes the
+  // two procedures out one after the other, and so does this file.
   spec data_randomizing_192_256(m: U128, s: Subkeys24) -> U128 {
     let kw: Word[64]^4 = s.0;
     let k: Word[64]^24 = s.1;
@@ -264,8 +267,8 @@ module camellia {
     [d24[1] ^ kw[2], d24[0] ^ kw[3]]
   }
 
-  // Section 2.3.3: an array of subkeys in the reverse order, k1 with kn and
-  // so on.
+  // Section 2.3.3 (Decryption): an array of subkeys in the reverse order,
+  // k1 with kn and so on.
   spec reversed[n in 4..25](x: Word[64]^n) -> Word[64]^n {
     for i in 0..(n) with r: Word[64]^n = x { r with [i] = x[n - 1 - i] }
   }

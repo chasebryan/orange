@@ -1,0 +1,75 @@
+// The Ascon permutation Ascon-p[rnd] of NIST SP 800-232, "Ascon-Based
+// Lightweight Cryptography Standards for Constrained Devices: Authenticated
+// Encryption, Hash, and Extendable Output Functions" (final, August 2025,
+// https://doi.org/10.6028/NIST.SP.800-232), section 3, written as the
+// standard writes it: the 320-bit state as five 64-bit words S0 through S4,
+// and each round the constant-addition layer p_C (3.1), the bitsliced 5-bit
+// S-box p_S (3.2) and the linear diffusion layer p_L (3.3). The module is
+// read by ascon.or (Ascon-AEAD128, with Ascon-p[12] and Ascon-p[8]) and by
+// ascon-hash256.or (Ascon-Hash256, with Ascon-p[12]), whose tests exercise
+// it; it carries no vectors of its own.
+edition 2026;
+module permutation {
+  // Section 3: the state S = S0 || S1 || S2 || S3 || S4, five 64-bit words.
+  // Section 2 loads bytes into a word little-endian, the first byte in the
+  // least significant position, so that bit 0 of the state is bit 0 of the
+  // first byte; the modes do that with `as little`.
+  type State = Word[64]^5;
+
+  // Section 3.1, the constant-addition layer p_C: the round constants of
+  // the twelve rounds of Ascon-p[12], c_i = ((0xf - i) << 4) | i for i = 0
+  // through 11. The standard's table of constants lists sixteen so that up
+  // to sixteen rounds are defined; Ascon-p[12] uses the last twelve, which
+  // are these, and Ascon-p[8] the last eight, indices 4 through 11 here.
+  // The values are those of permutations.h of the reference implementation.
+  spec round_constants() -> Word[8]^12 { hex"f0 e1 d2 c3 b4 a5 96 87 78 69 5a 4b" }
+
+  // Section 3.1: S2 <- S2 ^ c_i.
+  spec constant_addition(s: State, c: Word[8]) -> State {
+    s with [2] = s[2] ^ (c as Word[64])
+  }
+
+  // Section 3.2, the substitution layer p_S: the 5-bit S-box applied to
+  // the 64 columns of the state at once, written as the standard's
+  // bitsliced sequence of xor, and and not, with x0 through x4 the input
+  // words and t0 through t4 the intermediate ones, never as a table.
+  spec substitution_layer(s: State) -> State {
+    let x0: Word[64] = s[0] ^ s[4];
+    let x1: Word[64] = s[1];
+    let x2: Word[64] = s[2] ^ s[1];
+    let x3: Word[64] = s[3];
+    let x4: Word[64] = s[4] ^ s[3];
+    let t0: Word[64] = x0 ^ (~x1 & x2);
+    let t1: Word[64] = x1 ^ (~x2 & x3);
+    let t2: Word[64] = x2 ^ (~x3 & x4);
+    let t3: Word[64] = x3 ^ (~x4 & x0);
+    let t4: Word[64] = x4 ^ (~x0 & x1);
+    [t0 ^ t4, t1 ^ t0, ~t2, t3 ^ t2, t4]
+  }
+
+  // Section 3.3, the linear diffusion layer p_L: S_i <- Sigma_i(S_i) with
+  // Sigma_i(x) = x ^ (x >>> r1) ^ (x >>> r2) and the rotation pairs (19, 28),
+  // (61, 39), (1, 6), (10, 17) and (7, 41), rotations to the right.
+  spec linear_diffusion_layer(s: State) -> State {
+    [
+      s[0] ^ (s[0] >>> 19) ^ (s[0] >>> 28),
+      s[1] ^ (s[1] >>> 61) ^ (s[1] >>> 39),
+      s[2] ^ (s[2] >>> 1) ^ (s[2] >>> 6),
+      s[3] ^ (s[3] >>> 10) ^ (s[3] >>> 17),
+      s[4] ^ (s[4] >>> 7) ^ (s[4] >>> 41),
+    ]
+  }
+
+  // Section 3: one round p = p_L o p_S o p_C with the constant c_i.
+  spec round(s: State, c: Word[8]) -> State {
+    linear_diffusion_layer(substitution_layer(constant_addition(s, c)))
+  }
+
+  // Section 3: Ascon-p[rnd], rnd rounds with the last rnd constants, c_(12
+  // - rnd) through c_11 here: Ascon-p[12] runs all twelve and Ascon-p[8]
+  // the last eight, c_4 through c_11.
+  spec ascon_p[rnd in 1..13](s: State) -> State {
+    let c: Word[8]^12 = round_constants();
+    for i in (12 - rnd)..12 with t: State = s { round(t, c[i]) }
+  }
+}

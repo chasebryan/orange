@@ -43,7 +43,9 @@ randomizing part carries [D1, D2] and a block is read and written with
 k1 through k18 (or k24) and ke1 through ke4 (or ke6), of the type
 `Subkeys18` or `Subkeys24`. The S-box section prints SBOX1 and defines the
 other three from it, and the file does the same: `sbox1` is the RFC's table,
-and `sbox2`, `sbox3` and `sbox4` are its three definitions.
+and `sbox2`, `sbox3` and `sbox4` are its three definitions. The F-function
+holds the RFC's S and P steps inline, as the RFC writes it, so there is no
+separate S or P spec.
 
 | Standard section | Orange spec |
 | --- | --- |
@@ -101,15 +103,18 @@ depends on the mode and on nonce or IV discipline, not on the cipher.
 ### What the Orange rendering shows
 
 The only data-dependent operation in Camellia is the S-box lookup. In the
-Orange file it is written as the RFC writes it: `s1[x[0]]` for SBOX1[t1],
-`s1[x] <<< 1` for SBOX2, `s1[x] <<< 7` for SBOX3 and `s1[x <<< 1]` for
-SBOX4, a byte indexing the 256-entry table, which the checker proves in
-range. The table is `sbox1`, a literal of 256 decimal entries laid out in the
-RFC's sixteen rows of sixteen, so it can be read against section 2.4.3 row by
-row. Everything else in the cipher is xor, and, or and rotation on
-`Word[64]` and `Word[32]`, one to one with the RFC's text, and no step
-branches on data: the one conditional, in `rotl128`, tests the rotation
-amount, a constant of the subkey tables.
+Orange file it is written as the RFC writes it: `sbox1()[x[0]]` for SBOX1[t1],
+and `sbox2(x)`, `sbox3(x)` and `sbox4(x)` defined as `sbox1()[x] <<< 1`,
+`sbox1()[x] <<< 7` and `sbox1()[x <<< 1]`, a byte indexing the 256-entry
+table, which the checker proves in range. The table is `sbox1`, laid out in
+the RFC's sixteen rows of sixteen with the RFC's row labels, each row a
+`hex"..."` string of 16 bytes and the rows joined with `++`. The RFC prints
+the entries in decimal; the rows are in hexadecimal because a byte string
+costs one step to build, where a literal of 256 decimal entries costs 513.
+Everything else in the cipher is xor, and, or and rotation on `Word[64]` and
+`Word[32]`, one to one with the RFC's text, and no step branches on data: the
+one conditional, in `rotl128`, tests the rotation amount, a constant of the
+subkey tables.
 
 Byte orders are `as big`. The F-function splits `F_IN ^ KE` into its eight
 bytes, t1 the most significant, with `as big Word[8]^8` and joins y1 through
@@ -137,20 +142,18 @@ parameter over both subkey layouts, exchanges kw1 and kw2 with kw3 and kw4
 and reverses k and ke with `reversed`, one spec with a size parameter for
 the arrays of 4, 6, 18 and 24 subkeys.
 
-Measured under `orangec test --stats` and `orangec eval --stats`: an
-F-function costs 681 steps, of which 513 build the decimal SBOX1 literal
-(a 256-element array literal costs one step per element and one per
-literal), which each F call builds once and reads eight times; FL and FLINV
-cost 44 each and a 128-bit rotation 47. A round costs about 690 steps.
-The key schedule costs 4,006 steps for a 128-bit key (four F calls and 26
-rotations) and about 5,790 for a 192- or 256-bit key (six F calls and 34
-rotations). The data randomizing part costs 12,761 steps for 18 rounds and
-17,034 for 24, and reversing the subkeys 312 or 416. One 128-bit-key block
-costs 16,772 to 16,775 steps to encrypt and 17,084 to decrypt; a 192- or
-256-bit-key block 22,823 to 22,829 to encrypt and 23,239 to 23,244 to
-decrypt. The eight tests together use 165,594 steps. About two thirds of
-each block is the table literal; a `hex"..."` table would cost one step to
-build, but would not read as the RFC prints it.
+Measured under `orangec test --stats`: building the SBOX1 table costs 58
+steps (sixteen row literals and fifteen joins), and every lookup builds it
+again, so an F-function costs about 600 steps, of which the eight table
+builds are about 470; FL and FLINV cost 43 each and a 128-bit rotation 47.
+A round costs about 610 steps. The key schedule costs about 3,690 steps for
+a 128-bit key (four F calls and 26 rotations) and about 5,310 for a 192- or
+256-bit key (six F calls and 34 rotations). The data randomizing part costs
+about 11,340 steps for 18 rounds and 15,140 for 24, and reversing the
+subkeys 312 or 416. One 128-bit-key block costs 15,034 to 15,037 steps to
+encrypt and 15,346 to decrypt; a 192- or 256-bit-key block 20,453 to 20,459
+to encrypt and 20,869 to 20,874 to decrypt. The eight tests together use
+148,530 steps.
 
 Not expressed: constant-time behaviour (a table indexed by a secret byte is
 the classic cache-timing pattern, and the lookup is a specification of a
@@ -228,13 +231,18 @@ is carried over byte for byte from the first form, where each was a
 `<name>_expected` spec of bytes, and every key and plaintext is the first
 form's; a script compared each `hex"..."` literal of the new tests with the
 value the first form's spec evaluates to, and no vector was added or
-dropped. The decimal SBOX1 literal was printed by script from the first
-form's packed words and checked equal to them, entry by entry, by evaluating
-both forms; the Sigma constants are unchanged. The first form numbered the
-P-function 2.4.5 and FLINV and the S-boxes 2.4.3 and 2.4.4; the rewrite
-cites the P step inside the F-function of 2.4.1, FL and FLINV together in
-2.4.2 and the S-boxes in 2.4.3, from the rewriter's knowledge of the RFC,
-which could not be read from the build machine this time either.
+dropped. The SBOX1 rows were printed by script from the first form's packed
+words and checked equal to them, entry by entry, by evaluating both forms;
+the Sigma constants are unchanged. The first form cited FLINV, the S-function
+and the P-function as sections 2.4.3, 2.4.4 and 2.4.5. The rewrite follows
+the section layout of RFC 3713 as its authors recall it: 2.3.1 and 2.3.2 for
+encryption with 128-bit and with 192- or 256-bit keys, 2.3.3 for
+decryption, 2.4.1 for the F-function with its S and P steps inside, 2.4.2
+for the FL- and FLINV-functions, and 2.4.3 for the S-boxes. Each citation
+in `camellia.or` names the section's title as well as its number. The RFC
+could not be read from the build machine this time either, so these
+numbers, and the decimal layout of its SBOX1 table, were not checked
+against its text.
 
 This entry is a reference evaluation of RFC 3713 under `orangec test`. It
 makes no constant-time, side-channel, performance or certification claim,
@@ -243,9 +251,11 @@ and it is not a corpus entry in the sense of The Orange Book chapter 12.
 ## Gaps
 
 - There are no module-level constants: a parameterless spec such as the
-  SBOX1 table is evaluated again at every call, so each F call builds the
-  256-entry literal, about two thirds of the cost of a block. Passing the
-  table down from each block would avoid it at the price of a parameter on
-  F that the RFC's F(F_IN, KE) does not have.
+  SBOX1 table is evaluated again at every call, so each of the eight
+  lookups in an F call builds the table again, about two thirds of the
+  cost of a block. Reading the table once per F call and passing it to
+  `sbox2`, `sbox3` and `sbox4` measures 66,882 steps for the eight tests
+  instead of 148,530, at the price of a table parameter that the RFC's
+  SBOX2[x] = SBOX1[x] <<< 1 does not have; the file keeps the RFC's form.
 - There is no 128-bit word, so a 128-bit value is two 64-bit halves and its
   rotation `<<<` is the spec `rotl128`.
