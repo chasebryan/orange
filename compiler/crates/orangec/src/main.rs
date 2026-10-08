@@ -49,6 +49,7 @@ const USAGE: &str = concat!(
     "                      --witness <FILE> [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]\n",
     "                       [--bits <N[,M]> | --linear [--word <W>]]\n",
+    "                       [--layer <MODULE::NAME> --rounds <R>]\n",
     "                       [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
@@ -81,6 +82,8 @@ const USAGE: &str = concat!(
     "      --linear          Analyze a linear layer over GF(2) [analyze only]\n",
     "      --word <W>        Word width of a --linear layer [default: element or 8]\n",
     "      --table <TABLE>   Print values, ddt, lat, bct, anf or matrix [analyze only]\n",
+    "      --layer <M::N>    Bound trails of S-box rounds with this layer [analyze only]\n",
+    "      --rounds <R>      Rounds of trails --layer bounds, 1 to 32 [analyze only]\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -2425,7 +2428,7 @@ fn parse_arguments_with_path_reservation(
                     )?;
                     continue;
                 }
-                Some(name @ ("--bits" | "--word" | "--table")) => {
+                Some(name @ ("--bits" | "--word" | "--table" | "--layer" | "--rounds")) => {
                     let value = arguments
                         .next()
                         .ok_or_else(|| format!("option `{name}` requires a value"))?;
@@ -2482,8 +2485,10 @@ fn parse_arguments_with_path_reservation(
                         )?;
                         continue;
                     }
-                    if let Some((name @ ("--bits" | "--word" | "--table"), value)) =
-                        value.split_once('=')
+                    if let Some((
+                        name @ ("--bits" | "--word" | "--table" | "--layer" | "--rounds"),
+                        value,
+                    )) = value.split_once('=')
                     {
                         analysis_options.set(name, OsStr::new(value))?;
                         continue;
@@ -2508,6 +2513,8 @@ fn parse_arguments_with_path_reservation(
                     b"--bits=",
                     b"--word=",
                     b"--table=",
+                    b"--layer=",
+                    b"--rounds=",
                 ]
                 .iter()
                 .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>

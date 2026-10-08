@@ -14,17 +14,20 @@ function, its algebraic degree, the boomerang connectivity of a permutation,
 the implicit equations its graph satisfies, and its cycle structure. With
 `--linear` it reads the matrix of a linear layer back from the function and
 reports its branch numbers, whether it is maximum distance separable, and the
-field its blocks multiply in. The function is the Orange source itself, so
-the numbers describe the function the program computes, not a table copied
-beside it.
+field its blocks multiply in. With `--layer` and `--rounds` it builds a round
+of a substitution-permutation network from an S-box and a layer and finds,
+by complete search, the fewest active S-boxes and the best trail over each
+number of rounds. The function is the Orange source itself, so the numbers
+describe the function the program computes, not a table copied beside it.
 
 Every property of an S-box or Boolean function is computed by complete
 enumeration of the function's values, and every property of a layer from its
 exact matrix, so every reported number is exact for that function. None is
-sampled, estimated or bounded, and none is a claim about the security of a
-cipher that uses the function. The one statement that is not complete is
-named as such: a layer of more than 16 bits is checked to be affine only up
-to its terms of degree 2. The implemented language marker remains S3u; this
+sampled or estimated, and none is a claim about the security of a cipher
+that uses the function. Trail results are exact minima over every trail of
+the network, which bound single trails and nothing more. The one statement
+that is not complete is named as such: a layer of more than 16 bits is
+checked to be affine only up to its terms of degree 2. The implemented language marker remains S3u; this
 tool adds no syntax and changes no meaning of any program.
 
 ## Command
@@ -32,6 +35,7 @@ tool adds no syntax and changes no meaning of any program.
 ```text
 orangec analyze --function MODULE::NAME [--instance N[,N...]] [--bits N[,M]] [--table TABLE] [--steps N] [--stats] SOURCE|-
 orangec analyze --function MODULE::NAME [--instance N[,N...]] --linear [--word W] [--table matrix] [--steps N] [--stats] SOURCE|-
+orangec analyze --function MODULE::NAME [--instance N[,N...]] [--bits N] --layer MODULE::NAME --rounds R [--steps N] [--stats] SOURCE|-
 ```
 
 The source and its imported modules must pass complete lexical, syntactic
@@ -45,12 +49,13 @@ does not exist at that instance is `ORC1016`. Named tests are never selected.
 (default 1,048,576); each input is a fresh call with the whole budget.
 `--stats` writes the number of calls, the total steps and the steps of the
 largest call to standard error. `--edition 2026` and `--` keep their
-ordinary meanings. `--bits`, `--linear`, `--word` and `--table` belong to
-`analyze` alone, and each of them, like `--function`, `--instance` and
-`--steps`, may appear at most once. `--bits` does not combine with `--linear`,
-`--word` requires it, and with it `--table` takes only `matrix`, which in turn
-requires it. A malformed, misplaced or conflicting option is a usage error
-with exit status 2.
+ordinary meanings. `--bits`, `--linear`, `--word`, `--table`, `--layer` and
+`--rounds` belong to `analyze` alone, and each of them, like `--function`,
+`--instance` and `--steps`, may appear at most once. `--bits` does not combine
+with `--linear`, `--word` requires it, and with it `--table` takes only
+`matrix`, which in turn requires it. `--layer` and `--rounds` require each
+other and combine with neither `--linear` nor `--table`. A malformed,
+misplaced or conflicting option is a usage error with exit status 2.
 
 ## Analyzed functions
 
@@ -303,6 +308,131 @@ would exceed 2^32 operations is reported as not computed, with its cost, as
 above. So a 128-bit layer of 16 bytes is searched to weight 2 in about 2^24
 operations, while words of 32 or more bits are out of reach.
 
+## Substitution-permutation networks
+
+`--layer MODULE::NAME --rounds R` analyzes rounds of a key-alternating
+substitution-permutation network: the function selected by `--function` is
+its S-box, applied to every word of the state, and the function `--layer`
+names is its linear layer. For each number of rounds r from 1 through R it
+reports the least number of active S-boxes and the least weight of any
+differential trail and of any linear trail, and it reports how many rounds
+the network takes to diffuse every input bit into every output bit.
+
+### The network
+
+The S-box is read as in [Analyzed functions](#analyzed-functions), `--bits N`
+selecting its low N bits. It must be a permutation of s bits with
+2 ≤ s ≤ 8. A wider or narrower function is `ORC1017`, "an S-box of s bits is
+outside the 2 to 8 bits of a trail search", and one that is not a
+permutation is `ORC1017`, "`NAME` is not a permutation of s bits".
+
+The layer is a function with no size or type parameters; a name that selects
+none is `ORC1016`, "no function `MODULE::NAME` without size or type
+parameters". It is read and checked as in [Analyzed layers](#analyzed-layers)
+and [Reading the matrix](#reading-the-matrix), with the note "`--layer`
+selects the linear layer of a round, a map x -> M x + c" on a function that
+is not affine. Its n bits form k = n / s words, word c holding bits c s
+through c s + s - 1, and S is applied to each; an n that s does not divide is
+`ORC1017`. M must be invertible over GF(2), or a nonzero difference could
+vanish between rounds; a singular M is `ORC1017`, "`NAME` is not invertible
+over GF(2)". The layer's constant c, and any round key added between rounds,
+change no difference and no mask, so neither appears in the results.
+
+### Trails
+
+A differential trail over r rounds is a sequence of differences
+a_1 → b_1, a_2 → b_2, …, a_r → b_r with a_1 ≠ 0, a_(i+1) = M b_i, and
+DDT(a_i[c], b_i[c]) ≠ 0 at every word c. A linear trail is a sequence of
+masks with W(a_i[c], b_i[c]) ≠ 0 at every word c and
+a_(i+1) = (M^-1)^T b_i, since a · (M z) = (M^T a) · z. An S-box is active in
+round i when its word of a_i is nonzero.
+
+One S-box's transition has weight s - log2 DDT(a, b), for a probability of
+2^-weight, or s - log2 |W(a, b)|, for a correlation of ±2^-weight. The
+weight of a trail is the sum over its active S-boxes: the probability of a
+differential trail is the product of its transitions' probabilities, and the
+correlation of a linear trail the product of theirs. Weights are integers
+only when every nonzero DDT entry, or every nonzero |W(a, b)|, is a power of
+two. Otherwise only active S-boxes are counted, and the output says so.
+
+### Full diffusion
+
+Output bit i of a round depends on input bit j when M adds into bit i some
+output bit of the S-box at word c of bit j whose value changes with bit j at
+some input of the S-box. **full diffusion** is the least r such that after r
+rounds every output bit depends, through this relation, on every input bit:
+the least r for which the r-th Boolean power of the n × n relation has every
+entry set. No row or column of the relation is empty, so once a power is
+full every later one is, and if any power is, one of at most
+(n - 1)^2 + 1 is, by Wielandt's bound. It is found by repeated squaring and
+a binary search, and reads `never` when no power is full, as for a layer
+that keeps each S-box's bits within a fixed set of S-boxes.
+
+### Search
+
+The least cost of a trail of r rounds, B(r), counting either active S-boxes
+or weight, is found by the search of Matsui (EUROCRYPT 1994) for the best
+trail. B(1) is the cheapest single transition. For r ≥ 2 the search tries
+each target T from B(r - 1) + B(1) upward, since every r-round trail is an
+(r - 1)-round trail and one more round with a nonzero input, and B(r) is the
+first T that some trail meets. Under a target, trails are built round by
+round:
+
+- round 1 is chosen by its output b_1 ≠ 0, one nonzero word at a time, each
+  costing the cheapest transition into it, which exists because S is a
+  permutation;
+- each middle round tries the transitions of each active word, cheapest
+  first;
+- the last round costs the cheapest transition out of each active word.
+
+A partial trail is abandoned once its cost, the cheapest transitions of the
+remaining active words of its round, and a lower bound on the rounds after
+it exceed T. After round i of r with w active words, the later rounds cost at
+least B(r - i), and at least B(1) for each of the max(1, β - w) or more
+active words of round i + 1 plus B(r - i - 1), where β is the differential
+branch number of M over s-bit words, or for masks the linear one. β is
+computed as in [Branch number search](#branch-number-search) when s is a
+power of two and its search is within limits, and taken as 0 otherwise. A
+search abandoned on these bounds has no trail of cost T, so the result is
+the exact minimum.
+
+Each of the four searches, active S-boxes and weight for differential and
+for linear trails, counts its steps: every round entered and every
+transition tried. A search that passes 2^28 steps stops. Its round and every
+later one read `-`, and a line `-` explains that a search passed its limit
+of 2^28 steps. PRESENT's search for the fewest active S-boxes in a
+differential trail takes 2.4 × 10^8 steps through seven rounds, within the
+limit. The AES round's searches pass it at three rounds, where a bit-level
+search must try the transitions of four active bytes at once; the wide trail
+argument of Daemen and Rijmen bounds those rounds instead.
+
+### Network output
+
+```text
+round                     MODULE::NAME[INSTANCE] on k words of s bits, then MODULE::NAME[]
+layer checked             all N inputs | the N inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+full diffusion            r rounds | never: some output bit depends on some input bit after no number of rounds
+
+differential trails       a trail of weight w has probability 2^-w
+rounds  active S-boxes  least weight
+1       …               …
+
+linear trails             a trail of weight w has correlation 2^-w in magnitude
+rounds  active S-boxes  least weight
+1       …               …
+```
+
+When weights are not integers the trail line reads `weights not computed:
+some DDT entry is not a power of two`, or `some |W(a, b)| is not a power of
+two`, and its table has only the first two columns. `--stats` writes the
+calls and steps of the S-box and then of the layer, two lines each.
+
+A trail bound says that no single trail does better. A differential collects
+every trail with its input and output differences, and a linear hull every
+trail with its masks, so either can be stronger than its best trail; and the
+probabilities multiply only when round keys are independent and uniform.
+None of these numbers is a security claim for any cipher.
+
 ## Published values
 
 The fixtures in [`compiler/fixtures/analyze`](../compiler/fixtures/analyze)
@@ -321,6 +451,9 @@ values their designers and analysts published.
 | AES ShiftRows then MixColumns | `--linear --function aes::linear` | branch number 5 over the 16 bytes of the state, the bound of 5 active S-boxes in any two rounds (Daemen and Rijmen) |
 | PRESENT pLayer | `--linear --word 4 --function present::player` | a permutation of bits (Bogdanov et al.): no XOR gate, branch number 2 over the S-boxes' nibbles |
 | Midori64 MixColumn | `--linear --word 4 --function midori::mix_column` | an involutive binary matrix, almost MDS with branch number 4 (Banik et al., ASIACRYPT 2015) |
+| PRESENT, S-box then pLayer | `--function present::sbox --bits 4 --layer present::player --rounds 5` | 10 active S-boxes in the best five-round differential trail, the least Theorem 1 of Bogdanov et al. allows; the best four-round linear trail has correlation 2^-6, bias 2^-7, meeting the bound of their Theorem 2 |
+| AES S-box then ShiftRows and MixColumns | `--function aes::sbox --layer aes::linear --rounds 2` | 5 active S-boxes in any two-round trail, the branch number bound, and a best two-round differential trail of weight 30, five S-boxes at the best probability 2^-6 (Daemen and Rijmen) |
+| Heys's tutorial network | `--function heys::sbox --bits 4 --layer heys::permute --rounds 3` | 4 active S-boxes in the best three-round differential trail, as many as in the tutorial's characteristic (Heys, Cryptologia 2002); weights are not integers |
 
 Each number in the tests was also recomputed, while the tool was built, by
 an independent implementation of the definitions above that shares no code
@@ -337,9 +470,10 @@ designer asks for, not evidence that a design is secure.
 
 ## Later slices
 
-Slice A1 covered S-boxes and Boolean functions, and slice A2 linear layers.
-Later slices may add diffusion and avalanche counts of whole primitives,
-trail bounds for small substitution-permutation networks, and checks of the
-properties claimed in [`algorithms/`](../algorithms). Each will extend this
+Slice A1 covered S-boxes and Boolean functions, slice A2 linear layers, and
+slice A3 trail bounds for small substitution-permutation networks. Later
+slices may add avalanche counts of whole primitives, networks whose S-boxes
+act on bits that are not consecutive words, such as Ascon's, and checks of
+the properties claimed in [`algorithms/`](../algorithms). Each will extend this
 contract and keep its rule: exact numbers from complete enumeration, or a
 reported limit.

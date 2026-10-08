@@ -11,7 +11,7 @@ use std::fmt::{self, Write as _};
 use orange_compiler::cryptanalysis::{Cycles, Monomial, Summary};
 use orange_compiler::{
     AnalysisError, BitFunction, Computed, CoreFunction, CoreModule, CoreType, CoreValue, Evaluator,
-    MAX_ANALYSIS_BITS, MAX_ANALYSIS_OPERATIONS, SourceMap, render_diagnostics,
+    MAX_ANALYSIS_BITS, MAX_ANALYSIS_OPERATIONS, MAX_TRAIL_ROUNDS, SourceMap, render_diagnostics,
 };
 
 use super::{
@@ -23,6 +23,7 @@ use super::{
 const LABEL_WIDTH: usize = 26;
 
 mod linear;
+mod trails;
 
 /// What `analyze` analyzes and prints.
 #[derive(Debug, Eq, PartialEq)]
@@ -39,6 +40,18 @@ pub(crate) struct Analysis {
     pub(crate) linear: bool,
     /// The bits of a word of a linear layer, when given.
     pub(crate) word: Option<u32>,
+    /// The rounds whose trails are bounded, when the function is an S-box.
+    pub(crate) trails: Option<Trails>,
+}
+
+/// The network of `analyze --layer`: the selected S-box on every word of
+/// the layer's bits, then the layer.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct Trails {
+    /// The linear layer, `MODULE::NAME`, a function with no size parameters.
+    pub(crate) layer: String,
+    /// The most rounds bounded.
+    pub(crate) rounds: u32,
 }
 
 /// The options only `analyze` takes, as the command line gives them.
@@ -48,14 +61,19 @@ pub(crate) struct AnalysisOptions {
     table: Option<Table>,
     linear: bool,
     word: Option<u32>,
+    layer: Option<String>,
+    rounds: Option<u32>,
 }
 
 impl AnalysisOptions {
-    /// Records `--bits`, `--word` or `--table`, each at most once.
+    /// Records `--bits`, `--word`, `--table`, `--layer` or `--rounds`, each
+    /// at most once.
     pub(crate) fn set(&mut self, name: &str, value: &OsStr) -> Result<(), String> {
         let duplicate = match name {
             "--bits" => self.bits.is_some(),
             "--word" => self.word.is_some(),
+            "--layer" => self.layer.is_some(),
+            "--rounds" => self.rounds.is_some(),
             _ => self.table.is_some(),
         };
         if duplicate {
@@ -65,6 +83,8 @@ impl AnalysisOptions {
         match name {
             "--bits" => self.bits = Some(parse_bits(text)?),
             "--word" => self.word = Some(parse_word(text)?),
+            "--layer" => self.layer = Some(parse_layer(text)?),
+            "--rounds" => self.rounds = Some(parse_rounds(text)?),
             _ => {
                 self.table = Some(Table::parse(text).ok_or_else(|| {
                     String::from("option `--table` takes values, ddt, lat, bct, anf, or matrix")
@@ -95,6 +115,10 @@ impl AnalysisOptions {
             Some("--word")
         } else if self.table.is_some() {
             Some("--table")
+        } else if self.layer.is_some() {
+            Some("--layer")
+        } else if self.rounds.is_some() {
+            Some("--rounds")
         } else {
             None
         }
@@ -103,6 +127,24 @@ impl AnalysisOptions {
     /// Returns the analysis of `function` at `instance` these options ask
     /// for, refusing options that do not go together.
     pub(crate) fn analysis(self, function: String, instance: Vec<u32>) -> Result<Analysis, String> {
+        let trails = match (self.layer, self.rounds) {
+            (Some(layer), Some(rounds)) => Some(Trails { layer, rounds }),
+            (Some(_), None) => return Err(String::from("option `--layer` requires `--rounds`")),
+            (None, Some(_)) => return Err(String::from("option `--rounds` requires `--layer`")),
+            (None, None) => None,
+        };
+        if trails.is_some() {
+            if self.linear {
+                return Err(String::from(
+                    "option `--layer` does not apply with `--linear`",
+                ));
+            }
+            if self.table.is_some() {
+                return Err(String::from(
+                    "option `--table` does not apply with `--layer`",
+                ));
+            }
+        }
         if self.linear {
             if self.bits.is_some() {
                 return Err(String::from(
@@ -129,6 +171,7 @@ impl AnalysisOptions {
             table: self.table,
             linear: self.linear,
             word: self.word,
+            trails,
         })
     }
 }
@@ -202,6 +245,42 @@ fn word_usage() -> String {
     String::from("option `--word` takes 1, 2, 4, 8, 16, 32, or 64")
 }
 
+/// Reads `--layer MODULE::NAME`: two identifiers.
+pub(crate) fn parse_layer(text: &str) -> Result<String, String> {
+    let invalid = || String::from("option `--layer` takes exactly MODULE::NAME identifiers");
+    let (module, name) = text.split_once("::").ok_or_else(invalid)?;
+    let identifier = |text: &str| {
+        let mut bytes = text.bytes();
+        bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    };
+    if !identifier(module) || !identifier(name) {
+        return Err(invalid());
+    }
+    let mut stored = String::new();
+    stored
+        .try_reserve_exact(text.len())
+        .map_err(|_| String::from("could not allocate the layer selector"))?;
+    stored.push_str(text);
+    Ok(stored)
+}
+
+/// Reads `--rounds R`: a canonical decimal from 1 through
+/// [`MAX_TRAIL_ROUNDS`].
+pub(crate) fn parse_rounds(text: &str) -> Result<u32, String> {
+    let invalid =
+        || format!("option `--rounds` takes a number of rounds from 1 through {MAX_TRAIL_ROUNDS}");
+    if text.is_empty() || text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    text.parse::<u32>()
+        .ok()
+        .filter(|rounds| (1..=MAX_TRAIL_ROUNDS).contains(rounds))
+        .ok_or_else(invalid)
+}
+
 /// Evaluates the selected function at every input and renders its summary,
 /// or the one table asked for, before any byte is written.
 pub(crate) fn prepare(
@@ -221,7 +300,110 @@ pub(crate) fn prepare(
     if analysis.linear {
         return linear::prepare(options, core, sources, analysis, selected);
     }
-    let (input_bits, output_bits) = domain(selected, analysis.bits)?;
+    let tabulated = tabulate(options, core, sources, selected, analysis.bits)?;
+    if let Some(network) = &analysis.trails {
+        return trails::prepare(options, core, sources, selected, &tabulated, network);
+    }
+    let function = &tabulated.function;
+
+    let mut output = Text::new(MAX_STANDARD_OUTPUT_BYTES);
+    let rendered = match analysis.table {
+        None => {
+            let summary = function
+                .summary()
+                .map_err(|error| failure(error, &missing))?;
+            write_summary(&mut output, selected, function, &summary)
+        }
+        Some(Table::Values) => write_values(&mut output, function),
+        Some(Table::Ddt) => {
+            let table = function
+                .difference_table()
+                .map_err(|error| failure(error, &missing))?;
+            write_grid(&mut output, function, &table, function.output_bits())
+        }
+        Some(Table::Lat) => {
+            let table = function
+                .linear_table()
+                .map_err(|error| failure(error, &missing))?;
+            write_grid(&mut output, function, &table, function.output_bits())
+        }
+        Some(Table::Bct) => {
+            let table = function
+                .boomerang_table()
+                .map_err(|error| failure(error, &missing))?;
+            write_grid(&mut output, function, &table, function.input_bits())
+        }
+        Some(Table::Anf) => {
+            let forms = function
+                .normal_form()
+                .map_err(|error| failure(error, &missing))?;
+            write_forms(&mut output, &forms)
+        }
+        Some(Table::Matrix) => return Err(missing()),
+    };
+    if rendered.is_err() {
+        return Err(output.failure());
+    }
+
+    let mut statistics = Text::new(MAX_STANDARD_ERROR_BYTES);
+    if options.evaluation.stats
+        && tabulated
+            .write_statistics(&mut statistics, selected)
+            .is_err()
+    {
+        return Err(statistics.failure());
+    }
+    Ok(PreparedReport {
+        output: output.text,
+        statistics: statistics.text,
+    })
+}
+
+/// A function's table, with the calls that computed it.
+struct Tabulated {
+    function: BitFunction,
+    /// The steps a call may take.
+    steps: usize,
+    total_steps: usize,
+    largest_call: usize,
+}
+
+impl Tabulated {
+    /// Writes the calls and steps that computed the table.
+    fn write_statistics(&self, statistics: &mut Text, selected: &CoreFunction) -> fmt::Result {
+        let inputs = self.function.values().len();
+        write_numeric_function(statistics, selected)?;
+        writeln!(
+            statistics,
+            ": {inputs} {}, {} {}",
+            noun(inputs, "call", "calls"),
+            self.total_steps,
+            noun(self.total_steps, "step", "steps")
+        )?;
+        writeln!(
+            statistics,
+            "largest call: {} of {} steps",
+            self.largest_call, self.steps
+        )
+    }
+}
+
+/// Evaluates `selected` at every input of the analyzed domain.
+fn tabulate(
+    options: &Options,
+    core: &CoreModule,
+    sources: &SourceMap,
+    selected: &CoreFunction,
+    bits: Option<(u32, Option<u32>)>,
+) -> Result<Tabulated, String> {
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "analysis returned no complete artifact",
+            "this is an internal compiler or resource failure",
+        )
+    };
+    let (input_bits, output_bits) = domain(selected, bits)?;
     let steps = options.evaluation.steps;
 
     let mut evaluator = Evaluator::new(core).ok_or_else(missing)?;
@@ -269,66 +451,11 @@ pub(crate) fn prepare(
         }
         values.push(u32::try_from(value).map_err(|_| missing())?);
     }
-    let function = BitFunction::new(input_bits, output_bits, &values).ok_or_else(missing)?;
-
-    let mut output = Text::new(MAX_STANDARD_OUTPUT_BYTES);
-    let rendered = match analysis.table {
-        None => {
-            let summary = function
-                .summary()
-                .map_err(|error| failure(error, &missing))?;
-            write_summary(&mut output, selected, &function, &summary)
-        }
-        Some(Table::Values) => write_values(&mut output, &function),
-        Some(Table::Ddt) => {
-            let table = function
-                .difference_table()
-                .map_err(|error| failure(error, &missing))?;
-            write_grid(&mut output, &function, &table, function.output_bits())
-        }
-        Some(Table::Lat) => {
-            let table = function
-                .linear_table()
-                .map_err(|error| failure(error, &missing))?;
-            write_grid(&mut output, &function, &table, function.output_bits())
-        }
-        Some(Table::Bct) => {
-            let table = function
-                .boomerang_table()
-                .map_err(|error| failure(error, &missing))?;
-            write_grid(&mut output, &function, &table, function.input_bits())
-        }
-        Some(Table::Anf) => {
-            let forms = function
-                .normal_form()
-                .map_err(|error| failure(error, &missing))?;
-            write_forms(&mut output, &forms)
-        }
-        Some(Table::Matrix) => return Err(missing()),
-    };
-    if rendered.is_err() {
-        return Err(output.failure());
-    }
-
-    let mut statistics = Text::new(MAX_STANDARD_ERROR_BYTES);
-    if options.evaluation.stats {
-        let rendered = (|| {
-            write_numeric_function(&mut statistics, selected)?;
-            writeln!(
-                statistics,
-                ": {inputs} {}, {total_steps} {}",
-                noun(inputs, "call", "calls"),
-                noun(total_steps, "step", "steps")
-            )?;
-            writeln!(statistics, "largest call: {largest_call} of {steps} steps")
-        })();
-        if rendered.is_err() {
-            return Err(statistics.failure());
-        }
-    }
-    Ok(PreparedReport {
-        output: output.text,
-        statistics: statistics.text,
+    Ok(Tabulated {
+        function: BitFunction::new(input_bits, output_bits, &values).ok_or_else(missing)?,
+        steps,
+        total_steps,
+        largest_call,
     })
 }
 

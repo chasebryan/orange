@@ -197,7 +197,6 @@ impl LinearMap {
     /// reserved.
     pub fn summary(&self) -> Result<LayerSummary, AnalysisError> {
         let rank = gf2_rank(&self.columns);
-        let invertible = rank == self.bits;
         let mut shifted = filled(0_u128, self.columns.len())?;
         for (j, (sum, column)) in shifted.iter_mut().zip(&self.columns).enumerate() {
             *sum = column ^ unit(j);
@@ -213,17 +212,7 @@ impl LinearMap {
             .iter()
             .map(|row| u64::from(row.count_ones().saturating_sub(1)))
             .fold(0_u64, u64::saturating_add);
-        let inverse = if invertible {
-            Some(self.inverse()?)
-        } else {
-            None
-        };
-        let differential_branch = self.branch(inverse.as_ref())?;
-        let transpose_inverse = match &inverse {
-            Some(inverse) => Some(inverse.transpose()?),
-            None => None,
-        };
-        let linear_branch = self.transpose()?.branch(transpose_inverse.as_ref())?;
+        let (differential_branch, linear_branch) = self.branch_numbers()?;
         let fields = if (2..=MAX_FIELD_WORD_BITS).contains(&self.word_bits) {
             Some(self.fields()?)
         } else {
@@ -238,6 +227,40 @@ impl LinearMap {
             linear_branch,
             fields,
         })
+    }
+
+    /// Returns the inverse of the matrix, or `None` when it is singular.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AnalysisError::Allocation`] when storage cannot be
+    /// reserved.
+    pub fn inverse(&self) -> Result<Option<Self>, AnalysisError> {
+        if gf2_rank(&self.columns) == self.bits {
+            self.invert().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Returns the differential branch number, the least wt(x) + wt(M x)
+    /// over x != 0, and the linear branch number, the least
+    /// wt(b) + wt(M^T b) over b != 0, each only when its search is within
+    /// [`MAX_ANALYSIS_OPERATIONS`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AnalysisError::Allocation`] when working storage cannot be
+    /// reserved.
+    pub fn branch_numbers(&self) -> Result<(Computed<u32>, Computed<u32>), AnalysisError> {
+        let inverse = self.inverse()?;
+        let differential = self.branch(inverse.as_ref())?;
+        let transpose_inverse = match &inverse {
+            Some(inverse) => Some(inverse.transpose()?),
+            None => None,
+        };
+        let linear = self.transpose()?.branch(transpose_inverse.as_ref())?;
+        Ok((differential, linear))
     }
 
     /// Returns the least wt(x) + wt(M x) over x != 0, searching inputs in
@@ -305,7 +328,7 @@ impl LinearMap {
     /// Returns [`AnalysisError::Allocation`] when storage cannot be
     /// reserved; a singular matrix keeps the identity's rows where its own
     /// have no pivot, which the caller never asks of it.
-    fn inverse(&self) -> Result<Self, AnalysisError> {
+    fn invert(&self) -> Result<Self, AnalysisError> {
         let mut rows = self.rows()?;
         let mut inverse = filled(0_u128, rows.len())?;
         for (i, row) in inverse.iter_mut().enumerate() {
@@ -790,7 +813,7 @@ mod tests {
                 };
                 assert_eq!(1_usize << summary.rank, distinct);
                 if summary.rank == bits {
-                    let inverse = map.inverse().unwrap();
+                    let inverse = map.inverse().unwrap().unwrap();
                     assert!((0..1_u128 << bits).all(|x| inverse.apply(map.apply(x)) == x));
                 }
                 let fixed = images

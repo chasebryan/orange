@@ -35,6 +35,7 @@ pub use cryptanalysis::{
     AnalysisError, BitFunction, Computed, MAX_ANALYSIS_BITS, MAX_ANALYSIS_OPERATIONS,
     MAX_TABLE_BITS,
     linear::{LinearMap, MAX_LAYER_BITS},
+    trails::{MAX_SBOX_BITS, MAX_TRAIL_ROUNDS, MAX_TRAIL_STEPS, Network, TrailBounds},
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use documentation::{
