@@ -183,16 +183,19 @@ module des {
   // and last bits, b1 b6, name the row of S_j, and the middle four,
   // b2 b3 b4 b5, the column; the entry's four bits follow those of S_(j-1).
   // The masks & 3 and & 15 at the lookup change no value: row and column
-  // are already that small, and the masks show the checker so.
+  // are already that small, and the masks show the checker so. The eight
+  // tables are an argument, s, so that dea builds them once per block rather
+  // than once per iteration: the standard's f(R, K) is f(s, R, K) with s
+  // fixed. The 32 bits S1(B1) ... S8(B8) are sb, the input of P.
   spec f(s: SBoxes, r: Word[32], k: Word[64]) -> Word[32] {
     let b: Word[64] = k ^ permute(bit_selection(), r as Word[64], 32);
-    let out: Word[32] = for j in 0..8 with out: Word[32] = 0 {
+    let sb: Word[32] = for j in 0..8 with acc: Word[32] = 0 {
       let bj: Word[64] = (b >> (42 - (6 * j))) & 63;
       let row: Word[8] = (((bj >> 4) & 2) | (bj & 1)) as Word[8];
       let column: Word[8] = ((bj >> 1) & 15) as Word[8];
-      (out << 4) | (s[j][row & 3][column & 15] as Word[32])
+      (acc << 4) | (s[j][row & 3][column & 15] as Word[32])
     };
-    permute(permutation(), out as Word[64], 32) as Word[32]
+    permute(permutation(), sb as Word[64], 32) as Word[32]
   }
 
   // Key Schedule Calculation: PC-1 takes the 64-bit KEY to C0 (its first 28
@@ -238,24 +241,26 @@ module des {
   // KS(n, KEY): the sixteen 48-bit subkeys K1 through K16 of a 64-bit KEY
   // (56 key bits and eight parity bits, which PC-1 drops). C_n = LS_n(C_{n-1}),
   // D_n = LS_n(D_{n-1}), and K_n = PC-2(C_n D_n), stored at position n - 1.
+  // The loop ends with C16, D16 and the subkeys; only the subkeys are kept.
   spec key_schedule(key: Word[8]^8) -> Word[64]^16 {
     let cd0: Word[64] = permute(permuted_choice_1(), key as big Word[64], 64);
     let shifts: Int^16 = left_shifts();
-    let ks: (Word[64], Word[64], Word[64]^16) =
+    let (c16: Word[64], d16: Word[64], subkeys: Word[64]^16) =
       for n in 0..16 with (c: Word[64], d: Word[64], k: Word[64]^16) =
         (cd0 >> 28, cd0 & 0x0fffffff, [0; 16]) {
         let cn: Word[64] = left_shift(c, shifts[n]);
         let dn: Word[64] = left_shift(d, shifts[n]);
         (cn, dn, k with [n] = permute(permuted_choice_2(), (cn << 28) | dn, 56))
       };
-    ks.2
+    subkeys
   }
 
   // Enciphering: IP; sixteen iterations on L R, L_n = R_{n-1} and
   // R_n = L_{n-1} xor f(R_{n-1}, K_n); the preoutput block R16 L16, the halves
   // exchanged once after the last iteration; and IP^-1. The block is read
   // as a 64-bit word, bit 1 its most significant, and L and R are the two
-  // halves of the permuted word, read big-endian.
+  // halves of the permuted word, read big-endian. The selection functions
+  // are built once here and passed to every call of f.
   spec dea(ks: Word[64]^16, input: Word[8]^8) -> Word[8]^8 {
     let s: SBoxes = selection_functions();
     let lr0: Word[32]^2 =
@@ -362,7 +367,7 @@ module des {
   // are all zero, the sixteen subkeys are equal, and enciphering twice gives
   // the block back. The block is that of Botan des.vec, [DES], second case,
   // "Now is t"; pycryptodome confirms the involution.
-  test "Weak key 0101010101010101: enciphering twice is the identity" {
+  test "Botan des.vec [DES] case 2, weak key 0101010101010101: enciphering twice is the identity" {
     let k: Word[8]^8 = hex"0101010101010101";
     encrypt(k, encrypt(k, hex"4e6f772069732074")) == hex"4e6f772069732074"
   }

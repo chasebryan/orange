@@ -36,6 +36,7 @@ module ascon {
     [0; (16 * ((len / 16) + 1) - len)] with [0] = 0x01
   }
 
+  // X padded: X followed by padding[len]().
   spec pad[len in 1..33](x: Word[8]^len) -> Word[8]^(16 * ((len / 16) + 1)) {
     x ++ padding[len]()
   }

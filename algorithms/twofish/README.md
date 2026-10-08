@@ -65,7 +65,7 @@ as the paper prints them.
 | 4, the little-endian words of a block | `as little Word[32]^4` and `as little Word[8]^16` in `encrypt` and `decrypt` |
 | 4, whitening and the sixteen rounds | `encrypt[k]`, `round[k]`; `decrypt[k]`, `inverse_round[k]` |
 | 4.1, the function F with the PHT and the round subkeys | `f[k]` |
-| 4.2, the MDS matrix over GF(2^8) modulo v(x) | `times_x`, `gf_walk`, `gf_mul`, `mds_matrix`, `mds` |
+| 4.2, the MDS matrix over GF(2^8) modulo v(x) | `times_x`, `gf_mul`, `mds_matrix`, `mds` |
 | 4.2 and 4.3.3, g(X) = h(X, S) | `g[k]` |
 | 4.3, the key words M_i, Me, Mo and the RS matrix modulo w(x) | `key_schedule[k]`, `rs_matrix`, `rs` |
 | 4.3.2, the function h | `stage`, `h[k]` |
@@ -141,36 +141,38 @@ L_1 or L_0; the paper skips the stages of L_3 and L_2 for shorter keys,
 and the loop's length k does the same. The key schedule writes Me and Mo
 as the even and odd words of `key as little Word[32]^(2 * k)`, S_i as the
 RS product of the slice `key[8 * i..8 * i + 8]`, and K_(2i) and K_(2i+1)
-as section 4.3.4 writes them. Byte orders are stated once each, where the
-paper fixes them: blocks, key words and the outputs of the MDS and RS
-products are little-endian.
+as section 4.3.4 writes them. Byte orders are written with `as little`
+wherever the paper fixes them: blocks, key words, the bytes of X and L in
+h, and the outputs of the MDS and RS products.
 
 The GF(2^8) arithmetic is written out: `times_x` multiplies by x modulo a
 polynomial passed as its full nine-bit value, 0x169 for v(x) and 0x14D
-for w(x), and `gf_mul` adds a x^i for each bit i of b. Both matrices are
-applied by the same row-by-column sum of `gf_mul` products over their
-`hex"..."` rows. The whitening, the PHT, the 1-bit rotations and the
-undoing of the last swap (C_i = R_(16,(i+2) mod 4) xor K_(i+4)) read as
-section 4 writes them.
+for w(x), and `gf_mul` adds a x^i for each bit i of b, carrying the sum
+and the power a x^i through one loop. Both matrices are applied by the
+same row-by-column sum of `gf_mul` products over their `hex"..."` rows.
+The whitening, the PHT, the 1-bit rotations and the undoing of the last
+swap (C_i = R_(16,(i+2) mod 4) xor K_(i+4)) read as section 4 writes
+them.
 
-Measured with `orangec eval --stats` and `orangec test --stats`: a byte
-through q0 or q1 costs about 90 steps and a GF(2^8) product about 264;
-the MDS matrix costs 4,250 steps and an RS product of eight key bytes
-8,588. h costs 5,637 steps for k = 2, 5,985 for k = 3 and 6,436 for
-k = 4, three quarters of it the MDS matrix. The key schedule (forty h
-evaluations and k RS products) costs 242,944, 267,544 and 292,818 steps
-for 128-, 192- and 256-bit keys, and the sixteen rounds (thirty-two g
-evaluations) about 180,000, 194,000 and 207,000 more. One block, key
-schedule included, costs 423,369 to 423,727 steps with a 128-bit key,
-461,199 to 462,185 with a 192-bit key and 499,725 to 500,555 with a
-256-bit key, encryption and decryption alike, varying by a few hundred
-steps with the data because each bit of a GF(2^8) multiplier takes one
-branch or the other. The seven tests together use 3,194,487 steps. Not
-expressed: constant-time behaviour (a lookup is a specification, not a
-claim about leakage), any mode of operation, the paper's implementation
-options (full, partial, minimal and zero keying), and any key length
-other than the three of the paper (the paper pads shorter keys with
-zeros to the next of them).
+Measured with `orangec eval --stats` and `orangec test --stats` (the
+figures for single operations depend on the data and are approximate): a
+byte through q0 or q1 costs about 90 steps and a GF(2^8) product about 250
+to 270; the MDS matrix costs about 4,100 to 4,500 steps and an RS product
+of eight key bytes about 8,300 to 9,100. h costs about 5,600
+steps for k = 2, 6,000 for k = 3 and 6,400 for k = 4, two thirds to three
+quarters of it the MDS matrix. The key schedule (forty h evaluations and k
+RS products) costs about 240,000, 265,000 and 291,000 steps for 128-,
+192- and 256-bit keys, and the sixteen rounds (thirty-two g evaluations)
+about 180,000, 193,000 and 206,000 more. One block, key schedule
+included, costs 419,721 to 420,079 steps with a 128-bit key, 457,455 to
+458,441 with a 192-bit key and 495,885 to 496,715 with a 256-bit key in
+the tests, encryption and decryption alike, varying by a few hundred steps
+with the data because each bit of a GF(2^8) multiplier and each reduction
+in `times_x` takes one branch or the other. The seven tests together use
+3,168,375 steps. Not expressed: constant-time behaviour (a lookup is a
+specification, not a claim about leakage), any mode of operation, the
+paper's implementation options (full, partial, minimal and zero keying),
+and any key length other than the three of the paper.
 
 ## Dissemination
 

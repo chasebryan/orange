@@ -24,9 +24,9 @@ edition 2026;
 module hmac_hkdf {
   use sha256;
 
-  // FIPS 198-1 section 4, Table 1: with H = SHA-256 the block size is
-  // B = 64 bytes and the output L = 32; ipad is the byte 0x36 and opad the
-  // byte 0x5c, each repeated B times.
+  // FIPS 198-1 section 4: with H = SHA-256 the block size is B = 64 bytes
+  // and the output L = 32; ipad is the byte 0x36 and opad the byte 0x5c,
+  // each repeated B times.
   spec ipad() -> Word[8]^64 { [0x36; 64] }
   spec opad() -> Word[8]^64 { [0x5c; 64] }
 
@@ -34,12 +34,15 @@ module hmac_hkdf {
   // key of B bytes is K0 itself (step 1); a longer key is hashed to L = 32
   // bytes and B - L zeros are appended (step 2); a shorter key has B - K
   // zeros appended (step 3). Steps 1 and 3 are one expression: the key
-  // followed by B zeros, cut to its first B bytes. The length k is a size,
-  // so the comparison with B is fixed for each instance and only the chosen
-  // branch is evaluated.
-  spec k0[k in 1..257](key: Word[8]^k) -> Word[8]^64 {
-    let padded: Word[8]^(k + 64) = key ++ [0; 64];
-    if k > 64 { sha256::digest(key) ++ [0; 32] } else { padded[..64] }
+  // followed by B zeros, cut to its first B bytes. The key length key_len
+  // is a size, so the comparison with B is fixed for each instance, and only
+  // the chosen branch is evaluated: a short key is never hashed, and a long
+  // one is never padded.
+  spec k0[key_len in 1..257](key: Word[8]^key_len) -> Word[8]^64 {
+    if key_len > 64 { sha256::digest(key) ++ [0; 32] } else {
+      let padded: Word[8]^(key_len + 64) = key ++ [0; 64];
+      padded[..64]
+    }
   }
 
   // FIPS 198-1 section 4, steps 4 and 7: K0 xor ipad and K0 xor opad, byte
@@ -52,22 +55,23 @@ module hmac_hkdf {
   // HMAC(K, text) = H((K0 xor opad) || H((K0 xor ipad) || text)).
   // Step 5 appends the text, of n bytes, to the 64-byte inner pad, and step
   // 8 the 32-byte inner hash to the outer pad, a 96-byte message. The key
-  // enters as K0 (the parameter k), from `k0`: a function has at most 256
+  // enters as K0 (the parameter k0), from `k0`: a function has at most 256
   // instances, counting every combination of its sizes, and the vectors'
   // keys (4 through 131 bytes) and texts (1 through 152) together need far
   // more, so steps 1 to 3 and steps 4 to 9 are two functions with one size
   // each, and a test writes HMAC(K, text) as `hmac(k0(key), text)`. The
   // full L = 32 bytes are returned; the truncation of section 5 is a slice
   // at the caller.
-  spec hmac[n in 1..193](k: Word[8]^64, text: Word[8]^n) -> Word[8]^32 {
-    let inner: Word[8]^32 = sha256::digest(xor(k, ipad()) ++ text);
-    sha256::digest(xor(k, opad()) ++ inner)
+  spec hmac[text_len in 1..193](k0: Word[8]^64, text: Word[8]^text_len) -> Word[8]^32 {
+    let inner: Word[8]^32 = sha256::digest(xor(k0, ipad()) ++ text);
+    sha256::digest(xor(k0, opad()) ++ inner)
   }
 
   // RFC 5869 section 2.2: PRK = HMAC-Hash(salt, IKM), HashLen = 32. The salt
-  // is the HMAC key, so it enters as K0, `k0(salt)`, as for `hmac`.
-  spec hkdf_extract[n in 1..193](salt: Word[8]^64, ikm: Word[8]^n) -> Word[8]^32 {
-    hmac(salt, ikm)
+  // is the HMAC key, so it enters as K0, as for `hmac`: the parameter k0 is
+  // K0 of the salt, and a caller writes `hkdf_extract(k0(salt), ikm)`.
+  spec hkdf_extract[ikm_len in 1..193](k0: Word[8]^64, ikm: Word[8]^ikm_len) -> Word[8]^32 {
+    hmac(k0, ikm)
   }
 
   // RFC 5869 section 2.2: a salt that is not provided is a string of
@@ -76,19 +80,20 @@ module hmac_hkdf {
 
   // RFC 5869 section 2.3: T = T(1) || T(2) || ... || T(N), with T(0) the
   // empty string and T(i) = HMAC-Hash(PRK, T(i-1) || info || i), i a single
-  // octet. The loop carries T and the last block T(i-1); T(0) has no array
-  // of its own (an array has at least one element), so the first step,
-  // i = 1, hashes info || 0x01 alone, and the 32 zeros that start the
-  // carried block are never read. The PRK is the HMAC key, HashLen = 32
-  // bytes, brought to K0 once.
+  // octet. The loop index j runs from 0 to N - 1, so i = j + 1. The loop
+  // carries T and the last block T(i-1); T(0) has no array of its own (an
+  // array has at least one element), so the first step, i = 1, hashes
+  // info || 0x01 alone, and the 32 zeros that start the carried block are
+  // never read. The PRK is the HMAC key, HashLen = 32 bytes, brought to K0
+  // once.
   //
   // The output length L is not a size here: a function has at most 256
   // instances, counting every combination of its sizes, and L from 42 to 82
   // beside an info of 1 to 80 bytes would need 3,280. The spec's sizes are
-  // N = ceiling(L / HashLen), here nb, and the info length i, 240
+  // N = ceiling(L / HashLen), here nb, and the info length info_len, 240
   // instances; it returns all of T, N HashLen octets, and the caller keeps
   // the first L octets, OKM, with a slice.
-  spec hkdf_expand[nb in 1..4, i in 1..81](prk: Word[8]^32, info: Word[8]^i)
+  spec hkdf_expand[nb in 1..4, info_len in 1..81](prk: Word[8]^32, info: Word[8]^info_len)
     -> Word[8]^(32 * nb) {
     let key: Word[8]^64 = k0(prk);
     let r: (Word[8]^(32 * nb), Word[8]^32) =
@@ -106,7 +111,8 @@ module hmac_hkdf {
   // RFC 5869 section 2.3 with info the zero-length string, which the RFC
   // allows and A.3 uses: T(1) = HMAC-Hash(PRK, 0x01) and
   // T(i) = HMAC-Hash(PRK, T(i-1) || i). An empty info has no array, so this
-  // is `hkdf_expand` with info left out.
+  // is `hkdf_expand` with info left out; the two loops must stay identical
+  // apart from info.
   spec hkdf_expand_no_info[nb in 1..4](prk: Word[8]^32) -> Word[8]^(32 * nb) {
     let key: Word[8]^64 = k0(prk);
     let r: (Word[8]^(32 * nb), Word[8]^32) =
@@ -131,7 +137,8 @@ module hmac_hkdf {
 
   // RFC 4231 section 4.3, test case 2: key "Jefe", data "what do ya want
   // for nothing?"; a key shorter than the block. The value as printed in
-  // Botan's hmac.vec, [HMAC(SHA-256)], and Go's hmac_test.go (also hmac).
+  // Botan's hmac.vec, [HMAC(SHA-256)], and Go's hmac_test.go (also
+  // Python's hmac).
   test "RFC 4231 4.3: test case 2" {
     hmac(k0("Jefe"), "what do ya want for nothing?") ==
       hex"5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
@@ -139,7 +146,7 @@ module hmac_hkdf {
 
   // RFC 4231 section 4.4, test case 3: key 0xaa repeated 20 times, data
   // 0xdd repeated 50 times. The value as printed in Go's hmac_test.go
-  // (also hmac).
+  // (also Python's hmac).
   test "RFC 4231 4.4: test case 3" {
     hmac(k0([0xaa; 20]), [0xdd; 50]) ==
       hex"773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"
@@ -147,7 +154,7 @@ module hmac_hkdf {
 
   // RFC 4231 section 4.5, test case 4: key 0x01, 0x02, ..., 0x19 (25
   // bytes), data 0xcd repeated 50 times. The value as printed in Go's
-  // hmac_test.go (also hmac).
+  // hmac_test.go (also Python's hmac).
   test "RFC 4231 4.5: test case 4" {
     hmac(k0(hex"0102030405060708090a0b0c0d0e0f10111213141516171819"), [0xcd; 50]) ==
       hex"82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"
@@ -173,7 +180,7 @@ module hmac_hkdf {
   // RFC 4231 section 4.7, test case 6: key 0xaa repeated 131 times, longer
   // than the block, so it is hashed first; data "Test Using Larger Than
   // Block-Size Key - Hash Key First". The value as printed in Botan's
-  // hmac.vec and Go's hmac_test.go (also hmac).
+  // hmac.vec and Go's hmac_test.go (also Python's hmac).
   test "RFC 4231 4.7: test case 6" {
     hmac(k0([0xaa; 131]), "Test Using Larger Than Block-Size Key - Hash Key First") ==
       hex"60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
@@ -181,7 +188,7 @@ module hmac_hkdf {
 
   // RFC 4231 section 4.8, test case 7: the same 131-byte key and 152 bytes
   // of data. The value as printed in Botan's hmac.vec and Go's hmac_test.go
-  // (also hmac).
+  // (also Python's hmac).
   test "RFC 4231 4.8: test case 7" {
     let data: Word[8]^152 =
       "This is a test using a larger than block-size key and a larger than " ++
@@ -193,7 +200,7 @@ module hmac_hkdf {
 
   // Project Wycheproof, testvectors_v1/hmac_sha256_test.json, tcId 171,
   // "long key": a 65-byte key, one byte over the block, and a 32-byte
-  // message; the tag as printed there (also hmac).
+  // message; the tag as printed there (also Python's hmac).
   test "Wycheproof hmac_sha256_test tcId 171" {
     let key: Word[8]^65 =
       hex"21178e26bc28ffc27c06f762ba190a627075856d7ca6feab79ac63149b17126e" ++

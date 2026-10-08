@@ -53,9 +53,13 @@ module twofish {
   // Section 4.3.5: ROR4(x, 1), a 4-bit value rotated right by one bit.
   spec ror4(x: Word[8]) -> Word[8] { ((x >> 1) | (x << 3)) & 15 }
 
-  // Section 4.3.5: a byte x through a q permutation. Nibbles are held in
-  // bytes; each table lookup reduces its index mod 16, which the paper's
-  // nibbles already are, so that the checker can prove it below 16.
+  // Section 4.3.5: a byte x through a q permutation. The byte splits into
+  // the nibbles a0 (high) and b0 (low); each of two stages forms
+  // a' = a xor b and b' = a xor ROR4(b, 1) xor 8a mod 16 and passes the
+  // pair through two of the tables t0 to t3; the last pair is reassembled
+  // with b high. Nibbles are held in bytes; each table lookup reduces its
+  // index mod 16, which the paper's nibbles already are, so that the
+  // checker can prove it below 16.
   spec q(t: QTables, x: Word[8]) -> Word[8] {
     let a0: Word[8] = x / 16;
     let b0: Word[8] = x % 16;
@@ -85,14 +89,14 @@ module twofish {
     r as Word[8]
   }
 
-  // The product a b modulo p: a x^i added for each bit i of b.
-  spec gf_walk(a: Word[8], b: Word[8], p: Word[16]) -> (Word[8], Word[8]) {
-    for i in 0..8 with (s: Word[8], m: Word[8]) = (0, a) {
+  // The product a b modulo p: a x^i added for each bit i of b. The loop
+  // carries the sum s and the power m = a x^i; the product is the sum.
+  spec gf_mul(a: Word[8], b: Word[8], p: Word[16]) -> Word[8] {
+    let r: (Word[8], Word[8]) = for i in 0..8 with (s: Word[8], m: Word[8]) = (0, a) {
       (if ((b >> i) & 1) == 1 { s ^ m } else { s }, times_x(m, p))
-    }
+    };
+    r.0
   }
-
-  spec gf_mul(a: Word[8], b: Word[8], p: Word[16]) -> Word[8] { gf_walk(a, b, p).0 }
 
   // Section 4.2: the MDS matrix, applied over GF(2^8) modulo v(x) to the
   // column (y_0, y_1, y_2, y_3), gives (z_0, z_1, z_2, z_3), and
