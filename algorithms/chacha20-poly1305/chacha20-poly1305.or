@@ -171,7 +171,7 @@ module chacha20_poly1305 {
     chacha20_block(key, 0, nonce)[..32]
   }
 
-  // Section 2.8: x || pad16(x), x followed by the zero bytes that fill its
+  // Section 2.8.1: x || pad16(x), x followed by the zero bytes that fill its
   // last sixteen-byte block. x has 16 q + k bytes, q from 0 through 16 and
   // k from 1 through 15: every length up to 271 bytes whose last block is
   // partial, which takes in the vectors' 8, 12, 47, 114 and 265 (255
@@ -181,7 +181,7 @@ module chacha20_poly1305 {
     x ++ [0; (16 - k)]
   }
 
-  // Section 2.8: num_to_8_le_bytes(x.length), the length of x in bytes as a
+  // Section 2.8.1: num_to_8_le_bytes(x.length), the length of x in bytes as a
   // 64-bit little-endian integer, for the lengths padded16 takes.
   spec length_bytes[q in 0..17, k in 1..16](x: Word[8]^(16 * q + k)) -> Word[8]^8 {
     let length: Int = 16 * q + k;

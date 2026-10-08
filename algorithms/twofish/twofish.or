@@ -158,7 +158,7 @@ module twofish {
   // Section 4.3: the key schedule for a key of N = 64 k bits. The key bytes
   // form the words M_0 to M_(2k-1), little-endian; Me = (M_0, M_2, ...)
   // and Mo = (M_1, M_3, ...). S_i is the RS product of key bytes 8i to
-  // 8i + 7, and section 4.3.3 lists them (S_(k-1), ..., S_0) for g.
+  // 8i + 7, and section 4.3 lists them (S_(k-1), ..., S_0), which 4.3.3 gives to g.
   // Section 4.3.4: with rho = 2^24 + 2^16 + 2^8 + 1, A_i = h(2 i rho, Me),
   // B_i = ROL(h((2 i + 1) rho, Mo), 8), K_(2i) = A_i + B_i and
   // K_(2i+1) = ROL(A_i + 2 B_i, 9) for i from 0 through 19. The result is

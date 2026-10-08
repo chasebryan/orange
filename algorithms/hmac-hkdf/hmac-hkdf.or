@@ -171,7 +171,7 @@ module hmac_hkdf {
 
   // RFC 4231 section 4.6, test case 5 as the RFC prints it: the truncated
   // output of FIPS 198-1 section 5 and RFC 2104 section 5, the leftmost
-  // t = 128 bits of the MAC, RFC 4231's HMAC-SHA-256-128.
+  // t = 128 bits of the MAC, which RFC 4231 calls a truncation of output.
   test "RFC 4231 4.6: test case 5, truncated to 128 bits" {
     hmac(k0([0x0c; 20]), "Test With Truncation")[..16] ==
       hex"a3b6167473100ee06e0c796c2955552b"

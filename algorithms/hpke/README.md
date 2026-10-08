@@ -184,12 +184,12 @@ write that check.
 Status as of September 2026: RFC 9180 (February 2022) is the current
 specification, published as an IRTF CFRG informational RFC with IANA
 registries for its KEM, KDF and AEAD identifiers. It is the encryption inside
-TLS Encrypted Client Hello (`draft-ietf-tls-esni`; its publication status was
-not checked from this machine), MLS (RFC 9420, 2023), Oblivious HTTP
-(RFC 9458, 2024), Oblivious DoH (RFC 9230, 2022) and the rate-limited
-Privacy Pass issuance draft. Its components are current standards too:
-X25519 (RFC 7748), HKDF (RFC 5869) and ChaCha20-Poly1305 (RFC 8439), each
-with its own entry or fixture in this repository.
+TLS Encrypted Client Hello (RFC 9849, March 2026, published from
+`draft-ietf-tls-esni`), MLS (RFC 9420, 2023), Oblivious HTTP (RFC 9458, 2024),
+Oblivious DoH (RFC 9230, 2022) and the rate-limited Privacy Pass issuance
+draft. Its components are current standards too: X25519 (RFC 7748), HKDF
+(RFC 5869) and ChaCha20-Poly1305 (RFC 8439), each with its own entry or
+fixture in this repository.
 
 ### What the Orange rendering shows
 
@@ -255,9 +255,13 @@ modules of `hpke.or`, whose tests run through all of them.
 ### Running
 
 ```console
-orangec test algorithms/hpke/hpke.or
+orangec test --steps 1073741824 algorithms/hpke/hpke.or
 python3 algorithms/verify.py algorithms/hpke
 ```
+
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 3,002,767), so the command raises it, as
+`verify.py` does.
 
 `orangec eval algorithms/hpke/hpke.or` prints the parameterless specs of the
 root, the identifiers, the `N` constants, the two `suite_id`s and

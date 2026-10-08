@@ -185,8 +185,12 @@ and any key length other than the three of the paper.
 
 ### Running
 
-    orangec test algorithms/twofish/twofish.or
+    orangec test --steps 1073741824 algorithms/twofish/twofish.or
     python3 algorithms/verify.py algorithms/twofish
+
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 3,168,375), so the command raises it, as
+`verify.py` does.
 
 ### Vectors
 
@@ -243,6 +247,16 @@ by script, never transcribed by eye or from memory:
   the first evaluation. The identity of the two MDS coefficient products
   with the general GF(2^8) product was also checked for all 256 bytes
   before the shared `xtime` chain replaced `gf_mul` in `mds`.
+
+The section numbers in `twofish.or` and in the table above were checked
+afterwards against the published text of the paper, the PDF dated 15 June
+1998 at
+<https://www.schneier.com/wp-content/uploads/2016/02/paper-twofish-paper.pdf>.
+Sections 4, 4.1, 4.2, 4.3, 4.3.2, 4.3.3, 4.3.4 and 4.3.5 are as cited, with
+the two field polynomials, the constant rho and the first row of the q0 and
+q1 tables. One comment was corrected: the list S = (S_(k-1), ..., S_0) is
+given in section 4.3, and section 4.3.3 is where g(X) = h(X, S) uses it. The
+matrices and the other table rows were not compared with the paper's text.
 
 The Python reference, the table and vector cross-checks, the literal
 generator, the build script that assembled the three `.or` files of the

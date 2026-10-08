@@ -112,8 +112,8 @@ compiled artifact follows from it.
 The modes have their own conditions. ECB encrypts equal blocks to equal
 ciphertext blocks, so it hides neither repetition nor structure and is not
 suitable for general use; NIST's review of the SP 800-38 series (NIST IR 8459,
-initial public draft, 2023) took up whether it should stay approved for
-general use at all. CBC needs an unpredictable IV
+September 2024) recommends considering disallowing ECB for encrypting
+secrets. CBC needs an unpredictable IV
 (Rogaway 2011; the BEAST attack of Duong and Rizzo 2011 exploited predictable
 IVs in TLS 1.0), and a CBC decryptor that reveals whether padding was valid
 gives a padding oracle that decrypts any ciphertext with about 128 queries per
@@ -202,10 +202,14 @@ than a different function.
 ### Running
 
 ```console
-orangec test algorithms/aes/aes.or
-orangec test algorithms/aes/aes-modes.or
+orangec test --steps 1073741824 algorithms/aes/aes.or
+orangec test --steps 1073741824 algorithms/aes/aes-modes.or
 python3 algorithms/verify.py algorithms/aes
 ```
+
+The tests of both files need more than `orangec test`'s default budget of
+1,048,576 evaluation steps (aes.or uses 1,259,062 and aes-modes.or
+7,714,374), so the commands raise it, as `verify.py` does.
 
 `orangec eval` prints every parameterless spec: the tables (`sbox`,
 `inv_sbox` and `rcon`) for `aes.or`, and the shared inputs of Appendix F
@@ -236,6 +240,10 @@ Each row is a `test` block comparing an output with the published value.
 | `SP 800-38A F.5.2: CTR-AES128.Decrypt` | SP 800-38A, Appendix F.5.2; recomputed | CTR-AES128.Decrypt, blocks 1 to 4 |
 | `SP 800-38A F.5.5: CTR-AES256.Encrypt` | SP 800-38A, Appendix F.5.5; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | CTR-AES256.Encrypt, blocks 1 to 4 |
 | `SP 800-38A F.5.6: CTR-AES256.Decrypt` | SP 800-38A, Appendix F.5.6; recomputed | CTR-AES256.Decrypt, blocks 1 to 4 |
+
+FIPS 197 Appendix C.1 to C.3 are in the 2001 text of the standard. The 2023
+update removed them in favor of NIST's page of example values and kept
+Appendix B, so the Appendix C rows above cite the 2001 edition.
 
 "The OpenSSL file" is `test/recipes/30-test_evp_data/evpciph_aes_common.txt`
 of the OpenSSL repository, which transcribes these cases of the two standards

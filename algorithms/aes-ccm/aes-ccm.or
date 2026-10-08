@@ -84,7 +84,7 @@ module aes_ccm {
   }
 
   // Appendix A.3: the counter blocks Ctr_i = Flags || N || [i]_8q, whose
-  // flags byte is 0 || 0 || 000 || [q - 1]_3 (Table 2).
+  // flags byte is 0 || 0 || 000 || [q - 1]_3 (Table 4).
   spec ctr[n in 7..14](nonce: Word[8]^n, i: Int) -> Block {
     let q: Int = 15 - n;
     flags_nonce_integer(q - 1, nonce, i)

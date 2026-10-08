@@ -1,8 +1,9 @@
 # SHA-2: SHA-256 and SHA-512
 
-SHA-2 is the family of hash functions that NIST published in 2001 (SHA-256,
-SHA-384, SHA-512, designed at the NSA) and extended in 2004 (SHA-224) and 2012
-(SHA-512/224, SHA-512/256). The current definition is
+SHA-2 is the family of hash functions that NIST proposed in 2001 and
+standardized in 2002 (SHA-256, SHA-384, SHA-512, designed at the NSA) and
+extended in 2004 (SHA-224) and 2012 (SHA-512/224, SHA-512/256). The current
+definition is
 [FIPS 180-4, Secure Hash Standard](https://doi.org/10.6028/NIST.FIPS.180-4)
 (August 2015). SHA-256 and SHA-512 are the hashes of TLS, X.509 certificates,
 code signing, Git's newer object format, HMAC and HKDF, most password-based

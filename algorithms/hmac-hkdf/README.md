@@ -103,9 +103,12 @@ the two must stay identical apart from it.
 ### Security status
 
 Record as written in September 2026. The standards themselves, FIPS 198-1,
-SP 800-107 and the RFCs, are unreachable from the build machine; their
-section numbers and the literature below are cited from the worker's
-knowledge and were not re-read for this entry.
+SP 800-107 and the RFCs, were unreachable from the build machine when this
+entry was written. Their section numbers were later checked against the
+published texts: FIPS 198, FIPS 198-1 and FIPS 180-4 at nvlpubs.nist.gov and
+csrc.nist.gov, RFC 2104, RFC 4231 and RFC 5869 at rfc-editor.org. The
+literature below was cited from the worker's knowledge and was not re-read
+for this entry.
 
 HMAC was designed with a proof. Bellare, Canetti and Krawczyk (CRYPTO 1996)
 showed that NMAC, and HMAC as its single-key variant, is a secure MAC when
@@ -152,16 +155,18 @@ but HMAC is defined for any approved hash, SHA-3 included.
 Key length and truncation. RFC 2104 section 3 recommends keys of at least L
 bytes; longer keys do not add strength, since a key longer than B is hashed
 to L bytes anyway, and a key of less than L bytes gives at most its own
-entropy. FIPS 198-1 section 3 requires a key of at least L / 2 bytes and
-notes that keys above L bytes do not add strength; SP 800-107 Rev. 1 (2012)
-ties HMAC's security strength to the key's and to the hash's state size.
-Truncating the MAC (FIPS 198-1's truncated output, RFC 2104 section 5)
-keeps the leftmost t bytes; RFC 2104 asks for t at least L / 2 and at least
-80 bits, SP 800-107 states the corresponding conditions, and RFC 4231 test
-case 5 is such a truncation to 128 bits. Two implementation pitfalls are not attacks on the
-construction: comparing tags byte by byte with early exit leaks the first
-differing position, and using a hash of a password as an HMAC key without a
-slow derivation leaves the key guessable.
+entropy. The original FIPS 198 (2002) section 3 required a key of at least
+L / 2 bytes and noted that keys above L bytes do not add strength; FIPS 198-1
+section 3 asks only for a key of appropriate security strength, as SP 800-107
+discusses, and SP 800-107 Rev. 1 (2012) ties HMAC's security strength to the
+key's and to the hash's state size. Truncating the MAC (FIPS 198-1's
+truncated output, RFC 2104 section 5) keeps the leftmost t bytes; RFC 2104
+asks for t at least L / 2 and at least 80 bits, SP 800-107 states the
+corresponding conditions, and RFC 4231 test case 5 is such a truncation to
+128 bits. Two implementation pitfalls are not attacks on the construction:
+comparing tags byte by byte with early exit leaks the first differing
+position, and using a hash of a password as an HMAC key without a slow
+derivation leaves the key guessable.
 
 HKDF's rationale (Krawczyk, CRYPTO 2010) is that key derivation has two
 jobs that should not be conflated. Extract turns input keying material of
@@ -251,8 +256,12 @@ number of bytes. Each range is one number in a signature, up to the
 
 ### Running
 
-    orangec test algorithms/hmac-hkdf/hmac-hkdf.or
+    orangec test --steps 1073741824 algorithms/hmac-hkdf/hmac-hkdf.or
     python3 algorithms/verify.py algorithms/hmac-hkdf
+
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 1,101,975), so the command raises it, as
+`verify.py` does.
 
 `orangec test` reads `sha256.or` from the same folder through `use sha256;`.
 

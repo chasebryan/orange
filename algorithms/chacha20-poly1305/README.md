@@ -13,12 +13,12 @@ lengths in a 16-byte tag. XChaCha20-Poly1305 is the same construction with
 a 192-bit nonce, the first 128 bits of which pass through HChaCha20 to make
 a subkey, described in
 [draft-irtf-cfrg-xchacha](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha)
-(Arciszewski, versions 00 to 03, 2018 to January 2020). ChaCha20-Poly1305
-is a cipher suite of TLS 1.2 and 1.3, an OpenSSH transport cipher, an IPsec
-ESP algorithm, a QUIC packet protection cipher, a Noise cipher and the only
-cipher of WireGuard; RFC 8439 is a current IETF specification, and
-XChaCha20-Poly1305 is an expired draft that libsodium, Botan, Go's x/crypto
-and other libraries implement as written.
+(Arciszewski, versions 00 to 03, April 2019 to January 2020).
+ChaCha20-Poly1305 is a cipher suite of TLS 1.2 and 1.3, an OpenSSH transport
+cipher, an IPsec ESP algorithm, a QUIC packet protection cipher, a Noise
+cipher and the only cipher of WireGuard; RFC 8439 is a current IETF
+specification, and XChaCha20-Poly1305 is an expired draft that libsodium,
+Botan, Go's x/crypto and other libraries implement as written.
 
 ## Analysis
 
@@ -77,7 +77,7 @@ AEAD_CHACHA20_POLY1305 under the subkey with the 12-byte nonce
 | 2.5.1, `poly1305_mac` | `poly1305_mac[h, q, k]` for messages of `256 h + 16 q + k` bytes |
 | 2.5.1, `poly1305_mac` on whole blocks | `poly1305_mac_blocks[b]` for 1 through 24 blocks |
 | 2.6.1, `poly1305_key_gen` | `poly1305_key_gen` |
-| 2.8, `x \|\| pad16(x)` and `num_to_8_le_bytes(x.length)` | `padded16[q, k]`, `length_bytes[q, k]` |
+| 2.8.1, `x \|\| pad16(x)` and `num_to_8_le_bytes(x.length)` | `padded16[q, k]`, `length_bytes[q, k]` |
 | 2.8.1, `mac_data` and the tag | `aead_tag` |
 | 2.8.1, `chacha20_aead_encrypt` | `chacha20_aead_encrypt` |
 | 2.8, decryption: the tag comparison and the plaintext | `chacha20_aead_decrypt`, `withheld[n]` |

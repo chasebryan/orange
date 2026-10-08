@@ -7,10 +7,10 @@
 // the standard's Algorithms 1 and 3 do. The S-box and its inverse are the
 // tables of sections 5.1.1 and 5.3.2, read by the byte they substitute.
 //
-// The file reproduces the cipher examples of Appendix C.1, C.2 and C.3 and
-// their inverses, and the output of the round-by-round example of Appendix
-// B. The modes of operation of SP 800-38A are in aes-modes.or, which uses
-// this module.
+// The file reproduces the cipher examples of Appendix C.1, C.2 and C.3 of the
+// 2001 text (the 2023 update removed them) and their inverses, and the output
+// of the round-by-round example of Appendix B. The modes of operation of
+// SP 800-38A are in aes-modes.or, which uses this module.
 edition 2026;
 module aes {
   // Section 3.4: the state is four rows of four bytes, s[r][c] the byte in
@@ -131,7 +131,7 @@ module aes {
   // rows are rotations of its first row m, so that
   // s'[r][c] = m[0] s[r][c] + m[1] s[r + 1][c] + m[2] s[r + 2][c] + m[3] s[r + 3][c],
   // the row indices taken modulo 4. This is the product of the column with a
-  // fixed polynomial modulo x^4 + 1.
+  // fixed polynomial modulo x^4 + 1, as the 2001 text writes it.
   spec mix(s: State, m: Row) -> State {
     for r in 0..4 with t: State = s {
       for c in 0..4 with u: State = t {
@@ -144,12 +144,15 @@ module aes {
   }
 
   // Section 5.1.3: MixColumns, the polynomial
-  // a(x) = {03}x^3 + {01}x^2 + {01}x + {02}, whose matrix has first row
-  // {02} {03} {01} {01}.
+  // a(x) = {03}x^3 + {01}x^2 + {01}x + {02} (Equation 5.5 of the 2001 text;
+  // the 2023 text gives its coefficients as the word [{02}, {01}, {01}, {03}]),
+  // whose matrix has first row {02} {03} {01} {01}.
   spec mix_columns(s: State) -> State { mix(s, [0x02, 0x03, 0x01, 0x01]) }
 
   // Section 5.3.3: InvMixColumns, the inverse polynomial
-  // a^-1(x) = {0b}x^3 + {0d}x^2 + {09}x + {0e}, first row {0e} {0b} {0d} {09}.
+  // a^-1(x) = {0b}x^3 + {0d}x^2 + {09}x + {0e} (Equation 5.9 of the 2001 text;
+  // the 2023 text gives the word [{0e}, {09}, {0d}, {0b}]), first row
+  // {0e} {0b} {0d} {09}.
   spec inv_mix_columns(s: State) -> State { mix(s, [0x0e, 0x0b, 0x0d, 0x09]) }
 
   // Section 5.1.4: AddRoundKey adds word w[4 round + c] of the round key to

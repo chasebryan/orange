@@ -142,9 +142,10 @@ Len, Grubbs and Ristenpart (2021) built partitioning-oracle attacks on
 password-based uses of GCM from ciphertexts valid under thousands of keys;
 and Albertini, Duong, Gueron, Kolbl, Luykx and Schmieg (2022) collected the
 abuses and the fixes (a padding check, or a key-commitment tag derived
-with the key). NIST's review of the SP 800-38 series (NIST IR 8459, draft
-2023) opened the question of revising the modes, key commitment among the
-topics; the 2007 text remains the standard.
+with the key). NIST's review of the SP 800-38 series (NIST IR 8459, September
+2024) describes the two-key ciphertext of the franking attack and recommends
+reaffirming SP 800-38D with possible corrections; NIST announced in March 2024
+that it will revise SP 800-38D, and the 2007 text remains the standard.
 
 **The misuse-resistant alternative** is AES-GCM-SIV (Gueron, Langley and
 Lindell; RFC 8452, 2019), which derives per-nonce keys, computes the tag
@@ -264,8 +265,12 @@ vector here exercises it and the GCM key lists name 16- and 32-byte keys.
 
 ### Running
 
-    orangec test algorithms/aes-gcm/aes-gcm.or
+    orangec test --steps 1073741824 algorithms/aes-gcm/aes-gcm.or
     python3 algorithms/verify.py algorithms/aes-gcm
+
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 1,651,253), so the command raises it, as
+`verify.py` does.
 
 `aes.or` has no tests; the gate checks it as the module the root uses.
 `orangec eval` prints the parameterless specs, which are the two inputs that
@@ -291,10 +296,11 @@ is the claim that the verdict is `false`.
 | `GCM specification Test Case 13: AES-256, empty P and A` | GCM specification, Test Case 13; OpenSSL file | AES-256, zero key, zero 96-bit IV, empty P and A |
 | `GCM specification Test Case 16: AES-256, 60-byte P, 20-byte A` | GCM specification, Test Case 16; OpenSSL file | AES-256, key feffe992...8308 twice, IV cafebabe...f888, 60-byte P, 20-byte A |
 
-The GCM specification's Test Cases 1 to 18 are the cases NIST's GCM example
-file also carries. Every expected value above was also produced by the
-Python `cryptography` package (`AESGCM.encrypt` and `AESGCM.decrypt`, which
-raises `InvalidTag` for the tampered row) and agrees.
+NIST's own GCM example file (`AES_GCM.pdf` on its page of example values) is a
+different list, eighteen examples labelled Example #1 to #6 under each key
+size, and it is not a source of any vector here. Every expected value above
+was also produced by the Python `cryptography` package (`AESGCM.encrypt` and
+`AESGCM.decrypt`, which raises `InvalidTag` for the tampered row) and agrees.
 
 ### Provenance and claims
 

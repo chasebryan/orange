@@ -3,7 +3,7 @@
 // Extendable Output Functions" (final, August 2025,
 // https://doi.org/10.6028/NIST.SP.800-232), written as the standard writes
 // it: the 320-bit state as five 64-bit words S0 through S4 loaded
-// little-endian (section 2), the permutation Ascon-p[rnd] of section 3 (the
+// little-endian (Appendix A.1), the permutation Ascon-p[rnd] of section 3 (the
 // module permutation, in permutation.or beside this file), and the AEAD of
 // section 4 with a 128-bit rate, 12 rounds in initialization and
 // finalization and 8 between blocks. Encryption gives C || T; decryption
@@ -42,8 +42,9 @@ module ascon {
     x ++ padding[len]()
   }
 
-  // Section 2: a 16-byte block enters the rate, S_r <- S_r ^ X_i, as two
-  // little-endian words, and the rate leaves the state as sixteen bytes.
+  // Section 4 and Appendix A.1: a 16-byte block enters the rate,
+  // S_r <- S_r ^ X_i, as two little-endian words, and the rate leaves the
+  // state as sixteen bytes.
   spec add_to_rate(s: State, x: Word[8]^16) -> State {
     let w: Word[64]^2 = x as little Word[64]^2;
     (s with [0] = s[0] ^ w[0]) with [1] = s[1] ^ w[1]
@@ -101,7 +102,7 @@ module ascon {
     tag as little Word[8]^16
   }
 
-  // Section 4, Algorithm 1, Ascon-AEAD128 encryption: C || T from K, N, A
+  // Section 4, Algorithm 3, Ascon-AEAD128 encryption: C || T from K, N, A
   // and P, with A and P not empty. The plaintext is any of 1 through 32
   // bytes and the output C || T is |P| + 16 bytes; the associated data has
   // one of the lengths the vectors use, listed as types, because a spec has
@@ -115,7 +116,7 @@ module ascon {
     r.1[..len] ++ finalization(r.0, k)
   }
 
-  // Algorithm 1 with A empty: nothing is absorbed before the domain
+  // Algorithm 3 with A empty: nothing is absorbed before the domain
   // separation.
   spec encrypt_empty_a[len in 1..33](
     k: Word[8]^16,
@@ -127,7 +128,7 @@ module ascon {
     r.1[..len] ++ finalization(r.0, k)
   }
 
-  // Algorithm 1 with P empty: the padded P is the one block padding[0](),
+  // Algorithm 3 with P empty: the padded P is the one block padding[0](),
   // C is empty, and C || T is T.
   spec encrypt_empty_p[A in {Word[8]^1, Word[8]^7, Word[8]^8, Word[8]^16, Word[8]^32}](
     k: Word[8]^16,
@@ -138,13 +139,13 @@ module ascon {
     finalization(plaintext(s, padding[0]()).0, k)
   }
 
-  // Algorithm 1 with A and P both empty: C || T is T.
+  // Algorithm 3 with A and P both empty: C || T is T.
   spec encrypt_empty(k: Word[8]^16, n: Word[8]^16) -> Word[8]^16 {
     let s: State = domain_separation(initialization(k, n));
     finalization(plaintext(s, padding[0]()).0, k)
   }
 
-  // Section 4, Algorithm 2, processing ciphertext, over the padded C of b
+  // Section 4, Algorithm 4, processing ciphertext, over the padded C of b
   // blocks: P_i <- S_r ^ C_i and S_r <- C_i, then Ascon-p[8], for every
   // block but the last; for the last block P~ is the first |C| mod 16 bytes
   // of S_r ^ C~, which the caller takes. The last block's state is not
@@ -161,7 +162,7 @@ module ascon {
     r.1
   }
 
-  // Section 4, Algorithm 2: the plaintext of |C| bytes, before the tag is
+  // Section 4, Algorithm 4: the plaintext of |C| bytes, before the tag is
   // checked, with A and C not empty; A has one of the listed lengths, as in
   // encrypt.
   spec plaintext_bytes[
@@ -177,7 +178,7 @@ module ascon {
     ciphertext(s, pad(c))[..len]
   }
 
-  // Section 4, Algorithm 2: S_r <- C_i is S_r <- S_r ^ P_i, and after the
+  // Section 4, Algorithm 4: S_r <- C_i is S_r <- S_r ^ P_i, and after the
   // last block S_r <- S_r ^ (P~ || 1 || 0^*) is the state encryption
   // reaches over the same P, so the tag T' is the tag of encrypting the
   // recovered P, and decryption succeeds when T' = T. A and C are not
@@ -196,7 +197,7 @@ module ascon {
     encrypt(k, n, a, p)[len..] == t
   }
 
-  // Section 4, Algorithm 2, Ascon-AEAD128 decryption: P when T verifies,
+  // Section 4, Algorithm 4, Ascon-AEAD128 decryption: P when T verifies,
   // and fail otherwise. Orange has no value for fail, so the result is then
   // all zeros and the verdict of verify is false; no plaintext is released
   // before the tag is checked. A and C are not empty, and A has one of the
@@ -308,13 +309,13 @@ module ascon {
       hex"202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
   }
 
-  // The verdict of Algorithm 2 on Count = 1089.
+  // The verdict of Algorithm 4 on Count = 1089.
   test "LWC_AEAD_KAT_128_128 Count 1089: the tag verifies" {
     verify(kat_key(), kat_nonce(), kat_count_1089_a(), kat_count_1089_c(), kat_count_1089_t())
   }
 
   // Derived from Count = 1089, not an entry of the file: the last tag byte
-  // changed from 0xaa to 0xab, for which Algorithm 2 returns fail. The
+  // changed from 0xaa to 0xab, for which Algorithm 4 returns fail. The
   // verdict is the definition's; the Python reference written for this entry
   // agrees.
   test "Derived from Count 1089, last tag byte changed: rejected" {

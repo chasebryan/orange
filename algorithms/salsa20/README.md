@@ -48,7 +48,8 @@ nonce by rows. The encryption function (section 10) takes n = (v, i), the
 nonce is words 6 and 7 and the counter words 8 (low) and 9 (high); the
 keystream is the blocks Salsa20_k(v, 0), Salsa20_k(v, 1), ..., and the
 ciphertext is the message XORed with it, the surplus of the last block being
-discarded. Salsa20/r replaces the ten doublerounds with r/2.
+discarded. Salsa20/r, defined in Salsa20/8 and Salsa20/12 (Bernstein, 2006)
+and not in the specification, replaces the ten doublerounds with r/2.
 
 HSalsa20 (Extending the Salsa20 nonce) runs the same twenty rounds
 on the expansion of a 32-byte key and a 16-byte n, omits the final addition,
@@ -65,7 +66,7 @@ HSalsa20_k(n[0..15]) with Salsa20 and the 8-byte nonce n[16..23].
 | 5, columnround | `columnround` |
 | 6, doubleround | `doubleround` |
 | 7, littleendian and its inverse | `as little Word[32]^16` and `as little Word[8]^64` in `salsa20[r]`; `as little Word[8]^8` in `nonce_counter` |
-| 8, the Salsa20 hash function, and Salsa20/r | `doublerounds[r]`, `salsa20[r]` for r = 20, 12 and 8 |
+| 8, the Salsa20 hash function; Salsa20/r is from Salsa20/8 and Salsa20/12 (2006), not the specification | `doublerounds[r]`, `salsa20[r]` for r = 20, 12 and 8 |
 | 9, the expansion for 32-byte and 16-byte keys | `expand_32`, `expand_16` |
 | 10, n = (v, i) and the keystream blocks | `nonce_counter`, `keystream[r, b]` for b of 1 to 4 blocks |
 | 10, encryption | `encrypt[n]` for messages of 1 to 256 bytes |
@@ -117,8 +118,10 @@ that a quarter of every input is fixed and public. Without the constants the
 core alone is not collision-resistant: Hernandez-Castro, Tapiador and
 Quisquater (FSE 2008) showed that adding 2^31 to every word of the input
 leaves the core's output unchanged, which Bernstein's expansion excludes by
-fixing the diagonal, and the specification itself says the hash function is
-not meant as a cryptographic hash.
+fixing the diagonal, and Bernstein's page on the
+[Salsa20 core](https://cr.yp.to/salsa20.html), the later name of the
+specification's hash function, says that it does not compress and is not
+collision-resistant.
 
 Every published key-recovery attack is on a reduced number of rounds, and
 none reaches the twelve of Salsa20/12. Crowley (2005) attacked 5 rounds with
@@ -309,6 +312,10 @@ nothing was typed by hand. pycryptodome 3.23 rejects a 24-byte nonce for
 `Salsa20`, so XSalsa20 has no library oracle here: its values are the files'
 and `ref.py` reproduces them through both routes (HSalsa20 then Salsa20, and
 Salsa20 under libsodium's published second key).
+
+The section numbers of the specification cited in this entry (3 to 10) were
+later checked against the published
+[specification](https://cr.yp.to/snuffle/spec.pdf).
 
 The identification of Botan's first and second cases as eSTREAM set 3,
 vectors 0 and 27, rests on the set's construction (the key bytes are the

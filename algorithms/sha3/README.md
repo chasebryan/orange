@@ -88,11 +88,13 @@ sponge construction comes with a proof: Bertoni, Daemen, Peeters and Van
 Assche (EUROCRYPT 2008) showed that a sponge over a random permutation is
 indifferentiable from a random oracle up to about 2^(c/2) queries, so the
 capacity sets the generic security and the rate is what remains for
-throughput. FIPS 202 Appendix A.1 states the resulting levels: for a digest
-of d bits and capacity c, collision resistance min(d/2, c/2) and preimage
-and second-preimage resistance min(d, c/2). With c = 2d for the hash
-functions this gives 112, 128, 192 and 256 bits of collision resistance for
-SHA3-224 through SHA3-512, and 224, 256, 384 and 512 bits against preimages.
+throughput. For a digest of d bits and capacity c the generic levels are
+collision resistance min(d/2, c/2) and preimage and second-preimage
+resistance min(d, c/2); FIPS 202 does not state these formulas, but its
+Appendix A.1 (Table 4) lists the levels for each function. With c = 2d for
+the hash functions this gives 112, 128, 192 and 256 bits of collision
+resistance for SHA3-224 through SHA3-512, and 224, 256, 384 and 512 bits
+against preimages.
 SHAKE128 (c = 256) and SHAKE256 (c = 512) offer at most 128 and 256 bits of
 security whatever the output length, and less when the output is short:
 min(d/2, 128) or min(d/2, 256) against collisions. Unlike SHA-2, a sponge has

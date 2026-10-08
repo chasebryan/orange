@@ -197,25 +197,25 @@ is copied from a fetched vector file.
 
 ### Provenance and claims
 
-RFC 6229 and RFC 7465 are not reachable from the build, so the vectors
-came from the three mirrors above, all fetched from
-`raw.githubusercontent.com` and kept in the scratch directory: the
-`cryptography` project's `rfc-6229-*.txt` files (seven key lengths, 36
-rows each), OpenSSL's `evpciph_rc4.txt`, and Botan's `rc4.vec`, with Go's
-`crypto/rc4/rc4_test.go` for the 1994 posting's cases. A script
-(`crosscheck.py`) ran all 252 RFC 6229 rows and all 69 `[RC4]` cases of
-Botan's file through pycryptodome's `Crypto.Cipher.ARC4`, the
-`cryptography` package's `ARC4` and a plain Python RC4 written from the
-two loops (`rc4_ref.py`, which can also dump S, i and j after any step);
-all agree. The Orange literals, the packed identity permutation, the keys
-and the expected keystreams, were generated from the fetched files by
-`gen_literals.py`, not typed. Section 2 of RFC 6229 is cited as the
-section that holds the test vectors, as the document is known to the
-author; the number was not checked from this machine. The Orange files
-matched all five vectors on their first evaluation, so `rc4_ref.py`'s
-step-by-step dump was not needed. Costs were measured by the loop-and-
-binary-search method of the folder's brief (`measure.py`) and by filling
-each file's remaining budget with a calibrated loop (`headroom.py`).
+RFC 6229 and RFC 7465 are not reachable from the build, so the vectors came
+from the three mirrors above, all fetched from `raw.githubusercontent.com` and
+kept in the scratch directory: the `cryptography` project's `rfc-6229-*.txt`
+files (seven key lengths, 36 rows each), OpenSSL's `evpciph_rc4.txt`, and
+Botan's `rc4.vec`, with Go's `crypto/rc4/rc4_test.go` for the 1994 posting's
+cases. A script (`crosscheck.py`) ran all 252 RFC 6229 rows and all 69 `[RC4]`
+cases of Botan's file through pycryptodome's `Crypto.Cipher.ARC4`, the
+`cryptography` package's `ARC4` and a plain Python RC4 written from the two
+loops (`rc4_ref.py`, which can also dump S, i and j after any step); all
+agree. The Orange literals, the packed identity permutation, the keys and the
+expected keystreams, were generated from the fetched files by
+`gen_literals.py`, not typed. Section 2 of RFC 6229, "Test Vectors for RC4",
+holds the test vectors; the section number and the rows used by the four RFC
+tests were checked against the published
+[RFC 6229](https://www.rfc-editor.org/rfc/rfc6229). The Orange files matched
+all five vectors on their first evaluation, so `rc4_ref.py`'s step-by-step
+dump was not needed. Costs were measured by the loop-and-binary-search method
+of the folder's brief (`measure.py`) and by filling each file's remaining
+budget with a calibrated loop (`headroom.py`).
 
 The entry was then rewritten in the current language, the two files
 folded into one. Every expected value is carried over byte for byte from

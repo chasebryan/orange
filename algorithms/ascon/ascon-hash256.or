@@ -29,7 +29,7 @@ module ascon_hash256 {
     [0; (8 * ((len / 8) + 1) - len)] with [0] = 0x01
   }
 
-  // Section 5, Algorithm 3, Ascon-Hash256 of a padded message of b blocks:
+  // Section 5, Algorithm 5, Ascon-Hash256 of a padded message of b blocks:
   // S <- Ascon-p[12](IV || 0^256); each block M_i enters the rate as a
   // little-endian word, S0 <- S0 ^ M_i, followed by Ascon-p[12]; then the
   // 256-bit digest H is squeezed as four 64-bit words S0, with Ascon-p[12]

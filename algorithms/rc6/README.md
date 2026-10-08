@@ -109,8 +109,11 @@ on RC5's data-dependent rotation (filed 1995) and U.S. Patent 6,269,163 on
 RC6's enhancements (filed 1998). RSA had announced that RC6 would be
 royalty-free if selected; as it was not, the patents stood until they
 expired, twenty years after filing, in 2015 and 2018, and RC6 is now
-unencumbered (the patent numbers and dates are as RSA's submission and the
-patents' front pages give them, and were not checked from this machine).
+unencumbered (the patent numbers were matched to the patents' titles in the
+USPTO's public patent search, "Block encryption algorithm with data-dependent
+rotations" and "Enhanced block ciphers with data-dependent rotations"; the
+filing and expiry dates are as RSA's submission and the patents' front pages
+give them, and were not checked from this machine).
 RC6 was also submitted to the European NESSIE project (2000) and was not
 retained in its 2003 portfolio. The same features are the cipher's
 side-channel liability: on processors where a multiplication or a
@@ -222,6 +225,12 @@ Castle's `RC6Engine.java` and `RC6Test.java`. The paper itself is not
 reachable from the build, so the file's comments cite its sections by their
 titles ("Details of RC6", "Key schedule", "Encryption and decryption")
 rather than by number, and the test vectors by the file that carries them.
+The paper's own text was still out of reach when these titles were checked.
+The IETF draft draft-krovetz-rc6-rc5-vectors-00, which cites the paper and
+dates it 20 August 1998, calls its section 2.2 "Encryption and decryption"
+and names a key schedule section "Key schedule for RC6", which agrees with
+the first and, in its longer form, the second title. The title "Details of
+RC6" and the version number 1.1 were not confirmed.
 
 P32 and Q32 were recomputed by script from their definition,
 P32 = Odd((e - 2) 2^32) and Q32 = Odd((phi - 1) 2^32) with Odd the nearest

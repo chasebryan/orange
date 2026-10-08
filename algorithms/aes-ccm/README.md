@@ -55,11 +55,11 @@ the recovered `P`, and accepts only when the two tags agree.
 | SP 800-38C section 5.1, `CIPH_K` | `ciph` |
 | The standard's symbols, `X ^ Y` and the length of a string in octets | `xor[l]`, `octets[l]` |
 | Appendix A.1, the layout Flags, N, `[x]_8q` with `n + q = 15` shared by `B_0` and `Ctr_i` | `flags_nonce_integer[n]` |
-| Appendix A.2.1, `B_0` (Table 1) | `b_0[n]` |
+| Appendix A.2.1, `B_0` (Tables 1 and 2) | `b_0[n]` |
 | Appendix A.2.2, the associated-data blocks | `associated_data_blocks[a]` |
 | Appendix A.2.3, the payload blocks | `payload_blocks[p]` |
 | Appendix A.2, the formatting function | `b_0(...) ++ associated_data_blocks(assoc) ++ payload_blocks(payload)` in the processes; `b_0(...) ++ payload_blocks(payload)` in `decryption_verification_without_a` |
-| Appendix A.3, the counter blocks (Table 2) | `ctr[n]` |
+| Appendix A.3, the counter blocks (Tables 3 and 4) | `ctr[n]` |
 | Section 6.1, steps 2 to 4, the CBC-MAC | `cbc_mac[blocks]` |
 | Section 6.1, steps 5 to 7, the counter blocks and `S` | `keystream[n, m]` |
 | Section 6.1, step 8 (and section 6.2, step 5), `P ^ MSB_Plen(S)` | `counter_mode[n, p]` |
@@ -121,10 +121,10 @@ the block cipher is a pseudorandom permutation and nonces do not repeat: the
 advantage of an adversary is bounded by a birthday term, of the order of
 `sigma^2 / 2^128` for `sigma` blocks processed under one key, plus
 `q_v / 2^Tlen` for `q_v` forgery attempts. No attack below these bounds is
-known. SP 800-38C Appendix B draws the practical limits from them: at most
-`2^61` block cipher invocations under one key, and a tag of at least 64 bits
-unless the number of forgery attempts an attacker can make is itself
-limited.
+known. SP 800-38C draws the practical limits from them: at most `2^61` block
+cipher invocations under one key (section 5.1), and a tag of at least 64 bits
+unless the number of forgery attempts an attacker can make is itself limited
+(Appendix B.2).
 
 The design has been criticized rather than broken. Rogaway and Wagner
 ("A Critique of CCM", 2003) listed what the two-pass structure costs. CCM
@@ -171,11 +171,12 @@ nonces longer than 60 bytes, CVE-2017-18330), and a verifier must compare
 the whole tag.
 
 Status as of 2026: SP 800-38C is a current NIST recommendation, and NIST's
-review of the SP 800-38 series (NIST IR 8459, initial public draft, 2023)
-proposed no change to CCM as far as this author recalls (not checked from
-this machine); CCM is the mandatory cipher of WPA2 and of WPA3-Personal, the
-cipher of Zigbee, Thread and Bluetooth LE link encryption, and optional in
-TLS 1.3.
+review of the SP 800-38 series (NIST IR 8459, September 2024) recommends
+reaffirming it with possible corrections, among them one for an error in the
+decryption-verification of a zero-length plaintext (section 6 of the report);
+NIST announced in April 2025 that it will revise SP 800-38C. CCM is the
+mandatory cipher of WPA2 and of WPA3-Personal, the cipher of Zigbee, Thread
+and Bluetooth LE link encryption, and optional in TLS 1.3.
 
 ### What the Orange rendering shows
 
@@ -240,7 +241,7 @@ to the lists in the processes' signatures, within the 256 instances);
 generation-encryption with empty associated data, which no vector here
 needs; AES-192 and AES-256 as the block cipher (the Appendix C examples are
 all `Klen = 128`); and the validity requirements on `N`, `A`, `P` and `Tlen`
-of section 5.3 and Appendix A.1, which section 6.1 takes as prerequisites
+of section 5.4 and Appendix A.1, which section 6.1 takes as prerequisites
 and section 6.2 step 7 checks, and which hold here by the listed lengths
 rather than being computed.
 
@@ -296,7 +297,7 @@ GF(2^8) modulo `x^8 + x^4 + x^3 + x + 1`, then the affine map with constant
 `0x63`), compared entry by entry with the `sbox[]` table of the tiny-AES-c
 reference implementation, and packed into the `Word[64]` literals by the
 same script; the round constants are the powers of `x` in that field. The
-CCM layout (the flags bytes of Tables 1 and 2, the length encodings, the
+CCM layout (the flags bytes of Tables 1 and 4, the length encodings, the
 counter blocks) was written as a Python reference of SP 800-38C for this
 entry, and that reference agrees with the `cryptography` package's `AESCCM`
 and with every AES-128 case of three fetched vector files: all 34 AES-128

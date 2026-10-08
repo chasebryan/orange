@@ -10,11 +10,11 @@
 // GCM-AD (7.2, Algorithm 5), with 128-bit tags.
 //
 // It reproduces Test Cases 1, 2, 4 and 6 (AES-128) and 13 and 16 (AES-256)
-// of the GCM specification (McGrew and Viega, 2005; the same cases are
-// NIST's GCM examples), case 2 of Wycheproof's aes_gcm_test.json (a 96-bit
-// IV, an independent source), GCM-AD on Test Cases 4 and 6, and the
-// decryption-error row of OpenSSL's evpciph_aes_common.txt that follows Test
-// Case 6, whose changed tag GCM-AD rejects.
+// of the GCM specification (McGrew and Viega, 2005), case 2 of Wycheproof's
+// aes_gcm_test.json (a 96-bit IV, an independent source), GCM-AD on Test
+// Cases 4 and 6, and the decryption-error row of OpenSSL's
+// evpciph_aes_common.txt that follows Test Case 6, whose changed tag GCM-AD
+// rejects.
 edition 2026;
 module aes_gcm {
   use aes;

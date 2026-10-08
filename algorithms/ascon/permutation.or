@@ -3,20 +3,20 @@
 // Encryption, Hash, and Extendable Output Functions" (final, August 2025,
 // https://doi.org/10.6028/NIST.SP.800-232), section 3, written as the
 // standard writes it: the 320-bit state as five 64-bit words S0 through S4,
-// and each round the constant-addition layer p_C (3.1), the bitsliced 5-bit
-// S-box p_S (3.2) and the linear diffusion layer p_L (3.3). The module is
+// and each round the constant-addition layer p_C (3.2), the bitsliced 5-bit
+// S-box p_S (3.3) and the linear diffusion layer p_L (3.4). The module is
 // read by ascon.or (Ascon-AEAD128, with Ascon-p[12] and Ascon-p[8]) and by
 // ascon-hash256.or (Ascon-Hash256, with Ascon-p[12]), whose tests exercise
 // it; it carries no vectors of its own.
 edition 2026;
 module permutation {
   // Section 3: the state S = S0 || S1 || S2 || S3 || S4, five 64-bit words.
-  // Section 2 loads bytes into a word little-endian, the first byte in the
+  // Appendix A.1 loads bytes into a word little-endian, the first byte in the
   // least significant position, so that bit 0 of the state is bit 0 of the
   // first byte; the modes do that with `as little`.
   type State = Word[64]^5;
 
-  // Section 3.1, the constant-addition layer p_C: the round constants of
+  // Section 3.2, the constant-addition layer p_C: the round constants of
   // the twelve rounds of Ascon-p[12]. The standard's table lists sixteen
   // constants so that up to sixteen rounds are defined, and Ascon-p[12] uses
   // the last twelve of them, 0xf0 through 0x4b. This entry numbers those
@@ -26,12 +26,12 @@ module permutation {
   // of permutations.h of the reference implementation.
   spec round_constants() -> Word[8]^12 { hex"f0 e1 d2 c3 b4 a5 96 87 78 69 5a 4b" }
 
-  // Section 3.1: S2 <- S2 ^ c_i.
+  // Section 3.2: S2 <- S2 ^ c_i.
   spec constant_addition(s: State, c: Word[8]) -> State {
     s with [2] = s[2] ^ (c as Word[64])
   }
 
-  // Section 3.2, the substitution layer p_S: the 5-bit S-box applied to
+  // Section 3.3, the substitution layer p_S: the 5-bit S-box applied to
   // the 64 columns of the state at once, written as the standard's
   // bitsliced sequence of xor, and and not, with x0 through x4 the input
   // words and t0 through t4 the intermediate ones, never as a table.
@@ -49,7 +49,7 @@ module permutation {
     [t0 ^ t4, t1 ^ t0, ~t2, t3 ^ t2, t4]
   }
 
-  // Section 3.3, the linear diffusion layer p_L: S_i <- Sigma_i(S_i) with
+  // Section 3.4, the linear diffusion layer p_L: S_i <- Sigma_i(S_i) with
   // Sigma_i(x) = x ^ (x >>> r1) ^ (x >>> r2) and the rotation pairs (19, 28),
   // (61, 39), (1, 6), (10, 17) and (7, 41), rotations to the right.
   spec linear_diffusion_layer(s: State) -> State {

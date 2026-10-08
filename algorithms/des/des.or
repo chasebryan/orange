@@ -9,17 +9,18 @@
 // sixteen columns. On it, the Triple Data Encryption Algorithm of NIST
 // SP 800-67 rev. 2, "Recommendation for the Triple Data Encryption Algorithm
 // (TDEA) Block Cipher" (2017), https://doi.org/10.6028/NIST.SP.800-67r2,
-// section 3: the forward transformation E_K3(D_K2(E_K1(I))), the inverse
-// D_K1(E_K2(D_K3(I))), and keying options 1 (three independent keys) and 2
-// (K3 = K1).
+// section 3.1: the forward cipher operation E_K3(D_K2(E_K1(I))), the inverse
+// D_K1(E_K2(D_K3(I))), and the keying options of FIPS 46-3 and SP 800-67
+// rev. 1 section 3.2, 1 (three independent keys) and 2 (K3 = K1).
 //
-// The file reproduces the SP 800-67 rev. 2 Appendix B example, the
+// The file reproduces the SP 800-67 rev. 1 Appendix B.1 example, the
 // single-DES and TDEA cases of Botan's des.vec, three DES-ECB cases of
 // OpenSSL's evpciph_des.txt, the DES-EDE3-ECB and DES-EDE-ECB cases of
 // OpenSSL's evpciph_des3_common.txt, the complementation property on a
 // Botan case, and the involution under a weak key: thirteen vectors in all.
 // FIPS 46-3 does not number the sections of its body; the comments name its
-// headings.
+// headings. The key schedule has none: the standard gives it in Appendix 1
+// and Figure 3.
 edition 2026;
 module des {
   // The selection functions: an S-box is four rows of sixteen four-bit
@@ -198,9 +199,9 @@ module des {
     permute(permutation(), sb as Word[64], 32) as Word[32]
   }
 
-  // Key Schedule Calculation: PC-1 takes the 64-bit KEY to C0 (its first 28
-  // outputs) and D0 (the last 28), passing over the parity bits 8, 16, ...,
-  // 64, which no row of the table names.
+  // Appendix 1 and Figure 3, Key schedule calculation: PC-1 takes the 64-bit
+  // KEY to C0 (its first 28 outputs) and D0 (the last 28), passing over the
+  // parity bits 8, 16, ..., 64, which no row of the table names.
   spec permuted_choice_1() -> Word[8]^56 {
     [
       57, 49, 41, 33, 25, 17,  9,
@@ -214,8 +215,8 @@ module des {
     ]
   }
 
-  // Key Schedule Calculation: PC-2 selects the 48 bits of K_n from the 56
-  // bits of C_n D_n.
+  // Appendix 1 and Figure 3, Key schedule calculation: PC-2 selects the 48
+  // bits of K_n from the 56 bits of C_n D_n.
   spec permuted_choice_2() -> Word[8]^48 {
     [
       14, 17, 11, 24,  1,  5,
@@ -229,8 +230,8 @@ module des {
     ]
   }
 
-  // Key Schedule Calculation: the schedule of left shifts, the number of
-  // places C and D turn at iterations 1 through 16.
+  // Appendix 1 and Figure 3, Key schedule calculation: the schedule of left
+  // shifts, the number of places C and D turn at iterations 1 through 16.
   spec left_shifts() -> Int^16 { [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1] }
 
   // LS_n: a circular left shift of a 28-bit block by one or two places.
@@ -284,11 +285,12 @@ module des {
     dea(reversed_schedule(key_schedule(key)), block)
   }
 
-  // SP 800-67 rev. 2, section 3: the TDEA forward transformation of a block
-  // I under the key bundle (K1, K2, K3), O = E_K3(D_K2(E_K1(I))), and the
-  // inverse transformation O = D_K1(E_K2(D_K3(I))). Keying option 1 is three
-  // independent keys; keying option 2 is K3 = K1, and is written here by
-  // passing K1 again as the third key.
+  // SP 800-67 rev. 2, section 3.1: the TDEA forward cipher operation on a
+  // block I under the key bundle (K1, K2, K3), O = E_K3(D_K2(E_K1(I))), and
+  // the inverse cipher operation O = D_K1(E_K2(D_K3(I))). Keying option 1
+  // (FIPS 46-3; SP 800-67 rev. 1 section 3.2) is three independent keys;
+  // keying option 2 is K3 = K1, and is written here by passing K1 again as
+  // the third key.
   spec tdea_encrypt(k1: Word[8]^8, k2: Word[8]^8, k3: Word[8]^8, block: Word[8]^8) -> Word[8]^8 {
     encrypt(k3, decrypt(k2, encrypt(k1, block)))
   }
@@ -297,7 +299,7 @@ module des {
     decrypt(k1, encrypt(k2, decrypt(k3, block)))
   }
 
-  // SP 800-67 rev. 2, Appendix B, applies the forward transformation to
+  // SP 800-67 rev. 1, Appendix B.1, applies the forward cipher operation to
   // consecutive blocks (the ECB mode of SP 800-38A): here n blocks of eight
   // bytes, n from 1 through 3. Each key's schedule is computed once for all
   // the blocks.
@@ -315,11 +317,13 @@ module des {
   // The vectors. Keys, blocks and expected values are written in hex as the
   // sources print them.
 
-  // SP 800-67 rev. 2, Appendix B: the three blocks of "The qufck brown fox
-  // jump" (the standard's own spelling) under Key1 = 0123456789abcdef,
-  // Key2 = 23456789abcdef01, Key3 = 456789abcdef0123, in ECB. The expected
-  // value is pycryptodome DES3's, confirmed by the cryptography package.
-  test "SP 800-67r2 Appendix B: three-key TDEA of three blocks in ECB" {
+  // SP 800-67 rev. 1, Appendix B.1 (rev. 2 no longer holds the example): the
+  // three blocks of "The qufck brown fox jump" (as the standard's hex spells
+  // it) under Key1 = 0123456789abcdef, Key2 = 23456789abcdef01,
+  // Key3 = 456789abcdef0123, in ECB. The expected value is the ciphertext
+  // that the standard prints, which pycryptodome DES3 and the cryptography
+  // package reproduce.
+  test "SP 800-67r1 Appendix B.1: three-key TDEA of three blocks in ECB" {
     tdea_encrypt_ecb(
       hex"0123456789abcdef", hex"23456789abcdef01", hex"456789abcdef0123",
       "The qufck brown fox jump",

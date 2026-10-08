@@ -99,7 +99,7 @@ module chacha20poly1305 {
     block(key, 0, nonce)[..32]
   }
 
-  // Section 2.8: x || pad16(x), x followed by the zeros that fill its last
+  // Section 2.8.1: x || pad16(x), x followed by the zeros that fill its last
   // sixteen-byte block. The RFC's pad16(x) is the zeros alone, which are
   // empty when x fills its last block; an array has at least one element,
   // so the padded string is written whole.
@@ -107,7 +107,7 @@ module chacha20poly1305 {
     [0; (16 * ((n + 15) / 16))] with [..n] = x
   }
 
-  // Section 2.8, chacha20_aead_encrypt: the plaintext is encrypted from
+  // Section 2.8.1, chacha20_aead_encrypt: the plaintext is encrypted from
   // counter 1, and the tag is Poly1305 under the one-time key of
   // mac_data = aad || pad16(aad) || ciphertext || pad16(ciphertext) ||
   // num_to_8_le_bytes(aad.length) || num_to_8_le_bytes(ciphertext.length).
