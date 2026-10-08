@@ -11,34 +11,41 @@ with fixed digests, and SHAKE128 and SHAKE256 with output of any length. They
 are current standards; SHA3-256, SHA3-512, SHAKE128 and SHAKE256 are the hash
 functions inside ML-KEM (FIPS 203) and ML-DSA (FIPS 204), and the derived
 functions cSHAKE, KMAC, TupleHash and ParallelHash of SP 800-185 are built on
-the same sponge. This entry writes the permutation, the sponge, SHA3-256,
-SHA3-512, SHAKE128 and SHAKE256 in Orange and reproduces eight digests.
+the same sponge. This entry writes the permutation, the sponge and all six
+functions in Orange and reproduces ten digests.
 
 ## Analysis
 
 ### Structure
 
 The state of Keccak-p[1600, 24] is 1600 bits arranged as a 5 by 5 array of
-64-bit lanes A[x, y] (FIPS 202 section 3.1). The Orange file keeps it as
-`Word[64]^25` with A[x, y] at index x + 5y and loads each lane little-endian
-from the byte string, exactly the conversion of section 3.1.2. A round is the
-five step mappings of section 3.2 applied in order, and the permutation is 24
-rounds, ir = 0 through 23, with the round constants of Algorithm 5.
+64-bit lanes A[x, y] (FIPS 202 section 3.1). The Orange file keeps it as the
+standard indexes it: `type State = Sheet^5` with `type Sheet = Word[64]^5`,
+so `a[x][y]` is lane (x, y), and every step mapping writes lane (x, y) with
+the update path `with [x][y]`. A string of 1600 bits is 200 bytes; lane
+(x, y) is its word 5y + x read little-endian (section 3.1.2 with the bit
+order of Appendix B.1), and the string is read back plane by plane
+(section 3.1.3). A round is the five step mappings of section 3.2 applied in
+order, and the permutation is 24 rounds, i_r = 0 through 23, with the round
+constants of Algorithms 5 and 6.
 
 | Standard section | Orange spec |
 | --- | --- |
-| 3.1.2, string to state array | `lanes` |
-| 3.2.1, theta | `theta` |
-| 3.2.2, rho (Table 2 offsets) | `rho` |
-| 3.2.3, pi | `pi` |
-| 3.2.4, chi | `chi` |
-| 3.2.5, iota and the constants RC[ir] | `iota`, `round_constants` |
-| 3.3, Rnd and Keccak-p[1600, 24] | `rnd`, `keccak_p` |
-| 4, Algorithm 8, absorbing | `absorb` |
-| 4, Algorithm 8, squeezing (one block, d <= r) | `squeeze_32`, `squeeze_64`, `squeeze_168` |
-| 5.1 and B.2, pad10*1 with the domain suffix | `pad` |
-| 6.1, SHA3-256 and SHA3-512 | `sha3_256`, `sha3_256_two_blocks`, `sha3_512` |
-| 6.2, SHAKE128 and SHAKE256 | `shake128_32`, `shake128_168`, `shake256_64` |
+| 3.1, the state array | `Sheet`, `State` (`a[x][y]`) |
+| 3.1.2, string to state array | `state_array` |
+| 3.1.3, state array to string | `state_string` |
+| 3.2.1, Algorithm 1, theta | `theta` |
+| 3.2.2, Algorithm 2, rho (the offsets of Table 2, computed) | `rho_walk`, `rho` |
+| 3.2.3, Algorithm 3, pi | `pi` |
+| 3.2.4, Algorithm 4, chi | `chi` |
+| 3.2.5, Algorithm 5, rc(t) | `rc` |
+| 3.2.5, Algorithm 6, RC[i_r] and iota | `round_constants`, `iota` |
+| 3.3, Rnd and Algorithm 7, Keccak-p[1600, 24] | `rnd`, `keccak_p` |
+| 4, Algorithm 8, step 6, the xor of a block | `xor_string` |
+| 4 and 5.2, Algorithm 8, KECCAK[c] | `keccak[c, n]` (c in lanes, n blocks) |
+| 5.1, 6 and B.2, pad10*1 after the domain suffix | `pad[q]` (q bytes) |
+| 6.1, SHA3-224, SHA3-256, SHA3-384, SHA3-512 | `sha3_224[n]`, `sha3_256[n]`, `sha3_384[n]`, `sha3_512[n]` |
+| 6.2, SHAKE128 and SHAKE256 | `shake128[n]`, `shake256[n]` |
 
 Theta computes the five column parities C[x], the five values
 D[x] = C[x - 1] xor rot(C[x + 1], 1), and adds D[x] to every lane of column
@@ -48,12 +55,26 @@ A[x] xor (not A[x + 1] and A[x + 2]), and iota adds the round constant to
 lane (0, 0). The sponge (section 4) absorbs r-bit blocks by xor into the
 first r bits of the state followed by the permutation, and squeezes output
 from the same r bits. Each SHA-3 function fixes the capacity c and the rate
-r = 1600 - c; SHA3-256 and SHAKE256 have r = 1088 bits (136 bytes), SHA3-512
-has r = 576 (72 bytes) and SHAKE128 has r = 1344 (168 bytes). The message is
+r = 1600 - c; SHA3-224 has r = 1152 bits (144 bytes), SHA3-256 and SHAKE256
+have r = 1088 (136 bytes), SHA3-384 has r = 832 (104 bytes), SHA3-512 has
+r = 576 (72 bytes) and SHAKE128 has r = 1344 (168 bytes). The message is
 followed by a domain suffix, 01 for the hash functions and 1111 for the
 XOFs, and then by pad10*1 (section 5.1), which in bytes is the value 0x06 or
-0x1f at the first free position and 0x80 at the last byte of the rate
-(Appendix B.2).
+0x1f at the first free position and 0x80 at the last byte of the rate, the
+two sharing a byte (0x86 or 0x9f) when only one is free (Appendix B.2).
+
+`keccak[c, n]` is KECCAK[c] of section 5.2 for a capacity of c lanes (4
+through 16, so 256 through 1024 bits) over a padded string of n blocks of
+8(25 - c) bytes: SHA3-256, KECCAK[512], is `keccak[8, n]`. It runs
+Algorithm 8 on strings, as the standard writes it: each block is joined to
+c lanes of zeros and xored into S, and S = Keccak-p(S); the first block of
+output, Trunc_r(S), is returned, and each function keeps its first d bits
+with a slice. `pad[q]` is Appendix B.2's padding in bytes: q is the number
+of bytes from the end of the message to the end of its last block,
+q = r/8 - (m mod r/8) for a message of m bytes, and the spec takes the
+first byte (0x06 or 0x1f) as its argument. The hash and XOF specs take the
+padded message, `Word[8]^(136 * n)` for SHA3-256, and a test reads
+`sha3_256("abc" ++ pad[136 - 3](0x06))`.
 
 ### Security status
 
@@ -117,61 +138,85 @@ SHA3-256, SHA3-512, SHAKE128 and SHAKE256 in ML-KEM, ML-DSA and SLH-DSA.
 
 ### What the Orange rendering shows
 
-Everything in SHA-3 is data-independent: no branch, no table, no rotation
-depends on the message, and the Orange file has no conditional inside the
-permutation. The state array with its (x, y) coordinates becomes a flat
-`Word[64]^25` because Orange has no arrays of arrays; the index x + 5y is the
-standard's own lane order (section 3.1.2), so the little-endian byte loading
-is the one the standard describes. Rho writes Table 2 as the 25 rotations
-`a[i] <<< offset` rather than as an offset table read in a loop. A rotation
-amount need not be a literal: an `Int`, a word, or a table element is
-accepted, so a loop may rotate by `offsets[i]`. A literal amount on
-`Word[64]` is still only 0 through 63. Theta, pi and chi are 25-element
-array literals laid out one line per plane y, so each line is the standard's
-formula for one row; the column parities C and D of theta are loops with the
-indices (x + 4) mod 5 and (x + 1) mod 5 of the standard.
+Nothing in SHA-3 depends on the data except the values themselves: no
+branch, no table lookup and no rotation amount depends on the message. The
+only conditional in the file is the feedback of the shift register in `rc`,
+which depends on the register alone. Every index is a literal, a loop index,
+a loop index reduced modulo 5, or a coordinate of rho's walk, and the
+checker proves each in range before evaluation.
 
-The sponge needs a message length, and Orange has no data-dependent index, so
-`pad` finds the suffix byte by comparing the loop index with n and the final
-byte by comparing with r - 1 (about 3,800 steps for the two passes over 200
-bytes). Every message travels as a 200-byte string, the width of the state,
-with zeros beyond its length, which lets one `absorb` serve all three rates.
-Squeezing more than one block is not needed for these outputs (d <= r in
-every case) and is not written.
+The step mappings read as Algorithms 1 through 4. Theta, pi and chi are
+loops over x and y that build the new state with `with [x][y]`, each lane
+written with the standard's coordinates: `a[(x + 3 * y) % 5][x]` for pi,
+`a[(x + 1) % 5][y]` and `a[(x + 2) % 5][y]` for chi, `c[(x - 1) % 5]` for
+theta, where the language's `%` gives (x - 1) mod 5 = 4 at x = 0 as the
+standard's mod does. Rho is Algorithm 2 itself: the coordinates (x, y) are
+residues modulo 5, `Mod[5]`, stepped to (y, 2x + 3y), and each lane is
+rotated by the computed amount (t + 1)(t + 2)/2, which the rotation reduces
+modulo 64; the offsets of Table 2 are never typed. The round constants are
+Algorithms 5 and 6: `rc` runs the shift register for t = 0 through 167, and
+`round_constants` sets bit 2^j - 1 of RC[i_r] to rc(j + 7 i_r), so no
+constant is typed either.
 
-Measured under `orangec eval`: one Keccak-p[1600, 24] permutation costs about
-23,300 steps, a one-block SHA3-256 about 35,000, SHAKE128 with 168 bytes of
-output about 70,000 (the 168-byte squeeze is a third of it), and the
-two-block SHA3-256 about 105,000. The eight vectors together use about
-420,000 of the 1,048,576-step budget; six more two-block vectors would fit,
-and nothing was dropped or moved to a second file.
+Byte order is written once, where Appendix B.1 fixes it: `as little
+Word[64]^25` turns 200 bytes into the 25 lanes of section 3.1.2 and back.
+Lengths are sizes. `keccak[c, n]` slices block i of the padded message as
+`p[8 * (25 - c) * i..8 * (25 - c) * (i + 1)]` and joins it to `[0; (8 * c)]`,
+the 0^c of Algorithm 8; `pad[q]` builds its q bytes as a fill with the first
+byte set and the last xored with 0x80, so q = 1 gives 0x86 or 0x9f with no
+special case. The checker computes each instance's lengths from its
+signature, so a test that names the wrong q for its message finds no
+instance of the hash spec that takes the result, unless the error is a
+whole block. A digest of d bits is the slice `[..d/8]` of Trunc_r(S).
+
+Measured costs under `orangec eval --stats` and `orangec test --stats`: one
+Keccak-p[1600, 24] permutation costs 89,719 steps, of which 7,546 build the
+round constants and 24 rounds of 3,388 the rest (theta 661, rho 1,286, pi
+514, chi 921, iota and the call); the two conversions between string and
+state array cost about 420 each. Each block absorbed adds 90,131 steps to
+`keccak[c, n]`, and a call to `pad` costs 26 to 32 steps. A one-block test
+costs 90,161 to 90,182 steps and the two-block SHA3-256 test 180,294. The
+ten tests together use 991,794 steps.
+
+Not expressed: a message whose length is not a whole number of bytes, a
+message of more than two blocks, and SHAKE output longer than one rate
+(Gaps).
 
 ## Dissemination
 
 ### Files
 
-- `sha3.or`: Keccak-p[1600, 24], the sponge with pad10*1, SHA3-256, SHA3-512,
-  SHAKE128 and SHAKE256, and the eight vector pairs.
+- `sha3.or`: Keccak-p[1600, 24], the sponge KECCAK[c] with pad10*1 after
+  the domain suffix, SHA3-224, SHA3-256, SHA3-384, SHA3-512, SHAKE128 and
+  SHAKE256, and the ten tests below.
 
 ### Running
 
 ```console
-orangec eval algorithms/sha3/sha3.or
+orangec test algorithms/sha3/sha3.or
 python3 algorithms/verify.py algorithms/sha3
 ```
 
+`orangec eval` prints the two parameterless specs, the bits rc(0) through
+rc(167) and the 24 round constants.
+
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `sha3.or`, comparing a digest or an output
+with the published or recomputed value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `botan_sha3_256_empty` | Botan `src/tests/data/hash/sha3.vec`, `[SHA-3(256)]`, empty `In`; `hashlib.sha3_256` agrees | SHA3-256 of the empty message |
-| `botan_sha3_512_empty` | Botan `sha3.vec`, `[SHA-3(512)]`, empty `In`; `hashlib.sha3_512` agrees | SHA3-512 of the empty message |
-| `hashlib_sha3_256_abc` | oracle `hashlib.sha3_256(b"abc")`; CompactFIPS202.py agrees | SHA3-256 of `abc`, `3a985da7...11431532` |
-| `hashlib_sha3_512_abc` | oracle `hashlib.sha3_512(b"abc")`; CompactFIPS202.py agrees | SHA3-512 of `abc` |
-| `hashlib_shake128_empty_32` | oracle `hashlib.shake_128(b"").digest(32)`; Botan `src/tests/data/xof/shake.vec` (selected from the NIST CAVS file), `[SHAKE-128]`, empty `In` gives the first 16 bytes | SHAKE128 of the empty message, 32 bytes |
-| `hashlib_shake256_abc_64` | oracle `hashlib.shake_256(b"abc").digest(64)`; CompactFIPS202.py agrees | SHAKE256 of `abc`, 64 bytes |
-| `hashlib_sha3_256_200_bytes` | oracle `hashlib.sha3_256(bytes(range(200)))`; CompactFIPS202.py agrees | SHA3-256 of the bytes 00 through c7: two blocks at rate 136 |
-| `hashlib_shake128_abc_168` | oracle `hashlib.shake_128(b"abc").digest(168)`; CompactFIPS202.py agrees | SHAKE128 of `abc`, one full rate of 168 bytes |
+| `Botan sha3.vec: SHA3-256 of the empty message` | Botan `src/tests/data/hash/sha3.vec`, `[SHA-3(256)]`, empty `In`; `hashlib.sha3_256` agrees | SHA3-256 of the empty message |
+| `Botan sha3.vec: SHA3-512 of the empty message` | Botan `sha3.vec`, `[SHA-3(512)]`, empty `In`; `hashlib.sha3_512` agrees | SHA3-512 of the empty message |
+| `hashlib: SHA3-224 of abc` | oracle `hashlib.sha3_224(b"abc")`; pycryptodome `SHA3_224` agrees (added in the rewrite) | SHA3-224 of `abc` |
+| `hashlib: SHA3-256 of abc` | oracle `hashlib.sha3_256(b"abc")`; CompactFIPS202.py agrees | SHA3-256 of `abc`, `3a985da7...11431532` |
+| `hashlib: SHA3-384 of abc` | oracle `hashlib.sha3_384(b"abc")`; pycryptodome `SHA3_384` agrees (added in the rewrite) | SHA3-384 of `abc` |
+| `hashlib: SHA3-512 of abc` | oracle `hashlib.sha3_512(b"abc")`; CompactFIPS202.py agrees | SHA3-512 of `abc` |
+| `hashlib: SHAKE128 of the empty message, 32 bytes` | oracle `hashlib.shake_128(b"").digest(32)`; Botan `src/tests/data/xof/shake.vec` (selected from the NIST CAVS file), `[SHAKE-128]`, empty `In` gives the first 16 bytes | SHAKE128 of the empty message, 32 bytes |
+| `hashlib: SHAKE256 of abc, 64 bytes` | oracle `hashlib.shake_256(b"abc").digest(64)`; CompactFIPS202.py agrees | SHAKE256 of `abc`, 64 bytes |
+| `hashlib: SHA3-256 of the 200 bytes 00 through c7` | oracle `hashlib.sha3_256(bytes(range(200)))`; CompactFIPS202.py agrees | SHA3-256 of the bytes 00 through c7: two blocks at rate 136 |
+| `hashlib: SHAKE128 of abc, 168 bytes` | oracle `hashlib.shake_128(b"abc").digest(168)`; CompactFIPS202.py agrees | SHAKE128 of `abc`, one full rate of 168 bytes |
 
 ### Provenance and claims
 
@@ -192,27 +237,47 @@ file; `sha3.vec` carries no such note, so its two values are cited as
 Botan's. The scripts live in the worker's scratch directory, not in the
 repository.
 
-This entry is a reference evaluation of a specification under `orangec
-eval`. It makes no constant-time, side-channel, performance or certification
-claim, and it is not a corpus entry in the sense of The Orange Book
-chapter 12.
+The entry was then rewritten in the current language, with the state array
+`A[x][y]` and the step mappings in the standard's coordinates. Every expected
+value is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of bytes: the new tests state the same values as
+`hex"..."` literals, traced to the old values by a script that evaluates
+the first form, and none of the eight was dropped. The offsets, the pi and
+chi coordinates and the round constants are now computed in the file by
+the standard's Algorithms 1 through 6 instead of printed as literals; the
+computed offsets and the 24 computed constants were compared with the
+first form's literals under `orangec eval`. The rewrite adds SHA3-224 and
+SHA3-384, one spec each over the shared sponge, and one vector for each:
+the digests of `abc` from `hashlib.sha3_224` and `hashlib.sha3_384`,
+recomputed with pycryptodome's `SHA3_224` and `SHA3_384`, which agree.
+
+This entry is a reference evaluation of a specification under
+`orangec test`. It makes no constant-time, side-channel, performance or
+certification claim, and it is not a corpus entry in the sense of The Orange
+Book chapter 12.
 
 ## Gaps
 
-- Rho is written as 25 rotations with literal amounts, so the table of
-  section 3.2.2 is read from the code rather than from an offset array.
-  A rotation amount may be computed, and a loop may rotate by `offsets[i]`;
-  this source has not been rewritten that way.
-- Indices must be static, so the padding positions n and r - 1 are found by
-  comparison in a loop over the 200-byte string (about 3,800 steps per
-  message instead of two updates), and a message length cannot parametrize an
-  array type: every message is carried in a 200-byte string, and a message of
-  more than one block has its split written for its length
-  (`sha3_256_two_blocks` for 200 bytes at rate 136).
+- Keccak-p is written for 64-bit lanes only, b = 1600, w = 64, l = 6.
+  Section 3 defines Keccak-p[b, n_r] for every lane width w = 2^l from 1
+  through 64; one function for every width would need a word-width
+  parameter the current language does not check: `Word[n]` takes only a
+  literal width, and a type parameter `W in {Word[8], ..., Word[64]}` does
+  not give w itself as a size for the 25w-bit string, l or the round
+  indices 12 + 2l - n_r. Widths 1, 2 and 4 are not words at all.
+- No array has zero elements, so the empty message is not a value: `pad`
+  returns what is appended, the hash and XOF specs take the padded message,
+  and each test joins its message to the padding itself.
+- A sized spec with no array parameter needs its size written at the call,
+  so each test computes q for its message, `pad[136 - 3]`; the checker
+  rejects a wrong q unless it is off by a whole block, but cannot infer it.
+- A function has at most 256 instances, counting every combination of its
+  sizes. `keccak` takes 13 capacities, so it could cover at most 19 blocks;
+  this file allows one or two, which every vector here needs.
+- Squeezing stops after one block (Algorithm 8, step 10 is not written), so
+  SHAKE output is at most one rate, 168 or 136 bytes; no vector here needs
+  more.
 - FIPS 202 defines the functions on bit strings, and the NIST example values
   include messages of 5, 30, 1605 and 1630 bits; Orange has byte arrays, so
-  only whole-byte messages are written and those examples are not reproduced.
-- SHA3-224 and SHA3-384 are not included; each would be one further spec with
-  r = 144 or 104 bytes and a 28- or 48-byte squeeze.
-- The step budget was not reached: the file uses about 420,000 of 1,048,576
-  steps.
+  only whole-byte messages are written and those examples are not
+  reproduced.
