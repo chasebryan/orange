@@ -55,20 +55,22 @@ uses S3.
 The Orange file follows the proposal part by part; the proposal could not
 be read from the machine this entry was written on, so its comments name
 the parts rather than section numbers. A block is `Word[8]^16` read as
-four little-endian words; the round keys are one `Word[32]^132` with K_i
-at indices 4i to 4i + 3; each S-box is one spec whose body is Osvik's
-boolean form as a sequence of typed lets.
+four little-endian words of the type `Block`, `Word[32]^4`, the bitslice
+words X0 to X3; the round keys are `RoundKeys`, an array of thirty-three
+blocks with K_i at index i; each S-box is one spec whose body is Osvik's
+boolean form as a sequence of typed lets, and the linear transformation
+is one let per line of the proposal's ten.
 
 | Proposal part | Orange spec |
 | --- | --- |
-| The little-endian words of a block | `load_le32`, `le_bytes`, `block_words`, `block_bytes` |
-| The S-boxes S0 to S7, bitsliced | `sbox0` to `sbox7`, selected by round in `round_sbox` |
-| Their inverses | `inverse_sbox0` to `inverse_sbox7`, `round_inverse_sbox` |
+| The bitslice representation, a block as four little-endian words | `Block`; `as little Block` and `as little Word[8]^16` in `encrypt` and `decrypt` |
+| The S-boxes S0 to S7, bitsliced | `sbox0` to `sbox7`, selected by round in `sbox` |
+| Their inverses | `inverse_sbox0` to `inverse_sbox7`, selected in `inverse_sbox` |
 | The linear transformation L and its inverse | `linear_transformation`, `inverse_linear_transformation` |
-| The key padding to 256 bits | `key_128`, `key_192`, `key_256` |
-| The prekeys w_i and phi | `prekeys`, `phi` |
-| The round keys K_i through the S-boxes | `key_schedule` |
-| The rounds R_i and the cipher | `round`, `encrypt` |
+| The key padding to 256 bits | `pad_key[len]` for keys of 1 through 31 bytes |
+| The prekeys w_i and phi | `prekeys` (the key read with `as little Word[32]^8`), `phi` |
+| The round keys K_i through the S-boxes | `key_schedule`, giving `RoundKeys` |
+| The rounds R_i and the cipher | `xor`, `round`, `encrypt` |
 | Decryption | `inverse_round`, `decrypt` |
 
 ### Security status
@@ -141,13 +143,29 @@ is recalled and not checked from this machine).
 Nothing in Serpent is data-dependent. In the bitsliced form the S-boxes
 are boolean formulas on the four words, the linear transformation is
 rotations, shifts and xors by literal amounts, and the key schedule is the
-same operations on the prekeys; the only conditionals in the file, the
-S-box selections `round_sbox` and `round_inverse_sbox`, choose an S-box by
-the round number, an `Int` fixed by the loop, never by the data. This is the cipher its designers wrote and the
-reason Orange needs no table idiom for it: an S-box evaluation costs about
-70 steps for all thirty-two nibbles of a block, where the 4-bit table of
-the standard description would have cost a sixteen-arm selection per
-nibble.
+same operations on the prekeys, with its one rotation, by 11, as fixed as
+the proposal writes it. The only conditionals in the file, the S-box
+selections `sbox` and `inverse_sbox`, choose an S-box by the round number,
+an `Int` fixed by the loop, never by the data. Every index is a literal or
+a loop index: the prekey array holds w_-8 to w_131 with w_i at index
+i + 8, so the recurrence reads `w[i]`, `w[i + 3]`, `w[i + 5]` and
+`w[i + 7]`; round key K_i is the slice `w[4 * i + 8..4 * i + 12]` passed
+through its S-box and stored as row i of `RoundKeys`; encryption reads
+`k[i]` and decryption `k[30 - j]`. The checker proves each in range before
+evaluation. This is the cipher its designers wrote, and it needs no
+lookup: the file has no table at all.
+
+Byte order is written once per place the proposal fixes it: the plaintext
+or ciphertext becomes four words with `as little Block` and the result
+goes back to bytes with `as little Word[8]^16`, and the padded key becomes
+w_-8 to w_-1 with `as little Word[32]^8`. Key lengths are sizes:
+`pad_key[len]` has one instance per key length from 1 through 31 bytes,
+appending the fill `[0; (32 - len)]` whose first byte is `0x01`, the
+proposal's single 1 bit in little-endian order; a test passes its 16- or
+24-byte key and the checker picks the instance from its length, while a
+256-bit key goes to `encrypt` and `decrypt` as it is. The tests write keys,
+plaintexts and ciphertexts as `hex"..."` in the order Botan's file prints
+them.
 
 The correspondence between the two descriptions is stated rather than
 computed: IP and FP are the identity here, and the file says so and does
@@ -155,14 +173,21 @@ not carry the permutation tables. The S-box boolean forms are Osvik's
 rather than a transcription from the proposal's tables; each was verified
 against its table on all sixteen inputs, so a reader who trusts the tables
 can trust the formulas, but the formulas are not the proposal's text. The
-key schedule binds each round key's S-box once and then writes its four
-words. Measured by the evaluator's step counter: the prekeys cost 5,894
-steps, the whole key schedule 12,557, encryption of one block 19,232 steps
-with its schedule and about 6,700 without it, and decryption 19,990 steps
-with its schedule and about 7,400 without it. The twelve vectors use
-234,170 of the 1,048,576 steps. Not expressed: constant-time
-behaviour (the evaluator specifies values, not timing), any mode of
-operation, and the standard (non-bitsliced) description with IP and FP.
+linear transformation is the proposal's own sequence of ten updates, each
+a `let` naming the word after its update.
+
+Measured costs under `orangec test --stats` and `orangec eval --stats`:
+a call to one bitsliced S-box costs 67 to 83 steps for all thirty-two
+nibbles of a block, and selecting it through `sbox` adds 10 steps for S0
+up to 42 for S7; L costs 55 steps and its inverse 59; a round 170 to 209.
+The prekeys cost 5,295 steps and the whole key schedule 9,225. Encryption
+of one block costs 14,832 steps with its key schedule, about 5,600 without
+it, and decryption 15,218, about 6,000 without it. The twelve tests
+together use 179,232 steps, 14,834 to 15,228 each.
+
+Not expressed: constant-time behaviour (the evaluator specifies values,
+not timing), any mode of operation, and the standard (non-bitsliced)
+description with IP and FP.
 
 ## Dissemination
 
@@ -170,32 +195,33 @@ operation, and the standard (non-bitsliced) description with IP and FP.
 
 - `serpent.or`: the complete cipher (the sixteen bitsliced S-box specs,
   the linear transformation and its inverse, the key padding, the prekeys,
-  the round keys, encryption and decryption) with twelve vector pairs
-  across the three key sizes, nine encryptions and three decryptions.
+  the round keys, encryption and decryption) with twelve tests across the
+  three key sizes, nine encryptions and three decryptions.
 
 ### Running
 
-```console
-orangec eval algorithms/serpent/serpent.or
-python3 algorithms/verify.py algorithms/serpent
-```
+    orangec test algorithms/serpent/serpent.or
+    python3 algorithms/verify.py algorithms/serpent
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `serpent.or`, comparing the output of
+`encrypt` or `decrypt` with the value Botan's file prints.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `nessie_128_set_1_vector_0` | Botan `src/tests/data/block/serpent.vec`, line 813; NESSIE Serpent-128 set 1, vector 0 | key 80 00..00 (128 bits), zero plaintext, ciphertext 264e5481eff42a4606abda06c0bfda3d |
-| `nessie_128_set_1_vector_0_decrypt` | the same record, decrypted | that ciphertext under that key gives the zero block back |
-| `nessie_128_set_2_vector_0` | Botan `serpent.vec`, line 3117; NESSIE Serpent-128 set 2, vector 0 | zero 128-bit key, plaintext 80 00..00, ciphertext a3b35de7c358ddd82644678c64b8bcbb |
-| `nessie_192_set_1_vector_0` | Botan `serpent.vec`, line 1581; NESSIE Serpent-192 set 1, vector 0 | key 80 00..00 (192 bits), zero plaintext, ciphertext 9e274ead9b737bb21efcfca548602689 |
-| `nessie_192_set_2_vector_0` | Botan `serpent.vec`, line 3629; NESSIE Serpent-192 set 2, vector 0 | zero 192-bit key, plaintext 80 00..00, ciphertext 23f5f432ad687e0d4574c16459618abb |
-| `nessie_256_set_1_vector_0` | Botan `serpent.vec`, line 2605; NESSIE Serpent-256 set 1, vector 0 | key 80 00..00 (256 bits), zero plaintext, ciphertext a223aa1288463c0e2be38ebd825616c0 |
-| `nessie_256_set_2_vector_0` | Botan `serpent.vec`, line 4141; NESSIE Serpent-256 set 2, vector 0 | zero 256-bit key, plaintext 80 00..00, ciphertext 8314675e8ad5c3ecd83d852bcf7f566e |
-| `nessie_256_set_2_vector_0_decrypt` | the same record, decrypted | that ciphertext under the zero key gives 80 00..00 back |
-| `botan_serpent_vec_128_example` | Botan `serpent.vec`, line 4173; the designers' example | key 0x00112233445566778899aabbccddeeff, plaintext 0x0123456789abcdeffedcba9876543210 (both as the proposal's little-endian integers), ciphertext d5baa00a4bb9d8a7c981c8dc90d89d92 |
-| `botan_serpent_vec_128_example_decrypt` | Botan `serpent.vec`, line 4177, read as a decryption | under the same key the example plaintext, taken as a ciphertext, decrypts to 145f0b8b663176b95dcab7e9dcd5cc24 |
-| `botan_serpent_vec_192_example` | Botan `serpent.vec`, line 4181; the designers' example | key 0x00112233445566778899aabbccddeeffffeeddccbbaa9988 (192 bits), the same plaintext, ciphertext da860842b720802bf404a4c71034879a |
-| `botan_serpent_vec_256_example` | Botan `serpent.vec`, line 4189; the designers' example | key 0x00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100, the same plaintext, ciphertext 93df9a3cafe387bd999eebe393a17fca |
+| `NESSIE Serpent-128 set 1, vector 0: encrypts` | Botan `src/tests/data/block/serpent.vec`, line 813; NESSIE Serpent-128 set 1, vector 0 | key 80 00..00 (128 bits), zero plaintext, ciphertext 264e5481eff42a4606abda06c0bfda3d |
+| `NESSIE Serpent-128 set 1, vector 0: decrypts` | the same record, decrypted | that ciphertext under that key gives the zero block back |
+| `NESSIE Serpent-128 set 2, vector 0: encrypts` | Botan `serpent.vec`, line 3117; NESSIE Serpent-128 set 2, vector 0 | zero 128-bit key, plaintext 80 00..00, ciphertext a3b35de7c358ddd82644678c64b8bcbb |
+| `NESSIE Serpent-192 set 1, vector 0: encrypts` | Botan `serpent.vec`, line 1581; NESSIE Serpent-192 set 1, vector 0 | key 80 00..00 (192 bits), zero plaintext, ciphertext 9e274ead9b737bb21efcfca548602689 |
+| `NESSIE Serpent-192 set 2, vector 0: encrypts` | Botan `serpent.vec`, line 3629; NESSIE Serpent-192 set 2, vector 0 | zero 192-bit key, plaintext 80 00..00, ciphertext 23f5f432ad687e0d4574c16459618abb |
+| `NESSIE Serpent-256 set 1, vector 0: encrypts` | Botan `serpent.vec`, line 2605; NESSIE Serpent-256 set 1, vector 0 | key 80 00..00 (256 bits), zero plaintext, ciphertext a223aa1288463c0e2be38ebd825616c0 |
+| `NESSIE Serpent-256 set 2, vector 0: encrypts` | Botan `serpent.vec`, line 4141; NESSIE Serpent-256 set 2, vector 0 | zero 256-bit key, plaintext 80 00..00, ciphertext 8314675e8ad5c3ecd83d852bcf7f566e |
+| `NESSIE Serpent-256 set 2, vector 0: decrypts` | the same record, decrypted | that ciphertext under the zero key gives 80 00..00 back |
+| `Botan serpent.vec line 4173, designers' example: Serpent-128 encrypts` | Botan `serpent.vec`, line 4173; the designers' example | key 0x00112233445566778899aabbccddeeff, plaintext 0x0123456789abcdeffedcba9876543210 (both as the proposal's little-endian integers), ciphertext d5baa00a4bb9d8a7c981c8dc90d89d92 |
+| `Botan serpent.vec line 4177, designers' example: Serpent-128 decrypts` | Botan `serpent.vec`, line 4177, read as a decryption | under the same key the example plaintext, taken as a ciphertext, decrypts to 145f0b8b663176b95dcab7e9dcd5cc24 |
+| `Botan serpent.vec line 4181, designers' example: Serpent-192 encrypts` | Botan `serpent.vec`, line 4181; the designers' example | key 0x00112233445566778899aabbccddeeffffeeddccbbaa9988 (192 bits), the same plaintext, ciphertext da860842b720802bf404a4c71034879a |
+| `Botan serpent.vec line 4189, designers' example: Serpent-256 encrypts` | Botan `serpent.vec`, line 4189; the designers' example | key 0x00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100, the same plaintext, ciphertext 93df9a3cafe387bd999eebe393a17fca |
 
 Every expected value is copied from Botan's `serpent.vec` (current master,
 1,047 records). The file does not label its records; a script classified
@@ -250,20 +276,30 @@ The Python reference, the S-box interpreter and generator, the vector
 classifier and literal generator, and the step-measurement drivers were
 kept with the work record and are not part of the repository.
 
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec holding an array of byte literals: the twelve tests
+state the same sixteen bytes as `hex"..."`, and so do the keys and
+plaintexts, compared byte for byte with the first form's arrays (the
+decryption tests' zero and single-bit blocks, formerly specs, are the same
+bytes). No vector was added or dropped. The sixteen S-box specs are the
+first form's text unchanged but for the name of their type; the linear
+transformation and its inverse were split into one `let` per line of the
+proposal, the key padding became one sized spec for every key length, the
+round keys an array of thirty-three blocks, and the hand-written byte
+loads `as little`, all checked against the same twelve vectors.
+
 This entry is a reference evaluation of the Serpent proposal under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim, and it is not a corpus entry in the sense of The
 Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. This rendering retains a flat round-key array
-and an inner loop that places four words from the S-box bound in the outer
-step. `encrypt` and `decrypt` index round keys with the loop variable and
-pass four words to `round` and `inverse_round`.
-
-The current implemented slices also offer tuple accumulators, array slices
-and slice updates, and bounded data-dependent indices. Their absence from
-this rendering is not a language limitation. The S-box of a round is still
-chosen by an eight-arm conditional on `i % 8`; lists of functions are not
-part of the implemented language.
+- A spec is not a value and the language has no arrays of functions, so
+  the S-box of a round is chosen by an eight-arm conditional on `r % 8`
+  in `sbox` and `inverse_sbox` rather than by indexing a list of the eight
+  S-boxes.
+- Keys are whole bytes: `pad_key` takes 1 through 31 bytes, and a key
+  whose bit length is not a multiple of 8, which the proposal allows,
+  would need its last byte and its 1 bit placed by hand.

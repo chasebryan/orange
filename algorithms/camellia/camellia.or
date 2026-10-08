@@ -1,160 +1,128 @@
 // Camellia, the 128-bit block cipher of RFC 3713, "A Description of the
 // Camellia Encryption Algorithm" (Matsui, Nakajima, Moriai; NTT and
 // Mitsubishi, 2004), https://www.rfc-editor.org/rfc/rfc3713, written the way
-// the RFC writes it: the key schedule of section 2.2 with the Sigma constants
-// and its 128-bit rotations, the data randomizing part of section 2.3 for
-// 128-bit keys (18 rounds, FL and FLINV after rounds 6 and 12) and for 192-
-// and 256-bit keys (24 rounds), and the F, FL, FLINV, S and P functions of
-// section 2.4. Encryption and decryption for all three key sizes reproduce
-// the test data of RFC 3713 Appendix A and two cases of Botan's camellia.vec.
+// the RFC writes it: the key scheduling part of section 2.2 with the Sigma
+// constants and its 128-bit rotations, the data randomizing part of section
+// 2.3 for 128-bit keys (18 rounds, FL and FLINV after rounds 6 and 12, 2.3.1)
+// and for 192- and 256-bit keys (24 rounds, 2.3.2), decryption with the
+// subkeys reversed (2.3.3), and the F-function, the FL- and FLINV-functions
+// and the S-boxes of section 2.4. Encryption and decryption for all three key
+// sizes reproduce the test data of RFC 3713 Appendix A, and encryption two
+// cases of Botan's camellia.vec.
 edition 2026;
 module camellia {
-  // Bytes and words. Camellia reads its key and its blocks big-endian.
-  spec load_be64(
-    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
-    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
-  ) -> Word[64] {
-    ((b0 as Word[64]) << 56) | ((b1 as Word[64]) << 48) | ((b2 as Word[64]) << 40)
-      | ((b3 as Word[64]) << 32) | ((b4 as Word[64]) << 24) | ((b5 as Word[64]) << 16)
-      | ((b6 as Word[64]) << 8) | (b7 as Word[64])
-  }
+  // Section 2.1: a 128-bit value (M, C, KL, KR, KA, KB) is held as its two
+  // 64-bit halves, [v >> 64, v & MASK64]; in the data randomizing part these
+  // are [D1, D2].
+  type U128 = Word[64]^2;
 
-  spec be_bytes64(x: Word[64]) -> Word[8]^8 {
+  // Section 2.2: the subkeys of one key, as the three arrays kw1 through
+  // kw4, k1 through k18 (or k24), and ke1 through ke4 (or ke6). The RFC
+  // lists them in the order they are used; the arrays keep each family in
+  // the order of its index.
+  type Subkeys18 = (Word[64]^4, Word[64]^18, Word[64]^4);
+  type Subkeys24 = (Word[64]^4, Word[64]^24, Word[64]^6);
+
+  // Section 2.4.3: SBOX1, entry 16 r + c in row r and column c, in decimal
+  // as the RFC prints it.
+  spec sbox1() -> Word[8]^256 {
     [
-      (x >> 56) as Word[8], (x >> 48) as Word[8], (x >> 40) as Word[8], (x >> 32) as Word[8],
-      (x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8],
+      112, 130,  44, 236, 179,  39, 192, 229, 228, 133,  87,  53, 234,  12, 174,  65,  // 00
+       35, 239, 107, 147,  69,  25, 165,  33, 237,  14,  79,  78,  29, 101, 146, 189,  // 10
+      134, 184, 175, 143, 124, 235,  31, 206,  62,  48, 220,  95,  94, 197,  11,  26,  // 20
+      166, 225,  57, 202, 213,  71,  93,  61, 217,   1,  90, 214,  81,  86, 108,  77,  // 30
+      139,  13, 154, 102, 251, 204, 176,  45, 116,  18,  43,  32, 240, 177, 132, 153,  // 40
+      223,  76, 203, 194,  52, 126, 118,   5, 109, 183, 169,  49, 209,  23,   4, 215,  // 50
+       20,  88,  58,  97, 222,  27,  17,  28,  50,  15, 156,  22,  83,  24, 242,  34,  // 60
+      254,  68, 207, 178, 195, 181, 122, 145,  36,   8, 232, 168,  96, 252, 105,  80,  // 70
+      170, 208, 160, 125, 161, 137,  98, 151,  84,  91,  30, 149, 224, 255, 100, 210,  // 80
+       16, 196,   0,  72, 163, 247, 117, 219, 138,   3, 230, 218,   9,  63, 221, 148,  // 90
+      135,  92, 131,   2, 205,  74, 144,  51, 115, 103, 246, 243, 157, 127, 191, 226,  // a0
+       82, 155, 216,  38, 200,  55, 198,  59, 129, 150, 111,  75,  19, 190,  99,  46,  // b0
+      233, 121, 167, 140, 159, 110, 188, 142,  41, 245, 249, 182,  47, 253, 180,  89,  // c0
+      120, 152,   6, 106, 231,  70, 113, 186, 212,  37, 171,  66, 136, 162, 141, 250,  // d0
+      114,   7, 185,  85, 248, 238, 172,  10,  54,  73,  42, 104,  60,  56, 241, 164,  // e0
+       64,  40, 211, 123, 187, 201,  67, 193,  21, 227, 173, 244, 119, 199, 128, 158,  // f0
     ]
   }
 
-  // A 128-bit value is two 64-bit words, the high word first: [D1, D2] for
-  // a block, and likewise for KL, KR, KA and KB of the key schedule.
-  spec block_words(b: Word[8]^16) -> Word[64]^2 {
-    [
-      load_be64(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]),
-      load_be64(b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]),
-    ]
+  // Section 2.4.3: SBOX2, SBOX3 and SBOX4 are defined from SBOX1, so only
+  // SBOX1 is a table. Each takes the table s1 that the F-function reads once.
+  spec sbox2(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x] <<< 1 }
+  spec sbox3(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x] <<< 7 }
+  spec sbox4(s1: Word[8]^256, x: Word[8]) -> Word[8] { s1[x <<< 1] }
+
+  // Section 2.4.1: the F-function. The RFC's t1 = x >> 56 through
+  // t8 = x & MASK8 are the eight bytes of x, most significant first, here
+  // x[0] through x[7]; its t1 = SBOX1[t1] through t8 = SBOX1[t8] bind t1
+  // through t8, and F_OUT = (y1 << 56) | ... | y8 joins y1 through y8 the
+  // same way round.
+  spec f(f_in: Word[64], ke: Word[64]) -> Word[64] {
+    let s1: Word[8]^256 = sbox1();
+    let x: Word[8]^8 = (f_in ^ ke) as big Word[8]^8;
+    let t1: Word[8] = s1[x[0]];
+    let t2: Word[8] = sbox2(s1, x[1]);
+    let t3: Word[8] = sbox3(s1, x[2]);
+    let t4: Word[8] = sbox4(s1, x[3]);
+    let t5: Word[8] = sbox2(s1, x[4]);
+    let t6: Word[8] = sbox3(s1, x[5]);
+    let t7: Word[8] = sbox4(s1, x[6]);
+    let t8: Word[8] = s1[x[7]];
+    let y1: Word[8] = t1 ^ t3 ^ t4 ^ t6 ^ t7 ^ t8;
+    let y2: Word[8] = t1 ^ t2 ^ t4 ^ t5 ^ t7 ^ t8;
+    let y3: Word[8] = t1 ^ t2 ^ t3 ^ t5 ^ t6 ^ t8;
+    let y4: Word[8] = t2 ^ t3 ^ t4 ^ t5 ^ t6 ^ t7;
+    let y5: Word[8] = t1 ^ t2 ^ t6 ^ t7 ^ t8;
+    let y6: Word[8] = t2 ^ t3 ^ t5 ^ t7 ^ t8;
+    let y7: Word[8] = t3 ^ t4 ^ t5 ^ t6 ^ t8;
+    let y8: Word[8] = t1 ^ t4 ^ t5 ^ t6 ^ t7;
+    [y1, y2, y3, y4, y5, y6, y7, y8] as big Word[64]
   }
 
-  spec block_bytes(d: Word[64]^2) -> Word[8]^16 {
-    let hi: Word[8]^8 = be_bytes64(d[0]);
-    let lo: Word[8]^8 = be_bytes64(d[1]);
-    [
-      hi[0], hi[1], hi[2], hi[3], hi[4], hi[5], hi[6], hi[7],
-      lo[0], lo[1], lo[2], lo[3], lo[4], lo[5], lo[6], lo[7],
-    ]
+  // Section 2.4.2: a 64-bit value as its 32-bit halves, (v >> 32, v & MASK32).
+  spec halves(v: Word[64]) -> (Word[32], Word[32]) {
+    let h: Word[32]^2 = v as big Word[32]^2;
+    (h[0], h[1])
   }
 
-  // Section 2.4.4: SBOX1, packed eight entries to a 64-bit word, the first
-  // entry in the most significant byte, so that each literal holds eight
-  // consecutive entries of the RFC's table (0x70822cecb327c0e5 is 112 130 44
-  // 236 179 39 192 229, the first eight). Only s1 is a table: RFC 3713
-  // defines s2, s3 and s4 as rotations of s1, so one table suffices and the
-  // other three are written as the rotations below.
-  spec sbox1() -> Word[64]^32 {
-    [
-      0x70822cecb327c0e5, 0xe4855735ea0cae41, 0x23ef6b934519a521, 0xed0e4f4e1d6592bd,
-      0x86b8af8f7ceb1fce, 0x3e30dc5f5ec50b1a, 0xa6e139cad5475d3d, 0xd9015ad651566c4d,
-      0x8b0d9a66fbccb02d, 0x74122b20f0b18499, 0xdf4ccbc2347e7605, 0x6db7a931d11704d7,
-      0x14583a61de1b111c, 0x320f9c165318f222, 0xfe44cfb2c3b57a91, 0x2408e8a860fc6950,
-      0xaad0a07da1896297, 0x545b1e95e0ff64d2, 0x10c40048a3f775db, 0x8a03e6da093fdd94,
-      0x875c8302cd4a9033, 0x7367f6f39d7fbfe2, 0x529bd826c837c63b, 0x81966f4b13be632e,
-      0xe979a78c9f6ebc8e, 0x29f5f9b62ffdb459, 0x7898066ae74671ba, 0xd425ab4288a28dfa,
-      0x7207b955f8eeac0a, 0x36492a683c38f1a4, 0x4028d37bbbc943c1, 0x15e3adf477c7809e,
-    ]
-  }
-
-  // The byte at position k of a word holding eight table entries.
-  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
-    if k == 0 { (w >> 56) as Word[8] }
-    else if k == 1 { (w >> 48) as Word[8] }
-    else if k == 2 { (w >> 40) as Word[8] }
-    else if k == 3 { (w >> 32) as Word[8] }
-    else if k == 4 { (w >> 24) as Word[8] }
-    else if k == 5 { (w >> 16) as Word[8] }
-    else if k == 6 { (w >> 8) as Word[8] }
-    else { w as Word[8] }
-  }
-
-  // Entry x of a 256-entry table packed eight entries to a word. A byte may
-  // index a table of 256 entries; this rendering still selects the word
-  // holding x and then the byte within it.
-  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
-    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
-      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
-    };
-    byte_at(w, x & 7)
-  }
-
-  // Section 2.4.4: s1 is the table; s2(x) = s1(x) <<< 1, s3(x) = s1(x) <<< 7,
-  // s4(x) = s1(x <<< 1).
-  spec s1(t: Word[64]^32, x: Word[8]) -> Word[8] { lookup(t, x) }
-  spec s2(t: Word[64]^32, x: Word[8]) -> Word[8] { lookup(t, x) <<< 1 }
-  spec s3(t: Word[64]^32, x: Word[8]) -> Word[8] { lookup(t, x) <<< 7 }
-  spec s4(t: Word[64]^32, x: Word[8]) -> Word[8] { lookup(t, x <<< 1) }
-
-  // Section 2.4.4: the S-function. The input's eight bytes l1 through l8
-  // pass through s1, s2, s3, s4, s2, s3, s4, s1 in that order.
-  spec s_function(t: Word[64]^32, x: Word[64]) -> Word[8]^8 {
-    let l: Word[8]^8 = be_bytes64(x);
-    [
-      s1(t, l[0]), s2(t, l[1]), s3(t, l[2]), s4(t, l[3]),
-      s2(t, l[4]), s3(t, l[5]), s4(t, l[6]), s1(t, l[7]),
-    ]
-  }
-
-  // Section 2.4.5: the P-function, a linear map on eight bytes; z1 is the
-  // most significant byte of the input and y1 of the output.
-  spec p_function(z: Word[8]^8) -> Word[64] {
-    let z1: Word[8] = z[0];
-    let z2: Word[8] = z[1];
-    let z3: Word[8] = z[2];
-    let z4: Word[8] = z[3];
-    let z5: Word[8] = z[4];
-    let z6: Word[8] = z[5];
-    let z7: Word[8] = z[6];
-    let z8: Word[8] = z[7];
-    let y1: Word[8] = z1 ^ z3 ^ z4 ^ z6 ^ z7 ^ z8;
-    let y2: Word[8] = z1 ^ z2 ^ z4 ^ z5 ^ z7 ^ z8;
-    let y3: Word[8] = z1 ^ z2 ^ z3 ^ z5 ^ z6 ^ z8;
-    let y4: Word[8] = z2 ^ z3 ^ z4 ^ z5 ^ z6 ^ z7;
-    let y5: Word[8] = z1 ^ z2 ^ z6 ^ z7 ^ z8;
-    let y6: Word[8] = z2 ^ z3 ^ z5 ^ z7 ^ z8;
-    let y7: Word[8] = z3 ^ z4 ^ z5 ^ z6 ^ z8;
-    let y8: Word[8] = z1 ^ z4 ^ z5 ^ z6 ^ z7;
-    load_be64(y1, y2, y3, y4, y5, y6, y7, y8)
-  }
-
-  // Section 2.4.1: the F-function, F(F_IN, KE) = P(S(F_IN ^ KE)).
-  spec f_function(f_in: Word[64], ke: Word[64]) -> Word[64] {
-    let t: Word[64]^32 = sbox1();
-    p_function(s_function(t, f_in ^ ke))
-  }
-
-  // Section 2.4.2: the FL-function on the 32-bit halves x1 || x2 of FL_IN
-  // with the halves k1 || k2 of KE.
-  spec fl_function(fl_in: Word[64], ke: Word[64]) -> Word[64] {
-    let x1: Word[32] = (fl_in >> 32) as Word[32];
-    let x2: Word[32] = fl_in as Word[32];
-    let k1: Word[32] = (ke >> 32) as Word[32];
-    let k2: Word[32] = ke as Word[32];
+  // Section 2.4.2: the FL-function. The RFC assigns x2 and then x1 again;
+  // the new values are x2_out and x1_out, and FL_OUT = (x1 << 32) | x2.
+  spec fl(fl_in: Word[64], ke: Word[64]) -> Word[64] {
+    let (x1: Word[32], x2: Word[32]) = halves(fl_in);
+    let (k1: Word[32], k2: Word[32]) = halves(ke);
     let x2_out: Word[32] = x2 ^ ((x1 & k1) <<< 1);
     let x1_out: Word[32] = x1 ^ (x2_out | k2);
-    ((x1_out as Word[64]) << 32) | (x2_out as Word[64])
+    [x1_out, x2_out] as big Word[64]
   }
 
-  // Section 2.4.3: the FLINV-function, the inverse of FL, on the halves
-  // y1 || y2 of FLINV_IN.
-  spec flinv_function(flinv_in: Word[64], ke: Word[64]) -> Word[64] {
-    let y1: Word[32] = (flinv_in >> 32) as Word[32];
-    let y2: Word[32] = flinv_in as Word[32];
-    let k1: Word[32] = (ke >> 32) as Word[32];
-    let k2: Word[32] = ke as Word[32];
+  // Section 2.4.2: the FLINV-function, the inverse of FL, which undoes its
+  // two steps in the reverse order.
+  spec flinv(flinv_in: Word[64], ke: Word[64]) -> Word[64] {
+    let (y1: Word[32], y2: Word[32]) = halves(flinv_in);
+    let (k1: Word[32], k2: Word[32]) = halves(ke);
     let y1_out: Word[32] = y1 ^ (y2 | k2);
     let y2_out: Word[32] = y2 ^ ((y1_out & k1) <<< 1);
-    ((y1_out as Word[64]) << 32) | (y2_out as Word[64])
+    [y1_out, y2_out] as big Word[64]
   }
 
-  // Section 2.2: the constants Sigma1 through Sigma6 of the key schedule.
+  // Sections 2.2 and 2.3.1: two rounds as the RFC writes each pair,
+  // D2 = D2 ^ F(D1, k1) and then D1 = D1 ^ F(D2, k2). The halves never
+  // change places, so six rounds are three pairs.
+  spec two_rounds(d: U128, k1: Word[64], k2: Word[64]) -> U128 {
+    let d2: Word[64] = d[1] ^ f(d[0], k1);
+    let d1: Word[64] = d[0] ^ f(d2, k2);
+    [d1, d2]
+  }
+
+  spec six_rounds(d: U128, k: Word[64]^6) -> U128 {
+    for i in 0..3 with e: U128 = d { two_rounds(e, k[2 * i], k[2 * i + 1]) }
+  }
+
+  // Section 2.2: a 128-bit xor, written on both halves.
+  spec xor128(a: U128, b: U128) -> U128 { [a[0] ^ b[0], a[1] ^ b[1]] }
+
+  // Section 2.2: the constants Sigma1 through Sigma6, here sigma()[0]
+  // through sigma()[5].
   spec sigma() -> Word[64]^6 {
     [
       0xa09e667f3bcc908b, 0xb67ae8584caa73b2, 0xc6ef372fe94f82be, 0x54ff53a5f1d36f1c,
@@ -162,324 +130,246 @@ module camellia {
     ]
   }
 
-  // Section 2.2: the 128-bit rotations (x <<< n) of the key schedule. A
-  // shift amount may be computed; this rendering still writes one spec per
-  // amount. For n above 64 the words change places and the rotation by
-  // n - 64 remains.
-  spec rotl128_15(x: Word[64]^2) -> Word[64]^2 {
-    [(x[0] << 15) | (x[1] >> 49), (x[1] << 15) | (x[0] >> 49)]
-  }
-  spec rotl128_30(x: Word[64]^2) -> Word[64]^2 {
-    [(x[0] << 30) | (x[1] >> 34), (x[1] << 30) | (x[0] >> 34)]
-  }
-  spec rotl128_45(x: Word[64]^2) -> Word[64]^2 {
-    [(x[0] << 45) | (x[1] >> 19), (x[1] << 45) | (x[0] >> 19)]
-  }
-  spec rotl128_60(x: Word[64]^2) -> Word[64]^2 {
-    [(x[0] << 60) | (x[1] >> 4), (x[1] << 60) | (x[0] >> 4)]
-  }
-  spec rotl128_77(x: Word[64]^2) -> Word[64]^2 {
-    [(x[1] << 13) | (x[0] >> 51), (x[0] << 13) | (x[1] >> 51)]
-  }
-  spec rotl128_94(x: Word[64]^2) -> Word[64]^2 {
-    [(x[1] << 30) | (x[0] >> 34), (x[0] << 30) | (x[1] >> 34)]
-  }
-  spec rotl128_111(x: Word[64]^2) -> Word[64]^2 {
-    [(x[1] << 47) | (x[0] >> 17), (x[0] << 47) | (x[1] >> 17)]
+  // Section 2.2: KA from KL and KR. D1 || D2 starts as KL ^ KR, takes two
+  // rounds keyed with Sigma1 and Sigma2, is xored with KL, and takes two
+  // more with Sigma3 and Sigma4; KA = (D1 << 64) | D2.
+  spec derive_ka(kl: U128, kr: U128) -> U128 {
+    let s: Word[64]^6 = sigma();
+    let d: U128 = two_rounds(xor128(kl, kr), s[0], s[1]);
+    two_rounds(xor128(d, kl), s[2], s[3])
   }
 
-  // Section 2.2: KA from KL and KR, by four Feistel rounds keyed with Sigma1
-  // through Sigma4, with KL xored back in after the second.
-  spec derive_ka(kl: Word[64]^2, kr: Word[64]^2) -> Word[64]^2 {
-    let c: Word[64]^6 = sigma();
-    let d1: Word[64] = kl[0] ^ kr[0];
-    let d2: Word[64] = kl[1] ^ kr[1];
-    let d2_a: Word[64] = d2 ^ f_function(d1, c[0]);
-    let d1_a: Word[64] = d1 ^ f_function(d2_a, c[1]);
-    let d1_b: Word[64] = d1_a ^ kl[0];
-    let d2_b: Word[64] = d2_a ^ kl[1];
-    let d2_c: Word[64] = d2_b ^ f_function(d1_b, c[2]);
-    let d1_c: Word[64] = d1_b ^ f_function(d2_c, c[3]);
-    [d1_c, d2_c]
-  }
-
-  // Section 2.2: KB from KA and KR, by two more rounds keyed with Sigma5 and
+  // Section 2.2: KB from KA and KR, by two rounds keyed with Sigma5 and
   // Sigma6; used only for 192- and 256-bit keys.
-  spec derive_kb(ka: Word[64]^2, kr: Word[64]^2) -> Word[64]^2 {
-    let c: Word[64]^6 = sigma();
-    let d1: Word[64] = ka[0] ^ kr[0];
-    let d2: Word[64] = ka[1] ^ kr[1];
-    let d2_a: Word[64] = d2 ^ f_function(d1, c[4]);
-    let d1_a: Word[64] = d1 ^ f_function(d2_a, c[5]);
-    [d1_a, d2_a]
+  spec derive_kb(ka: U128, kr: U128) -> U128 {
+    let s: Word[64]^6 = sigma();
+    two_rounds(xor128(ka, kr), s[4], s[5])
   }
 
-  // Section 2.2: the 26 subkeys of a 128-bit key, in one array laid out as
-  // kw1, kw2, k1 through k18, ke1 through ke4, kw3, kw4. Each is a 64-bit
-  // half of KL or KA rotated by the amount the RFC's table gives.
-  spec subkeys_128(kl: Word[64]^2) -> Word[64]^26 {
-    let ka: Word[64]^2 = derive_ka(kl, [0, 0]);
-    let kl_15: Word[64]^2 = rotl128_15(kl);
-    let ka_15: Word[64]^2 = rotl128_15(ka);
-    let ka_30: Word[64]^2 = rotl128_30(ka);
-    let kl_45: Word[64]^2 = rotl128_45(kl);
-    let ka_45: Word[64]^2 = rotl128_45(ka);
-    let kl_60: Word[64]^2 = rotl128_60(kl);
-    let ka_60: Word[64]^2 = rotl128_60(ka);
-    let kl_77: Word[64]^2 = rotl128_77(kl);
-    let kl_94: Word[64]^2 = rotl128_94(kl);
-    let ka_94: Word[64]^2 = rotl128_94(ka);
-    let kl_111: Word[64]^2 = rotl128_111(kl);
-    let ka_111: Word[64]^2 = rotl128_111(ka);
-    [
-      kl[0], kl[1],                                       // kw1, kw2
-      ka[0], ka[1], kl_15[0], kl_15[1], ka_15[0], ka_15[1], // k1 to k6
-      kl_45[0], kl_45[1], ka_45[0], kl_60[1], ka_60[0], ka_60[1], // k7 to k12
-      kl_94[0], kl_94[1], ka_94[0], ka_94[1], kl_111[0], kl_111[1], // k13 to k18
-      ka_30[0], ka_30[1], kl_77[0], kl_77[1],             // ke1 to ke4
-      ka_111[0], ka_111[1],                               // kw3, kw4
-    ]
+  // Section 2.1: x <<< n on a 128-bit value. From n = 64 on the halves
+  // change places and the rotation by n - 64 remains; a shift by 64 is 0,
+  // so n = 0 and n = 64 need no case of their own.
+  spec rotl128(v: U128, n: Int) -> U128 {
+    let h: U128 = if n < 64 { v } else { [v[1], v[0]] };
+    let m: Int = n % 64;
+    [(h[0] << m) | (h[1] >> (64 - m)), (h[1] << m) | (h[0] >> (64 - m))]
   }
 
-  // Section 2.2: the 34 subkeys of a 192- or 256-bit key, laid out as kw1,
-  // kw2, k1 through k24, ke1 through ke6, kw3, kw4, from KL, KR, KA and KB.
-  spec subkeys_192_256(kl: Word[64]^2, kr: Word[64]^2) -> Word[64]^34 {
-    let ka: Word[64]^2 = derive_ka(kl, kr);
-    let kb: Word[64]^2 = derive_kb(ka, kr);
-    let kr_15: Word[64]^2 = rotl128_15(kr);
-    let ka_15: Word[64]^2 = rotl128_15(ka);
-    let kr_30: Word[64]^2 = rotl128_30(kr);
-    let kb_30: Word[64]^2 = rotl128_30(kb);
-    let kl_45: Word[64]^2 = rotl128_45(kl);
-    let ka_45: Word[64]^2 = rotl128_45(ka);
-    let kl_60: Word[64]^2 = rotl128_60(kl);
-    let kr_60: Word[64]^2 = rotl128_60(kr);
-    let kb_60: Word[64]^2 = rotl128_60(kb);
-    let kl_77: Word[64]^2 = rotl128_77(kl);
-    let ka_77: Word[64]^2 = rotl128_77(ka);
-    let kr_94: Word[64]^2 = rotl128_94(kr);
-    let ka_94: Word[64]^2 = rotl128_94(ka);
-    let kl_111: Word[64]^2 = rotl128_111(kl);
-    let kb_111: Word[64]^2 = rotl128_111(kb);
-    [
-      kl[0], kl[1],                                       // kw1, kw2
-      kb[0], kb[1], kr_15[0], kr_15[1], ka_15[0], ka_15[1], // k1 to k6
-      kb_30[0], kb_30[1], kl_45[0], kl_45[1], ka_45[0], ka_45[1], // k7 to k12
-      kr_60[0], kr_60[1], kb_60[0], kb_60[1], kl_77[0], kl_77[1], // k13 to k18
-      kr_94[0], kr_94[1], ka_94[0], ka_94[1], kl_111[0], kl_111[1], // k19 to k24
-      kr_30[0], kr_30[1], kl_60[0], kl_60[1], ka_77[0], ka_77[1], // ke1 to ke6
-      kb_111[0], kb_111[1],                               // kw3, kw4
-    ]
-  }
+  // Section 2.2: the two halves of a rotated value, as the subkey tables
+  // write them: high(v, n) is (v <<< n) >> 64 and low(v, n) is
+  // (v <<< n) & MASK64.
+  spec high(v: U128, n: Int) -> Word[64] { rotl128(v, n)[0] }
+  spec low(v: U128, n: Int) -> Word[64] { rotl128(v, n)[1] }
 
-  // Section 2.2: a 128-bit key K is KL, and KR is zero.
-  spec key_schedule_128(key: Word[8]^16) -> Word[64]^26 { subkeys_128(block_words(key)) }
-
-  // Section 2.2: for a 192-bit key, KL is the first 128 bits and KR is the
-  // remaining 64 bits followed by their complement.
-  spec key_schedule_192(key: Word[8]^24) -> Word[64]^34 {
-    let kl: Word[64]^2 = [
-      load_be64(key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7]),
-      load_be64(key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15]),
+  // Section 2.2: the subkeys of a 128-bit key, KL = K and KR = 0, from the
+  // RFC's table row by row.
+  spec key_schedule_128(key: Word[8]^16) -> Subkeys18 {
+    let kl: U128 = key as big U128;
+    let ka: U128 = derive_ka(kl, [0, 0]);
+    let kw: Word[64]^4 = [
+      high(kl, 0), low(kl, 0),       // kw1, kw2
+      high(ka, 111), low(ka, 111),   // kw3, kw4
     ];
-    let kr_hi: Word[64] =
-      load_be64(key[16], key[17], key[18], key[19], key[20], key[21], key[22], key[23]);
-    subkeys_192_256(kl, [kr_hi, ~kr_hi])
-  }
-
-  // Section 2.2: for a 256-bit key, KL is the first 128 bits and KR the last.
-  spec key_schedule_256(key: Word[8]^32) -> Word[64]^34 {
-    let kl: Word[64]^2 = [
-      load_be64(key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7]),
-      load_be64(key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15]),
+    let k: Word[64]^18 = [
+      high(ka, 0), low(ka, 0),       // k1, k2
+      high(kl, 15), low(kl, 15),     // k3, k4
+      high(ka, 15), low(ka, 15),     // k5, k6
+      high(kl, 45), low(kl, 45),     // k7, k8
+      high(ka, 45), low(kl, 60),     // k9, k10
+      high(ka, 60), low(ka, 60),     // k11, k12
+      high(kl, 94), low(kl, 94),     // k13, k14
+      high(ka, 94), low(ka, 94),     // k15, k16
+      high(kl, 111), low(kl, 111),   // k17, k18
     ];
-    let kr: Word[64]^2 = [
-      load_be64(key[16], key[17], key[18], key[19], key[20], key[21], key[22], key[23]),
-      load_be64(key[24], key[25], key[26], key[27], key[28], key[29], key[30], key[31]),
+    let ke: Word[64]^4 = [
+      high(ka, 30), low(ka, 30),     // ke1, ke2
+      high(kl, 77), low(kl, 77),     // ke3, ke4
     ];
-    subkeys_192_256(kl, kr)
+    (kw, k, ke)
   }
 
-  // Section 2.3: decryption uses the subkeys in the reverse order, kw1 with
-  // kw3, kw2 with kw4, k1 with k18 and so on, ke1 with ke4 and ke2 with ke3.
-  spec reverse_subkeys_128(sk: Word[64]^26) -> Word[64]^26 {
-    let kw: Word[64]^26 = for i in 0..26 with r: Word[64]^26 = [0; 26] {
-      if i == 0 { r with [0] = sk[24] }
-      else if i == 1 { r with [1] = sk[25] }
-      else if i == 24 { r with [24] = sk[0] }
-      else if i == 25 { r with [25] = sk[1] }
-      else { r }
-    };
-    let k: Word[64]^26 = for i in 0..18 with r: Word[64]^26 = kw { r with [2 + i] = sk[19 - i] };
-    for i in 0..4 with r: Word[64]^26 = k { r with [20 + i] = sk[23 - i] }
+  // Section 2.2: the subkeys of a 192- or 256-bit key from KL and KR, from
+  // the RFC's second table row by row.
+  spec subkeys_192_256(kl: U128, kr: U128) -> Subkeys24 {
+    let ka: U128 = derive_ka(kl, kr);
+    let kb: U128 = derive_kb(ka, kr);
+    let kw: Word[64]^4 = [
+      high(kl, 0), low(kl, 0),       // kw1, kw2
+      high(kb, 111), low(kb, 111),   // kw3, kw4
+    ];
+    let k: Word[64]^24 = [
+      high(kb, 0), low(kb, 0),       // k1, k2
+      high(kr, 15), low(kr, 15),     // k3, k4
+      high(ka, 15), low(ka, 15),     // k5, k6
+      high(kb, 30), low(kb, 30),     // k7, k8
+      high(kl, 45), low(kl, 45),     // k9, k10
+      high(ka, 45), low(ka, 45),     // k11, k12
+      high(kr, 60), low(kr, 60),     // k13, k14
+      high(kb, 60), low(kb, 60),     // k15, k16
+      high(kl, 77), low(kl, 77),     // k17, k18
+      high(kr, 94), low(kr, 94),     // k19, k20
+      high(ka, 94), low(ka, 94),     // k21, k22
+      high(kl, 111), low(kl, 111),   // k23, k24
+    ];
+    let ke: Word[64]^6 = [
+      high(kr, 30), low(kr, 30),     // ke1, ke2
+      high(kl, 60), low(kl, 60),     // ke3, ke4
+      high(ka, 77), low(ka, 77),     // ke5, ke6
+    ];
+    (kw, k, ke)
   }
 
-  // Section 2.3: the same for 24 rounds, k1 with k24 and ke1 with ke6.
-  spec reverse_subkeys_192_256(sk: Word[64]^34) -> Word[64]^34 {
-    let kw: Word[64]^34 = for i in 0..34 with r: Word[64]^34 = [0; 34] {
-      if i == 0 { r with [0] = sk[32] }
-      else if i == 1 { r with [1] = sk[33] }
-      else if i == 32 { r with [32] = sk[0] }
-      else if i == 33 { r with [33] = sk[1] }
-      else { r }
-    };
-    let k: Word[64]^34 = for i in 0..24 with r: Word[64]^34 = kw { r with [2 + i] = sk[25 - i] };
-    for i in 0..6 with r: Word[64]^34 = k { r with [26 + i] = sk[31 - i] }
+  // Section 2.2: for a 192-bit key, KL = K >> 64 and KR is the remaining
+  // 64 bits followed by their complement.
+  spec key_schedule_192(key: Word[8]^24) -> Subkeys24 {
+    let w: Word[64]^3 = key as big Word[64]^3;
+    subkeys_192_256([w[0], w[1]], [w[2], ~w[2]])
   }
 
-  // Section 2.3: one Feistel round. The RFC writes odd rounds as
-  // D2 = D2 ^ F(D1, k) and even rounds as D1 = D1 ^ F(D2, k); with the halves
-  // exchanged after every round both are this one formula, and six rounds
-  // leave D1 and D2 in their original places.
-  spec feistel_round(d: Word[64]^2, k: Word[64]) -> Word[64]^2 {
-    [d[1] ^ f_function(d[0], k), d[0]]
+  // Section 2.2: for a 256-bit key, KL = K >> 128 and KR = K & MASK128.
+  spec key_schedule_256(key: Word[8]^32) -> Subkeys24 {
+    subkeys_192_256(key[0..16] as big U128, key[16..32] as big U128)
   }
 
-  // Section 2.3, 128-bit key: prewhitening with kw1 and kw2, 18 rounds with
-  // FL and FLINV after rounds 6 and 12, and C = (D2 ^ kw3) || (D1 ^ kw4).
-  // The subkeys are laid out as key_schedule_128 leaves them.
-  spec data_randomizing_128(m: Word[64]^2, sk: Word[64]^26) -> Word[64]^2 {
-    let d0: Word[64]^2 = [m[0] ^ sk[0], m[1] ^ sk[1]];
-    let d6: Word[64]^2 = for r in 0..6 with d: Word[64]^2 = d0 { feistel_round(d, sk[2 + r]) };
-    let fl6: Word[64]^2 = [fl_function(d6[0], sk[20]), flinv_function(d6[1], sk[21])];
-    let d12: Word[64]^2 = for r in 6..12 with d: Word[64]^2 = fl6 { feistel_round(d, sk[2 + r]) };
-    let fl12: Word[64]^2 = [fl_function(d12[0], sk[22]), flinv_function(d12[1], sk[23])];
-    let d18: Word[64]^2 = for r in 12..18 with d: Word[64]^2 = fl12 { feistel_round(d, sk[2 + r]) };
-    [d18[1] ^ sk[24], d18[0] ^ sk[25]]
+  // Section 2.3.1, 128-bit keys: M = (D1 << 64) | D2, prewhitening with kw1
+  // and kw2, 18 rounds with FL and FLINV after rounds 6 and 12,
+  // postwhitening, and C = (D2 << 64) | D1.
+  spec data_randomizing_128(m: U128, s: Subkeys18) -> U128 {
+    let kw: Word[64]^4 = s.0;
+    let k: Word[64]^18 = s.1;
+    let ke: Word[64]^4 = s.2;
+    let d0: U128 = [m[0] ^ kw[0], m[1] ^ kw[1]];
+    let d6: U128 = six_rounds(d0, k[0..6]);
+    let e6: U128 = [fl(d6[0], ke[0]), flinv(d6[1], ke[1])];
+    let d12: U128 = six_rounds(e6, k[6..12]);
+    let e12: U128 = [fl(d12[0], ke[2]), flinv(d12[1], ke[3])];
+    let d18: U128 = six_rounds(e12, k[12..18]);
+    [d18[1] ^ kw[2], d18[0] ^ kw[3]]
   }
 
-  // Section 2.3, 192- and 256-bit keys: 24 rounds with FL and FLINV after
-  // rounds 6, 12 and 18.
-  spec data_randomizing_192_256(m: Word[64]^2, sk: Word[64]^34) -> Word[64]^2 {
-    let d0: Word[64]^2 = [m[0] ^ sk[0], m[1] ^ sk[1]];
-    let d6: Word[64]^2 = for r in 0..6 with d: Word[64]^2 = d0 { feistel_round(d, sk[2 + r]) };
-    let fl6: Word[64]^2 = [fl_function(d6[0], sk[26]), flinv_function(d6[1], sk[27])];
-    let d12: Word[64]^2 = for r in 6..12 with d: Word[64]^2 = fl6 { feistel_round(d, sk[2 + r]) };
-    let fl12: Word[64]^2 = [fl_function(d12[0], sk[28]), flinv_function(d12[1], sk[29])];
-    let d18: Word[64]^2 = for r in 12..18 with d: Word[64]^2 = fl12 { feistel_round(d, sk[2 + r]) };
-    let fl18: Word[64]^2 = [fl_function(d18[0], sk[30]), flinv_function(d18[1], sk[31])];
-    let d24: Word[64]^2 = for r in 18..24 with d: Word[64]^2 = fl18 { feistel_round(d, sk[2 + r]) };
-    [d24[1] ^ sk[32], d24[0] ^ sk[33]]
+  // Section 2.3.2, 192- and 256-bit keys: the same with 24 rounds and FL
+  // and FLINV after rounds 6, 12 and 18.
+  spec data_randomizing_192_256(m: U128, s: Subkeys24) -> U128 {
+    let kw: Word[64]^4 = s.0;
+    let k: Word[64]^24 = s.1;
+    let ke: Word[64]^6 = s.2;
+    let d0: U128 = [m[0] ^ kw[0], m[1] ^ kw[1]];
+    let d6: U128 = six_rounds(d0, k[0..6]);
+    let e6: U128 = [fl(d6[0], ke[0]), flinv(d6[1], ke[1])];
+    let d12: U128 = six_rounds(e6, k[6..12]);
+    let e12: U128 = [fl(d12[0], ke[2]), flinv(d12[1], ke[3])];
+    let d18: U128 = six_rounds(e12, k[12..18]);
+    let e18: U128 = [fl(d18[0], ke[4]), flinv(d18[1], ke[5])];
+    let d24: U128 = six_rounds(e18, k[18..24]);
+    [d24[1] ^ kw[2], d24[0] ^ kw[3]]
   }
 
-  // Sections 2.2 and 2.3 together: one block, each key size, each direction.
+  // Section 2.3.3: an array of subkeys in the reverse order, k1 with kn and
+  // so on.
+  spec reversed[n in 4..25](x: Word[64]^n) -> Word[64]^n {
+    for i in 0..(n) with r: Word[64]^n = x { r with [i] = x[n - 1 - i] }
+  }
+
+  // Section 2.3.3: decryption is encryption with the subkeys reversed: kw1
+  // with kw3 and kw2 with kw4, k1 with k18 (or k24) and so on, ke1 with ke4
+  // (or ke6) and so on. One spec serves both layouts.
+  spec decryption_subkeys[S in {Subkeys18, Subkeys24}](s: S) -> S {
+    (s.0[2..4] ++ s.0[0..2], reversed(s.1), reversed(s.2))
+  }
+
+  // Sections 2.2 and 2.3: one block, each key size, each direction. A block
+  // is a 128-bit value read and written big-endian.
   spec encrypt_128(key: Word[8]^16, m: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_128(block_words(m), key_schedule_128(key)))
+    data_randomizing_128(m as big U128, key_schedule_128(key)) as big Word[8]^16
   }
+
   spec decrypt_128(key: Word[8]^16, c: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_128(block_words(c), reverse_subkeys_128(key_schedule_128(key))))
+    let s: Subkeys18 = decryption_subkeys(key_schedule_128(key));
+    data_randomizing_128(c as big U128, s) as big Word[8]^16
   }
+
   spec encrypt_192(key: Word[8]^24, m: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_192_256(block_words(m), key_schedule_192(key)))
+    data_randomizing_192_256(m as big U128, key_schedule_192(key)) as big Word[8]^16
   }
+
   spec decrypt_192(key: Word[8]^24, c: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_192_256(
-      block_words(c), reverse_subkeys_192_256(key_schedule_192(key))
-    ))
+    let s: Subkeys24 = decryption_subkeys(key_schedule_192(key));
+    data_randomizing_192_256(c as big U128, s) as big Word[8]^16
   }
+
   spec encrypt_256(key: Word[8]^32, m: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_192_256(block_words(m), key_schedule_256(key)))
+    data_randomizing_192_256(m as big U128, key_schedule_256(key)) as big Word[8]^16
   }
+
   spec decrypt_256(key: Word[8]^32, c: Word[8]^16) -> Word[8]^16 {
-    block_bytes(data_randomizing_192_256(
-      block_words(c), reverse_subkeys_192_256(key_schedule_256(key))
-    ))
+    let s: Subkeys24 = decryption_subkeys(key_schedule_256(key));
+    data_randomizing_192_256(c as big U128, s) as big Word[8]^16
   }
 
-  // RFC 3713 Appendix A: the plaintext 0123456789abcdeffedcba9876543210 under
-  // the 128-bit key 0123456789abcdeffedcba9876543210 gives the ciphertext
-  // 67673138549669730857065648eabe43.
-  spec appendix_a_plaintext() -> Word[8]^16 {
-    [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]
+  // RFC 3713 Appendix A: the plaintext 0123456789abcdeffedcba9876543210
+  // under the 128-bit key of the same value.
+  test "RFC 3713 Appendix A: 128-bit key encrypts" {
+    encrypt_128(
+      hex"01234567 89abcdef fedcba98 76543210",
+      hex"01234567 89abcdef fedcba98 76543210",
+    ) == hex"67673138 54966973 08570656 48eabe43"
   }
 
-  spec appendix_a_key_128() -> Word[8]^16 {
-    [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]
+  // RFC 3713 Appendix A: the ciphertext decrypted under the same key gives
+  // the plaintext back.
+  test "RFC 3713 Appendix A: 128-bit key decrypts" {
+    decrypt_128(
+      hex"01234567 89abcdef fedcba98 76543210",
+      hex"67673138 54966973 08570656 48eabe43",
+    ) == hex"01234567 89abcdef fedcba98 76543210"
   }
-
-  spec rfc3713_a_128() -> Word[8]^16 {
-    encrypt_128(appendix_a_key_128(), appendix_a_plaintext())
-  }
-  spec rfc3713_a_128_expected() -> Word[8]^16 {
-    [0x67, 0x67, 0x31, 0x38, 0x54, 0x96, 0x69, 0x73, 0x08, 0x57, 0x06, 0x56, 0x48, 0xea, 0xbe, 0x43]
-  }
-
-  // RFC 3713 Appendix A: the same ciphertext decrypted under the 128-bit key
-  // gives the plaintext back.
-  spec rfc3713_a_128_decrypt() -> Word[8]^16 {
-    decrypt_128(appendix_a_key_128(), rfc3713_a_128_expected())
-  }
-  spec rfc3713_a_128_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
 
   // RFC 3713 Appendix A: the 192-bit key
-  // 0123456789abcdeffedcba98765432100011223344556677 gives
-  // b4993401b3e996f84ee5cee7d79b09b9.
-  spec appendix_a_key_192() -> Word[8]^24 {
-    [
-      0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-    ]
+  // 0123456789abcdeffedcba98765432100011223344556677, the same plaintext.
+  test "RFC 3713 Appendix A: 192-bit key encrypts" {
+    encrypt_192(
+      hex"01234567 89abcdef fedcba98 76543210 00112233 44556677",
+      hex"01234567 89abcdef fedcba98 76543210",
+    ) == hex"b4993401 b3e996f8 4ee5cee7 d79b09b9"
   }
 
-  spec rfc3713_a_192() -> Word[8]^16 {
-    encrypt_192(appendix_a_key_192(), appendix_a_plaintext())
+  test "RFC 3713 Appendix A: 192-bit key decrypts" {
+    decrypt_192(
+      hex"01234567 89abcdef fedcba98 76543210 00112233 44556677",
+      hex"b4993401 b3e996f8 4ee5cee7 d79b09b9",
+    ) == hex"01234567 89abcdef fedcba98 76543210"
   }
-  spec rfc3713_a_192_expected() -> Word[8]^16 {
-    [0xb4, 0x99, 0x34, 0x01, 0xb3, 0xe9, 0x96, 0xf8, 0x4e, 0xe5, 0xce, 0xe7, 0xd7, 0x9b, 0x09, 0xb9]
-  }
-
-  spec rfc3713_a_192_decrypt() -> Word[8]^16 {
-    decrypt_192(appendix_a_key_192(), rfc3713_a_192_expected())
-  }
-  spec rfc3713_a_192_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
 
   // RFC 3713 Appendix A: the 256-bit key
-  // 0123456789abcdeffedcba987654321000112233445566778899aabbccddeeff gives
-  // 9acc237dff16d76c20ef7c919e3a7509.
-  spec appendix_a_key_256() -> Word[8]^32 {
-    [
-      0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-    ]
+  // 0123456789abcdeffedcba987654321000112233445566778899aabbccddeeff, the
+  // same plaintext.
+  test "RFC 3713 Appendix A: 256-bit key encrypts" {
+    encrypt_256(
+      hex"01234567 89abcdef fedcba98 76543210 00112233 44556677 8899aabb ccddeeff",
+      hex"01234567 89abcdef fedcba98 76543210",
+    ) == hex"9acc237d ff16d76c 20ef7c91 9e3a7509"
   }
 
-  spec rfc3713_a_256() -> Word[8]^16 {
-    encrypt_256(appendix_a_key_256(), appendix_a_plaintext())
+  test "RFC 3713 Appendix A: 256-bit key decrypts" {
+    decrypt_256(
+      hex"01234567 89abcdef fedcba98 76543210 00112233 44556677 8899aabb ccddeeff",
+      hex"9acc237d ff16d76c 20ef7c91 9e3a7509",
+    ) == hex"01234567 89abcdef fedcba98 76543210"
   }
-  spec rfc3713_a_256_expected() -> Word[8]^16 {
-    [0x9a, 0xcc, 0x23, 0x7d, 0xff, 0x16, 0xd7, 0x6c, 0x20, 0xef, 0x7c, 0x91, 0x9e, 0x3a, 0x75, 0x09]
-  }
-
-  spec rfc3713_a_256_decrypt() -> Word[8]^16 {
-    decrypt_256(appendix_a_key_256(), rfc3713_a_256_expected())
-  }
-  spec rfc3713_a_256_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
 
   // Botan src/tests/data/block/camellia.vec, section [Camellia-128], second
   // case: the key 80000000000000000000000000000000 on the zero block.
-  spec botan_camellia_128_case_2() -> Word[8]^16 {
-    encrypt_128(
-      [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-      [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-    )
-  }
-  spec botan_camellia_128_case_2_expected() -> Word[8]^16 {
-    [0x6c, 0x22, 0x7f, 0x74, 0x93, 0x19, 0xa3, 0xaa, 0x7d, 0xa2, 0x35, 0xa9, 0xbb, 0xa0, 0x5a, 0x2c]
+  test "Botan camellia.vec [Camellia-128] case 2" {
+    let key: Word[8]^16 = hex"80000000 00000000 00000000 00000000";
+    let zero: Word[8]^16 = [0; 16];
+    encrypt_128(key, zero) == hex"6c227f74 9319a3aa 7da235a9 bba05a2c"
   }
 
   // Botan camellia.vec, section [Camellia-256], third case: the key
-  // 0000000000000200000000000000000000000000000000000000000000000000 on the
-  // zero block.
-  spec botan_camellia_256_case_3() -> Word[8]^16 {
-    encrypt_256(
-      [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      ],
-      [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-    )
-  }
-  spec botan_camellia_256_case_3_expected() -> Word[8]^16 {
-    [0xe1, 0x8b, 0x0c, 0xb1, 0x98, 0x01, 0x24, 0x50, 0x4b, 0x46, 0xa4, 0x6a, 0x6f, 0x42, 0x73, 0xf3]
+  // 0000000000000200 followed by 24 zero bytes, on the zero block.
+  test "Botan camellia.vec [Camellia-256] case 3" {
+    let key: Word[8]^32 = hex"00000000 00000200" ++ [0; 24];
+    let zero: Word[8]^16 = [0; 16];
+    encrypt_256(key, zero) == hex"e18b0cb1 98012450 4b46a46a 6f4273f3"
   }
 }

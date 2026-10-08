@@ -17,43 +17,60 @@ the current standard: no practical attack on the full cipher is known as of
 ### Structure
 
 The cipher works on a state of sixteen bytes seen as a 4 x 4 array,
-`s[r, c] = in[r + 4c]` (FIPS 197 section 3.4). In Orange the state is
-`Word[8]^16` in that column-major order, so a block of input bytes is the
-state and no transposition is written. A round is four transformations:
-SubBytes (the S-box on every byte), ShiftRows (row `r` rotated left by `r`),
-MixColumns (each column multiplied by the fixed polynomial
-`{03}x^3 + {01}x^2 + {01}x + {02}` over GF(2^8)) and AddRoundKey (the round
-key added). The last round omits MixColumns. The key schedule (section 5.2)
-expands the key into `4(Nr + 1)` 32-bit words by a recurrence of period `Nk`
-that applies RotWord, SubWord and a round constant every `Nk` words, and
-SubWord alone at the half period when `Nk = 8`.
+`s[r, c] = in[r + 4c]` (FIPS 197 section 3.4). In Orange the state is that
+array: `type State = Row^4` with `type Row = Word[8]^4`, indexed `s[r][c]`
+with the row first, as the standard writes it; `state` fills it from the
+input column by column and `output` reads it back the same way. A round is
+four transformations: SubBytes (the S-box on every byte), ShiftRows (row `r`
+rotated left by `r`), MixColumns (each column multiplied by the fixed
+polynomial `{03}x^3 + {01}x^2 + {01}x + {02}` over GF(2^8)) and AddRoundKey
+(the round key added). The last round omits MixColumns. The key schedule
+(section 5.2) expands the key into `4(Nr + 1)` 32-bit words by a recurrence
+of period `Nk` that applies RotWord, SubWord and a round constant every `Nk`
+words, and SubWord alone at the half period when `Nk = 8`.
 
 | Standard section | Orange spec |
 | --- | --- |
-| FIPS 197 section 4.2.1, multiplication by `x` | `xtime` |
-| FIPS 197 section 5.1.1, SubBytes and the S-box (Table 4) | `sbox`, `lookup`, `byte_at`, `sub_bytes` |
+| FIPS 197 section 3.4, the state | `Row`, `State`, `state`, `output` |
+| FIPS 197 section 4.2, multiplication by `x` and multiplication in GF(2^8) | `xtime`, `mul` |
+| FIPS 197 section 5.1.1, SubBytes and the S-box (Table 4) | `sbox`, `sub_bytes` |
 | FIPS 197 section 5.1.2, ShiftRows | `shift_rows` |
-| FIPS 197 section 5.1.3, MixColumns | `mix_column`, `mix_columns` |
+| FIPS 197 section 5.1.3, MixColumns | `mix`, `mix_columns` |
 | FIPS 197 section 5.1.4, AddRoundKey | `add_round_key` |
-| FIPS 197 section 5.1, Algorithm 1, Cipher | `cipher` |
-| FIPS 197 section 5.2, Algorithm 2, KeyExpansion (Table 5, Rcon) | `rot_word`, `sub_word`, `rcon`, `key_expansion_128`, `key_expansion_192`, `key_expansion_256` |
-| FIPS 197 section 5.3.1 to 5.3.3, the inverse transformations (Table 6) | `inv_shift_rows`, `inv_sub_bytes`, `inv_sbox`, `inv_mix_column`, `inv_mix_columns` |
-| FIPS 197 section 5.3, Algorithm 3, InvCipher | `inv_cipher` |
+| FIPS 197 section 5.1, Algorithm 1, Cipher | `cipher[nr]` |
+| FIPS 197 section 5.2, Algorithm 2, KeyExpansion (Table 5, Rcon) | `rot_word`, `sub_word`, `rcon`, `key_expansion[nk]` |
+| FIPS 197 section 5.3.1 to 5.3.3, the inverse transformations (Table 6) | `inv_shift_rows`, `inv_sbox`, `inv_sub_bytes`, `mix`, `inv_mix_columns` |
+| FIPS 197 section 5.3, Algorithm 3, InvCipher | `inv_cipher[nr]` |
 | FIPS 197 section 5, AES-128, AES-192, AES-256 and their inverses | `aes128`, `aes192`, `aes256`, `aes128_inverse`, `aes192_inverse`, `aes256_inverse` |
-| SP 800-38A section 6.1, ECB | `ecb_encrypt` |
-| SP 800-38A section 6.2, CBC | `cbc_encrypt` |
-| SP 800-38A section 6.3, CFB with `s = 128` | `cfb128_encrypt` |
-| SP 800-38A section 6.4, OFB | `ofb_encrypt` |
-| SP 800-38A section 6.5, CTR, and Appendix B.1, the incrementing function | `ctr_encrypt`, `increment` |
+| SP 800-38A section 4.2, exclusive-or | `xor[n]` |
+| SP 800-38A section 6.1, ECB | `ecb_encrypt`, `ecb_decrypt` |
+| SP 800-38A section 6.2, CBC | `cbc_encrypt`, `cbc_decrypt` |
+| SP 800-38A section 6.3, CFB with `s = 128` | `cfb128_encrypt`, `cfb128_decrypt` |
+| SP 800-38A section 6.4, OFB | `ofb_output_blocks`, `ofb_encrypt`, `ofb_decrypt` |
+| SP 800-38A section 6.5, CTR, and Appendix B.1, the incrementing function | `increment`, `ctr_output_blocks`, `ctr_encrypt`, `ctr_decrypt` |
+| SP 800-38A Appendix F, the shared inputs of the examples | `example_key_128`, `example_key_256`, `example_iv`, `example_counter`, `example_plaintext` |
 
-`cipher(input, nr, w)` and `inv_cipher(input, nr, w)` take the number of
-rounds `Nr` as the standard's algorithms do, and `aes128`, `aes192` and
-`aes256` are `cipher` with `Nr = 10`, `12` and `14` under the schedule of
-their key, which is how the 2023 update names the three ciphers. The modes
-take the block cipher `CIPH_K` of SP 800-38A as the pair `(nr, w)`, so a
-mode under AES-256 is the same spec as under AES-128 with a different
-schedule; they are written for two-block messages as the equations of
-section 6 with `n = 2`.
+`key_expansion[nk]` takes a key of `4 Nk` bytes and returns the schedule of
+exactly `4 Nk + 28 = 4 Nr + 4` words; `cipher[nr]` and `inv_cipher[nr]` take
+the number of rounds `Nr` as a size, as the standard's algorithms take it as
+a parameter, and a schedule of `4 Nr + 4` words. `aes128`, `aes192` and
+`aes256` are `cipher[10]`, `cipher[12]` and `cipher[14]` under the schedule
+of their key, which is how the 2023 update names the three ciphers. MixColumns
+and InvMixColumns are one spec, `mix`, the product of each column with a
+matrix whose rows are rotations of its first row: `{02} {03} {01} {01}` for
+MixColumns and `{0e} {0b} {0d} {09}` for InvMixColumns, with the products
+those of section 4.2.
+
+The modes are in their own module, `aes_modes`, which reads the cipher with
+`use aes;`. Each takes the block cipher `CIPH_K` of SP 800-38A as an AES key
+schedule `w` of `Nr` rounds and a message of `n` whole blocks as `16 n`
+bytes, both sizes (`nr` and `n`), so a mode under AES-256 is the same spec as
+under AES-128 with a longer schedule. The modes are written as the equations
+of section 6: ECB and CBC call `aes::cipher` and, to decrypt,
+`aes::inv_cipher`; CBC and CFB carry the previous ciphertext block (the IV at
+first) through the loop over blocks; OFB and CTR build their output blocks
+`O_1` through `O_n` once and exclusive-or them with the plaintext to encrypt
+and with the ciphertext to decrypt.
 
 ### Security status
 
@@ -87,10 +104,10 @@ table implementation, and Osvik, Shamir and Tromer (2006) recovered keys in
 seconds to minutes from a process sharing a cache with the victim. That is
 why deployed AES uses hardware instructions (AES-NI, ARMv8 Crypto) or
 bitsliced software (Kasper and Schwabe 2009). The tables in this entry are
-the standard's tables, written as packed words and read by a selection over
-all of them; the entry is a reference evaluation under `orangec eval` and
-makes no constant-time claim, and nothing about a compiled artifact follows
-from it.
+the standard's tables, read by the secret byte itself as `sbox[x]`, the
+pattern those attacks exploit; the entry is a reference evaluation under
+`orangec test` and makes no constant-time claim, and nothing about a
+compiled artifact follows from it.
 
 The modes have their own conditions. ECB encrypts equal blocks to equal
 ciphertext blocks, so it hides neither repetition nor structure and is not
@@ -112,107 +129,126 @@ adds ciphertext stealing to CBC.
 
 ### What the Orange rendering shows
 
-Every data-dependent choice of the cipher is a table lookup: the S-box in
-SubBytes and in SubWord of the key schedule, 200 lookups per AES-128 block
-and 276 per AES-256 block. Nothing else depends on the data: ShiftRows is a
-fixed reindexing, MixColumns and its inverse are `xtime` chains and
-exclusive-ors, and the key schedule's branches are on the word index, which
-is static. A byte may index a table of 256 entries. This rendering still
-writes `sbox[x]` as a selection: the 256 entries are packed eight to a
-`Word[64]` so that every literal reads like a row of the standard's table,
-`lookup` walks the 32 words comparing `x >> 3` with each position, and
-`byte_at` picks the byte `x & 7`.
-One lookup costs 295 steps (measured), and the lookups are about 80 percent
-of a block: with a given key schedule an AES-128 block costs about 58,000
-steps and an AES-256 block about 81,000; `key_expansion_128` costs about
-16,000 and `key_expansion_256` about 22,000; an AES-128 inverse block about
-65,000, InvMixColumns being the costlier half.
+The data choose two things in the cipher. The S-box lookups are written
+`sbox[s[r][c]]` in SubBytes and `sbox[a[i]]` in SubWord, a byte indexing the
+256 bytes of Table 4 (and `inv_sbox[...]` in InvSubBytes): 200 lookups per
+AES-128 block with its key schedule and 276 per AES-256 block. A `Word[8]`
+index ranges over 0 through 255, so the checker proves every lookup in range
+from the types alone. Besides the lookups, `mul(a, b)` tests each bit `k` of
+`b` and adds `x^k a` when it is set; in MixColumns and InvMixColumns `b` is a
+state byte, so those tests follow the data. The `xtime` steps inside `mul`
+run on `a`, which there is a matrix constant, so `xtime`'s test of the top
+bit branches the same way for every state. Everything else is fixed by the
+round and position: ShiftRows and InvShiftRows read `s[r][(c + r) % 4]` and
+`s[r][(c - r) % 4]`, the standard's formulas, with loop indices that the
+checker bounds; the key schedule's branches are on the word index `i`; and
+the round key of round `round` is the slice `w[4 round .. 4 round + 4]`.
 
-A bounded `Int` index checks when every value the index expression can take
-selects an element: a loop index, an expression built from one, or a word
-converted with `as Int`. An `Int` with no bound is `ORC0226`, including an
-`Int` parameter. A slice bound is a literal or a loop index. The round key
-of round `round` is `w[4 round .. 4 round + 3]`. `nr` is an `Int` parameter,
-so the round index is the loop index: `cipher` loops over rounds 1 through
-14 and lets the rounds above `Nr` pass the state through, and `inv_cipher`
-counts a loop index up and takes `round = 14 - j`. The schedule is
-`Word[32]^60` for all three key sizes, with AES-128 and AES-192 leaving the
-tail at zero, and the recurrence `w[i] = w[i - Nk] ^ temp` is written once
-per `Nk`, because `w[i - nk]` with `nk` an `Int` parameter is rejected. A
-size is an index, including `w[i - nk]` when `nk` is a size and `i` is a
-loop index; this file does not use one.
+Byte order is written where FIPS 197 fixes it: the key is read into words
+with `key as big Word[32]^nk` (the first byte most significant, as in
+section 5.2), AddRoundKey spreads word `w[4 round + c]` down column `c` with
+`k[c] as big Word[8]^4`, SubWord splits and rejoins a word the same way, and
+the round constants are Table 5's words, printed as hex and read with
+`as big`. RotWord on a big-endian word is `w <<< 8`. In the modes, the CTR
+counter block is a 128-bit big-endian integer (`t as big Int`), and
+`next as big Word[8]^16` keeps the incremented value modulo 2^128, which is
+the standard incrementing function of Appendix B.1 with `m = 128`.
 
-The budget sized the vectors. The seven FIPS 197 cases of `aes.or` cost about
-594,000 of the 1,048,576 steps a file has (measured with a filler spec). The
-modes cannot share that file, so `aes-modes.or` carries its own copy of the
-forward cipher and reproduces the first two blocks of each of six SP 800-38A
-examples at about 817,000 steps; a third block of each would add about
-371,000 and does not fit, and the four-block originals would need two more
-files.
+Lengths are sizes. `key_expansion[nk]` has one instance per key length, and
+`cipher[nr]` and `inv_cipher[nr]` one per number of rounds, so a schedule
+has exactly its `4 Nr + 4` words and the round loop runs `Nr - 1` times;
+InvCipher's loop counts `j` up and takes round `Nr - j`, because a loop runs
+upward. The modes have one instance per pair `(nr, n)`, and each test names
+neither: the checker picks `nr = 10` from the 44 words of an AES-128 schedule
+(60 for AES-256 gives 14) and `n = 4` from the 64-byte message, so a schedule
+or message of a length no instance takes is rejected before evaluation.
+The modes reach the cipher across modules as `aes::cipher[nr](...)` and
+`aes::inv_cipher[nr](...)`; the gate runs the tests of `aes.or` on their own.
 
-Not expressed: the modes' decryption direction (CBC and ECB decryption use
-InvCipher; CFB, OFB and CTR decryption reuse the forward cipher), since a
-spec without a vector would be dead code and its vectors do not fit the
-budget; messages of other lengths, since an array's length is part of its
-type (a size parameter covers a finite family of lengths; these modes do not
-use one); and the Equivalent Inverse Cipher
-of FIPS 197 section 5.3.5, which is an implementation arrangement rather than
-a different function.
+Measured costs under `orangec test --stats`: one AES-128 block costs about
+149,000 steps given its schedule, one AES-256 block about 214,000, the
+inverse cipher the same as the forward; `key_expansion` costs about 2,400 steps
+for a 128-bit key, 2,500 for 192 and 3,100 for 256. MixColumns is the
+expensive step: `mix` forms its 64 products with the general multiplication
+of section 4.2, eight `xtime` steps each, at about 15,500 steps a call,
+between about 14,700 and 16,300 as the state bytes have fewer or more bits
+set; the nine calls in an AES-128 block make up about 94 percent of it.
+SubBytes, ShiftRows and AddRoundKey cost under 300 steps each, the S-box
+table about 60 to build and a lookup a few steps. A four-block mode example costs about 598,000 steps
+under AES-128 and 862,000 under AES-256. The seven tests of `aes.or` use
+1,259,062 steps and the twelve of `aes-modes.or` 7,714,374.
+
+Not expressed: a final partial block, which SP 800-38A allows in CFB, OFB
+and CTR (the last `u` bits of the output block); CFB with segments of 1, 8
+or 64 bits; messages of more than four blocks, which are a change to the
+size range up to the limits under Gaps; and the Equivalent Inverse Cipher
+of FIPS 197 section 5.3.5, which is an implementation arrangement rather
+than a different function.
 
 ## Dissemination
 
 ### Files
 
-- `aes.or`: module `aes`, the cipher of FIPS 197. The packed S-box and
-  inverse S-box, the four transformations and their inverses, `xtime`,
-  KeyExpansion for `Nk = 4, 6, 8`, `cipher` and `inv_cipher`, the six
-  AES-128/192/256 entry points, and the vectors of Appendix B and C.
-- `aes-modes.or`: module `aes_modes`, the five modes of SP 800-38A over
-two-block messages, with the forward cipher of FIPS 197 repeated (a module
-may `use` another; this file does not) and the first two blocks of six
-Appendix F examples.
+- `aes.or`: module `aes`, the cipher of FIPS 197. The state as a 4 x 4
+  array, the S-box and inverse S-box as the standard's tables, the four
+  transformations and their inverses, `xtime` and multiplication in
+  GF(2^8), KeyExpansion for every `Nk`, `cipher` and `inv_cipher` for every
+  `Nr`, the six AES-128/192/256 entry points, and the vectors of Appendix B
+  and C.
+- `aes-modes.or`: module `aes_modes`, the five modes of SP 800-38A in both
+  directions over messages of one to four blocks, using module `aes`, and
+  twelve four-block examples of Appendix F.
 
 ### Running
 
 ```console
-orangec eval algorithms/aes/aes.or
-orangec eval algorithms/aes/aes-modes.or
+orangec test algorithms/aes/aes.or
+orangec test algorithms/aes/aes-modes.or
 python3 algorithms/verify.py algorithms/aes
 ```
 
-`eval` prints every parameterless spec, including the tables (`sbox`,
-`inv_sbox` and `rcon` in `aes.or`, `sbox` and `rcon` in `aes-modes.or`); the pairs
-below are the vectors.
+`orangec eval` prints every parameterless spec: the tables (`sbox`,
+`inv_sbox` and `rcon`) for `aes.or`, and the shared inputs of Appendix F
+for `aes-modes.or`.
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block comparing an output with the published value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `fips197_c1_aes128` | FIPS 197, Appendix C.1, via the OpenSSL file | AES-128, plaintext 00112233...eeff, key 000102...0f |
-| `fips197_c1_aes128_inverse` | FIPS 197, Appendix C.1 (INVERSE CIPHER), via the OpenSSL file | the C.1 ciphertext back to the plaintext |
-| `fips197_c2_aes192` | FIPS 197, Appendix C.2, via the OpenSSL file | AES-192, the same plaintext, key 000102...17 |
-| `fips197_c2_aes192_inverse` | FIPS 197, Appendix C.2 (INVERSE CIPHER), via the OpenSSL file | the C.2 ciphertext back to the plaintext |
-| `fips197_c3_aes256` | FIPS 197, Appendix C.3, via the OpenSSL file | AES-256, the same plaintext, key 000102...1f |
-| `fips197_c3_aes256_inverse` | FIPS 197, Appendix C.3 (INVERSE CIPHER), via the OpenSSL file | the C.3 ciphertext back to the plaintext |
-| `fips197_b_aes128` | FIPS 197, Appendix B; expected value from the Python `cryptography` oracle | AES-128, input 3243f6a8..., key 2b7e1516... |
-| `sp800_38a_f_1_1_ecb_aes128` | SP 800-38A, Appendix F.1.1, via the OpenSSL file | ECB-AES128.Encrypt, blocks 1 and 2 |
-| `sp800_38a_f_2_1_cbc_aes128` | SP 800-38A, Appendix F.2.1, via the OpenSSL file | CBC-AES128.Encrypt, blocks 1 and 2 |
-| `sp800_38a_f_3_13_cfb128_aes128` | SP 800-38A, Appendix F.3.13, via the OpenSSL file | CFB128-AES128.Encrypt, blocks 1 and 2 |
-| `sp800_38a_f_4_1_ofb_aes128` | SP 800-38A, Appendix F.4.1, via the OpenSSL file | OFB-AES128.Encrypt, blocks 1 and 2 |
-| `sp800_38a_f_5_1_ctr_aes128` | SP 800-38A, Appendix F.5.1, via the OpenSSL file | CTR-AES128.Encrypt, blocks 1 and 2 |
-| `sp800_38a_f_5_5_ctr_aes256` | SP 800-38A, Appendix F.5.5, via the OpenSSL file | CTR-AES256.Encrypt, blocks 1 and 2 |
+| `FIPS 197 C.1: AES-128 encrypts` | FIPS 197, Appendix C.1, via the OpenSSL file | AES-128, plaintext 00112233...eeff, key 000102...0f |
+| `FIPS 197 C.1: AES-128 inverse cipher` | FIPS 197, Appendix C.1 (INVERSE CIPHER), via the OpenSSL file | the C.1 ciphertext back to the plaintext |
+| `FIPS 197 C.2: AES-192 encrypts` | FIPS 197, Appendix C.2, via the OpenSSL file | AES-192, the same plaintext, key 000102...17 |
+| `FIPS 197 C.2: AES-192 inverse cipher` | FIPS 197, Appendix C.2 (INVERSE CIPHER), via the OpenSSL file | the C.2 ciphertext back to the plaintext |
+| `FIPS 197 C.3: AES-256 encrypts` | FIPS 197, Appendix C.3, via the OpenSSL file | AES-256, the same plaintext, key 000102...1f |
+| `FIPS 197 C.3: AES-256 inverse cipher` | FIPS 197, Appendix C.3 (INVERSE CIPHER), via the OpenSSL file | the C.3 ciphertext back to the plaintext |
+| `FIPS 197 B: the cipher example` | FIPS 197, Appendix B; expected value from the Python `cryptography` oracle | AES-128, input 3243f6a8..., key 2b7e1516... |
+| `SP 800-38A F.1.1: ECB-AES128.Encrypt` | SP 800-38A, Appendix F.1.1; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | ECB-AES128.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.1.2: ECB-AES128.Decrypt` | SP 800-38A, Appendix F.1.2; recomputed | ECB-AES128.Decrypt, blocks 1 to 4 |
+| `SP 800-38A F.2.1: CBC-AES128.Encrypt` | SP 800-38A, Appendix F.2.1; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | CBC-AES128.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.2.2: CBC-AES128.Decrypt` | SP 800-38A, Appendix F.2.2; recomputed | CBC-AES128.Decrypt, blocks 1 to 4 |
+| `SP 800-38A F.3.13: CFB128-AES128.Encrypt` | SP 800-38A, Appendix F.3.13; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | CFB128-AES128.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.3.14: CFB128-AES128.Decrypt` | SP 800-38A, Appendix F.3.14; recomputed | CFB128-AES128.Decrypt, blocks 1 to 4 |
+| `SP 800-38A F.4.1: OFB-AES128.Encrypt` | SP 800-38A, Appendix F.4.1; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | OFB-AES128.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.4.2: OFB-AES128.Decrypt` | SP 800-38A, Appendix F.4.2; recomputed | OFB-AES128.Decrypt, blocks 1 to 4 |
+| `SP 800-38A F.5.1: CTR-AES128.Encrypt` | SP 800-38A, Appendix F.5.1; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | CTR-AES128.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.5.2: CTR-AES128.Decrypt` | SP 800-38A, Appendix F.5.2; recomputed | CTR-AES128.Decrypt, blocks 1 to 4 |
+| `SP 800-38A F.5.5: CTR-AES256.Encrypt` | SP 800-38A, Appendix F.5.5; blocks 1 and 2 via the OpenSSL file, 3 and 4 recomputed | CTR-AES256.Encrypt, blocks 1 to 4 |
+| `SP 800-38A F.5.6: CTR-AES256.Decrypt` | SP 800-38A, Appendix F.5.6; recomputed | CTR-AES256.Decrypt, blocks 1 to 4 |
 
 "The OpenSSL file" is `test/recipes/30-test_evp_data/evpciph_aes_common.txt`
 of the OpenSSL repository, which transcribes these cases of the two standards
 block by block; every one of its values used here was also checked against
-the Python `cryptography` package (see Provenance below).
+the Python `cryptography` package (see Provenance below). "Recomputed" means
+recomputed with two independent libraries for this rewrite, as described
+below. Each decryption example takes the ciphertext of the matching
+encryption example back to the shared plaintext of Appendix F.
 
-Blocks 3 and 4 of the six SP 800-38A examples are not evaluated, for the
-budget reason given above; their plaintexts are the standard's blocks 3 and 4
-and nothing else changes, so a reader who wants them can extend the message
-type to `Word[8]^64` in a third file. The ECB examples for AES-192 and AES-256 (F.1.3,
-F.1.5) are covered in substance by the FIPS 197 cases; the remaining
-Appendix F examples are not reproduced.
+The ECB examples for AES-192 and AES-256 (F.1.3 to F.1.6) are covered in
+substance by the FIPS 197 cases. The CFB1 and CFB8 examples, the AES-192
+examples of CBC, CFB128, OFB and CTR, and the AES-256 examples of CBC,
+CFB128 and OFB are not reproduced.
 
 ### Provenance and claims
 
@@ -224,34 +260,48 @@ GF(2^8) modulo `x^8 + x^4 + x^3 + x + 1`, then the affine map with constant
 `0x63`) and compared entry by entry with the table in the tiny-AES-c
 reference implementation; the inverse S-box is its inverse permutation, also
 compared; the round constants are the powers of `x` in the same field. The
-packed `Word[64]` literals were generated by the script from those tables.
-The FIPS 197 Appendix C and SP 800-38A Appendix F expected values are the
-entries of OpenSSL's `test/recipes/30-test_evp_data/evpciph_aes_common.txt`,
-which carries the FIPS 197 C.1 to C.3 cases and the SP 800-38A F.1 to F.5
-examples block by block; the Appendix B output was produced by the Python
-`cryptography` package (AES in ECB mode) because the vector file omits that
-case. A Python reference of the cipher and the five modes written for this
-entry agrees with `cryptography` and with all 84 whole-block AES entries of
-the OpenSSL file in the five modes, and served as the oracle for
-intermediate values while the Orange was written.
+packed `Word[64]` literals of the first form were generated by the script
+from those tables. The FIPS 197 Appendix C and SP 800-38A Appendix F
+expected values are the entries of OpenSSL's
+`test/recipes/30-test_evp_data/evpciph_aes_common.txt`, which carries the
+FIPS 197 C.1 to C.3 cases and the SP 800-38A F.1 to F.5 examples block by
+block; the Appendix B output was produced by the Python `cryptography`
+package (AES in ECB mode) because the vector file omits that case. A Python
+reference of the cipher and the five modes written for this entry agrees
+with `cryptography` and with all 84 whole-block AES entries of the OpenSSL
+file in the five modes, and served as the oracle for intermediate values
+while the Orange was written.
+
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of bytes: the seven FIPS 197 tests state the same
+sixteen bytes, and each SP 800-38A encryption test states the first form's
+32 bytes as its first two blocks. The S-box and inverse S-box rows, now
+`hex"..."` lines read as `sbox[x]`, were printed by script from the first
+form's packed words, and the S-box was checked once more against its
+definition in section 5.1.1. The first form evaluated only blocks 1 and 2
+of the six SP 800-38A examples, to fit its step budget; the rewrite extends
+each to the four blocks Appendix F prints and adds the six decryption
+examples of the same cases (F.1.2, F.2.2, F.3.14, F.4.2, F.5.2 and F.5.6).
+Blocks 3 and 4 of every example, and every decryption result, were
+recomputed with pycryptodome 3.24.0 and with `cryptography` 50.0.2, in each
+mode and both directions; the two agreed with each other and, on blocks 1
+and 2, with the first form's values.
 
 This entry is a reference evaluation of a specification under `orangec
-eval`: it shows that the Orange text computes the standards' values on the
+test`: it shows that the Orange text computes the standards' values on the
 cases listed. It makes no constant-time, side-channel, performance or
 certification claim, it is not an implementation anyone should deploy, and
 it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- A module may `use` another. `aes-modes.or` still repeats about 200 lines
-  of `aes.or` (the forward cipher and its tables).
-- A byte may index a table of 256 entries. The lookup is still a 32-way
-  selection at 295 steps, which makes a block cost 58,000 to 81,000 steps
-  and limits the modes file to two blocks of each example. `nr` and `nk` are
-  `Int` parameters with no bound (`ORC0226`), so `cipher` and `inv_cipher`
-  iterate over 14 rounds for every key size, the schedule is sized for
-  AES-256, and the key expansion recurrence is written once per `Nk`.
-- A size parameter covers a finite family of lengths. The modes are still
-  fixed to two-block messages (`Word[8]^32`).
-- The step budget per file (1,048,576) kept the modes' decryption direction
-  and blocks 3 and 4 of the Appendix F examples out of the entry.
+- A size ranges over an interval, so `key_expansion[nk]` is defined for
+  `Nk` from 4 through 8 and `cipher[nr]` and `inv_cipher[nr]` for `Nr` from
+  10 through 14, including the values 5, 7, 11 and 13 that AES does not
+  use; a size cannot be restricted to `{4, 6, 8}`. The tie `Nr = Nk + 6`
+  is written by the callers (`aes128` calls `cipher[10]`), not by a type.
+- A function has at most 256 instances, and the modes have one per pair
+  of `Nr` and block count: the five values of `nr` leave room for messages
+  of up to 51 blocks, and an arbitrary message length is not a type.
+- No array has zero elements, so a mode cannot take the empty message.

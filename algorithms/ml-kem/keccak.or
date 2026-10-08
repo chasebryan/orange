@@ -1,12 +1,23 @@
 // The hash functions of FIPS 202 that ML-KEM needs: SHA3-256, SHA3-512,
 // SHAKE128 and SHAKE256, from "SHA-3 Standard: Permutation-Based Hash and
 // Extendable-Output Functions", NIST, August 2015,
-// https://doi.org/10.6028/NIST.FIPS.202. The file transcribes Keccak-p[1600,
-// 24] (sections 3.1 to 3.3, with the state as the standard indexes it, a
-// 5 x 5 array of 64-bit lanes A[x][y]), the sponge construction (section 4,
-// Algorithm 8) with pad10*1 (section 5.1) after the domain suffix of
-// section 6, and the four functions of sections 6.1 and 6.2. It holds no
-// tests: ml-kem.or uses it, and the ML-KEM vectors check it.
+// https://doi.org/10.6028/NIST.FIPS.202. The file transcribes
+// Keccak-p[1600, 24] (sections 3.1 to 3.3, with the state as the standard
+// indexes it, a 5 x 5 array of 64-bit lanes A[x][y]), the sponge
+// construction (section 4, Algorithm 8) with pad10*1 (section 5.1) after the
+// domain suffix of section 6, and the four functions of sections 6.1 and
+// 6.2. It holds no tests: ml-kem.or uses it, and the ML-KEM vectors check
+// it.
+//
+// Departure in form: the step mappings theta, rho, pi and chi are written
+// out lane by lane, with rho's offsets taken from Table 2 and the
+// coordinates of pi and chi reduced modulo 5 by hand, and the round
+// constants of iota are a literal table, rather than the loops of
+// Algorithms 1 to 6. The looped form costs about 96,000 evaluation steps a
+// permutation against about 21,600 here, and the ML-KEM tests run about 400
+// permutations, which in the looped form would take them past the 25
+// million steps an entry is kept under. The ML-KEM vectors check every
+// literal.
 edition 2026;
 module keccak {
   // A sheet is the five lanes A[x][0] through A[x][4] of one x.
@@ -18,7 +29,9 @@ module keccak {
   // sheet x takes in D[x].
   spec parity(s: Sheet) -> Word[64] { s[0] ^ s[1] ^ s[2] ^ s[3] ^ s[4] }
 
-  spec add_lane(s: Sheet, d: Word[64]) -> Sheet { [s[0] ^ d, s[1] ^ d, s[2] ^ d, s[3] ^ d, s[4] ^ d] }
+  spec add_lane(s: Sheet, d: Word[64]) -> Sheet {
+    [s[0] ^ d, s[1] ^ d, s[2] ^ d, s[3] ^ d, s[4] ^ d]
+  }
 
   spec theta(a: State) -> State {
     let c: Word[64]^5 = [parity(a[0]), parity(a[1]), parity(a[2]), parity(a[3]), parity(a[4])];
@@ -96,24 +109,29 @@ module keccak {
   }
 
   // Section 4, Algorithm 8, lines 1 to 6: the sponge absorbs the padded
-  // string P, r bytes at a time, into the zero state. Here r is 8 * lanes;
-  // section 3.1.2 puts byte 8(5y + x) of a block in lane A[x][y], read
-  // little-endian, so lane i of a block is xored into A[i mod 5][i div 5].
+  // string P, r bytes at a time, into the zero state. Here r is 8 * lanes
+  // bytes; section 3.1.2 puts byte 8(5y + x) of a block in lane A[x][y],
+  // read little-endian, so lane i of a block is xored into
+  // A[i mod 5][i div 5].
   spec absorb[lanes in 9..22, blocks in 1..14](p: Word[8]^(8 * lanes * blocks)) -> State {
     for n in 0..(blocks) with s: State = [[0; 5]; 5] {
-      let block: Word[64]^lanes = p[8 * lanes * n..8 * lanes * n + 8 * lanes] as little Word[64]^lanes;
-      keccak_p(for i in 0..(lanes) with t: State = s {
+      let block: Word[64]^lanes =
+        p[8 * lanes * n..8 * lanes * n + 8 * lanes] as little Word[64]^lanes;
+      let mixed: State = for i in 0..(lanes) with t: State = s {
         t with [i % 5][i / 5] = s[i % 5][i / 5] ^ block[i]
-      })
+      };
+      keccak_p(mixed)
     }
   }
 
   // Section 4, Algorithm 8, lines 7 to 10: the sponge squeezes Trunc_r(S),
-  // and permutes again before each further block; here for a whole number
-  // of blocks, of which the caller keeps the first d bits.
+  // lanes A[0][0], A[1][0], ... little-endian, and permutes again before
+  // each further block; here for a whole number of blocks, of which the
+  // caller keeps the first d bits.
   spec squeeze[lanes in 9..22, blocks in 1..5](a: State) -> Word[8]^(8 * lanes * blocks) {
+    let start: (Word[8]^(8 * lanes * blocks), State) = ([0; (8 * lanes * blocks)], a);
     let out: (Word[8]^(8 * lanes * blocks), State) =
-      for n in 0..(blocks) with (z: Word[8]^(8 * lanes * blocks), s: State) = ([0; (8 * lanes * blocks)], a) {
+      for n in 0..(blocks) with (z: Word[8]^(8 * lanes * blocks), s: State) = start {
         let block: Word[64]^lanes = for i in 0..(lanes) with b: Word[64]^lanes = [0; lanes] {
           b with [i] = s[i % 5][i / 5]
         };
@@ -125,13 +143,16 @@ module keccak {
     out.0
   }
 
-  // Sections 5.1, 6 and B.2: the message M, the domain suffix with the
-  // first bit of pad10*1 (the byte 06 for SHA-3, 1f for SHAKE), zeros, and
-  // the last bit of pad10*1 in the byte 80, to the next whole number of
-  // r-byte blocks. A function has at most 256 instances, so a message
-  // length is written 32w + t with w from 1 through 25 and t from 0 through
-  // 2: every string ML-KEM-512 hashes is 32-byte seeds and encodings
-  // followed by at most two index bytes, and at most 800 bytes long.
+  // Sections 5.1, 6.1, 6.2 and B.2: each function pads the message M with
+  // its domain suffix and the first bit of pad10*1 (the byte 06 for SHA-3,
+  // 1f for SHAKE), zeros, and the last bit of pad10*1 in the byte 80, to
+  // the next whole number of r-byte blocks. A function has at most 256
+  // instances, so a message length is written 32w + t, with w from 1
+  // through 25 and t from 0 through 2: every string ML-KEM-512 hashes is a
+  // run of 32-byte seeds and encodings followed by at most two index bytes,
+  // at most 800 bytes in all. For every such length at least one zero byte
+  // falls between the suffix byte and the byte 80, as the check of each
+  // instance confirms.
 
   // Section 6.1: SHA3-256(M) = KECCAK[512](M || 01, 256), rate 136 bytes.
   spec sha3_256[w in 1..26, t in 0..3](m: Word[8]^(32 * w + t)) -> Word[8]^32 {

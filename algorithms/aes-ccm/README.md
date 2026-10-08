@@ -23,8 +23,8 @@ CCM takes a key `K`, a nonce `N` of `n` bytes with `7 <= n <= 13`,
 associated data `A`, a payload `P` and a tag length `Tlen` in bits, and
 returns `C = ciphertext || T` of `Plen + Tlen` bits. It is a two-pass mode,
 and both passes use only the forward block cipher `CIPH_K` (SP 800-38C
-section 5.1), so the Orange file carries the cipher of FIPS 197 and not its
-inverse.
+section 5.1), so the entry carries the cipher of FIPS 197, in the module
+`aes`, and not its inverse.
 
 The first pass is the CBC-MAC of section 6.1, steps 1 to 4, over the blocks
 `B_0 || B_1 || ... || B_r` that the formatting function of Appendix A.2
@@ -46,33 +46,69 @@ the recovered `P`, and accepts only when the two tags agree.
 
 | Standard section | Orange spec |
 | --- | --- |
-| FIPS 197 section 5.1.1, SubBytes and the S-box (Table 4) | `s_box`, `lookup`, `byte_at`, `sub_bytes` |
-| FIPS 197 section 5.1.2 to 5.1.4 | `shift_rows`, `mix_column`, `mix_columns`, `add_round_key` |
-| FIPS 197 section 5.2, KeyExpansion with `Nk = 4` | `rot_word`, `sub_word`, `rcon`, `key_expansion` |
-| FIPS 197 section 5.1, Cipher, the `CIPH_K` of SP 800-38C section 5.1 | `cipher` |
-| SP 800-38C Appendix A.1, the layout Flags, N, `[x]_8q` with `n + q = 15` shared by `B_0` and `Ctr_i` | `flags_nonce_integer`, `byte_weight` |
-| Appendix A.2.1, `B_0` (Table 1) | `b_0` |
-| Appendix A.2.2, the associated-data blocks | `associated_data_blocks`, `associated_data_block_count` |
-| Appendix A.2.3, the payload blocks | `payload_blocks`, `payload_block_count` |
-| Appendix A.2, the formatting function | `formatting`, `formatted_block_count`, `byte_of` |
-| Appendix A.3, the counter blocks (Table 2) | `ctr` |
-| Section 6.1, steps 2 to 4, the CBC-MAC | `cbc_mac` |
-| Section 6.1, steps 5 to 7, counter mode | `counter_mode`, `xor_block`, `mask_tag` |
-| Section 6.1, generation-encryption | `generation_encryption`, `block_byte` |
-| Section 6.2, steps 2 to 6, the recovered payload and received tag | `recovered_payload`, `received_tag` |
-| Section 6.2, decryption-verification | `decryption_verification` |
+| FIPS 197 section 3.4, the state | `aes::state`, `aes::output` (types `Row`, `State`) |
+| FIPS 197 section 4.2, multiplication by `x` | `aes::xtime` |
+| FIPS 197 section 5.1.1, SubBytes and the S-box (Table 4) | `aes::sbox`, `aes::sub_bytes` |
+| FIPS 197 sections 5.1.2 to 5.1.4 | `aes::shift_rows`, `aes::mix_columns`, `aes::add_round_key` |
+| FIPS 197 section 5.2, KeyExpansion with `Nk = 4` (Algorithm 2, Table 5) | `aes::rot_word`, `aes::sub_word`, `aes::xor_word`, `aes::rcon`, `aes::key_expansion` |
+| FIPS 197 section 5.1, Cipher (Algorithm 1), and section 5, AES-128 | `aes::cipher`, `aes::aes128` |
+| SP 800-38C section 5.1, `CIPH_K` | `ciph` |
+| The standard's symbols, `X ^ Y` and the length of a string in octets | `xor[l]`, `octets[l]` |
+| Appendix A.1, the layout Flags, N, `[x]_8q` with `n + q = 15` shared by `B_0` and `Ctr_i` | `flags_nonce_integer[n]` |
+| Appendix A.2.1, `B_0` (Table 1) | `b_0[n]` |
+| Appendix A.2.2, the associated-data blocks | `associated_data_blocks[a]` |
+| Appendix A.2.3, the payload blocks | `payload_blocks[p]` |
+| Appendix A.2, the formatting function | `b_0(...) ++ associated_data_blocks(a) ++ payload_blocks(p)`, in the two processes |
+| Appendix A.3, the counter blocks (Table 2) | `ctr[n]` |
+| Section 6.1, steps 2 to 4, the CBC-MAC | `cbc_mac[blocks]` |
+| Section 6.1, steps 5 to 7, the counter blocks and `S` | `keystream[n, m]` |
+| Section 6.1, step 8 (and section 6.2, step 5), `P ^ MSB_Plen(S)` | `counter_mode[n, p]` |
+| Section 6.1, generation-encryption | `generation_encryption[N, A, P, u]` |
+| Section 6.2, decryption-verification | `decryption_verification[N, A, P, u]`, `decryption_verification_without_a[N, P, u]` |
 
-The nonce travels in a 13-byte buffer with its length `n` beside it, the
-associated data and the payload in 32-byte buffers with `alen` and `plen`,
-and the ciphertext in a 48-byte buffer with `clen`, because an Orange array
-has one length and CCM's own parameters vary: the three examples of
-Appendix C use nonces of 7, 8 and 12 bytes and tags of 4, 6 and 8 bytes, and
-the Wycheproof case a 12-byte nonce and a 16-byte tag. The 6.1 output is
-`C` in the standard's layout, the tag starting at byte `Plen`, with zeros
-past `Clen`. Section 6.2 returns either `INVALID` or `P`; Orange has no sum
-type, so `decryption_verification` is the verdict of step 10 as a `Bool`
-and `recovered_payload` is the `P` of step 5, to be taken only when the
-verdict is `true`.
+Lengths are sizes. The nonce is `Word[8]^n` for `n` in 7 through 13, the
+seven lengths Appendix A.1 allows, and `q = 15 - n` follows from it, so
+`flags_nonce_integer` writes `Flags || N || [x]_8q` as the join of a
+flags byte, the nonce and `x as big Word[8]^(15 - n)`. The associated
+data and the payload are `Word[8]^a` and `Word[8]^p` for 1 through 32
+bytes, and their formatted blocks have the lengths the standard gives
+them, `16 ceil((2 + a) / 16)` and `16 ceil(p / 16)` bytes, written into
+the result types. `cbc_mac` takes the formatted string as
+`Word[8]^(16 * blocks)` and `keystream` makes `m` counter blocks, so
+every step of section 6.1 has the length of its operands in its type.
+
+The two processes take N, A and P at once, and that is more lengths than
+one function can range over: a function has at most 256 instances,
+counting every combination of its sizes, and ranges from the shortest to
+the longest of the vectors' lengths would give 6 x 13 x 21 x 13 of them
+(`n`, `a`, the payload length and the tag length), `a` and the payload
+length alone 273. So `generation_encryption` and the decryption processes
+take N, A and P at the lengths of the vectors, listed as types (`N in
+{Word[8]^7, Word[8]^8, Word[8]^12}`, associated data of 8, 16 and 20
+bytes, payloads of 4, 16 and 24), and the tag length as the size `u`,
+`t = 2u` bytes for `u` in 2 through 8: the seven tag lengths of Appendix
+A.1, whose flags field `[(t - 2) / 2]_3` is `u - 1`. That is 189
+instances. Each instance calls the sized steps above, which pick their
+own instances from the lengths of its arguments, and the formatting
+function of Appendix A.2 is the join `b_0(...) ++
+associated_data_blocks(a) ++ payload_blocks(p)` passed straight to
+`cbc_mac`, whose block count the checker reads off that join; no
+function names the formatted string's length in terms of the listed
+types, which it could not.
+
+The same limit shapes the results. `C = ciphertext || T` has
+`Plen / 8 + t` bytes, a length no type can write when `Plen / 8` comes
+from a listed type, so `generation_encryption` returns the pair
+`(ciphertext, tag)`, the two halves of `C` in order, and the
+decryption processes take the same two halves as two arguments (the
+length of an array inside a tuple argument does not choose an instance,
+and the tag's length is what picks `u`). Section 6.2 returns either
+`INVALID` or `P`; Orange has no sum type, so the decryption processes
+return the pair `(verdict, P)`, `VALID` as `true`, and `P` counts only
+when the verdict is `true`. The empty associated data of Wycheproof's
+test case 52 is not an array, since an array has at least one element,
+so `decryption_verification_without_a` is the same process with
+`Adata = 0` and no associated-data blocks.
 
 ### Security status
 
@@ -139,97 +175,103 @@ TLS 1.3.
 
 ### What the Orange rendering shows
 
-Every data-dependent choice of the mode is a table lookup inside AES: 160
-S-box lookups per block and 40 in the key schedule, each a 32-way selection
-over the packed table at 291 steps (measured), which makes a block cipher
-call cost about 69,900 steps and `key_expansion` about 15,200. Nothing in
-CCM itself branches on the data. What it does branch on are its lengths, and
-that is where the Orange form departs from the standard's text: an index
-must be static, so every position that is a value is written as a
-selection. `flags_nonce_integer` lays the nonce and the length field over
-the same sixteen bytes under guards `i < n` and `i < q`; the payload blocks
-begin at block `1 + ceil((2 + a) / 16)`, a value, so `formatting` places
-each payload byte with `byte_of`, a selection over the 32-byte buffer; the
-masked tag starts at byte `Plen` of `C` and is placed with `block_byte`; and
-`received_tag` selects the last `Tlen` bytes of a ciphertext of `Clen`
-bytes. The whole formatting function for the C.3 sizes costs about 19,000
-steps, the placement selections most of it, and a counter block about
-1,100: the formatting is under three percent of a CCM call, the block
-cipher the rest. The cost of one call is `(r + 1) + (m + 1)` block cipher
-calls, which the reader can count from the sizes: five for C.1 (one block
-each of `A` and `P`, `S_0`, one counter block), six for C.2 (the 2-byte
-length pushes 16 bytes of `A` into two blocks), eight for C.3.
+Every data-dependent choice of the mode is a table lookup inside AES: the
+S-box of FIPS 197 Table 4 is a `hex"..."` string of 256 bytes, sixteen rows
+as the standard prints them, and SubBytes and SubWord read it as `box[x]`
+with the byte itself as the index, 160 lookups per block and 40 in the key
+schedule. The checker proves every such index in range, because a
+`Word[8]` indexes a 256-entry table exactly; the lookups carry no timing
+claim. The state is the 4 x 4 byte array `s[r][c]` of FIPS 197 section
+3.4, and ShiftRows and MixColumns index it with the coordinates the
+standard writes, modulo 4.
 
-The budget sized the files. Measured with a filler spec, the pairs cost
-about 366,000 steps (C.1), 436,000 (C.2), 571,000 (C.3), 371,000
-(Wycheproof 12), 86,000 (the C.1 payload recovery), 367,000 (the C.1
-verdict) and 311,000 (the Wycheproof 52 rejection), out of 1,048,576 steps
-per file; so `aes-ccm.or` holds C.1 and C.2 (about 802,000), `aes-ccm-c3.or`
-C.3 and the Wycheproof case (about 941,000) and `aes-ccm-decrypt.or` the
-three decryption pairs (about 763,000). Nothing planned was dropped.
+Nothing in CCM itself branches on the data. What it does depend on are its
+lengths, and those are now sizes rather than values: the nonce and the
+`q`-byte integer of A.1 are joined with `++`, the length field of B_0 and
+of the counter blocks is `x as big Word[8]^(15 - n)`, the 2-byte prefix
+`[a]_16` is `a as big Word[8]^2`, the associated data and the payload are
+placed in their zero blocks with slice updates `with [2..a + 2]` and
+`with [0..p]`, the CBC-MAC slices block `i` out of the formatted string
+with `b[16 * i..16 * i + 16]`, and `MSB_Tlen` and `MSB_Plen` are the
+slices `y[..2 * u]` and `s[..p]`. Every position is a literal, a loop
+index or a size, so the checker proves every access in range for every
+instance before evaluation, and no step selects a byte by comparing
+indices. The one comparison is the tag check of section 6.2, step 10,
+`t == y[..2 * u]` over the whole tag, whose cost does not depend on where
+the two differ.
 
-Not expressed: associated data of `2^16 - 2^8` bytes or more. A.2.2's
-length encoding for that range is 6 bytes. 65,286 is the minimum size of
-the complete formatted associated-data field, that prefix plus 65,280
-bytes of `A`. The 10-byte length encoding itself fits in an array; the
-associated data it prefixes, `a >= 2^32`, does not. This entry writes
-neither. Also not expressed: payloads over 32 bytes and
-associated data over 32 bytes, since an array's length is part of its type
-(a second set of specs over `Word[8]^64` would be the same text); AES-192
-and AES-256 as the block cipher (the Appendix C examples are all
-`Klen = 128`); and the validity requirements on `N`, `A`, `P` and `Tlen` of
-section 5.3 and Appendix A.1, which section 6.1 takes as prerequisites and
-section 6.2 step 7 checks, and which are stated in comments here rather
-than computed.
+Measured costs under `orangec test --stats` and `orangec eval --stats`:
+`CIPH_K`, AES-128 with its key expansion, is 22,538 steps, of which
+KeyExpansion is 2,927; `ciph` expands the key at every call, as
+`CIPH_K` names the key and not a schedule, at a cost of about 13 percent.
+`B_0` costs 47 steps, a counter block 21, the associated-data blocks 17,
+the payload blocks 8 and a 16-byte `xor` 181, so the formatting is under
+one percent of a CCM call and the block cipher the rest. A call costs
+`(r + 1) + (m + 1)` block cipher calls, which the reader can count from
+the sizes: five for C.1 (one block each of `A` and `P`, `S_0`, one counter
+block), six for C.2 (the 2-byte length pushes 16 bytes of `A` into two
+blocks), eight for C.3, five for Wycheproof's test case 12, and four for
+test case 52 (no associated data). The tests cost 113,540 (C.1), 136,424
+(C.2), 181,839 (C.3), 113,804 (test case 12), 113,543 (C.1 decrypted) and
+91,050 steps (test case 52), 750,200 in all.
+
+Not expressed: associated data of `2^16 - 2^8` bytes or more. A.2.2's length
+encoding for that range is 6 bytes. 65,286 is the minimum size of the
+complete formatted associated-data field, that prefix plus 65,280 bytes of
+`A`. The 10-byte length encoding itself fits in an array; the associated
+data it prefixes, `a >= 2^32`, does not. This entry writes neither. Also not
+expressed: the processes at lengths other than the vectors' (the steps take
+nonces of 7 to 13 bytes and associated data and payloads of 1 to 32, the
+processes only the listed lengths; adding a length is a change to the lists
+in the processes' signatures, within the 256 instances);
+generation-encryption with empty associated data, which no vector here
+needs; AES-192 and AES-256 as the block cipher (the Appendix C examples are
+all `Klen = 128`); and the validity requirements on `N`, `A`, `P` and `Tlen`
+of section 5.3 and Appendix A.1, which section 6.1 takes as prerequisites
+and section 6.2 step 7 checks, and which hold here by the listed lengths
+rather than being computed.
 
 ## Dissemination
 
 ### Files
 
-- `aes-ccm.or`: module `aes_ccm`. AES-128 (the forward cipher, its packed
-  S-box and key expansion), the formatting function of Appendix A.2 as
-  `b_0`, `associated_data_blocks`, `payload_blocks` and `formatting`, the
-  counter blocks of A.3, `cbc_mac`, `counter_mode`, `mask_tag`,
-  `generation_encryption`, and the examples C.1 and C.2 of Appendix C.
-- `aes-ccm-c3.or`: the same algorithm, with the example C.3 of Appendix C
-  and test case 12 of Wycheproof's `aes_ccm_test.json`.
-- `aes-ccm-decrypt.or`: the same algorithm plus `received_tag`,
-  `recovered_payload` and `decryption_verification` of section 6.2, with
-  the decryption of C.1 (payload and verdict) and the rejection of
-  Wycheproof's test case 52.
-
-The three files are one file split by the step budget; their algorithm part
-is identical text, generated from one source (see Provenance).
+- `aes-ccm.or`: module `aes_ccm`, the root. `CIPH_K`, the formatting
+  function of Appendix A.2 as `b_0`, `associated_data_blocks` and
+  `payload_blocks`, the counter blocks of A.3, `cbc_mac`, `keystream`,
+  `counter_mode`, `generation_encryption`, `decryption_verification` and
+  `decryption_verification_without_a`, and the six tests below.
+- `aes.or`: module `aes`, AES-128 of FIPS 197, the forward cipher with its
+  S-box and key expansion. It has no tests of its own; `aes-ccm.or` uses it.
 
 ### Running
 
 ```console
-orangec eval algorithms/aes-ccm/aes-ccm.or
-orangec eval algorithms/aes-ccm/aes-ccm-c3.or
-orangec eval algorithms/aes-ccm/aes-ccm-decrypt.or
+orangec test algorithms/aes-ccm/aes-ccm.or
 python3 algorithms/verify.py algorithms/aes-ccm
 ```
 
-`eval` prints every parameterless spec, including `s_box` and `rcon`; the
-pairs below are the vectors. `verify.py` reports seven vectors reproduced.
+`verify.py` runs the six tests of `aes-ccm.or` and checks `aes.or`, which
+passes as a module of the root.
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `aes-ccm.or`.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `sp800_38c_c1` | SP 800-38C, Appendix C.1, via Botan's `ccm.vec` ("SP 800-38C Example 1"); confirmed with the Python `cryptography` AESCCM oracle | Klen 128, Tlen 32, Nlen 56, Alen 64, Plen 32: key 404142...4f, N 10111213141516, A 0001...07, P 20212223; C = 7162015b 4dac255d |
-| `sp800_38c_c2` | SP 800-38C, Appendix C.2, via Botan's `ccm.vec` ("Example 2"); confirmed with `cryptography` | Tlen 48, Nlen 64, Alen 128, Plen 128: C = d2a1f0e0...593d 1fc64fbfaccd |
-| `sp800_38c_c3` | SP 800-38C, Appendix C.3, via Botan's `ccm.vec` ("Example 3"); confirmed with `cryptography` | Tlen 64, Nlen 96, Alen 160, Plen 192: C = e3b201a9...e70b 6176aad9a4428aa5 484392fbc1b09951 |
-| `wycheproof_ccm_tc_12` | Wycheproof `testvectors_v1/aes_ccm_test.json`, tcId 12 | AES-128, 12-byte nonce, 8-byte aad, 16-byte msg, 16-byte tag; ct 08db327a..., tag b7c249f8... |
-| `sp800_38c_c1_payload` | SP 800-38C, Appendix C.1, via Botan's `ccm.vec`: the C.1 ciphertext back to its payload | section 6.2 step 5 from C = 7162015b4dac255d: P = 20212223 |
-| `sp800_38c_c1_verification` | SP 800-38C, Appendix C.1, via Botan's `ccm.vec` | section 6.2 step 10 on the C.1 ciphertext: VALID (`true`) |
-| `wycheproof_ccm_tc_52_verification` | Wycheproof `aes_ccm_test.json`, tcId 52, "Flipped bit 0 in tag", result `invalid` | AES-128, 12-byte nonce, 16-byte msg, 16-byte tag with bit 0 flipped: INVALID (`false`) |
+| `SP 800-38C C.1: generation-encryption` | SP 800-38C, Appendix C.1, via Botan's `ccm.vec` ("SP 800-38C Example 1"); confirmed with the Python `cryptography` AESCCM oracle | Klen 128, Tlen 32, Nlen 56, Alen 64, Plen 32: key 404142...4f, N 10111213141516, A 0001...07, P 20212223; C = 7162015b 4dac255d |
+| `SP 800-38C C.2: generation-encryption` | SP 800-38C, Appendix C.2, via Botan's `ccm.vec` ("Example 2"); confirmed with `cryptography` | Tlen 48, Nlen 64, Alen 128, Plen 128: C = d2a1f0e0...593d 1fc64fbfaccd |
+| `SP 800-38C C.3: generation-encryption` | SP 800-38C, Appendix C.3, via Botan's `ccm.vec` ("Example 3"); confirmed with `cryptography` | Tlen 64, Nlen 96, Alen 160, Plen 192: C = e3b201a9...e70b 6176aad9a4428aa5 484392fbc1b09951 |
+| `Wycheproof tcId 12: generation-encryption` | Wycheproof `testvectors_v1/aes_ccm_test.json`, tcId 12 | AES-128, 12-byte nonce, 8-byte aad, 16-byte msg, 16-byte tag; ct 08db327a..., tag b7c249f8... |
+| `SP 800-38C C.1: decryption-verification` | SP 800-38C, Appendix C.1, via Botan's `ccm.vec`: the C.1 ciphertext back to its payload | section 6.2 on C = 7162015b4dac255d: VALID (`true`, step 10) and P = 20212223 (step 5) |
+| `Wycheproof tcId 52: decryption-verification rejects` | Wycheproof `aes_ccm_test.json`, tcId 52, "Flipped bit 0 in tag", result `invalid` | AES-128, 12-byte nonce, no aad, 16-byte msg, 16-byte tag with bit 0 flipped: INVALID (`false`) |
 
 Botan's `ccm.vec` is `src/tests/data/aead/ccm.vec` of the Botan repository,
 which carries the three Appendix C examples under that name; the three
 values were also checked against the `cryptography` package's `AESCCM`
 with the example's tag length, so the row does not rest on one transcription.
-The `_expected` literals were generated by script from the fetched files.
+The `_expected` literals of the first form were generated by script from the
+fetched files.
 
 ### Provenance and claims
 
@@ -250,39 +292,60 @@ examples and NIST CAVS cases; the file's one SM4 case aside), all 135
 valid and 27 invalid AES-128 cases of Wycheproof's `aes_ccm_test.json` with
 nonces of 7 to 13 bytes, and all 796 encryption and 159 decryption-failure
 `aes-128-ccm` cases of OpenSSL's `evpciph_aes_ccm_cavs.txt`. It served as
-the oracle for the block-by-block values while the Orange was written. The
-three `.or` files were assembled by one script from one hand-written
-algorithm text and the fetched vectors, so their algorithm parts are
-identical.
+the oracle for the block-by-block values while the Orange was written. In
+that first form the three `.or` files were assembled by one script from one
+hand-written algorithm text and the fetched vectors, so their algorithm
+parts were identical.
+
+The entry was then rewritten in the current language, the three files folded
+into one root, `aes-ccm.or`, with the cipher in the module `aes.or`. Every
+expected value is carried over byte for byte from the first form, where each
+was a `<name>_expected` spec. Those specs held `C` in a 48-byte buffer, and
+the recovered payload in a 32-byte one, followed by zeros because the first
+form's buffers had one length; the new tests state the `Clen` bytes of `C`,
+split after `Plen / 8` bytes into the ciphertext and the tag, and the 4 bytes
+of `P`, and a script compared each with the prefix of the old value
+evaluated by `orangec eval` from `origin/main` and checked that everything
+after it was zero. The two verdicts are the same `true` and `false`. The
+inputs (keys, nonces, associated data, payloads, ciphertexts and tags) were
+compared by script with the old specs' literals, and every test's inputs and
+expected value were run again through `cryptography`'s `AESCCM` (encryption,
+the decryption of C.1, and the rejection of test case 52, whose tag with
+bit 0 restored decrypts to the payload 202122...2f). The S-box, now sixteen
+`hex"..."` rows, was compared by script, byte for byte, with the table
+computed from its definition in FIPS 197 section 5.1.1 and with the first
+form's packed `Word[64]` literals; the round constants of Table 5, now one
+`hex"..."` row, are the leading bytes of the first form's `Rcon` words,
+compared the same way. No vector was added or dropped.
 
 This entry is a reference evaluation of a specification under `orangec
-eval`: it shows that the Orange text computes the standard's values on the
+test`: it shows that the Orange text computes the standard's values on the
 cases listed. It makes no constant-time, side-channel, performance or
 certification claim, it is not an implementation anyone should deploy, and
 it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- No imports: each of the three files repeats the 333 lines of AES-128 and
-  CCM to add its vectors, and the step budget of 1,048,576 per file forces
-  the split, since one block cipher call costs about 69,900 steps and the
-  seven pairs need 34 of them.
-- Static indices only: the positions that CCM's own lengths determine (the
-  length field after a nonce of `n` bytes, the first payload block after
-  the associated data, the tag after `Plen` bytes of ciphertext, the last
-  `Tlen` bytes of `C`) are selections over a buffer instead of an index,
-  `byte_of`, `block_byte` and `received_tag`; they cost about 19,000 steps
-  per formatting, small next to the cipher, but they are the least
-  standard-like lines of the file.
-- No length polymorphism: the associated data and payload are 32-byte
-  buffers with their lengths beside them, and the nonce a 13-byte buffer
-  with `n`. An array holds 1 through 65,536 elements, not at most 256. The
-  long associated-data encodings of A.2.2 are still not written. The
-  6-byte length encoding is 6 bytes; 65,286 is the minimum size of the
-  complete formatted field (that prefix plus 65,280 bytes of `A`). The
-  10-byte encoding itself fits; an associated-data payload of `a >= 2^32`
-  does not.
-- No sum type: `INVALID` or `P` of section 6.2 is a `Bool` verdict and a
-  separate payload spec, and the caller carries the rule that the payload
-  counts only when the verdict is `true`; a `Bool` result also cannot be
-  paired with the payload in one array, since arrays hold one scalar type.
+- A function has at most 256 instances, counting every combination of its
+  sizes and listed types, and CCM's processes depend on four lengths: the
+  nonce, the associated data, the payload and the tag. No function can
+  range over the associated-data and payload lengths of the vectors at
+  once (13 x 21 = 273), so the formatting function is a join of sized
+  steps inside each process rather than one spec, and the processes take
+  `N`, `A` and `P` at the vectors' lengths, listed as types, with the tag
+  length as a size; a vector at another length needs its length added to
+  a list.
+- When a length comes from a listed type, no type can write a length
+  computed from it: `C = ciphertext || T` is returned, and taken, as its
+  two halves, and the formatted string is never bound to a name.
+- No array has zero elements, so empty associated data (`a = 0`) is not a
+  value: the decryption process for test case 52 is a second spec without
+  the parameter `A`, and there is no generation-encryption without
+  associated data.
+- The length of an array inside a tuple argument does not choose a sized
+  function's instance, so the decryption processes take the ciphertext and
+  the tag as two arguments rather than the pair the generation process
+  returns.
+- No sum type: `INVALID` or `P` of section 6.2 is the pair `(verdict, P)`,
+  and the caller carries the rule that `P` counts only when the verdict is
+  `true`.

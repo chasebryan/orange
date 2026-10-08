@@ -7,19 +7,20 @@
 // Salsa20/12 and Salsa20/8 ("Salsa20/8 and Salsa20/12", Bernstein, 2006) run
 // 6 and 4 double rounds in place of 10; Salsa20/12 is the eSTREAM portfolio
 // cipher (2008). XSalsa20 is the extended-nonce form of "Extending the
-// Salsa20 nonce" (Bernstein, 2011, https://cr.yp.to/snuffle/xsalsa-20110204.pdf):
-// HSalsa20 derives a subkey from the key and the first 16 bytes of a 24-byte
-// nonce, and Salsa20 under that subkey uses the last 8. The file reproduces
-// eSTREAM vectors of sets 1, 3 and 6 for 128- and 256-bit keys as Botan's
-// salsa20.vec and Crypto++'s salsa.txt state them, Crypto++'s Salsa20/12,
-// Salsa20/8 and counter-crossing cases, libsodium's core1, core2, core4 and
-// stream3 tests, and the XSalsa20 cases of Botan's file.
+// Salsa20 nonce" (Bernstein, 2011,
+// https://cr.yp.to/snuffle/xsalsa-20110204.pdf): HSalsa20 derives a subkey
+// from the key and the first 16 bytes of a 24-byte nonce, and Salsa20 under
+// that subkey uses the last 8. The file reproduces eSTREAM vectors of sets 1,
+// 3 and 6 for 128- and 256-bit keys as Botan's salsa20.vec and Crypto++'s
+// salsa.txt state them, Crypto++'s Salsa20/12, Salsa20/8 and counter-crossing
+// cases, libsodium's core1, core2, core4 and stream3 tests, and the XSalsa20
+// cases of Botan's file.
 edition 2026;
 module salsa20 {
   // Section 3: quarterround(y0, y1, y2, y3) = (z0, z1, z2, z3). Each word is
   // modified once, in the order z1, z2, z3, z0, by xor with a rotated sum;
   // the rotation amounts are 7, 9, 13 and 18.
-  spec quarter_round(y0: Word[32], y1: Word[32], y2: Word[32], y3: Word[32]) -> Word[32]^4 {
+  spec quarterround(y0: Word[32], y1: Word[32], y2: Word[32], y3: Word[32]) -> Word[32]^4 {
     let z1: Word[32] = y1 ^ ((y0 + y3) <<< 7);
     let z2: Word[32] = y2 ^ ((z1 + y0) <<< 9);
     let z3: Word[32] = y3 ^ ((z2 + z1) <<< 13);
@@ -28,16 +29,16 @@ module salsa20 {
   }
 
   // Section 4: rowround(y) = z. The quarterround on each row of the 4 by 4
-  // matrix, starting at the diagonal word: (z0, z1, z2, z3) =
+  // matrix y0 ... y15, starting at the diagonal word: (z0, z1, z2, z3) =
   // quarterround(y0, y1, y2, y3), (z5, z6, z7, z4) = quarterround(y5, y6, y7,
   // y4), (z10, z11, z8, z9) = quarterround(y10, y11, y8, y9), (z15, z12, z13,
   // z14) = quarterround(y15, y12, y13, y14). The results are placed back in
-  // one array literal.
-  spec row_round(y: Word[32]^16) -> Word[32]^16 {
-    let r0: Word[32]^4 = quarter_round(y[0], y[1], y[2], y[3]);
-    let r1: Word[32]^4 = quarter_round(y[5], y[6], y[7], y[4]);
-    let r2: Word[32]^4 = quarter_round(y[10], y[11], y[8], y[9]);
-    let r3: Word[32]^4 = quarter_round(y[15], y[12], y[13], y[14]);
+  // one array literal, z0 through z15 in order.
+  spec rowround(y: Word[32]^16) -> Word[32]^16 {
+    let r0: Word[32]^4 = quarterround(y[0], y[1], y[2], y[3]);
+    let r1: Word[32]^4 = quarterround(y[5], y[6], y[7], y[4]);
+    let r2: Word[32]^4 = quarterround(y[10], y[11], y[8], y[9]);
+    let r3: Word[32]^4 = quarterround(y[15], y[12], y[13], y[14]);
     [
       r0[0], r0[1], r0[2], r0[3],
       r1[3], r1[0], r1[1], r1[2],
@@ -52,11 +53,11 @@ module salsa20 {
   // quarterround(x10, x14, x2, x6), (y15, y3, y7, y11) = quarterround(x15,
   // x3, x7, x11). The specification notes that it is the transpose of
   // rowround.
-  spec column_round(x: Word[32]^16) -> Word[32]^16 {
-    let c0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
-    let c1: Word[32]^4 = quarter_round(x[5], x[9], x[13], x[1]);
-    let c2: Word[32]^4 = quarter_round(x[10], x[14], x[2], x[6]);
-    let c3: Word[32]^4 = quarter_round(x[15], x[3], x[7], x[11]);
+  spec columnround(x: Word[32]^16) -> Word[32]^16 {
+    let c0: Word[32]^4 = quarterround(x[0], x[4], x[8], x[12]);
+    let c1: Word[32]^4 = quarterround(x[5], x[9], x[13], x[1]);
+    let c2: Word[32]^4 = quarterround(x[10], x[14], x[2], x[6]);
+    let c3: Word[32]^4 = quarterround(x[15], x[3], x[7], x[11]);
     [
       c0[0], c1[3], c2[2], c3[1],
       c0[1], c1[0], c2[3], c3[2],
@@ -66,175 +67,74 @@ module salsa20 {
   }
 
   // Section 6: doubleround(x) = rowround(columnround(x)).
-  spec double_round(x: Word[32]^16) -> Word[32]^16 { row_round(column_round(x)) }
+  spec doubleround(x: Word[32]^16) -> Word[32]^16 { rowround(columnround(x)) }
 
-  // Section 7: littleendian(b) = b0 + 2^8 b1 + 2^16 b2 + 2^24 b3 and its
-  // inverse, on 4-byte groups.
-  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
-      | ((b3 as Word[32]) << 24)
+  // Section 8: doubleround^10(x), or for Salsa20/r ("Salsa20/8 and
+  // Salsa20/12") doubleround^(r/2)(x). r is a size, so the loop runs exactly
+  // r/2 times; only the even r of 8, 12 and 20 are called.
+  spec doublerounds[r in 8..21](x: Word[32]^16) -> Word[32]^16 {
+    for d in 0..(r / 2) with z: Word[32]^16 = x { doubleround(z) }
   }
 
-  spec le_bytes(x: Word[32]) -> Word[8]^4 {
-    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
-  }
-
-  // Section 7 applied to a 16-byte and a 32-byte string: four and eight
-  // little-endian words.
-  spec little_endian_16(b: Word[8]^16) -> Word[32]^4 {
-    for i in 0..4 with w: Word[32]^4 = [0; 4] {
-      w with [i] = load_le32(b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3])
-    }
-  }
-
-  spec little_endian_32(b: Word[8]^32) -> Word[32]^8 {
-    for i in 0..8 with w: Word[32]^8 = [0; 8] {
-      w with [i] = load_le32(b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3])
-    }
-  }
-
-  // Section 8: doubleround^10 on the sixteen words of the hash input, or
-  // doubleround^(r/2) for Salsa20/r. A loop's bounds are literals, so the
-  // ten iterations always run and those past r/2 leave the state unchanged.
-  spec double_rounds(x: Word[32]^16, rounds: Int) -> Word[32]^16 {
-    for r in 0..10 with z: Word[32]^16 = x {
-      if r < (rounds / 2) { double_round(z) } else { z }
-    }
-  }
-
-  // Section 8: the Salsa20 hash function on its sixteen words, Salsa20(x) =
-  // x + doubleround^10(x) word by word; littleendian in and out are the
-  // expansion below and serialize.
-  spec salsa20_hash(x: Word[32]^16, rounds: Int) -> Word[32]^16 {
-    let z: Word[32]^16 = double_rounds(x, rounds);
-    for i in 0..16 with h: Word[32]^16 = z { h with [i] = h[i] + x[i] }
-  }
-
-  // Section 8: littleendian^-1 on each of the sixteen output words, the
-  // 64-byte output of the hash.
-  spec serialize(z: Word[32]^16) -> Word[8]^64 {
-    for i in 0..16 with bytes: Word[8]^64 = [0; 64] {
-      for j in 0..4 with b: Word[8]^64 = bytes { b with [4 * i + j] = le_bytes(z[i])[j] }
-    }
+  // Sections 7 and 8: the Salsa20 hash function of a 64-byte sequence x.
+  // Section 7's littleendian reads x as sixteen words x0 ... x15 and its
+  // inverse writes the result back, both as `as little`; the output is
+  // littleendian^-1(z0 + x0), ..., littleendian^-1(z15 + x15) with
+  // (z0, ..., z15) = doubleround^10(x0, ..., x15), or r/2 doublerounds for
+  // Salsa20/r.
+  spec salsa20[r in 8..21](x: Word[8]^64) -> Word[8]^64 {
+    let xw: Word[32]^16 = x as little Word[32]^16;
+    let z: Word[32]^16 = doublerounds[r](xw);
+    let h: Word[32]^16 = for i in 0..16 with h: Word[32]^16 = z { h with [i] = z[i] + xw[i] };
+    h as little Word[8]^64
   }
 
   // Section 9: the expansion Salsa20_k(n) = Salsa20(sigma0, k0, sigma1, n,
-  // sigma2, k1, sigma3) for a 32-byte key k = (k0, k1) and a 16-byte n, as
-  // the sixteen words of the hash input. sigma0 to sigma3 are the bytes of
-  // "expa", "nd 3", "2-by", "te k", each read little-endian, so that in the
-  // 4 by 4 matrix the constants are the diagonal (words 0, 5, 10, 15), k0
-  // is words 1 to 4, n is words 6 to 9 and k1 is words 11 to 14.
-  spec expand_32(k: Word[8]^32, n: Word[8]^16) -> Word[32]^16 {
-    let kw: Word[32]^8 = little_endian_32(k);
-    let nw: Word[32]^4 = little_endian_16(n);
-    [
-      0x61707865, kw[0], kw[1], kw[2],
-      kw[3], 0x3320646e, nw[0], nw[1],
-      nw[2], nw[3], 0x79622d32, kw[4],
-      kw[5], kw[6], kw[7], 0x6b206574,
-    ]
+  // sigma2, k1, sigma3) for a 32-byte key k = (k0, k1) and a 16-byte n, here
+  // the 64-byte input of the hash. sigma0 to sigma3 are the four-byte pieces
+  // "expa", "nd 3", "2-by" and "te k" of "expand 32-byte k", so that in the
+  // 4 by 4 matrix of words the constants are the diagonal (words 0, 5, 10,
+  // 15), k0 is words 1 to 4, n is words 6 to 9 and k1 is words 11 to 14.
+  spec expand_32(k: Word[8]^32, n: Word[8]^16) -> Word[8]^64 {
+    "expa" ++ k[..16] ++ "nd 3" ++ n ++ "2-by" ++ k[16..] ++ "te k"
   }
 
   // Section 9: the expansion Salsa20_k(n) = Salsa20(tau0, k, tau1, n, tau2,
   // k, tau3) for a 16-byte key, which stands in both key positions; tau0 to
   // tau3 are "expa", "nd 1", "6-by", "te k".
-  spec expand_16(k: Word[8]^16, n: Word[8]^16) -> Word[32]^16 {
-    let kw: Word[32]^4 = little_endian_16(k);
-    let nw: Word[32]^4 = little_endian_16(n);
-    [
-      0x61707865, kw[0], kw[1], kw[2],
-      kw[3], 0x3120646e, nw[0], nw[1],
-      nw[2], nw[3], 0x79622d36, kw[0],
-      kw[1], kw[2], kw[3], 0x6b206574,
-    ]
+  spec expand_16(k: Word[8]^16, n: Word[8]^16) -> Word[8]^64 {
+    "expa" ++ k ++ "nd 1" ++ n ++ "6-by" ++ k ++ "te k"
   }
 
   // Section 10: the 16-byte n of the expansion is (v, i), the 8-byte nonce v
-  // followed by the 8-byte little-endian block counter i, so that i occupies
-  // words 8 (low) and 9 (high) of the state.
+  // followed by the block counter i as 8 little-endian bytes, so that i
+  // occupies words 8 (low) and 9 (high) of the state.
   spec nonce_counter(v: Word[8]^8, i: Word[64]) -> Word[8]^16 {
-    [
-      v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
-      i as Word[8], (i >> 8) as Word[8], (i >> 16) as Word[8], (i >> 24) as Word[8],
-      (i >> 32) as Word[8], (i >> 40) as Word[8], (i >> 48) as Word[8], (i >> 56) as Word[8],
-    ]
+    v ++ (i as little Word[8]^8)
   }
 
-  // Section 10: one 64-byte block Salsa20_k(v, i) of the keystream, from the
-  // expanded state x = (sigma or tau, k, (v, i)).
-  spec salsa20_block(x: Word[32]^16, rounds: Int) -> Word[8]^64 {
-    serialize(salsa20_hash(x, rounds))
+  // Section 10: b blocks of the keystream, Salsa20_k(v, i), Salsa20_k(v,
+  // i + 1), ..., of Salsa20/r, from the hash input x of block i (an
+  // expansion of section 9 with n = (v, i)). Bytes 32 to 39 of x are the
+  // counter, words 8 and 9; block j writes i + j there as one 64-bit
+  // integer, so the carry from word 8 into word 9 at counter 2^32 is the
+  // specification's addition. The counter wraps modulo 2^64, where the
+  // specification stops.
+  spec keystream[r in 8..21, b in 1..5](x: Word[8]^64) -> Word[8]^(64 * b) {
+    let i: Word[64] = x[32..40] as little Word[64];
+    for j in 0..(b) with z: Word[8]^(64 * b) = [0; (64 * b)] {
+      let ij: Word[64] = i + (j as Word[64]);
+      z with [64 * j..64 * j + 64] = salsa20[r](x with [32..40] = (ij as little Word[8]^8))
+    }
   }
 
-  // Section 10: the block Salsa20_k(v, i + j) from the state of block i. The
-  // counter is one 64-bit integer across words 8 and 9, so a carry passes
-  // from word 8 into word 9.
-  spec keystream_block(x: Word[32]^16, j: Int, rounds: Int) -> Word[8]^64 {
-    let i: Word[64] = (((x[9] as Word[64]) << 32) | (x[8] as Word[64])) + (j as Word[64]);
-    salsa20_block((x with [8] = i as Word[32]) with [9] = (i >> 32) as Word[32], rounds)
-  }
-
-  // Section 10: c = m xor Salsa20_k(v), the keystream being the blocks
-  // Salsa20_k(v, i), Salsa20_k(v, i + 1), ... from the counter i of the
-  // state x, with the surplus of the last block discarded. An Orange array
-  // has a fixed length, so the encryption is written once per message
-  // length the vectors need.
-  spec encrypt_32(x: Word[32]^16, m: Word[8]^32, rounds: Int) -> Word[8]^32 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    for n in 0..32 with c: Word[8]^32 = m { c with [n] = m[n] ^ z0[n] }
-  }
-
-  spec encrypt_39(x: Word[32]^16, m: Word[8]^39, rounds: Int) -> Word[8]^39 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    for n in 0..39 with c: Word[8]^39 = m { c with [n] = m[n] ^ z0[n] }
-  }
-
-  spec encrypt_64(x: Word[32]^16, m: Word[8]^64, rounds: Int) -> Word[8]^64 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    for n in 0..64 with c: Word[8]^64 = m { c with [n] = m[n] ^ z0[n] }
-  }
-
-  spec encrypt_111(x: Word[32]^16, m: Word[8]^111, rounds: Int) -> Word[8]^111 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    let z1: Word[8]^64 = keystream_block(x, 1, rounds);
-    let c0: Word[8]^111 = for n in 0..64 with c: Word[8]^111 = m { c with [n] = m[n] ^ z0[n] };
-    for n in 64..111 with c: Word[8]^111 = c0 { c with [n] = m[n] ^ z1[n - 64] }
-  }
-
-  spec encrypt_128(x: Word[32]^16, m: Word[8]^128, rounds: Int) -> Word[8]^128 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    let z1: Word[8]^64 = keystream_block(x, 1, rounds);
-    let c0: Word[8]^128 = for n in 0..64 with c: Word[8]^128 = m { c with [n] = m[n] ^ z0[n] };
-    for n in 64..128 with c: Word[8]^128 = c0 { c with [n] = m[n] ^ z1[n - 64] }
-  }
-
-  spec encrypt_139(x: Word[32]^16, m: Word[8]^139, rounds: Int) -> Word[8]^139 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    let z1: Word[8]^64 = keystream_block(x, 1, rounds);
-    let z2: Word[8]^64 = keystream_block(x, 2, rounds);
-    let c0: Word[8]^139 = for n in 0..64 with c: Word[8]^139 = m { c with [n] = m[n] ^ z0[n] };
-    let c1: Word[8]^139 = for n in 64..128 with c: Word[8]^139 = c0 { c with [n] = m[n] ^ z1[n - 64] };
-    for n in 128..139 with c: Word[8]^139 = c1 { c with [n] = m[n] ^ z2[n - 128] }
-  }
-
-  spec encrypt_192(x: Word[32]^16, m: Word[8]^192, rounds: Int) -> Word[8]^192 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    let z1: Word[8]^64 = keystream_block(x, 1, rounds);
-    let z2: Word[8]^64 = keystream_block(x, 2, rounds);
-    let c0: Word[8]^192 = for n in 0..64 with c: Word[8]^192 = m { c with [n] = m[n] ^ z0[n] };
-    let c1: Word[8]^192 = for n in 64..128 with c: Word[8]^192 = c0 { c with [n] = m[n] ^ z1[n - 64] };
-    for n in 128..192 with c: Word[8]^192 = c1 { c with [n] = m[n] ^ z2[n - 128] }
-  }
-
-  spec encrypt_238(x: Word[32]^16, m: Word[8]^238, rounds: Int) -> Word[8]^238 {
-    let z0: Word[8]^64 = keystream_block(x, 0, rounds);
-    let z1: Word[8]^64 = keystream_block(x, 1, rounds);
-    let z2: Word[8]^64 = keystream_block(x, 2, rounds);
-    let z3: Word[8]^64 = keystream_block(x, 3, rounds);
-    let c0: Word[8]^238 = for n in 0..64 with c: Word[8]^238 = m { c with [n] = m[n] ^ z0[n] };
-    let c1: Word[8]^238 = for n in 64..128 with c: Word[8]^238 = c0 { c with [n] = m[n] ^ z1[n - 64] };
-    let c2: Word[8]^238 = for n in 128..192 with c: Word[8]^238 = c1 { c with [n] = m[n] ^ z2[n - 128] };
-    for n in 192..238 with c: Word[8]^238 = c2 { c with [n] = m[n] ^ z3[n - 192] }
+  // Section 10: the encryption of an n-byte message m is m xor Salsa20_k(v),
+  // the keystream of Salsa20/20 from the hash input x, with the surplus of
+  // the last of its (n + 63) / 64 blocks discarded. Every encryption vector
+  // here is Salsa20/20; the reduced-round vectors are keystream.
+  spec encrypt[n in 1..257](x: Word[8]^64, m: Word[8]^n) -> Word[8]^n {
+    let z: Word[8]^(64 * ((n + 63) / 64)) = keystream[20, (n + 63) / 64](x);
+    for j in 0..(n) with c: Word[8]^n = m { c with [j] = m[j] ^ z[j] }
   }
 
   // Extending the Salsa20 nonce (2011): HSalsa20_k(n) for a 32-byte key and
@@ -245,589 +145,290 @@ module salsa20 {
   // the public constants and n on input, which is what the paper's argument
   // that HSalsa20 is a PRF uses.
   spec hsalsa20(k: Word[8]^32, n: Word[8]^16) -> Word[8]^32 {
-    let z: Word[32]^16 = double_rounds(expand_32(k, n), 20);
-    let out: Word[32]^8 = [z[0], z[5], z[10], z[15], z[6], z[7], z[8], z[9]];
-    for i in 0..8 with bytes: Word[8]^32 = [0; 32] {
-      for j in 0..4 with b: Word[8]^32 = bytes { b with [4 * i + j] = le_bytes(out[i])[j] }
-    }
+    let z: Word[32]^16 = doublerounds[20](expand_32(k, n) as little Word[32]^16);
+    [z[0], z[5], z[10], z[15], z[6], z[7], z[8], z[9]] as little Word[8]^32
   }
 
   // Extending the Salsa20 nonce (2011): XSalsa20_k(n) for a 24-byte n is
   // Salsa20 under the subkey HSalsa20_k(n[0..15]) with the nonce n[16..23];
-  // this is its expanded state at block counter i, to be encrypted with the
-  // encrypt_ specs above.
-  spec xsalsa20_state(k: Word[8]^32, n: Word[8]^24, i: Word[64]) -> Word[32]^16 {
-    let subkey: Word[8]^32 = hsalsa20(
-      k,
-      [
-        n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7],
-        n[8], n[9], n[10], n[11], n[12], n[13], n[14], n[15],
-      ],
-    );
-    expand_32(subkey, nonce_counter([n[16], n[17], n[18], n[19], n[20], n[21], n[22], n[23]], i))
+  // this is the hash input of its block 0, for keystream and encrypt.
+  spec xsalsa20(k: Word[8]^32, n: Word[8]^24) -> Word[8]^64 {
+    expand_32(hsalsa20(k, n[..16]), nonce_counter(n[16..], 0))
   }
 
-  // The key of eSTREAM set 6, vector 3 (Crypto++'s label), used by Botan's
-  // ninth and tenth cases and by Crypto++'s xor digest.
-  spec estream_set6_vector3_key() -> Word[8]^32 {
-    [
-      0x0f, 0x62, 0xb5, 0x08, 0x5b, 0xae, 0x01, 0x54, 0xa7, 0xfa, 0x4d, 0xa0, 0xf3, 0x46, 0x99, 0xec,
-      0x3f, 0x92, 0xe5, 0x38, 0x8b, 0xde, 0x31, 0x84, 0xd7, 0x2a, 0x7d, 0xd0, 0x23, 0x76, 0xc9, 0x1c,
-    ]
-  }
-
-  // The 128-bit key of eSTREAM set 1, vector 0: 80 00 ... 00, used by
-  // Crypto++'s Salsa20/20, Salsa20/12 and Salsa20/8 cases.
-  spec estream_set1_vector0_key() -> Word[8]^16 {
-    [
-      0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ]
-  }
-
-  // NaCl's "firstkey" 1b 27 55 64 ..., the output of libsodium's core1 and
-  // the key of core2, stream3 and Botan's third case.
-  spec nacl_first_key() -> Word[8]^32 {
-    [
-      0x1b, 0x27, 0x55, 0x64, 0x73, 0xe9, 0x85, 0xd4, 0x62, 0xcd, 0x51, 0x19, 0x7a, 0x9a, 0x46, 0xc7,
-      0x60, 0x09, 0x54, 0x9e, 0xac, 0x64, 0x74, 0xf2, 0x06, 0xc4, 0xee, 0x08, 0x44, 0xf6, 0x83, 0x89,
-    ]
-  }
-
-  // The first 128 bytes of the 2600-byte In of Botan's thirteenth case.
-  spec botan_13_message_head() -> Word[8]^128 {
-    [
-      0x11, 0x0c, 0x07, 0x02, 0xfd, 0xf8, 0xf3, 0xee, 0xe9, 0xe4, 0xdf, 0xda, 0xd5, 0xd0, 0xcb, 0xc6,
-      0xc1, 0xbc, 0xb7, 0xb2, 0xad, 0xa8, 0xa3, 0x9e, 0x99, 0x94, 0x8f, 0x8a, 0x85, 0x80, 0x7b, 0x76,
-      0x71, 0x6c, 0x67, 0x62, 0x5d, 0x58, 0x53, 0x4e, 0x49, 0x44, 0x3f, 0x3a, 0x35, 0x30, 0x2b, 0x26,
-      0x21, 0x1c, 0x17, 0x12, 0x0d, 0x08, 0x03, 0xfe, 0xf9, 0xf4, 0xef, 0xea, 0xe5, 0xe0, 0xdb, 0xd6,
-      0xd1, 0xcc, 0xc7, 0xc2, 0xbd, 0xb8, 0xb3, 0xae, 0xa9, 0xa4, 0x9f, 0x9a, 0x95, 0x90, 0x8b, 0x86,
-      0x81, 0x7c, 0x77, 0x72, 0x6d, 0x68, 0x63, 0x5e, 0x59, 0x54, 0x4f, 0x4a, 0x45, 0x40, 0x3b, 0x36,
-      0x31, 0x2c, 0x27, 0x22, 0x1d, 0x18, 0x13, 0x0e, 0x09, 0x04, 0xff, 0xfa, 0xf5, 0xf0, 0xeb, 0xe6,
-      0xe1, 0xdc, 0xd7, 0xd2, 0xcd, 0xc8, 0xc3, 0xbe, 0xb9, 0xb4, 0xaf, 0xaa, 0xa5, 0xa0, 0x9b, 0x96,
-    ]
-  }
-
-  // The 238-byte In of Botan's fourth case (XSalsa20).
-  spec botan_4_message() -> Word[8]^238 {
-    [
-      0x09, 0x3c, 0x5e, 0x55, 0x85, 0x57, 0x96, 0x25, 0x33, 0x7b, 0xd3, 0xab, 0x61, 0x9d, 0x61, 0x57,
-      0x60, 0xd8, 0xc5, 0xb2, 0x24, 0xa8, 0x5b, 0x1d, 0x0e, 0xfe, 0x0e, 0xb8, 0xa7, 0xee, 0x16, 0x3a,
-      0xbb, 0x03, 0x76, 0x52, 0x9f, 0xcc, 0x09, 0xba, 0xb5, 0x06, 0xc6, 0x18, 0xe1, 0x3c, 0xe7, 0x77,
-      0xd8, 0x2c, 0x3a, 0xe9, 0xd1, 0xa6, 0xf9, 0x72, 0xd4, 0x16, 0x02, 0x87, 0xcb, 0xfe, 0x60, 0xbf,
-      0x21, 0x30, 0xfc, 0x0a, 0x6f, 0xf6, 0x04, 0x9d, 0x0a, 0x5c, 0x8a, 0x82, 0xf4, 0x29, 0x23, 0x1f,
-      0x00, 0x80, 0x82, 0xe8, 0x45, 0xd7, 0xe1, 0x89, 0xd3, 0x7f, 0x9e, 0xd2, 0xb4, 0x64, 0xe6, 0xb9,
-      0x19, 0xe6, 0x52, 0x3a, 0x8c, 0x12, 0x10, 0xbd, 0x52, 0xa0, 0x2a, 0x4c, 0x3f, 0xe4, 0x06, 0xd3,
-      0x08, 0x5f, 0x50, 0x68, 0xd1, 0x90, 0x9e, 0xee, 0xca, 0x63, 0x69, 0xab, 0xc9, 0x81, 0xa4, 0x2e,
-      0x87, 0xfe, 0x66, 0x55, 0x83, 0xf0, 0xab, 0x85, 0xae, 0x71, 0xf6, 0xf8, 0x4f, 0x52, 0x8e, 0x6b,
-      0x39, 0x7a, 0xf8, 0x6f, 0x69, 0x17, 0xd9, 0x75, 0x4b, 0x73, 0x20, 0xdb, 0xdc, 0x2f, 0xea, 0x81,
-      0x49, 0x6f, 0x27, 0x32, 0xf5, 0x32, 0xac, 0x78, 0xc4, 0xe9, 0xc6, 0xcf, 0xb1, 0x8f, 0x8e, 0x9b,
-      0xdf, 0x74, 0x62, 0x2e, 0xb1, 0x26, 0x14, 0x14, 0x16, 0x77, 0x69, 0x71, 0xa8, 0x4f, 0x94, 0xd1,
-      0x56, 0xbe, 0xaf, 0x67, 0xae, 0xcb, 0xf2, 0xad, 0x41, 0x2e, 0x76, 0xe6, 0x6e, 0x8f, 0xad, 0x76,
-      0x33, 0xf5, 0xb6, 0xd7, 0xf3, 0xd6, 0x4b, 0x5c, 0x6c, 0x69, 0xce, 0x29, 0x00, 0x3c, 0x60, 0x24,
-      0x46, 0x5a, 0xe3, 0xb8, 0x9b, 0xe7, 0x8e, 0x91, 0x5d, 0x88, 0xb4, 0xb5, 0x62, 0x1d,
-    ]
-  }
+  // The vectors. Botan's salsa20.vec states no set or vector numbers; a case
+  // with no In line encrypts a zero message, so its Out is the keystream,
+  // and is written here as the keystream. Crypto++'s salsa.txt labels its
+  // eSTREAM cases and copies them from the eSTREAM verified.test-vectors
+  // files. Cases longer than needed are reproduced as their first bytes, as
+  // the title says.
 
   // Botan salsa20.vec, first case: the 128-bit key 00 01 ... 0f, no nonce
-  // line (Botan's zero nonce) and no In line (a zero message), so Out is the
-  // first 39 bytes of keystream. By its key the case is eSTREAM set 3, vector
-  // 0, of the 128-bit key file, which Botan does not label.
-  spec botan_salsa20_1() -> Word[8]^39 {
-    encrypt_39(
-      expand_16(
-        [
-          0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        ],
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 39],
-      20,
+  // line (Botan's zero nonce) and no In line, so Out is the first 39 bytes of
+  // keystream. By its key the case is eSTREAM set 3, vector 0, of the
+  // 128-bit key file, which Botan does not label.
+  test "Botan salsa20.vec case 1: 128-bit key, 39 bytes" {
+    let k: Word[8]^16 = hex"00010203 04050607 08090a0b 0c0d0e0f";
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 1](expand_16(k, nonce_counter(v, 0)))[..39] == (
+      hex"2dd5c3f7 ba2b20f7 6802410c 68868889 5ad8c1bd 4ea6c9b1 40fb9b90 e21049bf" ++
+      hex"583f5279 70ebc1"
     )
-  }
-
-  spec botan_salsa20_1_expected() -> Word[8]^39 {
-    [
-      0x2d, 0xd5, 0xc3, 0xf7, 0xba, 0x2b, 0x20, 0xf7, 0x68, 0x02, 0x41, 0x0c, 0x68, 0x86, 0x88, 0x89,
-      0x5a, 0xd8, 0xc1, 0xbd, 0x4e, 0xa6, 0xc9, 0xb1, 0x40, 0xfb, 0x9b, 0x90, 0xe2, 0x10, 0x49, 0xbf,
-      0x58, 0x3f, 0x52, 0x79, 0x70, 0xeb, 0xc1,
-    ]
   }
 
   // Botan salsa20.vec, second case: the 256-bit key 1b 1c ... 3a, zero nonce,
   // the first 111 bytes of keystream (blocks 0 and 1). By its key the case is
   // eSTREAM set 3, vector 27, of the 256-bit key file.
-  spec botan_salsa20_2() -> Word[8]^111 {
-    encrypt_111(
-      expand_32(
-        [
-          0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a,
-          0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a,
-        ],
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 111],
-      20,
+  test "Botan salsa20.vec case 2: 256-bit key, 111 bytes" {
+    let k: Word[8]^32 =
+      hex"1b1c1d1e 1f202122 23242526 2728292a 2b2c2d2e 2f303132 33343536 3738393a";
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 2](expand_32(k, nonce_counter(v, 0)))[..111] == (
+      hex"ae39508e ac9aece7 bf97bb20 b9dee41f 87d947f8 28913598 db72cc23 2948565e" ++
+      hex"837e0bf3 7d5d387b 2d7102b4 3bb5d823 b04adf3c ecb6d93b 9ba752be c5d45059" ++
+      hex"1514b40e 40e653d1 839c5ba0 92296b5e 965b1e2f d3acc192 b1413f19 2fc43bc6" ++
+      hex"95464554 e9750308 44afe58a 811209"
     )
-  }
-
-  spec botan_salsa20_2_expected() -> Word[8]^111 {
-    [
-      0xae, 0x39, 0x50, 0x8e, 0xac, 0x9a, 0xec, 0xe7, 0xbf, 0x97, 0xbb, 0x20, 0xb9, 0xde, 0xe4, 0x1f,
-      0x87, 0xd9, 0x47, 0xf8, 0x28, 0x91, 0x35, 0x98, 0xdb, 0x72, 0xcc, 0x23, 0x29, 0x48, 0x56, 0x5e,
-      0x83, 0x7e, 0x0b, 0xf3, 0x7d, 0x5d, 0x38, 0x7b, 0x2d, 0x71, 0x02, 0xb4, 0x3b, 0xb5, 0xd8, 0x23,
-      0xb0, 0x4a, 0xdf, 0x3c, 0xec, 0xb6, 0xd9, 0x3b, 0x9b, 0xa7, 0x52, 0xbe, 0xc5, 0xd4, 0x50, 0x59,
-      0x15, 0x14, 0xb4, 0x0e, 0x40, 0xe6, 0x53, 0xd1, 0x83, 0x9c, 0x5b, 0xa0, 0x92, 0x29, 0x6b, 0x5e,
-      0x96, 0x5b, 0x1e, 0x2f, 0xd3, 0xac, 0xc1, 0x92, 0xb1, 0x41, 0x3f, 0x19, 0x2f, 0xc4, 0x3b, 0xc6,
-      0x95, 0x46, 0x45, 0x54, 0xe9, 0x75, 0x03, 0x08, 0x44, 0xaf, 0xe5, 0x8a, 0x81, 0x12, 0x09,
-    ]
   }
 
   // Botan salsa20.vec, ninth case: key 0f 62 b5 08 ..., nonce 28 8f f6 5d c4
   // 2b 92 f9, the first 64 bytes of keystream. Crypto++'s salsa.txt labels
   // this key and IV eSTREAM set 6, vector 3 (its 131072-byte xor digest).
-  spec botan_salsa20_9() -> Word[8]^64 {
-    encrypt_64(
-      expand_32(
-        estream_set6_vector3_key(),
-        nonce_counter([0x28, 0x8f, 0xf6, 0x5d, 0xc4, 0x2b, 0x92, 0xf9], 0),
-      ),
-      [0; 64],
-      20,
+  test "Botan salsa20.vec case 9: eSTREAM set 6, vector 3, block 0" {
+    let k: Word[8]^32 =
+      hex"0f62b508 5bae0154 a7fa4da0 f34699ec 3f92e538 8bde3184 d72a7dd0 2376c91c";
+    let v: Word[8]^8 = hex"288ff65d c42b92f9";
+    keystream[20, 1](expand_32(k, nonce_counter(v, 0))) == (
+      hex"5e5e71f9 01993403 04abb22a 37b6625b f883fb89 ce3b21f5 4a10b810 66ef87da" ++
+      hex"30b77699 aa7379da 595c77dd 59542da2 08e5954f 89e40eb7 aa80a84a 6176663f"
     )
-  }
-
-  spec botan_salsa20_9_expected() -> Word[8]^64 {
-    [
-      0x5e, 0x5e, 0x71, 0xf9, 0x01, 0x99, 0x34, 0x03, 0x04, 0xab, 0xb2, 0x2a, 0x37, 0xb6, 0x62, 0x5b,
-      0xf8, 0x83, 0xfb, 0x89, 0xce, 0x3b, 0x21, 0xf5, 0x4a, 0x10, 0xb8, 0x10, 0x66, 0xef, 0x87, 0xda,
-      0x30, 0xb7, 0x76, 0x99, 0xaa, 0x73, 0x79, 0xda, 0x59, 0x5c, 0x77, 0xdd, 0x59, 0x54, 0x2d, 0xa2,
-      0x08, 0xe5, 0x95, 0x4f, 0x89, 0xe4, 0x0e, 0xb7, 0xaa, 0x80, 0xa8, 0x4a, 0x61, 0x76, 0x66, 0x3f,
-    ]
   }
 
   // Botan salsa20.vec, tenth case: the same key and nonce with Seek = 65472,
   // that is block counter 1023 (eSTREAM set 6, vector 3,
   // stream[65472..65535]).
-  spec botan_salsa20_10() -> Word[8]^64 {
-    encrypt_64(
-      expand_32(
-        estream_set6_vector3_key(),
-        nonce_counter([0x28, 0x8f, 0xf6, 0x5d, 0xc4, 0x2b, 0x92, 0xf9], 1023),
-      ),
-      [0; 64],
-      20,
+  test "Botan salsa20.vec case 10: eSTREAM set 6, vector 3, block 1023" {
+    let k: Word[8]^32 =
+      hex"0f62b508 5bae0154 a7fa4da0 f34699ec 3f92e538 8bde3184 d72a7dd0 2376c91c";
+    let v: Word[8]^8 = hex"288ff65d c42b92f9";
+    keystream[20, 1](expand_32(k, nonce_counter(v, 1023))) == (
+      hex"2da2174b d150a1df ec1796e9 21e9d6e2 4ecf0209 bcbea4f9 8370fce6 29056f64" ++
+      hex"91728343 6e2d3f45 55622530 7d5cc5a5 65325d89 93b37f16 54195c24 0bf75b16"
     )
-  }
-
-  spec botan_salsa20_10_expected() -> Word[8]^64 {
-    [
-      0x2d, 0xa2, 0x17, 0x4b, 0xd1, 0x50, 0xa1, 0xdf, 0xec, 0x17, 0x96, 0xe9, 0x21, 0xe9, 0xd6, 0xe2,
-      0x4e, 0xcf, 0x02, 0x09, 0xbc, 0xbe, 0xa4, 0xf9, 0x83, 0x70, 0xfc, 0xe6, 0x29, 0x05, 0x6f, 0x64,
-      0x91, 0x72, 0x83, 0x43, 0x6e, 0x2d, 0x3f, 0x45, 0x55, 0x62, 0x25, 0x30, 0x7d, 0x5c, 0xc5, 0xa5,
-      0x65, 0x32, 0x5d, 0x89, 0x93, 0xb3, 0x7f, 0x16, 0x54, 0x19, 0x5c, 0x24, 0x0b, 0xf7, 0x5b, 0x16,
-    ]
   }
 
   // Botan salsa20.vec, thirteenth case ("Long random inputs/outputs"): the
   // key 00 01 ... 1f, nonce a0 a1 ... a7, and a 2600-byte message; its first
-  // 128 bytes (blocks 0 and 1) are reproduced, the rest not being one Orange
-  // array.
-  spec botan_salsa20_13_head() -> Word[8]^128 {
-    encrypt_128(
-      expand_32(
-        [
-          0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-          0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-        ],
-        nonce_counter([0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7], 0),
-      ),
-      botan_13_message_head(),
-      20,
+  // 128 bytes (blocks 0 and 1) are reproduced.
+  test "Botan salsa20.vec case 13: first 128 bytes of a 2600-byte message" {
+    let k: Word[8]^32 =
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f";
+    let v: Word[8]^8 = hex"a0a1a2a3 a4a5a6a7";
+    let m: Word[8]^128 =
+      hex"110c0702 fdf8f3ee e9e4dfda d5d0cbc6 c1bcb7b2 ada8a39e 99948f8a 85807b76" ++
+      hex"716c6762 5d58534e 49443f3a 35302b26 211c1712 0d0803fe f9f4efea e5e0dbd6" ++
+      hex"d1ccc7c2 bdb8b3ae a9a49f9a 95908b86 817c7772 6d68635e 59544f4a 45403b36" ++
+      hex"312c2722 1d18130e 0904fffa f5f0ebe6 e1dcd7d2 cdc8c3be b9b4afaa a5a09b96";
+    encrypt(expand_32(k, nonce_counter(v, 0)), m) == (
+      hex"04cd66fc 0e74099d 7f93d5cb 0a2b9037 06839fa6 b219c4cf ede86068 7f9f0d9b" ++
+      hex"a0d883e3 a5586937 425f4d38 6457a334 1626c321 08ac114e bdb0099f bde4b68c" ++
+      hex"8f558ed4 e6400d3f 90e5e0ae 20d7324e 38fffb4b 37276112 31bb5fe1 08eadcc4" ++
+      hex"b99540bf a210d963 05162abf 9f351987 9f4dc3c4 256fe7f1 ff155c2c b93381d9"
     )
-  }
-
-  spec botan_salsa20_13_head_expected() -> Word[8]^128 {
-    [
-      0x04, 0xcd, 0x66, 0xfc, 0x0e, 0x74, 0x09, 0x9d, 0x7f, 0x93, 0xd5, 0xcb, 0x0a, 0x2b, 0x90, 0x37,
-      0x06, 0x83, 0x9f, 0xa6, 0xb2, 0x19, 0xc4, 0xcf, 0xed, 0xe8, 0x60, 0x68, 0x7f, 0x9f, 0x0d, 0x9b,
-      0xa0, 0xd8, 0x83, 0xe3, 0xa5, 0x58, 0x69, 0x37, 0x42, 0x5f, 0x4d, 0x38, 0x64, 0x57, 0xa3, 0x34,
-      0x16, 0x26, 0xc3, 0x21, 0x08, 0xac, 0x11, 0x4e, 0xbd, 0xb0, 0x09, 0x9f, 0xbd, 0xe4, 0xb6, 0x8c,
-      0x8f, 0x55, 0x8e, 0xd4, 0xe6, 0x40, 0x0d, 0x3f, 0x90, 0xe5, 0xe0, 0xae, 0x20, 0xd7, 0x32, 0x4e,
-      0x38, 0xff, 0xfb, 0x4b, 0x37, 0x27, 0x61, 0x12, 0x31, 0xbb, 0x5f, 0xe1, 0x08, 0xea, 0xdc, 0xc4,
-      0xb9, 0x95, 0x40, 0xbf, 0xa2, 0x10, 0xd9, 0x63, 0x05, 0x16, 0x2a, 0xbf, 0x9f, 0x35, 0x19, 0x87,
-      0x9f, 0x4d, 0xc3, 0xc4, 0x25, 0x6f, 0xe7, 0xf1, 0xff, 0x15, 0x5c, 0x2c, 0xb9, 0x33, 0x81, 0xd9,
-    ]
   }
 
   // Botan salsa20.vec, fourteenth case: the 128-bit key b0 b1 ... bf, nonce
   // c0 c1 ... c7, 1300 bytes of keystream; its first block is reproduced.
-  spec botan_salsa20_14() -> Word[8]^64 {
-    encrypt_64(
-      expand_16(
-        [
-          0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf,
-        ],
-        nonce_counter([0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7], 0),
-      ),
-      [0; 64],
-      20,
+  test "Botan salsa20.vec case 14: 128-bit key, first block" {
+    let k: Word[8]^16 = hex"b0b1b2b3 b4b5b6b7 b8b9babb bcbdbebf";
+    let v: Word[8]^8 = hex"c0c1c2c3 c4c5c6c7";
+    keystream[20, 1](expand_16(k, nonce_counter(v, 0))) == (
+      hex"9970db64 1010268e 34293d56 6842e95f 9e23091b 3e4380f6 bd6e07d6 724394fb" ++
+      hex"d6e908c2 48fa4d01 31545385 44c1e493 d202c813 8cf172c8 af75b90b f0ee70b0"
     )
-  }
-
-  spec botan_salsa20_14_expected() -> Word[8]^64 {
-    [
-      0x99, 0x70, 0xdb, 0x64, 0x10, 0x10, 0x26, 0x8e, 0x34, 0x29, 0x3d, 0x56, 0x68, 0x42, 0xe9, 0x5f,
-      0x9e, 0x23, 0x09, 0x1b, 0x3e, 0x43, 0x80, 0xf6, 0xbd, 0x6e, 0x07, 0xd6, 0x72, 0x43, 0x94, 0xfb,
-      0xd6, 0xe9, 0x08, 0xc2, 0x48, 0xfa, 0x4d, 0x01, 0x31, 0x54, 0x53, 0x85, 0x44, 0xc1, 0xe4, 0x93,
-      0xd2, 0x02, 0xc8, 0x13, 0x8c, 0xf1, 0x72, 0xc8, 0xaf, 0x75, 0xb9, 0x0b, 0xf0, 0xee, 0x70, 0xb0,
-    ]
   }
 
   // Botan salsa20.vec, sixteenth case: the key ff fe ... e0, nonce d0 d1 ...
   // d7, Seek = 274877906816 = 0xfffffffe * 64, 2048 bytes of keystream. The
   // first 192 bytes are the blocks at counters 0xfffffffe, 0xffffffff and
   // 0x100000000: the carry into word 9 of the state.
-  spec botan_salsa20_16_head() -> Word[8]^192 {
-    encrypt_192(
-      expand_32(
-        [
-          0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0,
-          0xef, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
-        ],
-        nonce_counter([0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7], 0xfffffffe),
-      ),
-      [0; 192],
-      20,
+  test "Botan salsa20.vec case 16: counter 0xfffffffe, first 192 bytes" {
+    let k: Word[8]^32 =
+      hex"fffefdfc fbfaf9f8 f7f6f5f4 f3f2f1f0 efeeedec ebeae9e8 e7e6e5e4 e3e2e1e0";
+    let v: Word[8]^8 = hex"d0d1d2d3 d4d5d6d7";
+    keystream[20, 3](expand_32(k, nonce_counter(v, 0xfffffffe))) == (
+      hex"4f674bfd 84eadd02 8bc24643 0b105b51 f842a148 794c71b7 4d56f799 60ff0868" ++
+      hex"166aa2f0 9cde0f4f 96a0eac1 7e667767 964053bc d1673c7d 51348ce7 7833f437" ++
+      hex"bead720d 82da8bb8 a276e9c6 65d9bc7d c5083cde 47b2717f 11886ff7 bf4be58f" ++
+      hex"dd4d81f7 6f35a990 ef4af9fa c1068249 205aafb6 22fbff75 19ba4b27 4e9d6121" ++
+      hex"d01e7815 054484f8 8efa817d f2885689 d36de63b f002197b 9856eac6 0730eb8d" ++
+      hex"c32409c7 91017ae8 59fc8c40 c3ed7f1c b8045f23 0378f493 6d61343b e3e612e2"
     )
-  }
-
-  spec botan_salsa20_16_head_expected() -> Word[8]^192 {
-    [
-      0x4f, 0x67, 0x4b, 0xfd, 0x84, 0xea, 0xdd, 0x02, 0x8b, 0xc2, 0x46, 0x43, 0x0b, 0x10, 0x5b, 0x51,
-      0xf8, 0x42, 0xa1, 0x48, 0x79, 0x4c, 0x71, 0xb7, 0x4d, 0x56, 0xf7, 0x99, 0x60, 0xff, 0x08, 0x68,
-      0x16, 0x6a, 0xa2, 0xf0, 0x9c, 0xde, 0x0f, 0x4f, 0x96, 0xa0, 0xea, 0xc1, 0x7e, 0x66, 0x77, 0x67,
-      0x96, 0x40, 0x53, 0xbc, 0xd1, 0x67, 0x3c, 0x7d, 0x51, 0x34, 0x8c, 0xe7, 0x78, 0x33, 0xf4, 0x37,
-      0xbe, 0xad, 0x72, 0x0d, 0x82, 0xda, 0x8b, 0xb8, 0xa2, 0x76, 0xe9, 0xc6, 0x65, 0xd9, 0xbc, 0x7d,
-      0xc5, 0x08, 0x3c, 0xde, 0x47, 0xb2, 0x71, 0x7f, 0x11, 0x88, 0x6f, 0xf7, 0xbf, 0x4b, 0xe5, 0x8f,
-      0xdd, 0x4d, 0x81, 0xf7, 0x6f, 0x35, 0xa9, 0x90, 0xef, 0x4a, 0xf9, 0xfa, 0xc1, 0x06, 0x82, 0x49,
-      0x20, 0x5a, 0xaf, 0xb6, 0x22, 0xfb, 0xff, 0x75, 0x19, 0xba, 0x4b, 0x27, 0x4e, 0x9d, 0x61, 0x21,
-      0xd0, 0x1e, 0x78, 0x15, 0x05, 0x44, 0x84, 0xf8, 0x8e, 0xfa, 0x81, 0x7d, 0xf2, 0x88, 0x56, 0x89,
-      0xd3, 0x6d, 0xe6, 0x3b, 0xf0, 0x02, 0x19, 0x7b, 0x98, 0x56, 0xea, 0xc6, 0x07, 0x30, 0xeb, 0x8d,
-      0xc3, 0x24, 0x09, 0xc7, 0x91, 0x01, 0x7a, 0xe8, 0x59, 0xfc, 0x8c, 0x40, 0xc3, 0xed, 0x7f, 0x1c,
-      0xb8, 0x04, 0x5f, 0x23, 0x03, 0x78, 0xf4, 0x93, 0x6d, 0x61, 0x34, 0x3b, 0xe3, 0xe6, 0x12, 0xe2,
-    ]
   }
 
   // Botan salsa20.vec, third case: XSalsa20 with the key 1b 27 55 64 ... and
   // the 24-byte nonce 69 69 6e e9 ..., the first 139 bytes of keystream. The
   // key and nonce are those of NaCl's and libsodium's stream tests; Crypto++
   // carries the same case as "created by Wei Dai using naclcrypto-20090308".
-  spec botan_xsalsa20_3() -> Word[8]^139 {
-    encrypt_139(
-      xsalsa20_state(
-        nacl_first_key(),
-        [
-          0x69, 0x69, 0x6e, 0xe9, 0x55, 0xb6, 0x2b, 0x73, 0xcd, 0x62, 0xbd, 0xa8, 0x75, 0xfc, 0x73, 0xd6,
-          0x82, 0x19, 0xe0, 0x03, 0x6b, 0x7a, 0x0b, 0x37,
-        ],
-        0,
-      ),
-      [0; 139],
-      20,
+  test "Botan salsa20.vec case 3: XSalsa20, 139 bytes" {
+    let k: Word[8]^32 =
+      hex"1b275564 73e985d4 62cd5119 7a9a46c7 6009549e ac6474f2 06c4ee08 44f68389";
+    let n: Word[8]^24 = hex"69696ee9 55b62b73 cd62bda8 75fc73d6 8219e003 6b7a0b37";
+    keystream[20, 3](xsalsa20(k, n))[..139] == (
+      hex"eea6a725 1c1e7291 6d11c2cb 214d3c25 2539121d 8e234e65 2d651fa4 c8cff880" ++
+      hex"309e645a 74e9e0a6 0d8243ac d9177ab5 1a1beb8d 5a2f5d70 0c093c5e 55855796" ++
+      hex"25337bd3 ab619d61 5760d8c5 b224a85b 1d0efe0e b8a7ee16 3abb0376 529fcc09" ++
+      hex"bab506c6 18e13ce7 77d82c3a e9d1a6f9 72d41602 87cbfe60 bf2130fc 0a6ff604" ++
+      hex"9d0a5c8a 82f42923 1f0080"
     )
-  }
-
-  spec botan_xsalsa20_3_expected() -> Word[8]^139 {
-    [
-      0xee, 0xa6, 0xa7, 0x25, 0x1c, 0x1e, 0x72, 0x91, 0x6d, 0x11, 0xc2, 0xcb, 0x21, 0x4d, 0x3c, 0x25,
-      0x25, 0x39, 0x12, 0x1d, 0x8e, 0x23, 0x4e, 0x65, 0x2d, 0x65, 0x1f, 0xa4, 0xc8, 0xcf, 0xf8, 0x80,
-      0x30, 0x9e, 0x64, 0x5a, 0x74, 0xe9, 0xe0, 0xa6, 0x0d, 0x82, 0x43, 0xac, 0xd9, 0x17, 0x7a, 0xb5,
-      0x1a, 0x1b, 0xeb, 0x8d, 0x5a, 0x2f, 0x5d, 0x70, 0x0c, 0x09, 0x3c, 0x5e, 0x55, 0x85, 0x57, 0x96,
-      0x25, 0x33, 0x7b, 0xd3, 0xab, 0x61, 0x9d, 0x61, 0x57, 0x60, 0xd8, 0xc5, 0xb2, 0x24, 0xa8, 0x5b,
-      0x1d, 0x0e, 0xfe, 0x0e, 0xb8, 0xa7, 0xee, 0x16, 0x3a, 0xbb, 0x03, 0x76, 0x52, 0x9f, 0xcc, 0x09,
-      0xba, 0xb5, 0x06, 0xc6, 0x18, 0xe1, 0x3c, 0xe7, 0x77, 0xd8, 0x2c, 0x3a, 0xe9, 0xd1, 0xa6, 0xf9,
-      0x72, 0xd4, 0x16, 0x02, 0x87, 0xcb, 0xfe, 0x60, 0xbf, 0x21, 0x30, 0xfc, 0x0a, 0x6f, 0xf6, 0x04,
-      0x9d, 0x0a, 0x5c, 0x8a, 0x82, 0xf4, 0x29, 0x23, 0x1f, 0x00, 0x80,
-    ]
   }
 
   // Botan salsa20.vec, fourth case: XSalsa20 with the key a6 a7 25 1c ...,
   // the nonce 9e 64 5a 74 ..., and a 238-byte message (four blocks). Crypto++
   // carries the same case.
-  spec botan_xsalsa20_4() -> Word[8]^238 {
-    encrypt_238(
-      xsalsa20_state(
-        [
-          0xa6, 0xa7, 0x25, 0x1c, 0x1e, 0x72, 0x91, 0x6d, 0x11, 0xc2, 0xcb, 0x21, 0x4d, 0x3c, 0x25, 0x25,
-          0x39, 0x12, 0x1d, 0x8e, 0x23, 0x4e, 0x65, 0x2d, 0x65, 0x1f, 0xa4, 0xc8, 0xcf, 0xf8, 0x80, 0x30,
-        ],
-        [
-          0x9e, 0x64, 0x5a, 0x74, 0xe9, 0xe0, 0xa6, 0x0d, 0x82, 0x43, 0xac, 0xd9, 0x17, 0x7a, 0xb5, 0x1a,
-          0x1b, 0xeb, 0x8d, 0x5a, 0x2f, 0x5d, 0x70, 0x0c,
-        ],
-        0,
-      ),
-      botan_4_message(),
-      20,
+  test "Botan salsa20.vec case 4: XSalsa20, 238-byte message" {
+    let k: Word[8]^32 =
+      hex"a6a7251c 1e72916d 11c2cb21 4d3c2525 39121d8e 234e652d 651fa4c8 cff88030";
+    let n: Word[8]^24 = hex"9e645a74 e9e0a60d 8243acd9 177ab51a 1beb8d5a 2f5d700c";
+    let m: Word[8]^238 =
+      hex"093c5e55 85579625 337bd3ab 619d6157 60d8c5b2 24a85b1d 0efe0eb8 a7ee163a" ++
+      hex"bb037652 9fcc09ba b506c618 e13ce777 d82c3ae9 d1a6f972 d4160287 cbfe60bf" ++
+      hex"2130fc0a 6ff6049d 0a5c8a82 f429231f 008082e8 45d7e189 d37f9ed2 b464e6b9" ++
+      hex"19e6523a 8c1210bd 52a02a4c 3fe406d3 085f5068 d1909eee ca6369ab c981a42e" ++
+      hex"87fe6655 83f0ab85 ae71f6f8 4f528e6b 397af86f 6917d975 4b7320db dc2fea81" ++
+      hex"496f2732 f532ac78 c4e9c6cf b18f8e9b df74622e b1261414 16776971 a84f94d1" ++
+      hex"56beaf67 aecbf2ad 412e76e6 6e8fad76 33f5b6d7 f3d64b5c 6c69ce29 003c6024" ++
+      hex"465ae3b8 9be78e91 5d88b4b5 621d";
+    encrypt(xsalsa20(k, n), m) == (
+      hex"b2af688e 7d8fc4b5 08c05cc3 9dd583d6 714322c6 4d7f3e63 147aede2 d9534934" ++
+      hex"b04ff6f3 37b03181 5cd094bd bc6d7a92 077dce70 94122868 22ef0737 ee47f6b7" ++
+      hex"ffa22f9d 53f11dd2 b0a3bb9f c01d9a88 f9d53c26 e9365c2c 3c063bc4 840bfc81" ++
+      hex"2e4b8046 3e69d179 530b25c1 58f54319 1cff9931 06511aa0 36043bbc 75866ab7" ++
+      hex"e34afc57 e2cce493 4a5faae6 eabe4f22 1770183d d0604678 27c27a35 4159a081" ++
+      hex"275a291f 69d946d6 fe28ed0b 9ce08206 cf484925 a51b9498 dbde178d dd3ae91a" ++
+      hex"8581b916 82d860f8 40782f6e ea49dbb9 bd721501 d2c67122 dea3b728 3848c5f1" ++
+      hex"3e0c0de8 76bd227a 856e4de5 93a3"
     )
-  }
-
-  spec botan_xsalsa20_4_expected() -> Word[8]^238 {
-    [
-      0xb2, 0xaf, 0x68, 0x8e, 0x7d, 0x8f, 0xc4, 0xb5, 0x08, 0xc0, 0x5c, 0xc3, 0x9d, 0xd5, 0x83, 0xd6,
-      0x71, 0x43, 0x22, 0xc6, 0x4d, 0x7f, 0x3e, 0x63, 0x14, 0x7a, 0xed, 0xe2, 0xd9, 0x53, 0x49, 0x34,
-      0xb0, 0x4f, 0xf6, 0xf3, 0x37, 0xb0, 0x31, 0x81, 0x5c, 0xd0, 0x94, 0xbd, 0xbc, 0x6d, 0x7a, 0x92,
-      0x07, 0x7d, 0xce, 0x70, 0x94, 0x12, 0x28, 0x68, 0x22, 0xef, 0x07, 0x37, 0xee, 0x47, 0xf6, 0xb7,
-      0xff, 0xa2, 0x2f, 0x9d, 0x53, 0xf1, 0x1d, 0xd2, 0xb0, 0xa3, 0xbb, 0x9f, 0xc0, 0x1d, 0x9a, 0x88,
-      0xf9, 0xd5, 0x3c, 0x26, 0xe9, 0x36, 0x5c, 0x2c, 0x3c, 0x06, 0x3b, 0xc4, 0x84, 0x0b, 0xfc, 0x81,
-      0x2e, 0x4b, 0x80, 0x46, 0x3e, 0x69, 0xd1, 0x79, 0x53, 0x0b, 0x25, 0xc1, 0x58, 0xf5, 0x43, 0x19,
-      0x1c, 0xff, 0x99, 0x31, 0x06, 0x51, 0x1a, 0xa0, 0x36, 0x04, 0x3b, 0xbc, 0x75, 0x86, 0x6a, 0xb7,
-      0xe3, 0x4a, 0xfc, 0x57, 0xe2, 0xcc, 0xe4, 0x93, 0x4a, 0x5f, 0xaa, 0xe6, 0xea, 0xbe, 0x4f, 0x22,
-      0x17, 0x70, 0x18, 0x3d, 0xd0, 0x60, 0x46, 0x78, 0x27, 0xc2, 0x7a, 0x35, 0x41, 0x59, 0xa0, 0x81,
-      0x27, 0x5a, 0x29, 0x1f, 0x69, 0xd9, 0x46, 0xd6, 0xfe, 0x28, 0xed, 0x0b, 0x9c, 0xe0, 0x82, 0x06,
-      0xcf, 0x48, 0x49, 0x25, 0xa5, 0x1b, 0x94, 0x98, 0xdb, 0xde, 0x17, 0x8d, 0xdd, 0x3a, 0xe9, 0x1a,
-      0x85, 0x81, 0xb9, 0x16, 0x82, 0xd8, 0x60, 0xf8, 0x40, 0x78, 0x2f, 0x6e, 0xea, 0x49, 0xdb, 0xb9,
-      0xbd, 0x72, 0x15, 0x01, 0xd2, 0xc6, 0x71, 0x22, 0xde, 0xa3, 0xb7, 0x28, 0x38, 0x48, 0xc5, 0xf1,
-      0x3e, 0x0c, 0x0d, 0xe8, 0x76, 0xbd, 0x22, 0x7a, 0x85, 0x6e, 0x4d, 0xe5, 0x93, 0xa3,
-    ]
   }
 
   // Crypto++ salsa.txt, Salsa20 "Set 1, vector# 0" (from the eSTREAM
   // verified.test-vectors of the 128-bit key file): key 80 00 ... 00, zero
   // IV, Seek 0, 64 zero bytes: stream[0..63].
-  spec cryptopp_set1_vector0() -> Word[8]^64 {
-    encrypt_64(
-      expand_16(
-        estream_set1_vector0_key(),
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 64],
-      20,
+  test "Crypto++ salsa.txt: Set 1, vector# 0" {
+    let k: Word[8]^16 = hex"80000000 00000000 00000000 00000000";
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 1](expand_16(k, nonce_counter(v, 0))) == (
+      hex"4dfa5e48 1da23ea0 9a310220 50859936 da52fcee 21800516 4f267cb6 5f5cfd7f" ++
+      hex"2b4f97e0 ff16924a 52df2695 15110a07 f9e460bc 65ef95da 58f740b7 d1dbb0aa"
     )
-  }
-
-  spec cryptopp_set1_vector0_expected() -> Word[8]^64 {
-    [
-      0x4d, 0xfa, 0x5e, 0x48, 0x1d, 0xa2, 0x3e, 0xa0, 0x9a, 0x31, 0x02, 0x20, 0x50, 0x85, 0x99, 0x36,
-      0xda, 0x52, 0xfc, 0xee, 0x21, 0x80, 0x05, 0x16, 0x4f, 0x26, 0x7c, 0xb6, 0x5f, 0x5c, 0xfd, 0x7f,
-      0x2b, 0x4f, 0x97, 0xe0, 0xff, 0x16, 0x92, 0x4a, 0x52, 0xdf, 0x26, 0x95, 0x15, 0x11, 0x0a, 0x07,
-      0xf9, 0xe4, 0x60, 0xbc, 0x65, 0xef, 0x95, 0xda, 0x58, 0xf7, 0x40, 0xb7, 0xd1, 0xdb, 0xb0, 0xaa,
-    ]
   }
 
   // Crypto++ salsa.txt, the same case at Seek 448, block counter 7:
   // stream[448..511].
-  spec cryptopp_set1_vector0_seek448() -> Word[8]^64 {
-    encrypt_64(
-      expand_16(
-        estream_set1_vector0_key(),
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 7),
-      ),
-      [0; 64],
-      20,
+  test "Crypto++ salsa.txt: Set 1, vector# 0, Seek 448" {
+    let k: Word[8]^16 = hex"80000000 00000000 00000000 00000000";
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 1](expand_16(k, nonce_counter(v, 7))) == (
+      hex"b3757037 39daced4 dd4059fd 71c3c47f c2f99396 70fad4a4 6066adcc 6a564578" ++
+      hex"3308b90f fb72be04 a6b147cb e38cc0c3 b9267c29 6a92a7c6 9873f9f2 63be9703"
     )
-  }
-
-  spec cryptopp_set1_vector0_seek448_expected() -> Word[8]^64 {
-    [
-      0xb3, 0x75, 0x70, 0x37, 0x39, 0xda, 0xce, 0xd4, 0xdd, 0x40, 0x59, 0xfd, 0x71, 0xc3, 0xc4, 0x7f,
-      0xc2, 0xf9, 0x93, 0x96, 0x70, 0xfa, 0xd4, 0xa4, 0x60, 0x66, 0xad, 0xcc, 0x6a, 0x56, 0x45, 0x78,
-      0x33, 0x08, 0xb9, 0x0f, 0xfb, 0x72, 0xbe, 0x04, 0xa6, 0xb1, 0x47, 0xcb, 0xe3, 0x8c, 0xc0, 0xc3,
-      0xb9, 0x26, 0x7c, 0x29, 0x6a, 0x92, 0xa7, 0xc6, 0x98, 0x73, 0xf9, 0xf2, 0x63, 0xbe, 0x97, 0x03,
-    ]
   }
 
   // Crypto++ salsa.txt, Salsa20 "Set 3, vector#243" (eSTREAM, 256-bit key
   // file): key f3 f4 ... 12, zero IV, stream[0..63].
-  spec cryptopp_set3_vector243() -> Word[8]^64 {
-    encrypt_64(
-      expand_32(
-        [
-          0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff, 0x00, 0x01, 0x02,
-          0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
-        ],
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 64],
-      20,
+  test "Crypto++ salsa.txt: Set 3, vector#243" {
+    let k: Word[8]^32 =
+      hex"f3f4f5f6 f7f8f9fa fbfcfdfe ff000102 03040506 0708090a 0b0c0d0e 0f101112";
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 1](expand_32(k, nonce_counter(v, 0))) == (
+      hex"b4c0afa5 03be7fc2 9a620581 66d56f8f 5d27dc24 6f75b9ad 8760c8c3 9dfd8749" ++
+      hex"2d3b76d5 d9637f00 9eada144 58a52dfb 09815337 e7267268 1dddc246 33750d83"
     )
-  }
-
-  spec cryptopp_set3_vector243_expected() -> Word[8]^64 {
-    [
-      0xb4, 0xc0, 0xaf, 0xa5, 0x03, 0xbe, 0x7f, 0xc2, 0x9a, 0x62, 0x05, 0x81, 0x66, 0xd5, 0x6f, 0x8f,
-      0x5d, 0x27, 0xdc, 0x24, 0x6f, 0x75, 0xb9, 0xad, 0x87, 0x60, 0xc8, 0xc3, 0x9d, 0xfd, 0x87, 0x49,
-      0x2d, 0x3b, 0x76, 0xd5, 0xd9, 0x63, 0x7f, 0x00, 0x9e, 0xad, 0xa1, 0x44, 0x58, 0xa5, 0x2d, 0xfb,
-      0x09, 0x81, 0x53, 0x37, 0xe7, 0x26, 0x72, 0x68, 0x1d, 0xdd, 0xc2, 0x46, 0x33, 0x75, 0x0d, 0x83,
-    ]
   }
 
   // Crypto++ salsa.txt, Salsa20 with Rounds: 12, "Set 1, vector# 0" (from the
   // eSTREAM reduced/12-rounds verified.test-vectors): key 80 00 ... 00, zero
   // IV, stream[0..63] of Salsa20/12.
-  spec cryptopp_salsa20_12_set1_vector0() -> Word[8]^64 {
-    encrypt_64(
-      expand_16(
-        estream_set1_vector0_key(),
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 64],
-      12,
+  test "Crypto++ salsa.txt: Salsa20/12, Set 1, vector# 0" {
+    let k: Word[8]^16 = hex"80000000 00000000 00000000 00000000";
+    let v: Word[8]^8 = [0; 8];
+    keystream[12, 1](expand_16(k, nonce_counter(v, 0))) == (
+      hex"fc207dbf c76c5e17 74961e7a 5aad0906 9b2225ac 1ce0fe7a 0ce77003 e7e5bdf8" ++
+      hex"b31af821 000813e6 c56b8c17 71d6ee70 39b2fbd0 a68e8ad7 0a3944b6 77937897"
     )
-  }
-
-  spec cryptopp_salsa20_12_set1_vector0_expected() -> Word[8]^64 {
-    [
-      0xfc, 0x20, 0x7d, 0xbf, 0xc7, 0x6c, 0x5e, 0x17, 0x74, 0x96, 0x1e, 0x7a, 0x5a, 0xad, 0x09, 0x06,
-      0x9b, 0x22, 0x25, 0xac, 0x1c, 0xe0, 0xfe, 0x7a, 0x0c, 0xe7, 0x70, 0x03, 0xe7, 0xe5, 0xbd, 0xf8,
-      0xb3, 0x1a, 0xf8, 0x21, 0x00, 0x08, 0x13, 0xe6, 0xc5, 0x6b, 0x8c, 0x17, 0x71, 0xd6, 0xee, 0x70,
-      0x39, 0xb2, 0xfb, 0xd0, 0xa6, 0x8e, 0x8a, 0xd7, 0x0a, 0x39, 0x44, 0xb6, 0x77, 0x93, 0x78, 0x97,
-    ]
   }
 
   // Crypto++ salsa.txt, Salsa20 with Rounds: 8, "Set 1, vector# 0" (eSTREAM
   // reduced/8-rounds): the same key and IV, stream[0..63] of Salsa20/8.
-  spec cryptopp_salsa20_8_set1_vector0() -> Word[8]^64 {
-    encrypt_64(
-      expand_16(
-        estream_set1_vector0_key(),
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0),
-      ),
-      [0; 64],
-      8,
+  test "Crypto++ salsa.txt: Salsa20/8, Set 1, vector# 0" {
+    let k: Word[8]^16 = hex"80000000 00000000 00000000 00000000";
+    let v: Word[8]^8 = [0; 8];
+    keystream[8, 1](expand_16(k, nonce_counter(v, 0))) == (
+      hex"a9c9f888 ab552a2d 1bbff9f3 6bebeb33 7a8b4b10 7c75b63b ae26cb9a 235bba9d" ++
+      hex"784f38be fc3adf4c d3e26668 7ea7b9f0 9ba650ae 81eac606 3ae31ff1 2218ddc5"
     )
-  }
-
-  spec cryptopp_salsa20_8_set1_vector0_expected() -> Word[8]^64 {
-    [
-      0xa9, 0xc9, 0xf8, 0x88, 0xab, 0x55, 0x2a, 0x2d, 0x1b, 0xbf, 0xf9, 0xf3, 0x6b, 0xeb, 0xeb, 0x33,
-      0x7a, 0x8b, 0x4b, 0x10, 0x7c, 0x75, 0xb6, 0x3b, 0xae, 0x26, 0xcb, 0x9a, 0x23, 0x5b, 0xba, 0x9d,
-      0x78, 0x4f, 0x38, 0xbe, 0xfc, 0x3a, 0xdf, 0x4c, 0xd3, 0xe2, 0x66, 0x68, 0x7e, 0xa7, 0xb9, 0xf0,
-      0x9b, 0xa6, 0x50, 0xae, 0x81, 0xea, 0xc6, 0x06, 0x3a, 0xe3, 0x1f, 0xf1, 0x22, 0x18, 0xdd, 0xc5,
-    ]
   }
 
   // Crypto++ salsa.txt, "Counter crosses 32-bit boundary (0xffffffff*64)":
   // zero key and IV, Seek64 0x3fffffffc0, that is block counter 0xffffffff,
   // 1024 zero bytes; the first 128 bytes are the blocks at counters
   // 0xffffffff and 0x100000000.
-  spec cryptopp_counter_crossing_head() -> Word[8]^128 {
-    encrypt_128(
-      expand_32(
-        [
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ],
-        nonce_counter([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 0xffffffff),
-      ),
-      [0; 128],
-      20,
+  test "Crypto++ salsa.txt: counter crosses 32-bit boundary, first 128 bytes" {
+    let k: Word[8]^32 = [0; 32];
+    let v: Word[8]^8 = [0; 8];
+    keystream[20, 2](expand_32(k, nonce_counter(v, 0xffffffff))) == (
+      hex"59fc4dd7 3f4b7b28 ce1b0ef5 62bab604 82407689 8a800797 b59902a9 9f312254" ++
+      hex"5231e85b 887ffa19 f71f24aa f352dc6a fe47281d 8f546c9d 41919447 9a369392" ++
+      hex"b65fc777 c4f950ec 0274ff0f fbb0a6e3 ededf784 77e94945 e87f26e3 162bf6a1" ++
+      hex"05093342 1833f249 da1162db 6e92a767 8505190c 80dc4635 0b81e831 f974b28c"
     )
-  }
-
-  spec cryptopp_counter_crossing_head_expected() -> Word[8]^128 {
-    [
-      0x59, 0xfc, 0x4d, 0xd7, 0x3f, 0x4b, 0x7b, 0x28, 0xce, 0x1b, 0x0e, 0xf5, 0x62, 0xba, 0xb6, 0x04,
-      0x82, 0x40, 0x76, 0x89, 0x8a, 0x80, 0x07, 0x97, 0xb5, 0x99, 0x02, 0xa9, 0x9f, 0x31, 0x22, 0x54,
-      0x52, 0x31, 0xe8, 0x5b, 0x88, 0x7f, 0xfa, 0x19, 0xf7, 0x1f, 0x24, 0xaa, 0xf3, 0x52, 0xdc, 0x6a,
-      0xfe, 0x47, 0x28, 0x1d, 0x8f, 0x54, 0x6c, 0x9d, 0x41, 0x91, 0x94, 0x47, 0x9a, 0x36, 0x93, 0x92,
-      0xb6, 0x5f, 0xc7, 0x77, 0xc4, 0xf9, 0x50, 0xec, 0x02, 0x74, 0xff, 0x0f, 0xfb, 0xb0, 0xa6, 0xe3,
-      0xed, 0xed, 0xf7, 0x84, 0x77, 0xe9, 0x49, 0x45, 0xe8, 0x7f, 0x26, 0xe3, 0x16, 0x2b, 0xf6, 0xa1,
-      0x05, 0x09, 0x33, 0x42, 0x18, 0x33, 0xf2, 0x49, 0xda, 0x11, 0x62, 0xdb, 0x6e, 0x92, 0xa7, 0x67,
-      0x85, 0x05, 0x19, 0x0c, 0x80, 0xdc, 0x46, 0x35, 0x0b, 0x81, 0xe8, 0x31, 0xf9, 0x74, 0xb2, 0x8c,
-    ]
   }
 
   // libsodium test/default/core4.c: crypto_core_salsa20 on the key 1, 2, ...,
   // 16, 201, ..., 216, the 16-byte input 101, ..., 116 and the constant
   // "expand 32-byte k": the Salsa20 hash of the section 9 expansion for a
   // 32-byte key, the input standing for (v, i).
-  spec libsodium_core4() -> Word[8]^64 {
-    salsa20_block(
-      expand_32(
-        [
-          0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-          0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf, 0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8,
-        ],
-        [
-          0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74,
-        ],
-      ),
-      20,
+  test "libsodium core4: crypto_core_salsa20" {
+    let k: Word[8]^32 =
+      hex"01020304 05060708 090a0b0c 0d0e0f10 c9cacbcc cdcecfd0 d1d2d3d4 d5d6d7d8";
+    let n: Word[8]^16 = hex"65666768 696a6b6c 6d6e6f70 71727374";
+    salsa20[20](expand_32(k, n)) == (
+      hex"45254427 290f6bc1 ff8b7a06 aae9d962 5990b66a 1533c841 ef31de22 d772287e" ++
+      hex"68c507e1 c5991f02 664e4cb0 54f5f6b8 b1a08582 06489577 c0c384ec ea67f64a"
     )
-  }
-
-  spec libsodium_core4_expected() -> Word[8]^64 {
-    [
-      0x45, 0x25, 0x44, 0x27, 0x29, 0x0f, 0x6b, 0xc1, 0xff, 0x8b, 0x7a, 0x06, 0xaa, 0xe9, 0xd9, 0x62,
-      0x59, 0x90, 0xb6, 0x6a, 0x15, 0x33, 0xc8, 0x41, 0xef, 0x31, 0xde, 0x22, 0xd7, 0x72, 0x28, 0x7e,
-      0x68, 0xc5, 0x07, 0xe1, 0xc5, 0x99, 0x1f, 0x02, 0x66, 0x4e, 0x4c, 0xb0, 0x54, 0xf5, 0xf6, 0xb8,
-      0xb1, 0xa0, 0x85, 0x82, 0x06, 0x48, 0x95, 0x77, 0xc0, 0xc3, 0x84, 0xec, 0xea, 0x67, 0xf6, 0x4a,
-    ]
   }
 
   // libsodium test/default/core1.c: crypto_core_hsalsa20 on the shared key 4a
   // 5d 9d 5b ... and a zero 16-byte input (the HSalsa20 step of NaCl's
   // crypto_box, deriving the first key from the Diffie-Hellman result).
-  spec libsodium_core1() -> Word[8]^32 {
-    hsalsa20(
-      [
-        0x4a, 0x5d, 0x9d, 0x5b, 0xa4, 0xce, 0x2d, 0xe1, 0x72, 0x8e, 0x3b, 0xf4, 0x80, 0x35, 0x0f, 0x25,
-        0xe0, 0x7e, 0x21, 0xc9, 0x47, 0xd1, 0x9e, 0x33, 0x76, 0xf0, 0x9b, 0x3c, 0x1e, 0x16, 0x17, 0x42,
-      ],
-      [0; 16],
-    )
-  }
-
-  spec libsodium_core1_expected() -> Word[8]^32 {
-    [
-      0x1b, 0x27, 0x55, 0x64, 0x73, 0xe9, 0x85, 0xd4, 0x62, 0xcd, 0x51, 0x19, 0x7a, 0x9a, 0x46, 0xc7,
-      0x60, 0x09, 0x54, 0x9e, 0xac, 0x64, 0x74, 0xf2, 0x06, 0xc4, 0xee, 0x08, 0x44, 0xf6, 0x83, 0x89,
-    ]
+  test "libsodium core1: crypto_core_hsalsa20 of the shared key" {
+    let k: Word[8]^32 =
+      hex"4a5d9d5b a4ce2de1 728e3bf4 80350f25 e07e21c9 47d19e33 76f09b3c 1e161742";
+    let n: Word[8]^16 = [0; 16];
+    hsalsa20(k, n) ==
+      hex"1b275564 73e985d4 62cd5119 7a9a46c7 6009549e ac6474f2 06c4ee08 44f68389"
   }
 
   // libsodium test/default/core2.c: crypto_core_hsalsa20 on core1's first key
   // and the nonce prefix 69 69 6e e9 ... (the first 16 bytes of the 24-byte
   // nonce of stream3): the XSalsa20 subkey.
-  spec libsodium_core2() -> Word[8]^32 {
-    hsalsa20(
-      nacl_first_key(),
-      [
-        0x69, 0x69, 0x6e, 0xe9, 0x55, 0xb6, 0x2b, 0x73, 0xcd, 0x62, 0xbd, 0xa8, 0x75, 0xfc, 0x73, 0xd6,
-      ],
-    )
-  }
-
-  spec libsodium_core2_expected() -> Word[8]^32 {
-    [
-      0xdc, 0x90, 0x8d, 0xda, 0x0b, 0x93, 0x44, 0xa9, 0x53, 0x62, 0x9b, 0x73, 0x38, 0x20, 0x77, 0x88,
-      0x80, 0xf3, 0xce, 0xb4, 0x21, 0xbb, 0x61, 0xb9, 0x1c, 0xbd, 0x4c, 0x3e, 0x66, 0x25, 0x6c, 0xe4,
-    ]
+  test "libsodium core2: crypto_core_hsalsa20, the XSalsa20 subkey" {
+    let k: Word[8]^32 =
+      hex"1b275564 73e985d4 62cd5119 7a9a46c7 6009549e ac6474f2 06c4ee08 44f68389";
+    let n: Word[8]^16 = hex"69696ee9 55b62b73 cd62bda8 75fc73d6";
+    hsalsa20(k, n) ==
+      hex"dc908dda 0b9344a9 53629b73 38207788 80f3ceb4 21bb61b9 1cbd4c3e 66256ce4"
   }
 
   // libsodium test/default/stream3.c: crypto_stream (XSalsa20) under core1's
   // first key and the 24-byte nonce 69 69 6e e9 ... 0b 37, the first 32 bytes
   // of keystream; equal to Salsa20 under core2's second key with the nonce 82
   // 19 e0 03 6b 7a 0b 37, and to the first 32 bytes of Botan's third case.
-  spec libsodium_stream3() -> Word[8]^32 {
-    encrypt_32(
-      xsalsa20_state(
-        nacl_first_key(),
-        [
-          0x69, 0x69, 0x6e, 0xe9, 0x55, 0xb6, 0x2b, 0x73, 0xcd, 0x62, 0xbd, 0xa8, 0x75, 0xfc, 0x73, 0xd6,
-          0x82, 0x19, 0xe0, 0x03, 0x6b, 0x7a, 0x0b, 0x37,
-        ],
-        0,
-      ),
-      [0; 32],
-      20,
-    )
-  }
-
-  spec libsodium_stream3_expected() -> Word[8]^32 {
-    [
-      0xee, 0xa6, 0xa7, 0x25, 0x1c, 0x1e, 0x72, 0x91, 0x6d, 0x11, 0xc2, 0xcb, 0x21, 0x4d, 0x3c, 0x25,
-      0x25, 0x39, 0x12, 0x1d, 0x8e, 0x23, 0x4e, 0x65, 0x2d, 0x65, 0x1f, 0xa4, 0xc8, 0xcf, 0xf8, 0x80,
-    ]
+  test "libsodium stream3: XSalsa20 keystream, 32 bytes" {
+    let k: Word[8]^32 =
+      hex"1b275564 73e985d4 62cd5119 7a9a46c7 6009549e ac6474f2 06c4ee08 44f68389";
+    let n: Word[8]^24 = hex"69696ee9 55b62b73 cd62bda8 75fc73d6 8219e003 6b7a0b37";
+    keystream[20, 1](xsalsa20(k, n))[..32] ==
+      hex"eea6a725 1c1e7291 6d11c2cb 214d3c25 2539121d 8e234e65 2d651fa4 c8cff880"
   }
 }
