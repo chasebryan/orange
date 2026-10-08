@@ -27,78 +27,93 @@ standard.
 The RFC composes its three parts through one small function pair,
 `LabeledExtract` and `LabeledExpand` (section 4), which are HKDF's `Extract`
 and `Expand` (RFC 5869) with every input prefixed by the string `"HPKE-v1"`, a
-`suite_id` and a label. The Orange file is ordered as the RFC is: the
-primitives it needs, then section 4, then 5.1, 5.2 and 5.3.
+`suite_id` and a label. The entry is five modules: one for each primitive
+the suite names, and the root `hpke.or`, which `use`s three of them (`hkdf`
+`use`s the fourth, `sha256`) and is ordered as the RFC is: section 4, then
+5.1, 5.2 and 5.3, with the identifiers of section 7 at the top.
 
-**The primitives.** Orange has no imports, so the files carry, each as far as
-its vectors need them, SHA-256
-(FIPS 180-4, as the repository's S3e fixture writes it, with `hash_blocks`
-generalizing the fixture's fixed blocks to a message of any length up to 119
-bytes after the 64-byte HMAC key block, which covers every message HPKE hashes
-with this suite), HMAC-SHA256 (RFC 2104, `key_block`, `outer_block`,
-`hmac_sha256`), HKDF-SHA256 (RFC 5869, `extract` and `expand`), X25519
-(RFC 7748, as the S3f fixture writes it: field
-arithmetic in `Int`, a Montgomery ladder whose conditional swap is a
-conditional), and ChaCha20-Poly1305 (RFC 8439, as the S3f AEAD fixture writes
-it, sized to the 29-byte plaintext and the 7- or 9-byte `aad` of Appendix A.2).
+**The primitives.** `sha256.or` is SHA-256 (FIPS 180-4) as the `sha2` entry
+writes it, with a `padding[len]` and a `digest[len]` for every message of 1
+through 256 bytes, which covers every message HPKE hashes with this suite.
+`hkdf.or` uses it for HMAC-SHA256 (RFC 2104, `hmac[n]`, keys of 32 bytes and
+texts of 1 through 192 bytes) and HKDF-SHA256 (RFC 5869, `extract[n]` and
+`expand[n]`). `curve25519.or` is X25519 (RFC 7748), written from the
+section 5 pseudocode over `Mod[2^255 - 19]`: `decode_u_coordinate`,
+`decode_scalar`, `cswap`, `ladder_step` and `x25519`, with the ladder's swap
+carried from bit to bit as the RFC carries it. `chacha20poly1305.or` is the
+AEAD of RFC 8439 section 2.8 over the block function, the encryption,
+Poly1305 over `Mod[2^130 - 5]` and the one-time key of sections 2.3 to 2.6,
+for additional data of 7 through 9 bytes and plaintexts of 1 through 64
+bytes; its `seal[a, n]` is RFC 9180's `Seal(key, nonce, aad, pt)`.
 
 **Section 4, the labeled KDF.** `LabeledExtract(salt, label, ikm)` is
 `Extract(salt, "HPKE-v1" || suite_id || label || ikm)` and
 `LabeledExpand(prk, label, info, L)` is
 `Expand(prk, I2OSP(L, 2) || "HPKE-v1" || suite_id || label || info, L)`.
-Orange has no strings and no variable-length arrays, so each concatenation
-the RFC forms is its own spec, a 128-byte buffer whose used length is passed
-beside it at the call: `labeled_ikm_eae_prk` and `labeled_info_shared_secret`
-for the KEM, `labeled_ikm_dkp_prk` and `labeled_info_sk` for `DeriveKeyPair`,
-`labeled_ikm_psk_id_hash`, `labeled_ikm_info_hash`, `labeled_ikm_secret`,
-`labeled_info_key`, `labeled_info_base_nonce` and `labeled_info_exp` for the
-key schedule, and `labeled_info_sec` for `Export`. Every label's ASCII stands
-in a comment beside its bytes. The KEM's `suite_id` is `"KEM" || 0x0020` and
-the rest of HPKE's is `"HPKE" || 0x0020 || 0x0001 || 0x0003`. Because every
-`L` this suite asks for is at most `Nh = 32`, `expand` is HKDF's `T(1)` alone.
+Both are single specs, `labeled_extract` and `labeled_expand`, sized by the
+length of their last argument and typed by the `suite_id`, which is the
+KEM's `"KEM" || I2OSP(kem_id, 2)` (5 bytes, `kem_suite_id`) inside DHKEM and
+`"HPKE" || I2OSP(kem_id, 2) || I2OSP(kdf_id, 2) || I2OSP(aead_id, 2)` (10
+bytes, `hpke_suite_id`) elsewhere, both built from the identifiers of
+section 7. The label and the `ikm` or `info` are one argument, written
+`"eae_prk" ++ dh` at the call, because the RFC passes empty strings for
+`psk_id`, `psk`, the `info` of `DeriveKeyPair` and an export context, and an
+empty string is no array: those calls pass the label alone. `I2OSP(L, 2)` is
+`l as big Word[8]^2`. Because every `L` this suite asks for is at most
+`Nh = 32`, `expand` is HKDF's `T(1)` alone, and `base_nonce` keeps its first
+`Nn = 12` bytes.
 
-**Section 4.1, DHKEM.** `dh` is X25519; `kem_context` is `enc || pkRm`;
+**Section 4.1, DHKEM.** `dh` is X25519; `pk` is section 3's `pk(skX)`,
+`X25519(sk, 9)`;
 `extract_and_expand` is `LabeledExtract("", "eae_prk", dh)` followed by
 `LabeledExpand(eae_prk, "shared_secret", kem_context, Nsecret)`; and `encap`
-is the RFC's `Encap(pkR)` with the ephemeral pair `(skE, pkE)` as inputs
-rather than drawn from `GenerateKeyPair`, since a specification takes its
-randomness as an argument. `SerializePublicKey` is the identity for X25519
-(section 7.1.1), so `enc = pkE`. Section 7.1.3's `DeriveKeyPair` for X25519 is
-`derive_key_pair_sk` (`dkp_prk = LabeledExtract("", "dkp_prk", ikm)`,
-`sk = LabeledExpand(dkp_prk, "sk", "", Nsk)`) and `pk`, which is
-`X25519(sk, 9)`; there are no tuples, so the pair is two specs.
+is the RFC's `Encap(pkR)`, returning the pair `(shared_secret, enc)`, with
+`kem_context = enc || pkRm` and with the ephemeral pair `(skE, pkE)` as
+inputs rather than drawn from `GenerateKeyPair`, since a specification takes
+its randomness as an argument. `SerializePublicKey` is the identity for
+X25519 (section 7.1.1), so `enc = pkE`. Section 7.1.3's `DeriveKeyPair` for
+X25519 is `derive_key_pair`, returning `(sk, pk(sk))` with
+`dkp_prk = LabeledExtract("", "dkp_prk", ikm)` and
+`sk = LabeledExpand(dkp_prk, "sk", "", Nsk)`.
 
 **Section 5.1, the key schedule.** For `mode_base`, `psk` and `psk_id` are
-empty: `key_schedule_context_base` forms `mode || psk_id_hash || info_hash`
-(65 bytes) from the two `LabeledExtract`s, `secret` is
-`LabeledExtract(shared_secret, "secret", "")`, and `key`, `base_nonce` and
-`exporter_secret` are the three `LabeledExpand`s with `Nk = 32`, `Nn = 12`
-and `Nh = 32`. `key_schedule_base` returns the context
-`key || base_nonce || exporter_secret` as 76 bytes, again because there are
-no records.
+empty: `key_schedule[n]` forms `psk_id_hash` and `info_hash` by
+`LabeledExtract`, `key_schedule_context = mode || psk_id_hash || info_hash`
+(65 bytes), `secret = LabeledExtract(shared_secret, "secret", "")`, and `key`,
+`base_nonce` and `exporter_secret` by the three `LabeledExpand`s with
+`Nk = 32`, `Nn = 12` and `Nh = 32`, for an `info` of 1 through 64 bytes. It
+returns the RFC's `Context(key, base_nonce, 0, exporter_secret)` as a value
+of the tuple type `Context`.
 
 **Sections 5.2 and 5.3, the context.** `compute_nonce` is
-`xor(base_nonce, I2OSP(seq, Nn))`; `context_seal` is `ContextS.Seal(aad, pt)`
-at a given sequence number, which calls the AEAD's `seal`; `export` is
-`LabeledExpand(exporter_secret, "sec", exporter_context, L)`. The RFC's
-context is stateful and `IncrementSeq` advances `seq` after each `Seal`;
-Orange has no mutation, so `seq` is a parameter, and a `Seal` at `seq = n`
-is the (n + 1)-th `Seal` of the context.
+`xor(base_nonce, I2OSP(seq, Nn))`, with `I2OSP` written
+`seq as big Word[8]^12`; `seal[a, n]` is `ContextS.Seal(aad, pt)` on the
+context's `seq`, which calls the AEAD's `seal`; `increment_seq` is
+`IncrementSeq`, returning the context with `seq + 1`; `export[n]` is
+`Export(exporter_context, L) = LabeledExpand(exporter_secret, "sec",
+exporter_context, L)` and `export_empty` the same with the empty
+`exporter_context`. The RFC's context is stateful and its `Seal` calls
+`IncrementSeq`; Orange has no mutation and a tuple holds no tuple, so `seal`
+returns the ciphertext alone and the context for the next `Seal` is
+`increment_seq(context)`; a context whose `seq` is `n` makes the
+(n + 1)-th `Seal`.
 
 | RFC 9180 section | Orange spec |
 | --- | --- |
-| 4, `Extract`, `Expand` (HKDF, RFC 5869) | `extract`, `expand` over `hmac_sha256` |
-| 4, `LabeledExtract`, `LabeledExpand` | the `labeled_ikm_*` and `labeled_info_*` buffers, one per use |
-| 4.1, `DH` | `dh` (`x25519`) |
-| 4.1, `ExtractAndExpand` | `extract_and_expand`, `kem_context` |
+| 3, `pk(skX)` | `pk` |
+| 4, `Extract`, `Expand` (HKDF, RFC 5869) | `hkdf::extract[n]`, `hkdf::expand[n]` over `hkdf::hmac[n]` and `sha256::digest[len]` |
+| 4, `LabeledExtract`, `LabeledExpand` | `labeled_extract`, `labeled_expand`, with `kem_suite_id` or `hpke_suite_id` |
+| 4.1, `DH` | `dh` (`curve25519::x25519`) |
+| 4.1, `ExtractAndExpand` | `extract_and_expand` |
 | 4.1, `Encap` | `encap` |
-| 5.1, `psk_id_hash`, `info_hash`, `key_schedule_context` | `key_schedule_context_base`, `key_schedule_context` |
-| 5.1, `secret`, `key`, `base_nonce`, `exporter_secret` | `secret`, `key`, `base_nonce`, `exporter_secret` |
-| 5.1, `KeySchedule` (mode_base) | `key_schedule_base` |
+| 5, `mode_base` | `mode_base` |
+| 5.1, `KeySchedule` (mode_base) | `key_schedule[n]`, returning a `Context` |
 | 5.2, `ComputeNonce` | `compute_nonce` |
-| 5.2, `ContextS.Seal` | `context_seal`, over `seal` (RFC 8439) |
-| 5.3, `Export` | `export`, `labeled_info_sec` |
-| 7.1.3, `DeriveKeyPair` (X25519) | `derive_key_pair_sk`, `pk` |
+| 5.2, `IncrementSeq` | `increment_seq` |
+| 5.2, `ContextS.Seal` | `seal[a, n]`, over `chacha20poly1305::seal[a, n]` (RFC 8439) |
+| 5.3, `Export` | `export[n]`, `export_empty` |
+| 7, `kem_id`, `kdf_id`, `aead_id`, `Nsecret`, `Nsk`, `Nh`, `Nk`, `Nn` | `kem_id`, `kdf_id`, `aead_id`, `n_secret`, `n_sk`, `n_h`, `n_k`, `n_n` |
+| 7.1.3, `DeriveKeyPair` (X25519) | `derive_key_pair` |
 
 ### Security status
 
@@ -179,120 +194,101 @@ with its own entry or fixture in this repository.
 ### What the Orange rendering shows
 
 Almost nothing in HPKE depends on data. The only data-dependent choice in the
-four files is the conditional swap of the X25519 ladder, a conditional on a
-scalar bit, exactly as in the `x25519` entry; every KDF call, every
-concatenation and the whole key schedule are straight-line. The RFC's
-variable-length inputs, `ikm`, `info`, `exporter_context` and the labeled
-concatenations, become fixed 128-byte buffers with their lengths written as
-literals at the calls (`16`, `51`, `91`, `28`, `46`, `23`, `87`, `94`, `22 + len`),
-and SHA-256's padding is computed by `hash_blocks` from that length with
-comparisons rather than assumed as in the fixtures, so the file shows that
-the message lengths of this suite are fixed by the suite and the inputs, and
-which they are. `expand` is HKDF's first block only; the general
-`T(1) || T(2) || ...` loop is not written because no `L` here exceeds 32,
-and the file says so. Poly1305 and X25519 are `Int` arithmetic reduced by
-`%`, as the fixtures write them. The context is a 76-byte array and the
-sequence number a parameter, because there are no records and no mutation:
-the stateful part of the RFC, `IncrementSeq` and the message limit, is
-described in a comment and not in code. `Encap` takes `skE` and `pkE` as
-inputs and `DeriveKeyPair` returns its two values through two specs.
+five files is `cswap` in the X25519 ladder, a conditional on the xor of two
+scalar bits; every KDF call, every concatenation and the whole key schedule
+are straight-line, and every index is a literal or a loop index, so the
+checker proves every access in range before evaluation. The bits of the
+clamped scalar are read as the RFC numbers them, bit `t % 8` of byte `t / 8`
+for `t` from 254 down to 0.
 
-The evaluation cost was measured with a filler spec sharing each file's
-budget (`budget.py` and `budget2.py` in the scratch directory; 67 steps per
-filler iteration, so the figures are about that precise). One SHA-256
-compression costs about 12,100 steps; one HMAC-SHA256 of a 51-byte text
-(four compressions) about 51,700 and of a 91-byte text (five) about 66,100;
-one X25519 about 621,000; `extract_and_expand` about 117,600, so `encap`,
-one X25519 and two HMACs, about 737,700; `derive_key_pair_sk` about
-103,200; each of `key`, `base_nonce` and `exporter_secret` from
-`shared_secret`, which recomputes `psk_id_hash`, `info_hash` and `secret`
-because parameterless specs share nothing, about 218,600; the whole
-`key_schedule_base` about 350,200; the AEAD's `seal` about 39,100 and
-`context_seal` about 44,000; one `export` about 55,700. Against the budget of
-1,048,576 steps per file: `hpke.or` uses about 840,200 (`shared_secret` and
-`skRm`) and has 208,000 left, less than the 218,600 of the smallest
-key-schedule pair, which is why the key schedule and the seal are in
-`hpke-key-schedule.or` with `shared_secret` as a literal, as the brief's
-contingency foresaw; `hpke-key-schedule.or` uses about 1,045,800 and has
-2,800 left; `hpke-encapsulated-key.or` uses about 792,400;
-`hpke-context.or` about 420,500. `Decap` and `Open` are not written: `Decap`
-is `extract_and_expand(dh(skR, enc), kem_context(enc, pkRm))`, a second
-X25519 that no file could evaluate, and `Open` is `Seal` with the tag
-compared, outside the scope of this entry.
+The RFC's strings are Orange's: labels, `info`, the plaintext and the `aad`
+are string literals (`"eae_prk"`, `"Ode on a Grecian Urn"`, `"Count-255"`),
+keys and expected values are `hex"..."`, and every concatenation the RFC
+writes with `concat` is `++`, so `"HPKE-v1" ++ suite_id ++ label_ikm` is the
+text of section 4. Byte orders are written where the standards fix them:
+`I2OSP` is `as big` (the identifiers, `L`, the sequence number), X25519's
+coordinates and Poly1305's blocks and lengths are `as little`, and SHA-256
+parses its blocks with `as big`. Lengths are sizes: the checker computes the
+length of each concatenation from the lengths of its parts, picks the
+instance of `labeled_extract`, `hkdf::extract`, `hkdf::hmac` and
+`sha256::digest` that takes it, and so fixes, for this suite and these
+inputs, which message lengths are hashed, without a length being written at
+any call. The field arithmetic is `Mod[2^255 - 19]` for X25519 and
+`Mod[2^130 - 5]` for Poly1305, so the formulas are the RFCs' with no
+reduction written, and X25519's final `x_2 * z_2^(p - 2)` is one division.
+Tuples carry what the RFC returns in pairs (`Encap`, `DeriveKeyPair`) and the
+context (`key`, `base_nonce`, `seq`, `exporter_secret`). `Decap` and `Open`
+are not written: `Decap` is `extract_and_expand(dh(skR, enc), enc || pkRm)`
+and `Open` is `Seal` with the tag compared, outside the scope of this entry
+as before.
+
+Measured costs under `orangec test --stats`: one SHA-256 compression costs
+8,934 steps; one HMAC-SHA256 of a 51-byte text (four compressions) 36,999
+and of a 92-byte text (five) 45,937; one X25519 380,835, of which each of
+the 255 ladder steps is about 1,480 (1,290 of it the ten multiplications
+of `ladder_step`, at 129 each) and the final division about 4,100; `extract_and_expand`
+82,979; a ChaCha20 block 4,324 and a Poly1305 of four blocks 485. The tests
+cost 454,868 for each `DeriveKeyPair` (one X25519 for `pk(sk)` and two
+HMACs), 463,875 for `Encap`, 248,916 for each test through the key schedule
+(six HMACs), 258,547 for the encryption through the key schedule, about
+9,640 for each `Seal` from the printed context, and about 37,040 for each
+`Export`. The seventeen tests together use 3,002,767 steps.
 
 ## Dissemination
 
 ### Files
 
-- `hpke.or`: the whole algorithm, from SHA-256 through `export`, and the
-  vectors that need X25519 once: the KEM shared secret of `Encap` from
-  `skEm`, `pkEm` and `pkRm`, and `skRm` from `ikmR` by `DeriveKeyPair`.
-- `hpke-encapsulated-key.or`: the KEM part only (through `DeriveKeyPair`),
-  and the derivation of the ephemeral pair from `ikmE`: `skEm`, and
-  `pkEm = X25519(skEm, 9)`, which is the encapsulated key `enc` that
-  `hpke.or` takes as a literal.
-- `hpke-key-schedule.or`: the parts after the KEM (no X25519), and the key
-  schedule from `shared_secret` as a literal: `key`, `base_nonce`,
-  `exporter_secret`, and the sequence-number-0 encryption through
-  `key_schedule_base` and `context_seal`.
-- `hpke-context.or`: the context's operations only (no X25519, no key
-  schedule), and, from the context as a literal, the six encryptions and
-  the three exports of Appendix A.2.
+- `hpke.or`: RFC 9180 base mode for this suite, sections 4 through 5.3 and
+  the identifiers of section 7, and the seventeen tests below.
+- `sha256.or`: SHA-256 (FIPS 180-4) for messages of 1 through 256 bytes;
+  module `sha256`, used by `hkdf.or`.
+- `hkdf.or`: HMAC-SHA256 (RFC 2104) and HKDF-SHA256 (RFC 5869) `Extract`
+  and the first block of `Expand`; module `hkdf`, used by `hpke.or`.
+- `curve25519.or`: X25519 (RFC 7748) over `Mod[2^255 - 19]`; module
+  `curve25519`, used by `hpke.or`.
+- `chacha20poly1305.or`: the ChaCha20-Poly1305 AEAD (RFC 8439) for the
+  lengths HPKE uses here; module `chacha20poly1305`, used by `hpke.or`.
 
-The four files are one file split by the step budget. Each is a subset of
-the same sections, assembled from one text by `build.py` in the scratch
-directory, so the algorithm text two files share is identical byte for
-byte; only the header and the vector specs differ. A file keeps each of its
-sections whole, so a few specs of a section are not reached by that file's
-vectors: `hpke.or` writes the whole algorithm and evaluates the part its
-budget holds (`key_schedule_base`, `context_seal` and `export` are evaluated
-in the other files), `hpke-encapsulated-key.or` carries `encap` beside the
-`DeriveKeyPair` it evaluates, `hpke-key-schedule.or` carries `export`, and
-`hpke-context.or` carries HKDF's `extract` beside the `expand` it uses.
+The four modules have no tests of their own; the gate checks them as
+modules of `hpke.or`, whose tests run through all of them.
 
 ### Running
 
 ```console
-orangec eval algorithms/hpke/hpke.or
-orangec eval algorithms/hpke/hpke-encapsulated-key.or
-orangec eval algorithms/hpke/hpke-key-schedule.or
-orangec eval algorithms/hpke/hpke-context.or
+orangec test algorithms/hpke/hpke.or
 python3 algorithms/verify.py algorithms/hpke
 ```
 
-`eval` also prints the input constants of Appendix A.2 (`a2_skem`,
-`a2_pkem`, `a2_pkrm`, `a2_ikmr`, `a2_ikme`, `a2_shared_secret`, `a2_info`,
-`a2_context`, `a2_pt`, the `a2_aad_*`) and the constant specs of the
-algorithm (`round_constants`, `initial_hash`, `empty_salt`, `prime_25519`,
-`prime_1305`, `base_point`, the parameterless `labeled_*` buffers), which
-have no `_expected` twin and are not vectors.
+`orangec eval algorithms/hpke/hpke.or` prints the parameterless specs of the
+root, the identifiers, the `N` constants, the two `suite_id`s and
+`mode_base`, which are not vectors.
 
 ### Vectors
 
 All rows are RFC 9180 Appendix A.2, "DHKEM(X25519, HKDF-SHA256), HKDF-SHA256,
 ChaCha20Poly1305", "Base Setup Information": `mode` 0, `kem_id` 32, `kdf_id`
 1, `aead_id` 3, `info` "Ode on a Grecian Urn", plaintext "Beauty is truth,
-truth beauty", `aad` "Count-n".
+truth beauty", `aad` "Count-n". Every test is in `hpke.or`.
 
-| Spec | Source | Case |
+| Test | Source | Case |
 | --- | --- | --- |
-| `rfc9180_a2_shared_secret` (`hpke.or`) | A.2 Base Setup, `shared_secret` | `Encap` from `skEm` f4ec9b33..., `pkEm` (= `enc`) 1afa08d3..., `pkRm` 4310ee97...; 0bbe7849... |
-| `rfc9180_a2_sk_rm` (`hpke.or`) | A.2 Base Setup, `skRm` | `DeriveKeyPair(ikmR)`, `ikmR` 1ac01f18...; 8057991e... |
-| `rfc9180_a2_sk_em` (`hpke-encapsulated-key.or`) | A.2 Base Setup, `skEm` | `DeriveKeyPair(ikmE)`, `ikmE` 909a9b35...; f4ec9b33... |
-| `rfc9180_a2_pk_em` (`hpke-encapsulated-key.or`) | A.2 Base Setup, `pkEm` | `pk(skEm)` = X25519(`skEm`, 9); 1afa08d3... |
-| `rfc9180_a2_key` (`hpke-key-schedule.or`) | A.2 Base Setup, `key` | key schedule from `shared_secret`; ad2744de... |
-| `rfc9180_a2_base_nonce` (`hpke-key-schedule.or`) | A.2 Base Setup, `base_nonce` | 5c4d98150661b848853b547f |
-| `rfc9180_a2_exporter_secret` (`hpke-key-schedule.or`) | A.2 Base Setup, `exporter_secret` | a3b010d4... |
-| `rfc9180_a2_encryption_0` (`hpke-key-schedule.or`) | A.2 Encryptions, sequence number 0 | through `key_schedule_base`; `aad` "Count-0"; `ct` 1c5250d8... |
-| `rfc9180_a2_encryption_0` (`hpke-context.or`) | A.2 Encryptions, sequence number 0 | from the context as a literal; nonce ...547f; `ct` 1c5250d8... |
-| `rfc9180_a2_encryption_1` (`hpke-context.or`) | A.2 Encryptions, sequence number 1 | nonce ...547e; `ct` 6b53c051... |
-| `rfc9180_a2_encryption_2` (`hpke-context.or`) | A.2 Encryptions, sequence number 2 | nonce ...547d; `ct` 71146bd6... |
-| `rfc9180_a2_encryption_4` (`hpke-context.or`) | A.2 Encryptions, sequence number 4 | nonce ...547b; `ct` 63357a2a... |
-| `rfc9180_a2_encryption_255` (`hpke-context.or`) | A.2 Encryptions, sequence number 255 | `aad` "Count-255"; nonce ...5480; `ct` 18ab939d... |
-| `rfc9180_a2_encryption_256` (`hpke-context.or`) | A.2 Encryptions, sequence number 256 | `aad` "Count-256"; nonce ...557f; `ct` 7a4a13e9... |
-| `rfc9180_a2_export_empty_context` (`hpke-context.or`) | A.2 Exported Values, first | `exporter_context` "", L = 32; 4bbd6243... |
-| `rfc9180_a2_export_zero_context` (`hpke-context.or`) | A.2 Exported Values, second | `exporter_context` 0x00, L = 32; 8c1df147... |
-| `rfc9180_a2_export_test_context` (`hpke-context.or`) | A.2 Exported Values, third | `exporter_context` "TestContext", L = 32; 5acb0921... |
+| `RFC 9180 A.2: DeriveKeyPair(ikmR) gives skRm` | A.2 Base Setup, `skRm` | `DeriveKeyPair(ikmR)`, `ikmR` 1ac01f18...; 8057991e... |
+| `RFC 9180 A.2: DeriveKeyPair(ikmE) gives skEm` | A.2 Base Setup, `skEm` | `DeriveKeyPair(ikmE)`, `ikmE` 909a9b35...; f4ec9b33... |
+| `RFC 9180 A.2: DeriveKeyPair(ikmE) gives pkEm, the enc` | A.2 Base Setup, `pkEm` | `pk(skEm)` = X25519(`skEm`, 9); 1afa08d3... |
+| `RFC 9180 A.2: Encap gives shared_secret` | A.2 Base Setup, `shared_secret` | `Encap` from `skEm` f4ec9b33..., `pkEm` (= `enc`) 1afa08d3..., `pkRm` 4310ee97...; 0bbe7849... |
+| `RFC 9180 A.2: KeySchedule gives key` | A.2 Base Setup, `key` | key schedule from `shared_secret`; ad2744de... |
+| `RFC 9180 A.2: KeySchedule gives base_nonce` | A.2 Base Setup, `base_nonce` | 5c4d98150661b848853b547f |
+| `RFC 9180 A.2: KeySchedule gives exporter_secret` | A.2 Base Setup, `exporter_secret` | a3b010d4... |
+| `RFC 9180 A.2: Seal at sequence number 0 from KeySchedule` | A.2 Encryptions, sequence number 0 | through `key_schedule`; `aad` "Count-0"; `ct` 1c5250d8... |
+| `RFC 9180 A.2: Seal at sequence number 0` | A.2 Encryptions, sequence number 0 | from the printed context; nonce ...547f; `ct` 1c5250d8... |
+| `RFC 9180 A.2: Seal at sequence number 1, after IncrementSeq` | A.2 Encryptions, sequence number 1 | the context at `seq` 0 advanced by `increment_seq`; nonce ...547e; `ct` 6b53c051... |
+| `RFC 9180 A.2: Seal at sequence number 2` | A.2 Encryptions, sequence number 2 | nonce ...547d; `ct` 71146bd6... |
+| `RFC 9180 A.2: Seal at sequence number 4` | A.2 Encryptions, sequence number 4 | nonce ...547b; `ct` 63357a2a... |
+| `RFC 9180 A.2: Seal at sequence number 255` | A.2 Encryptions, sequence number 255 | `aad` "Count-255"; nonce ...5480; `ct` 18ab939d... |
+| `RFC 9180 A.2: Seal at sequence number 256` | A.2 Encryptions, sequence number 256 | `aad` "Count-256"; nonce ...557f; `ct` 7a4a13e9... |
+| `RFC 9180 A.2: Export with the empty exporter_context` | A.2 Exported Values, first | `exporter_context` "", L = 32; 4bbd6243... |
+| `RFC 9180 A.2: Export with exporter_context 00` | A.2 Exported Values, second | `exporter_context` 0x00, L = 32; 8c1df147... |
+| `RFC 9180 A.2: Export with exporter_context TestContext` | A.2 Exported Values, third | `exporter_context` "TestContext", L = 32; 5acb0921... |
 
 Every expected value is the published value, taken from the two copies
 named below, which agree. The `cryptography` package (`X25519PrivateKey`,
@@ -327,14 +323,41 @@ The SHA-256 round constants and initial hash were recomputed from the cube
 and square roots of the first primes, the ChaCha20 constants decoded back to
 "expand 32-byte k", the Poly1305 clamp and prime, 2^255 - 19, a24 and the
 base point compared with Python, and every labeled byte string in the
-sources decoded back to the ASCII its comment names, with the stated
-concatenation lengths recomputed (`check_constants.py`). The byte literals
-of the four files were rendered from the fetched JSON and the labels' ASCII
-by `build.py`, never typed by hand; the repository files are byte-identical
-to its output.
+first form's sources decoded back to the ASCII its comment names, with the
+stated concatenation lengths recomputed (`check_constants.py`). The first
+form's byte literals were rendered from the fetched JSON and the labels'
+ASCII by `build.py`, never typed by hand, and its four files were
+byte-identical to that script's output.
+
+The entry was then rewritten in the current language. The first form was
+four files, one text split by the step budget of the time; the rewrite is
+one root, `hpke.or`, that holds every vector of the four, and four modules
+that it `use`s. Every expected value is carried over byte for byte from the
+first form's `<name>_expected` specs: a script read the bytes of each old
+spec from `origin/main` and compared them with the `hex"..."` literal of the
+test that carries it (seventeen pairs, `rfc9180_a2_encryption_0` twice, once
+through the key schedule and once from the printed context), and the inputs
+(`ikmR`, `ikmE`, `skEm`, `pkEm`, `pkRm`, `shared_secret` and the printed
+context) were printed by the same script from the first form's literals. No
+vector was added or dropped. The labels, `info`, the plaintext and the `aad`
+are now string literals; the SHA-256 round constants are `hex"..."` rows
+read with `as big`, as in the `sha2` entry, and were recomputed from the
+cube roots of the first 64 primes; the moduli are `(1 << 255) - 19` and
+`(1 << 130) - 5`; and the Poly1305 clamp is written as the two
+little-endian 64-bit halves of `0x0ffffffc0ffffffc0ffffffc0fffffff`. Beyond
+the seventeen vectors, a scratch program outside the entry (`modcheck/gen.py`
+in the scratch directory) ran the four modules on sixty generated cases,
+none of them a vector of this entry: `sha256::digest` at nineteen lengths
+from 1 to 256 bytes against `hashlib`, `hkdf::hmac`, `hkdf::extract` and
+`hkdf::expand` against `hmac`/`hashlib` and `cryptography`'s `HKDFExpand`,
+`chacha20poly1305::seal` against `cryptography`'s `ChaCha20Poly1305` for
+additional data of 7, 8 and 9 bytes and plaintexts of 1, 15, 16, 17, 29,
+33 and 64 bytes,
+and `curve25519::x25519` against the first test vector of RFC 7748 section
+5.2 and `cryptography`'s `X25519PrivateKey` on random keys; all agreed.
 
 This entry is a reference evaluation of RFC 9180's base mode under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim; the X25519 swap is a specification of a choice, not a
 constant-time swap, and the stateful nonce discipline of section 5.2 is
 described, not enforced. It is not a corpus entry in the sense of The Orange
@@ -342,24 +365,28 @@ Book chapter 12.
 
 ## Gaps
 
-- The step budget of 1,048,576 steps per file holds one X25519 (about
-  621,000 steps) and little more, and parameterless specs share no
-  computation, so the entry is four files whose algorithm parts are cut from
-  one text rather than one file: `hpke.or` cannot carry even the smallest key-schedule
-  pair beyond `shared_secret`, the key-schedule file is full to within 2,800
-  steps, `pkEm` is derived in a file of its own, and `Decap`, which would be
-  a second X25519 beside `Encap`, is not written.
-- There are no strings and no variable-length arrays, so `LabeledExtract`
-  and `LabeledExpand` cannot be two specs taking a label and an input; the
-  eleven concatenations the RFC forms for this mode are eleven specs, each a
-  128-byte buffer with its used length passed as an `Int`, and SHA-256's
-  padding is computed from that length at every hash.
-- There is no mutation, so the context's sequence number is a parameter of
-  `context_seal` and `IncrementSeq` with its `MessageLimitReachedError`
-  is a comment; there are no records or tuples, so the context is a 76-byte
-  array with three accessor specs, `Encap` takes `pkE` as an input, and
-  `DeriveKeyPair` is two specs.
-- Loop bounds are literals and there is no data-dependent index, so
-  `hash_blocks` always runs its two-block loop and skips the second block
-  with a comparison, and `expand` covers HKDF's first output block only,
-  which is all this suite uses.
+- An array has at least one element, so an empty string is not a value:
+  `labeled_extract` and `labeled_expand` take the label and the `ikm` or
+  `info` as one string, and the calls with an empty `psk_id`, `psk`, `info`
+  of `DeriveKeyPair` or `exporter_context` pass the label alone;
+  `export_empty` is a second spec for the empty `exporter_context`, and
+  `key_schedule` takes an `info` of at least one byte.
+- A function has at most 256 instances, counting every combination of its
+  sizes and types, so each length is a range: SHA-256 messages of 1 through
+  256 bytes, HMAC texts of 1 through 192, labeled strings of 1 through 128,
+  `info` and `exporter_context` of 1 through 64, and an AEAD `seal` over
+  additional data of 7 through 9 bytes and plaintexts of 1 through 64 bytes
+  (3 x 64 instances), which is where the two independent lengths meet.
+- `use` reads a module only from the folder of the file that uses it, so
+  `sha256.or`, `hkdf.or` and `chacha20poly1305.or` are copies written for
+  this entry of what the `sha2`, `hmac-hkdf` and `chacha20-poly1305`
+  entries hold, and `curve25519.or` is written here beside the `x25519`
+  entry; the entries cannot share one module.
+- A tuple holds no tuple and nothing is mutable, so `Seal` returns the
+  ciphertext and `increment_seq` gives the context of the next `Seal`; there
+  are no errors, so `IncrementSeq`'s `MessageLimitReachedError` and the
+  all-zero check of section 7.1.4 are comments, not code.
+- Not written, as a choice of scope and not for want of the language:
+  HKDF's `Expand` past its first block (every `L` here is at most
+  `Nh = 32`), Poly1305 over a partial last block (the AEAD pads every input
+  to whole blocks), `Decap`, `Open`, and the PSK and authenticated modes.

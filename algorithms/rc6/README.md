@@ -43,15 +43,28 @@ The Orange file follows the paper's text with these correspondences:
 
 | RC6 paper | Orange spec |
 | --- | --- |
-| Details of RC6: little-endian words | `load_le32`, `le_bytes`, `load_block`, `store_block` |
-| Details of RC6: a <<< b, a >>> b by the low lg w bits of b | `rotate_left_by`, `rotate_right_by` |
+| Details of RC6: little-endian words | `as little Word[32]^c` on the key, `as little Word[32]^4` and `as little Word[8]^16` on the block, in `key_schedule`, `encrypt` and `decrypt` |
+| Details of RC6: a <<< b, a >>> b by the low lg w bits of b | `<<<` and `>>>` with a computed amount, which turns by the amount modulo 32 |
 | Key schedule: P32 and Q32 | `p32`, `q32` |
-| Key schedule, step 1: L[0..c-1] | `key_words_128`, `key_words_192`, `key_words_256` |
-| Key schedule, step 2: S[0..2r+3] | `schedule_state` |
-| Key schedule, step 3: the mixing loop | `mix`, `key_schedule_128`, `key_schedule_192`, `key_schedule_256`, `round_keys` |
+| Key schedule: L[0..c-1], S[0..2r+3] and the mixing loop | `key_schedule[c]`, for c = 4 through 8 key words |
 | Encryption and decryption: f(x) | `f` |
-| Encryption and decryption: one round | `round`, `inverse_round` |
-| Encryption and decryption: whitening and the r rounds | `encrypt`, `decrypt` |
+| Encryption and decryption: encryption with RC6-w/r/b | `encrypt` |
+| Encryption and decryption: decryption with RC6-w/r/b | `decrypt` |
+
+The round keys are a `Word[32]^44`, S[0] through S[43], and the key words a
+`Word[32]^c` with the size c taken from the key's length, so one
+`key_schedule` serves the 16-, 24- and 32-byte keys. It also accepts the
+20- and 28-byte keys the paper allows, but no published vector in this
+entry uses them. The four registers A, B, C, D travel through the rounds
+as a tuple of four words, in the paper's order.
+
+The entry's scope is the AES parameters, w = 32 and r = 20, with keys of
+whole words from 16 through 32 bytes. The paper's RC6-w/r/b also allows
+w = 16 or 64 and any key from 0 through 255 bytes, the last word padded
+with zero bytes. Those cases need code this file does not carry: their own
+P, Q and lg w per width, a padding of the key, and, for keys over 176
+bytes (c > 44), a mixing loop of 3c iterations instead of the 132 the file
+writes. No vector here needs them.
 
 ### Security status
 
@@ -114,89 +127,87 @@ carried RC5's data-dependent rotation into the AES generation.
 
 ### What the Orange rendering shows
 
-The one data-dependent choice in RC6 is the rotation amount. A computed
-amount checks. `x <<< amount` and `x >>> amount`, with the amount a
-`Word[32]` or an `Int`, turn by that amount modulo 32. A literal amount is
-still only 0 through 31 (`ORC0216`). This file still writes `rotate_left_by` and
-`rotate_right_by` as a 32-arm selection on the low five bits of the amount
-word, and each such rotation costs about 78 evaluation steps
-(measured by the loop-and-binary-search method of the folder's brief).
-Everything else is 32-bit arithmetic: `f` is a multiplication, an addition
-and a rotation by the literal 5, about 16 steps, and one round, with two
-`f`, two data-dependent rotations and two additions, about 190 steps. A
-block therefore costs about 5,300 steps to encrypt and 5,400 to decrypt,
-and forty of the block's 128 rotations, two per round, are the
-data-dependent ones.
+The one data-dependent choice in RC6 is the rotation amount, and the file
+writes it as the paper does: `((a ^ t) <<< u) + s[2 * i]` in a round and
+`(l[k % c] + a1 + b) <<< (a1 + b)` in the key schedule, with the amount a
+`Word[32]` computed from the data. A computed rotation turns by its amount
+modulo 32, which is the paper's "least significant lg w bits of b", so no
+mask is written; only the rotations by the literal lg w = 5 in `f` and by
+3 in the key schedule are fixed. Forty of a block's rotations, two per round,
+are data-dependent, and so are the 132 rotations by A + B in the key
+schedule. Nothing else depends on data: there are no tables, and every
+index is a literal or computed from a loop index (`2 * i + 1`,
+`41 - 2 * k`, `k % 44`, `k % c`).
 
-The key schedule costs about ten times the block, 52,000 to 55,000 steps,
-and nearly all of it is bookkeeping rather than arithmetic. A loop may
-carry a tuple of accumulators, and a step may begin with `let`, so one
-step can compute A and B and store them into S[i] and L[j]. This file
-still carries S, L, A and B through the mixing loop as one `Word[32]^54`
-(S in positions 0 through 43, L in 44 through 51, A at 52 and B at 53) and
-splits each of the paper's 132 iterations into two steps of an inner loop,
-the first computing A and B into their slots (`mix`), the second storing
-them into S[i] and L[j]; each of the four 54-word updates costs 54 steps,
-about 220 of the roughly 370 steps an iteration takes. The modulus c of
-the index j is a literal, so each key length has its own copy of the
-mixing loop (`key_schedule_128`, `_192`, `_256`) around the shared `mix`,
-and L is carried as eight words for every length with zero beyond c, which
-the schedule never reads. The register rotation (A, B, C, D) = (B, C, D, A) and
-the whitening are array literals, `[x[1], c, x[3], a]` and
-`[x[0], x[1] + s[0], x[2], x[3] + s[1]]`, and decryption walks the round
-keys with the static index `s[40 - 2 * i]`.
+Byte order is written where the paper fixes it: `as little` loads the key
+into L[0..c-1] and the block into A, B, C, D, and stores the registers back
+into sixteen bytes. The key length is a size: `key_schedule[c]` takes a key
+of `4 * c` bytes, the checker picks the instance from the length of the
+`hex"..."` literal, and `j = (j + 1) mod c` is `k % c` on the loop counter,
+proved in range for each instance. The mixing loop carries S, L, A and B as
+a tuple of accumulators, so each of the paper's 132 iterations is one step
+that computes A and B and stores them into S[i] and L[j]. Encryption and
+decryption each carry (A, B, C, D) as a tuple through their twenty rounds;
+the register rotation (A, B, C, D) = (B, C, D, A) is the order of the
+tuple a step returns, and decryption walks the round keys down with the
+static indices `s[41 - 2 * k]` and `s[40 - 2 * k]`. Vectors, keys and
+plaintexts are `hex"..."` as the vector files print them.
 
-One vector, a key schedule and a block, costs about 60,000 steps. The
-twelve pairs of the file (nine encryptions and three decryptions) evaluate
-together at roughly 720,000 of the 1,048,576 steps; five more RC6-256
-encryptions would still fit. Nothing was moved to a second file or dropped.
+Measured costs under `orangec test --stats`: `f` costs about 10 steps and
+a round about 60; a block costs about 1,280 steps to encrypt and 1,340 to
+decrypt. The key schedule costs about 7,700 steps for every key length,
+since its loop runs 132 times whatever c is, so a test (one key schedule
+and one block) costs 8,993 to 9,054 steps. The twelve tests together use
+108,106 steps.
 
 ## Dissemination
 
 ### Files
 
 - `rc6.or`: RC6-32/20/16, /24 and /32, the key schedule, encryption and
-  decryption, with the twelve vector pairs.
+  decryption, with the twelve tests below.
 
 ### Running
 
 ```console
-orangec eval algorithms/rc6/rc6.or
+orangec test algorithms/rc6/rc6.or
 python3 algorithms/verify.py algorithms/rc6
 ```
 
-`eval` prints every parameterless spec, so `p32` and `q32` appear before
-the twelve pairs below.
+`orangec eval` prints only the parameterless specs `p32` and `q32`.
 
 ### Vectors
 
-| Spec | Source | Case |
-| --- | --- | --- |
-| `rc6_paper_128_1` | RC6 paper test vectors, as Crypto++ `TestData/rc6val.dat` entry 1 | RC6-32/20/16, key 00...00, plaintext 00...00, ciphertext 8fc3a536...9848a41e |
-| `rc6_paper_128_2` | RC6 paper test vectors, `rc6val.dat` entry 2 | RC6-32/20/16, key 0123456789abcdef0112233445566778, plaintext 02132435...cedfe0f1 |
-| `rc6_paper_128_2_decrypt` | `rc6val.dat` entry 2, decryption | the entry 2 ciphertext 524e192f...7ea43f18 decrypted to its plaintext |
-| `rc6_paper_192_1` | RC6 paper test vectors, `rc6val.dat` entry 3; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key 00...00 (24 bytes), plaintext 00...00 |
-| `rc6_paper_192_2` | RC6 paper test vectors, `rc6val.dat` entry 4; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key 01234567...ccddeeff0 (24 bytes), plaintext 02132435...cedfe0f1 |
-| `rc6_paper_192_2_decrypt` | `rc6val.dat` entry 4, decryption | the entry 4 ciphertext 688329d0...f95291d4 decrypted to its plaintext |
-| `rc6_paper_256_1` | RC6 paper test vectors, `rc6val.dat` entry 5; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key 00...00 (32 bytes), plaintext 00...00 |
-| `rc6_paper_256_2` | RC6 paper test vectors, `rc6val.dat` entry 6; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key 01234567...98badcfe (32 bytes), plaintext 02132435...cedfe0f1 |
-| `rc6_paper_256_2_decrypt` | `rc6val.dat` entry 6, decryption | the entry 6 ciphertext c8241816...674e5d48 decrypted to its plaintext |
-| `bouncycastle_rc6test_0` | AES-submission reference KATs, Bouncy Castle `RC6Test.java` test 0; also Botan 1.11 `rc6.vec` | RC6-32/20/16, key 00...00, plaintext 80 00...00 |
-| `bouncycastle_rc6test_1` | Bouncy Castle `RC6Test.java` test 1; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key with byte 16 = 80 and the rest zero, plaintext 00...00 |
-| `bouncycastle_rc6test_4` | Bouncy Castle `RC6Test.java` test 4; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key with byte 0 = 10 and the rest zero, plaintext 00...00 |
+Each row is a `test` block in `rc6.or`, comparing a ciphertext (or, for the
+decryptions, a plaintext) with the published value.
 
-The six `rc6_paper` encryptions are the test vectors appended to the RC6
+| Test | Source | Case |
+| --- | --- | --- |
+| `RC6 paper, rc6val.dat entry 1: RC6-32/20/16 encrypts` | RC6 paper test vectors, as Crypto++ `TestData/rc6val.dat` entry 1 | RC6-32/20/16, key 00...00, plaintext 00...00, ciphertext 8fc3a536...9848a41e |
+| `RC6 paper, rc6val.dat entry 2: RC6-32/20/16 encrypts` | RC6 paper test vectors, `rc6val.dat` entry 2 | RC6-32/20/16, key 0123456789abcdef0112233445566778, plaintext 02132435...cedfe0f1 |
+| `RC6 paper, rc6val.dat entry 2: RC6-32/20/16 decrypts` | `rc6val.dat` entry 2, decryption | the entry 2 ciphertext 524e192f...7ea43f18 decrypted to its plaintext |
+| `RC6 paper, rc6val.dat entry 3: RC6-32/20/24 encrypts` | RC6 paper test vectors, `rc6val.dat` entry 3; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key 00...00 (24 bytes), plaintext 00...00 |
+| `RC6 paper, rc6val.dat entry 4: RC6-32/20/24 encrypts` | RC6 paper test vectors, `rc6val.dat` entry 4; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key 01234567...ccddeeff0 (24 bytes), plaintext 02132435...cedfe0f1 |
+| `RC6 paper, rc6val.dat entry 4: RC6-32/20/24 decrypts` | `rc6val.dat` entry 4, decryption | the entry 4 ciphertext 688329d0...f95291d4 decrypted to its plaintext |
+| `RC6 paper, rc6val.dat entry 5: RC6-32/20/32 encrypts` | RC6 paper test vectors, `rc6val.dat` entry 5; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key 00...00 (32 bytes), plaintext 00...00 |
+| `RC6 paper, rc6val.dat entry 6: RC6-32/20/32 encrypts` | RC6 paper test vectors, `rc6val.dat` entry 6; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key 01234567...98badcfe (32 bytes), plaintext 02132435...cedfe0f1 |
+| `RC6 paper, rc6val.dat entry 6: RC6-32/20/32 decrypts` | `rc6val.dat` entry 6, decryption | the entry 6 ciphertext c8241816...674e5d48 decrypted to its plaintext |
+| `Bouncy Castle RC6Test.java test 0: RC6-32/20/16 encrypts` | AES-submission reference KATs, Bouncy Castle `RC6Test.java` test 0; also Botan 1.11 `rc6.vec` | RC6-32/20/16, key 00...00, plaintext 80 00...00 |
+| `Bouncy Castle RC6Test.java test 1: RC6-32/20/24 encrypts` | Bouncy Castle `RC6Test.java` test 1; also Botan 1.11 `rc6.vec` | RC6-32/20/24, key with byte 16 = 80 and the rest zero, plaintext 00...00 |
+| `Bouncy Castle RC6Test.java test 4: RC6-32/20/32 encrypts` | Bouncy Castle `RC6Test.java` test 4; also Botan 1.11 `rc6.vec` | RC6-32/20/32, key with byte 0 = 10 and the rest zero, plaintext 00...00 |
+
+The six `RC6 paper` encryptions are the test vectors appended to the RC6
 paper (two per key length), copied from Crypto++'s
 `TestData/rc6val.dat`, which carries them verbatim; the four 192- and
 256-bit ones are also among the 1,219 cases of Botan 1.11's
 `src/tests/data/block/rc6.vec`, which does not carry the two 128-bit ones.
 The three decryptions state the same entries' plaintexts as their expected
-values and so add no value from an oracle. The three `bouncycastle` rows
+values and so add no value from an oracle. The three `Bouncy Castle` rows
 are known-answer tests of the AES submission's reference implementation
 (`rc6-unix-refc`) as Bouncy Castle's
 `core/src/test/java/org/bouncycastle/crypto/test/RC6Test.java` carries
-them; Botan's `rc6.vec` carries all six of that file's cases. No
-`_expected` value was produced by an oracle.
+them; Botan's `rc6.vec` carries all six of that file's cases. No expected
+value was produced by an oracle.
 
 ### Provenance and claims
 
@@ -215,9 +226,10 @@ rather than by number, and the test vectors by the file that carries them.
 P32 and Q32 were recomputed by script from their definition,
 P32 = Odd((e - 2) 2^32) and Q32 = Odd((phi - 1) 2^32) with Odd the nearest
 odd integer, and matched against the two fetched implementations and the
-Orange file (`constants.py`). The vector literals in `rc6.or` were
-generated by script from the two fetched vector files, not typed
-(`gen_rc6_or.py`), as were the two 32-arm rotation selections.
+Orange file (`constants.py`). The vector literals in the first form of
+`rc6.or` were generated by script from the two fetched vector files, not
+typed (`gen_rc6_or.py`), as were the two 32-arm rotation selections that
+form used.
 
 There is no RC6 in `hashlib`, `cryptography` or `pycryptodome`, so a plain
 Python RC6-32/20/b written from the paper's structure (`rc6.py`) serves as
@@ -227,29 +239,35 @@ the oracle; it encrypts and decrypts all six `rc6val.dat` entries, all six
 to their published values (`check_botan.py`), and it can dump the key
 schedule and the round-by-round registers. The Orange file matched all
 twelve vectors on its first evaluation, so the round-by-round comparison
-was not needed. The step costs quoted above were measured by the brief's
-loop-and-binary-search method (`measure.py`, `measure2.py`) and the
-headroom by appending RC6-256 encryptions until ORC0301 (`budget.py`).
+was not needed.
+
+The entry was then rewritten in the current language: one sized
+`key_schedule` in place of three, the computed rotations in place of the
+32-arm selections, tuples for the registers and the mixing state, and
+`as little` for the byte orders. Every expected value is carried over byte
+for byte from the first form, where each was a `<name>_expected` spec of
+sixteen byte literals; the new tests state the same bytes as `hex"..."`,
+grouped in words as the vector files print them, and a script traced each
+old value into the new file. The keys, plaintexts and ciphertext inputs
+are the first form's bytes in the same notation. No vector was added or
+dropped, and the rewritten file also passed all twelve tests on its first
+run. The step costs above were measured with `orangec test --stats`.
 
 This entry is a reference evaluation of the RC6 specification under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim, and it is not a corpus entry in the sense of The
 Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented any planned vector. What this file's shape costs, and
-the limit that remains:
+None that prevented any planned vector. The one case of the paper the
+language cannot state:
 
-- A computed rotation amount checks, including `(l + a + b) <<< (a + b)`.
-  This source still writes the data-dependent rotation as a 32-arm
-  selection (`rotate_left_by`, `rotate_right_by`) at about 78 steps
-  instead of one operation. A literal amount on `Word[32]` is still only
-  0 through 31.
-- A loop step may begin with `let`, and a loop may carry a tuple of
-  accumulators, so one step can compute A and B and store both. This
-  source still splits each iteration into two steps of an inner loop
-  (compute, then store) over a 54-word state; the four 54-word updates
-  per iteration make the key schedule about ten times the cost of a block.
-- An index modulus must be a literal, so `j = (j + 1) mod c` is written
-  once per key length: three `key_schedule` specs around one `mix`.
+- No array has zero elements, so the empty key (b = 0, which the paper
+  allows and loads as c = 1 word L[0] = 0) cannot be passed as a
+  `Word[8]^b`. Every other key length the paper allows could be written
+  with one sized spec: a loop copying the b bytes into a zero fill of
+  `4 * ((b + 3) / 4)` bytes pads the last word, and a loop bound
+  `0..(3 * (44 + (c / 45) * (c - 44)))` is 3 max(c, 44) for every c up to
+  64; both were checked in scratch. The entry does not carry them (see
+  Structure).

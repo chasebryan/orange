@@ -1,0 +1,131 @@
+// ChaCha20-Poly1305 of RFC 8439, "ChaCha20 and Poly1305 for IETF
+// Protocols" (Nir, Langley, June 2018), https://www.rfc-editor.org/rfc/rfc8439:
+// the quarter round of section 2.1, the block function of section 2.3, the
+// encryption of section 2.4, Poly1305 of section 2.5 and the one-time key of
+// section 2.6, and the AEAD construction of section 2.8. It is the AEAD of
+// RFC 9180 section 7.3 (aead_id 0x0003, Nk = 32, Nn = 12, Nt = 16), whose
+// Seal(key, nonce, aad, pt) is `seal` here, for the lengths that `hpke`
+// uses: additional data of 7 through 9 bytes (Appendix A.2's "Count-0"
+// through "Count-256") and a plaintext of 1 through 64 bytes, one keystream
+// block. The module has no tests of its own: the vectors of RFC 9180
+// Appendix A.2 in `hpke` run through it.
+edition 2026;
+module chacha20poly1305 {
+  // Section 2.5.1: Poly1305's field, the integers modulo p = 2^130 - 5.
+  type P = Mod[(1 << 130) - 5];
+
+  // Section 2.1.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  // Section 2.3: a column round, then a diagonal round.
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  // Section 2.3: the block function. The state is the constant
+  // "expand 32-byte k", the key, the block counter and the nonce, read as
+  // sixteen little-endian words; twenty rounds (ten double rounds) are added
+  // to the initial state, and the result is serialized as 64 little-endian
+  // bytes.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
+    let out: Word[32]^16 = for i in 0..16 with s: Word[32]^16 = mixed {
+      s with [i] = s[i] + initial[i]
+    };
+    out as little Word[8]^64
+  }
+
+  // Section 2.4: the plaintext exclusive-ored with the key stream from the
+  // block counter given. A plaintext of at most 64 bytes takes the first n
+  // bytes of one block.
+  spec encrypt[n in 1..65](
+    key: Word[8]^32,
+    counter: Word[32],
+    nonce: Word[8]^12,
+    plaintext: Word[8]^n,
+  ) -> Word[8]^n {
+    let key_stream: Word[8]^n = block(key, counter, nonce)[..n];
+    for i in 0..(n) with c: Word[8]^n = plaintext { c with [i] = c[i] ^ key_stream[i] }
+  }
+
+  // Section 2.5.1: a whole sixteen-byte block is its bytes, little-endian,
+  // with the byte 0x01 above them.
+  spec poly_block(b: Word[8]^16) -> P { (b ++ hex"01") as little P }
+
+  // Section 2.5.1: Poly1305 of a message of b whole blocks under a one-time
+  // key. r is the key's first sixteen bytes, little-endian, clamped with
+  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff (here as its two little-endian
+  // 64-bit halves), and s the other sixteen. Each block is added to the
+  // accumulator, which is then multiplied by r modulo p; the tag is the
+  // accumulator plus s, modulo 2^128, as sixteen little-endian bytes. The
+  // AEAD's mac_data is always whole blocks (section 2.8), so the partial
+  // last block of section 2.5.1 is not written.
+  spec poly1305[b in 1..7](key: Word[8]^32, m: Word[8]^(16 * b)) -> Word[8]^16 {
+    let halves: Word[64]^2 = key[..16] as little Word[64]^2;
+    let r: P = [halves[0] & 0x0ffffffc0fffffff, halves[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = key[16..] as little Int;
+    let a: P = for j in 0..(b) with a: P = 0 { (a + poly_block(m[16 * j..16 * j + 16])) * r };
+    let t: Int = (a as Int) + s;
+    t as little Word[8]^16
+  }
+
+  // Section 2.6: the one-time Poly1305 key is the first 32 bytes of block 0.
+  spec poly1305_key_gen(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
+    block(key, 0, nonce)[..32]
+  }
+
+  // Section 2.8: x || pad16(x), x followed by the zeros that fill its last
+  // sixteen-byte block. The RFC's pad16(x) is the zeros alone, which are
+  // empty when x fills its last block; an array has at least one element,
+  // so the padded string is written whole.
+  spec padded16[n in 1..65](x: Word[8]^n) -> Word[8]^(16 * ((n + 15) / 16)) {
+    [0; (16 * ((n + 15) / 16))] with [..n] = x
+  }
+
+  // Section 2.8, chacha20_aead_encrypt: the plaintext is encrypted from
+  // counter 1, and the tag is Poly1305 under the one-time key of
+  // mac_data = aad || pad16(aad) || ciphertext || pad16(ciphertext) ||
+  // num_to_8_le_bytes(aad.length) || num_to_8_le_bytes(ciphertext.length).
+  // The 96-bit nonce is given whole (RFC 9180's Nn = 12). RFC 9180's
+  // Seal(key, nonce, aad, pt) returns the ciphertext followed by the tag.
+  spec seal[a in 7..10, n in 1..65](
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    aad: Word[8]^a,
+    plaintext: Word[8]^n,
+  ) -> Word[8]^(n + 16) {
+    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
+    let ciphertext: Word[8]^n = encrypt(key, 1, nonce, plaintext);
+    let aad_length: Int = a;
+    let ciphertext_length: Int = n;
+    let mac_data: Word[8]^(16 * ((a + 15) / 16) + 16 * ((n + 15) / 16) + 16) =
+      padded16(aad) ++ padded16(ciphertext) ++
+      (aad_length as little Word[8]^8) ++ (ciphertext_length as little Word[8]^8);
+    ciphertext ++ poly1305(otk, mac_data)
+  }
+}
