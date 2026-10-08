@@ -82,7 +82,7 @@ AEAD_CHACHA20_POLY1305 under the subkey with the 12-byte nonce
 | 2.8.1, `chacha20_aead_encrypt` | `chacha20_aead_encrypt` |
 | 2.8, decryption: the tag comparison and the plaintext | `chacha20_aead_decrypt`, `withheld[n]` |
 | draft, 2.2, HChaCha20 | `hchacha20` |
-| draft, 2, AEAD_XChaCha20_Poly1305 | `xchacha20_aead_encrypt` |
+| draft, 2, AEAD_XChaCha20_Poly1305, steps 1 and 2 (the same steps as 2.3 gives for XChaCha20) | `xchacha20_aead_encrypt` |
 
 Byte strings are typed by their lengths, and each function over strings of
 several lengths takes the length as a size parameter, within the limit of
@@ -285,19 +285,25 @@ and nothing more: `orangec test` counts steps, it does not measure time,
 and the entry makes no constant-time claim. The checker proves every index
 and slice in range for every instance before evaluation.
 
-Measured costs under `orangec --stats`: a `quarter_round` is 41 steps, an
-`inner_block` 412, a `chacha20_block` 4,323 and `hchacha20` 4,161; the
-one-time key tests cost 4,333 each. `chacha20_encrypt` costs 10,059 steps
-on 114 bytes (two blocks) and 25,697 on 265 (five blocks), the
-byte-by-byte exclusive-or being about 15 steps a byte. One `absorb` is
-about 90 steps, a residue product of five 32-bit digits being 51 of them,
-so a Poly1305 block costs about 100 steps with its slice and `0x01`:
-`poly1305_mac` over 64 bytes is 559 steps and over the 375-byte text about
-2,930, and the 2.8.2 tag over ten blocks of `mac_data` 1,187. A seal of the
-114-byte text is 15,572 steps, three ChaCha20 blocks and the tag; the
-XChaCha20 seal adds `hchacha20` for 19,766; the opening of section 2.8.2 is
-15,608 and that of appendix A.5, six ChaCha20 blocks and a tag over
-nineteen blocks, 32,271. The 22 tests use 135,961 steps in all.
+Measured costs, with `orangec test --stats`. The figures for one call come
+from scratch tests that make that call alone, and hold to within a few
+steps; the figures for tests are the ones `--stats` prints for the tests
+of the table below. One call of `quarter_round` is about 41 steps,
+`inner_block` about 412, `chacha20_block` about 4,320 and `hchacha20`
+about 4,160; each one-time key test costs 4,333. One call of
+`chacha20_encrypt` costs about 10,050 steps on 114 bytes (two blocks) and
+25,690 on 265 (five blocks), the byte-by-byte exclusive-or being 12 to 15
+steps a byte. One `absorb` is about 90 steps, a residue product of five
+32-bit digits being 51 of them, so a Poly1305 block costs 110 to 120 steps
+with its slice and `0x01`: one call of `poly1305_mac` over 64 bytes is
+about 555 steps and over the 375-byte text about 2,920, and the 2.8.2 tag
+over ten blocks of `mac_data` about 1,180. These depend a little on the
+data (an all-zero key and message cost less). One sealing of the 114-byte
+text is about 15,560 steps, three ChaCha20 blocks and the tag. As whole
+tests, the seal of section 2.8.2 costs 15,598 steps and its opening
+15,608, the XChaCha20 seal of the draft's A.1 adds `hchacha20` for 19,766,
+and the opening of appendix A.5, six ChaCha20 blocks and a tag over
+nineteen blocks, costs 32,271. The 22 tests use 135,961 steps in all.
 
 Not expressed: a message of any length in one function (each function
 takes the lengths its comment names, and the AEAD the lengths of its

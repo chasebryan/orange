@@ -258,6 +258,8 @@ module chacha20_poly1305 {
   // HChaCha20 of the key and the first sixteen bytes of the 192-bit nonce;
   // step 2, AEAD_CHACHA20_POLY1305 runs unchanged under the subkey, with the
   // 96-bit nonce made of four zero bytes followed by the last eight bytes.
+  // Section 2 states these two steps for the AEAD; section 2.3 states the
+  // same two for the XChaCha20 stream cipher alone.
   spec xchacha20_aead_encrypt[
     A in {Word[8]^8, Word[8]^12},
     M in {Word[8]^47, Word[8]^114, Word[8]^265}
