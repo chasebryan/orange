@@ -1,409 +1,327 @@
-// AES-GCM: the Galois/Counter Mode of NIST SP 800-38D (2007),
-// https://doi.org/10.6028/NIST.SP.800-38D, with AES-128 of FIPS 197 as the
-// block cipher. The file carries its own AES-128 (cipher only: GCM never
-// inverts the block cipher), the block product of section 6.3 with the
-// standard's bit order made explicit, GHASH (6.4), GCTR (6.5), J0 for a
-// 96-bit IV (7.1), and GCM-AE (algorithm 4). It reproduces Test Cases 1, 2
-// and 4 of the GCM specification (McGrew and Viega, 2005; the same cases are
-// NIST's GCM examples). Buffers are fixed: up to 32 bytes of additional data
-// and 64 bytes of plaintext, each with its length beside it, because an
-// Orange array has one length. J0 for other IV lengths, GCM-AD and AES-256
-// are in aes-gcm-iv.or, aes-gcm-ad.or and aes-gcm-256.or, split from this
-// file by the step budget.
+// AES-GCM: the Galois/Counter Mode of NIST SP 800-38D, Recommendation for
+// Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC
+// (November 2007), https://doi.org/10.6028/NIST.SP.800-38D, with AES of
+// FIPS 197 as the block cipher (the module aes, in aes.or beside this file;
+// GCM never inverts the block cipher). The file transcribes the incrementing
+// function (section 6.2), the block product (6.3, Algorithm 1) with the
+// standard's bit order made explicit, GHASH (6.4, Algorithm 2), GCTR (6.5,
+// Algorithm 3), the pre-counter block J0 for a 96-bit IV and through GHASH
+// for any other IV length (7.1, step 2), GCM-AE (7.1, Algorithm 4) and
+// GCM-AD (7.2, Algorithm 5), with 128-bit tags.
+//
+// It reproduces Test Cases 1, 2, 4 and 6 (AES-128) and 13 and 16 (AES-256)
+// of the GCM specification (McGrew and Viega, 2005; the same cases are
+// NIST's GCM examples), case 2 of Wycheproof's aes_gcm_test.json (a 96-bit
+// IV, an independent source), GCM-AD on Test Cases 4 and 6, and the
+// decryption-error row of OpenSSL's evpciph_aes_common.txt that follows Test
+// Case 6, whose changed tag GCM-AD rejects.
 edition 2026;
 module aes_gcm {
-  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  use aes;
+
+  type Block = Word[8]^16;
+
+  // Section 6.2: inc_32(X) increments the rightmost 32 bits of X, as an
+  // integer, modulo 2^32, and leaves the leftmost 96 bits unchanged.
+  spec inc32(x: Block) -> Block {
+    let counter: Word[32] = x[12..] as big Word[32];
+    let next: Word[32] = counter + 1;
+    x[..12] ++ (next as big Word[8]^4)
   }
 
-  spec be_bytes(x: Word[32]) -> Word[8]^4 {
-    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  // Section 4.2.2: X ^ Y, the bitwise exclusive-or of two blocks.
+  spec xor(x: Block, y: Block) -> Block {
+    for i in 0..16 with z: Block = x { z with [i] = x[i] ^ y[i] }
   }
 
-  spec load_be64(
-    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
-    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
-  ) -> Word[64] {
-    ((b0 as Word[64]) << 56) | ((b1 as Word[64]) << 48) | ((b2 as Word[64]) << 40)
-      | ((b3 as Word[64]) << 32) | ((b4 as Word[64]) << 24) | ((b5 as Word[64]) << 16)
-      | ((b6 as Word[64]) << 8) | (b7 as Word[64])
-  }
-
-  spec be_bytes64(x: Word[64]) -> Word[8]^8 {
-    [
-      (x >> 56) as Word[8], (x >> 48) as Word[8], (x >> 40) as Word[8], (x >> 32) as Word[8],
-      (x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8],
-    ]
-  }
-
-  // A 128-bit block as two 64-bit words, the first eight bytes in the first
-  // word, most significant byte first, so that the standard's bit 0 (the
-  // leftmost bit of the block) is the top bit of the first word.
-  spec block_words(b: Word[8]^16) -> Word[64]^2 {
-    [
-      load_be64(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]),
-      load_be64(b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]),
-    ]
-  }
-
-  spec block_bytes(x: Word[64]^2) -> Word[8]^16 {
-    for i in 0..2 with b: Word[8]^16 = [0; 16] {
-      for j in 0..8 with out: Word[8]^16 = b { out with [8 * i + j] = be_bytes64(x[i])[j] }
-    }
-  }
-
-  // FIPS 197 section 5.1.1, Table 4 (Figure 7 in the 2001 text): the S-box,
-  // packed eight entries to a word so that each literal reads as a row of
-  // the table (0x637c777bf26b6fc5 is 63 7c 77 7b f2 6b 6f c5). A byte may
-  // index a table of 256 entries; this rendering still selects over the 32
-  // words.
-  spec s_box() -> Word[64]^32 {
-    [
-      0x637c777bf26b6fc5, 0x3001672bfed7ab76, 0xca82c97dfa5947f0, 0xadd4a2af9ca472c0,
-      0xb7fd9326363ff7cc, 0x34a5e5f171d83115, 0x04c723c31896059a, 0x071280e2eb27b275,
-      0x09832c1a1b6e5aa0, 0x523bd6b329e32f84, 0x53d100ed20fcb15b, 0x6acbbe394a4c58cf,
-      0xd0efaafb434d3385, 0x45f9027f503c9fa8, 0x51a3408f929d38f5, 0xbcb6da2110fff3d2,
-      0xcd0c13ec5f974417, 0xc4a77e3d645d1973, 0x60814fdc222a9088, 0x46eeb814de5e0bdb,
-      0xe0323a0a4906245c, 0xc2d3ac629195e479, 0xe7c8376d8dd54ea9, 0x6c56f4ea657aae08,
-      0xba78252e1ca6b4c6, 0xe8dd741f4bbd8b8a, 0x703eb5664803f60e, 0x613557b986c11d9e,
-      0xe1f8981169d98e94, 0x9b1e87e9ce5528df, 0x8ca1890dbfe64268, 0x41992d0fb054bb16,
-    ]
-  }
-
-  // The byte at position k of a word holding eight table entries.
-  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
-    if k == 0 { (w >> 56) as Word[8] }
-    else if k == 1 { (w >> 48) as Word[8] }
-    else if k == 2 { (w >> 40) as Word[8] }
-    else if k == 3 { (w >> 32) as Word[8] }
-    else if k == 4 { (w >> 24) as Word[8] }
-    else if k == 5 { (w >> 16) as Word[8] }
-    else if k == 6 { (w >> 8) as Word[8] }
-    else { w as Word[8] }
-  }
-
-  // Entry x of a 256-entry table packed eight entries to a word.
-  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
-    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
-      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
-    };
-    byte_at(w, x & 7)
-  }
-
-  // FIPS 197 section 4.2.1: multiplication by x in GF(2^8) modulo
-  // x^8 + x^4 + x^3 + x + 1.
-  spec xtime(a: Word[8]) -> Word[8] {
-    (a << 1) ^ (if (a & 0x80) != 0 { 0x1b } else { 0 })
-  }
-
-  // FIPS 197 section 5.2: the key expansion. RotWord, SubWord, and the round
-  // constants Rcon[i] = [x^(i-1), 00, 00, 00] for i = 1 through 10.
-  spec rot_word(w: Word[32]) -> Word[32] { w <<< 8 }
-
-  spec sub_word(sbox: Word[64]^32, w: Word[32]) -> Word[32] {
-    let b: Word[8]^4 = be_bytes(w);
-    load_be32(lookup(sbox, b[0]), lookup(sbox, b[1]), lookup(sbox, b[2]), lookup(sbox, b[3]))
-  }
-
-  spec rcon() -> Word[32]^10 {
-    [
-      0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000,
-      0x20000000, 0x40000000, 0x80000000, 0x1b000000, 0x36000000,
-    ]
-  }
-
-  // Section 5.2 for Nk = 4: the first four words are the key, and word i is
-  // word i - 4 xored with word i - 1, transformed every fourth word.
-  spec key_expansion(key: Word[8]^16) -> Word[32]^44 {
-    let sbox: Word[64]^32 = s_box();
-    let r: Word[32]^10 = rcon();
-    let head: Word[32]^44 = for i in 0..4 with w: Word[32]^44 = [0; 44] {
-      w with [i] = load_be32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
-    };
-    for i in 4..44 with w: Word[32]^44 = head {
-      w with [i] = w[i - 4] ^ (
-        if (i % 4) == 0 { sub_word(sbox, rot_word(w[i - 1])) ^ r[(i / 4) - 1] } else { w[i - 1] }
-      )
-    }
-  }
-
-  // Section 3.4: the state is the 4 x 4 array s[r, c] = in[r + 4c], kept
-  // here in that byte order.
-  // Section 5.1.1: SubBytes.
-  spec sub_bytes(sbox: Word[64]^32, s: Word[8]^16) -> Word[8]^16 {
-    for i in 0..16 with t: Word[8]^16 = s { t with [i] = lookup(sbox, s[i]) }
-  }
-
-  // Section 5.1.2: ShiftRows, row r rotated left by r positions.
-  spec shift_rows(s: Word[8]^16) -> Word[8]^16 {
-    [
-      s[0], s[5], s[10], s[15],
-      s[4], s[9], s[14], s[3],
-      s[8], s[13], s[2], s[7],
-      s[12], s[1], s[6], s[11],
-    ]
-  }
-
-  // Section 5.1.3: MixColumns, one column multiplied by {03}x^3 + {01}x^2
-  // + {01}x + {02} modulo x^4 + 1, with {02}a = xtime(a) and {03}a = xtime(a) ^ a.
-  spec mix_column(a0: Word[8], a1: Word[8], a2: Word[8], a3: Word[8]) -> Word[8]^4 {
-    [
-      xtime(a0) ^ (xtime(a1) ^ a1) ^ a2 ^ a3,
-      a0 ^ xtime(a1) ^ (xtime(a2) ^ a2) ^ a3,
-      a0 ^ a1 ^ xtime(a2) ^ (xtime(a3) ^ a3),
-      (xtime(a0) ^ a0) ^ a1 ^ a2 ^ xtime(a3),
-    ]
-  }
-
-  spec mix_columns(s: Word[8]^16) -> Word[8]^16 {
-    let c0: Word[8]^4 = mix_column(s[0], s[1], s[2], s[3]);
-    let c1: Word[8]^4 = mix_column(s[4], s[5], s[6], s[7]);
-    let c2: Word[8]^4 = mix_column(s[8], s[9], s[10], s[11]);
-    let c3: Word[8]^4 = mix_column(s[12], s[13], s[14], s[15]);
-    [
-      c0[0], c0[1], c0[2], c0[3],
-      c1[0], c1[1], c1[2], c1[3],
-      c2[0], c2[1], c2[2], c2[3],
-      c3[0], c3[1], c3[2], c3[3],
-    ]
-  }
-
-  // Section 5.1.4: AddRoundKey, column c xored with round-key word c.
-  spec add_round_key(s: Word[8]^16, k: Word[32]^4) -> Word[8]^16 {
-    for c in 0..4 with t: Word[8]^16 = s {
-      for r in 0..4 with u: Word[8]^16 = t { u with [4 * c + r] = u[4 * c + r] ^ be_bytes(k[c])[r] }
-    }
-  }
-
-  // Section 5.1, algorithm 1: the cipher with Nr = 10 rounds over the
-  // expanded key w. The final round has no MixColumns.
-  spec cipher(w: Word[32]^44, input: Word[8]^16) -> Word[8]^16 {
-    let sbox: Word[64]^32 = s_box();
-    let start: Word[8]^16 = add_round_key(input, [w[0], w[1], w[2], w[3]]);
-    let rounds: Word[8]^16 = for round in 1..10 with s: Word[8]^16 = start {
-      add_round_key(
-        mix_columns(shift_rows(sub_bytes(sbox, s))),
-        [w[4 * round], w[4 * round + 1], w[4 * round + 2], w[4 * round + 3]],
-      )
-    };
-    add_round_key(shift_rows(sub_bytes(sbox, rounds)), [w[40], w[41], w[42], w[43]])
-  }
-
-  // SP 800-38D section 6.2: inc32, the rightmost 32 bits incremented modulo
-  // 2^32 and the other 96 bits unchanged.
-  spec inc32(x: Word[64]^2) -> Word[64]^2 {
-    [x[0], (x[1] & 0xffffffff00000000) | (((x[1] as Word[32]) + 1) as Word[64])]
-  }
-
-  // Section 6.3, algorithm 1: the product X . Y in GF(2^128). The standard
-  // numbers the bits of a block from the left, x_0 x_1 ... x_127, and the
-  // leftmost bit is the coefficient of x^0: a block is the polynomial read
-  // in the reverse of the usual order. So x_i is the top bit of X after i
-  // left shifts of the word pair, the standard's V >> 1 (multiplication by
-  // x) is a right shift of the pair, LSB_1(V) is bit 0 of the low word, and
+  // Section 6.3, Algorithm 1: the product X . Y of two blocks in GF(2^128).
+  // The standard numbers the bits of a block from the left, x_0 x_1 ...
+  // x_127, and the leftmost bit is the coefficient of x^0: a block is its
+  // polynomial read in the reverse of the usual order. Here a block is read
+  // as two 64-bit words, most significant byte first, so x_i is bit
+  // 63 - (i mod 64) of word i / 64; V >> 1, multiplication by x, is a right
+  // shift of the word pair; LSB_1(V) is bit 0 of the second word; and
   // R = 11100001 || 0^120, the reduction polynomial 1 + x + x^2 + x^7 + x^128
-  // written in that order, is 0xe1 followed by zeros: it lands in the high
-  // word. The accumulator is [X, V, Z], two words each.
-  spec block_product(x: Word[64]^2, y: Word[64]^2) -> Word[64]^2 {
-    let s: Word[64]^6 = for i in 0..128 with s: Word[64]^6 = [x[0], x[1], y[0], y[1], 0, 0] {
-      [
-        (s[0] << 1) | (s[1] >> 63),
-        s[1] << 1,
-        (s[2] >> 1) ^ (if (s[3] & 1) != 0 { 0xe100000000000000 } else { 0 }),
-        (s[3] >> 1) | (s[2] << 63),
-        if (s[0] & 0x8000000000000000) != 0 { s[4] ^ s[2] } else { s[4] },
-        if (s[0] & 0x8000000000000000) != 0 { s[5] ^ s[3] } else { s[5] },
-      ]
-    };
-    [s[4], s[5]]
+  // written in that order, is 0xe1 at the top of the first word. Step 2 sets
+  // Z_0 = 0^128 and V_0 = Y, step 3 computes Z_(i+1) and V_(i+1) for i = 0
+  // through 127, and step 4 returns Z_128.
+  spec block_product(x: Block, y: Block) -> Block {
+    let xw: Word[64]^2 = x as big Word[64]^2;
+    let r: Word[64]^2 = hex"e1000000000000000000000000000000" as big Word[64]^2;
+    let zv: (Word[64]^2, Word[64]^2) =
+      for i in 0..128 with (z: Word[64]^2, v: Word[64]^2) = ([0, 0], y as big Word[64]^2) {
+        let x_i: Word[64] = (xw[i / 64] >> (63 - (i % 64))) & 1;
+        let shifted: Word[64]^2 = [v[0] >> 1, (v[1] >> 1) | (v[0] << 63)];
+        (
+          if x_i == 0 { z } else { [z[0] ^ v[0], z[1] ^ v[1]] },
+          if (v[1] & 1) == 0 { shifted } else { [shifted[0] ^ r[0], shifted[1] ^ r[1]] },
+        )
+      };
+    let z: Word[64]^2 = zv.0;
+    z as big Word[8]^16
   }
 
-  // Section 6.4, algorithm 2: GHASH_H(X) for X = X_1 || ... || X_m, with
-  // Y_0 = 0 and Y_i = (Y_{i-1} ^ X_i) . H. The buffer holds up to seven
-  // blocks and m says how many are used.
-  spec ghash(h: Word[64]^2, x: Word[64]^14, m: Int) -> Word[64]^2 {
-    for i in 0..7 with y: Word[64]^2 = [0, 0] {
-      if i < m { block_product([y[0] ^ x[2 * i], y[1] ^ x[2 * i + 1]], h) } else { y }
+  // Section 6.4, Algorithm 2: GHASH_H(X) for X = X_1 || ... || X_m, with
+  // Y_0 = 0^128 and Y_i = (Y_(i-1) ^ X_i) . H; the result is Y_m. m runs
+  // over 1 through 7, which covers the formatted inputs of the vectors.
+  spec ghash[m in 1..8](h: Block, x: Word[8]^(16 * m)) -> Block {
+    for i in 0..(m) with y: Block = [0; 16] { block_product(xor(y, x[16 * i..16 * i + 16]), h) }
+  }
+
+  // Section 6.5, Algorithm 3, steps 4 and 5: the counter blocks CB_1 = ICB
+  // and CB_i = inc32(CB_(i-1)) for i = 2 through n, and their encryptions
+  // CIPH_K(CB_i) of steps 6 and 7, joined into one keystream of n blocks. K
+  // is the AES key, of 128 or 256 bits, and CIPH_K is aes::encrypt.
+  spec keystream[K in {Word[8]^16, Word[8]^32}, n in 1..5](key: K, icb: Block)
+    -> Word[8]^(16 * n) {
+    let run: (Word[8]^(16 * n), Block) =
+      for i in 0..(n) with (s: Word[8]^(16 * n), cb: Block) = ([0; (16 * n)], icb) {
+        (s with [16 * i..16 * i + 16] = aes::encrypt(key, cb), inc32(cb))
+      };
+    run.0
+  }
+
+  // Section 6.5, Algorithm 3: GCTR_K(ICB, X) for X of len bytes, in
+  // n = ceil(len(X) / 128) blocks (step 2), the last of them, X_n*, possibly
+  // partial. Y_i = X_i ^ CIPH_K(CB_i) for the whole blocks and
+  // Y_n* = X_n* ^ MSB_len(X_n*)(CIPH_K(CB_n)) for the last (steps 6 and 7),
+  // so Y is X xored with the leading len(X) bits of the keystream. Step 1,
+  // the empty X, has no value here (an array has at least one element);
+  // GCM-AE below writes the empty plaintext separately.
+  spec gctr[K in {Word[8]^16, Word[8]^32}, len in 1..65](key: K, icb: Block, x: Word[8]^len)
+    -> Word[8]^len {
+    let stream: Word[8]^(16 * ((len + 15) / 16)) = keystream[K, (len + 15) / 16](key, icb);
+    for i in 0..(len) with y: Word[8]^len = x { y with [i] = x[i] ^ stream[i] }
+  }
+
+  // X || 0^s: a string of len bytes followed by the fewest zero bits that
+  // make whole blocks, as section 7.1 pads the IV (step 2) and A and C
+  // (Algorithm 4, step 5).
+  spec pad[len in 1..65](x: Word[8]^len) -> Word[8]^(16 * ((len + 15) / 16)) {
+    [0; (16 * ((len + 15) / 16))] with [0..len] = x
+  }
+
+  // Section 4.2.2: [len(X)]_64, the bit length of X as a 64-bit string, most
+  // significant bit first.
+  spec bit_length[len in 1..65](x: Word[8]^len) -> Word[8]^8 {
+    let l: Int = 8 * len;
+    l as big Word[8]^8
+  }
+
+  // Section 7.1, Algorithm 4, step 2: the pre-counter block J0. If
+  // len(IV) = 96, J0 = IV || 0^31 || 1. Otherwise, with s the zero bits that
+  // pad the IV to whole blocks, J0 = GHASH_H(IV || 0^(s+64) || [len(IV)]_64).
+  // Every instance of the spec is checked, and for an IV of other than 12
+  // bytes IV || 0^31 || 1 is not a block, so the first branch takes the
+  // leading sixteen bytes of IV || 0^31 || 1 || 0^96, which for a 12-byte IV
+  // are IV || 0^31 || 1 exactly; it runs only for that IV.
+  spec pre_counter_block[len in 1..65](h: Block, iv: Word[8]^len) -> Block {
+    if len == 12 {
+      let j: Word[8]^(len + 16) = iv ++ hex"00000001" ++ [0; 12];
+      j[..16]
+    } else {
+      ghash(h, pad(iv) ++ [0; 8] ++ bit_length(iv))
     }
   }
 
-  // Section 6.5, algorithm 3: CB_1 = ICB and CB_i = inc32(CB_{i-1}), so the
-  // counter block of block i (from 0) is inc32 applied i times to ICB.
-  spec counter_block(icb: Word[64]^2, i: Int) -> Word[64]^2 {
-    for k in 0..4 with cb: Word[64]^2 = icb { if k < i { inc32(cb) } else { cb } }
+  // Section 7.1, Algorithm 4: GCM-AE_K(IV, P, A) = (C, T) with the full
+  // tag, t = 128, so MSB_t in step 6 is the identity and is not written.
+  // Step 1: H = CIPH_K(0^128). Step 2: J0. Step 3: C = GCTR_K(inc32(J0), P).
+  // Steps 4 and 5: S = GHASH_H(A || 0^v || C || 0^u || [len(A)]_64 ||
+  // [len(C)]_64), u and v the zero bits that pad C and A to whole blocks.
+  // Step 6: T = GCTR_K(J0, S). The key, IV, P and A are byte strings whose
+  // lengths are their types, listed here as the vectors use them.
+  spec gcm_ae[
+    K in {Word[8]^16, Word[8]^32},
+    IV in {Word[8]^12, Word[8]^60},
+    P in {Word[8]^16, Word[8]^60},
+    A in {Word[8]^16, Word[8]^20}
+  ](key: K, iv: IV, p: P, a: A) -> (P, Block) {
+    let h: Block = aes::encrypt(key, [0; 16]);
+    let j0: Block = pre_counter_block(h, iv);
+    let c: P = gctr(key, inc32(j0), p);
+    let s: Block = ghash(h, pad(a) ++ pad(c) ++ bit_length(a) ++ bit_length(c));
+    (c, gctr(key, j0, s))
   }
 
-  // Y_i = X_i ^ CIPH_K(CB_i), and for the last, partial block only its
-  // len(X_n*) leading bytes. The block index is a value, so the bytes of
-  // block i are found by comparing n / 16 with i.
-  spec xor_block(y: Word[8]^64, x: Word[8]^64, ks: Word[8]^16, i: Int, len: Int) -> Word[8]^64 {
-    for n in 0..64 with out: Word[8]^64 = y {
-      if ((n / 16) == i) && (n < len) { out with [n] = x[n] ^ ks[n % 16] } else { out }
-    }
+  // Algorithm 4 with A the empty string, which has no value of its own:
+  // A || 0^v is empty and [len(A)]_64 is 0^64, so step 5 hashes
+  // C || 0^u || 0^64 || [len(C)]_64.
+  spec gcm_ae_empty_a[
+    K in {Word[8]^16, Word[8]^32},
+    IV in {Word[8]^12, Word[8]^60},
+    P in {Word[8]^16, Word[8]^60}
+  ](key: K, iv: IV, p: P) -> (P, Block) {
+    let h: Block = aes::encrypt(key, [0; 16]);
+    let j0: Block = pre_counter_block(h, iv);
+    let c: P = gctr(key, inc32(j0), p);
+    let s: Block = ghash(h, pad(c) ++ [0; 8] ++ bit_length(c));
+    (c, gctr(key, j0, s))
   }
 
-  // Section 6.5, algorithm 3: GCTR_K(ICB, X) for X of len bytes in a 64-byte
-  // buffer; the bytes past len are zero, which is also the padding of
-  // section 7.1 step 5. A block past the end costs nothing: it is skipped.
-  spec gctr(w: Word[32]^44, icb: Word[64]^2, x: Word[8]^64, len: Int) -> Word[8]^64 {
-    for i in 0..4 with y: Word[8]^64 = [0; 64] {
-      if (16 * i) < len {
-        xor_block(y, x, cipher(w, block_bytes(counter_block(icb, i))), i, len)
-      } else { y }
-    }
+  // Algorithm 4 with P and A both empty: C is the empty string (Algorithm 3,
+  // step 1), and step 5 hashes the length block 0^64 || 0^64 alone. The
+  // result is T.
+  spec gcm_ae_empty[K in {Word[8]^16, Word[8]^32}, IV in {Word[8]^12, Word[8]^60}](
+    key: K,
+    iv: IV,
+  ) -> Block {
+    let h: Block = aes::encrypt(key, [0; 16]);
+    let j0: Block = pre_counter_block(h, iv);
+    gctr(key, j0, ghash(h, [0; 16]))
   }
 
-  // Section 7.1, step 2, for a 96-bit IV: J0 = IV || 0^31 || 1.
-  spec j0_96(iv: Word[8]^12) -> Word[64]^2 {
-    [
-      load_be64(iv[0], iv[1], iv[2], iv[3], iv[4], iv[5], iv[6], iv[7]),
-      load_be64(iv[8], iv[9], iv[10], iv[11], 0, 0, 0, 1),
-    ]
+  // Section 7.2, Algorithm 5: GCM-AD_K(IV, C, A, T). Step 1, the checks on
+  // the lengths of IV, C, A and T, is not written: the inputs are the
+  // vectors' own. Steps 2 to 7 are those of GCM-AE: H, J0,
+  // P = GCTR_K(inc32(J0), C), S over A and C, and T' = GCTR_K(J0, S) with
+  // t = 128. Step 8 returns P if T = T' and FAIL otherwise. A spec has one
+  // result type, so the result is the verdict T = T' with the P of step 4
+  // beside it: FAIL is a false verdict, and then P is not to be used.
+  spec gcm_ad[
+    K in {Word[8]^16, Word[8]^32},
+    IV in {Word[8]^12, Word[8]^60},
+    C in {Word[8]^16, Word[8]^60},
+    A in {Word[8]^16, Word[8]^20}
+  ](key: K, iv: IV, c: C, a: A, t: Block) -> (Bool, C) {
+    let h: Block = aes::encrypt(key, [0; 16]);
+    let j0: Block = pre_counter_block(h, iv);
+    let p: C = gctr(key, inc32(j0), c);
+    let s: Block = ghash(h, pad(a) ++ pad(c) ++ bit_length(a) ++ bit_length(c));
+    let t_prime: Block = gctr(key, j0, s);
+    (t == t_prime, p)
   }
 
-  // The word at index i of eight. `i` is an `Int`, and an `Int` is not an
-  // index, so the word is selected by comparing the loop index with `i`.
-  spec word_at(x: Word[64]^8, i: Int) -> Word[64] {
-    for k in 0..8 with acc: Word[64] = 0 { if k == i { x[k] } else { acc } }
+  // The vectors. Test Cases 4, 6 and 16 of the GCM specification share the
+  // 60-byte plaintext and the 20-byte additional data below; Test Cases 1,
+  // 2 and 13 use the zero key and the zero 96-bit IV.
+
+  // GCM specification, Test Cases 4, 6 and 16: P.
+  spec test_case_4_p() -> Word[8]^60 {
+    hex"d9313225f88406e5a55909c5aff5269a 86a7a9531534f7da2e4c303d8a318a72" ++
+    hex"1c3c0c95956809532fcf0e2449a6b525 b16aedf5aa0de657ba637b39"
   }
 
-  // Section 7.1, steps 4 and 5: the input to GHASH,
-  // A || 0^v || C || 0^u || [len(A)]64 || [len(C)]64, with lengths in bits.
-  // A occupies ceil(len_a / 16) blocks, C follows, then the length block;
-  // C's block d - m_a is selected by value because m_a is a value.
-  spec ghash_input(a: Word[8]^32, len_a: Int, c: Word[8]^64, len_c: Int) -> Word[64]^14 {
-    let m_a: Int = (len_a + 15) / 16;
-    let m_c: Int = (len_c + 15) / 16;
-    let a_padded: Word[8]^32 = for i in 0..32 with b: Word[8]^32 = a {
-      b with [i] = if i < len_a { a[i] } else { 0 }
-    };
-    let a_words: Word[64]^8 = for i in 0..4 with x: Word[64]^8 = [0; 8] {
-      x with [i] = load_be64(
-        a_padded[8 * i], a_padded[8 * i + 1], a_padded[8 * i + 2], a_padded[8 * i + 3],
-        a_padded[8 * i + 4], a_padded[8 * i + 5], a_padded[8 * i + 6], a_padded[8 * i + 7],
-      )
-    };
-    let c_words: Word[64]^8 = for i in 0..8 with x: Word[64]^8 = [0; 8] {
-      x with [i] = load_be64(
-        c[8 * i], c[8 * i + 1], c[8 * i + 2], c[8 * i + 3],
-        c[8 * i + 4], c[8 * i + 5], c[8 * i + 6], c[8 * i + 7],
-      )
-    };
-    let lengths: Word[64]^2 = [(8 * len_a) as Word[64], (8 * len_c) as Word[64]];
-    for d in 0..7 with x: Word[64]^14 = [0; 14] {
-      for j in 0..2 with y: Word[64]^14 = x {
-        y with [2 * d + j] =
-          if d < m_a { word_at(a_words, 2 * d + j) }
-          else if d < (m_a + m_c) { word_at(c_words, 2 * (d - m_a) + j) }
-          else if d == (m_a + m_c) { lengths[j] }
-          else { 0 }
-      }
-    }
+  // GCM specification, Test Cases 4, 6 and 16: A.
+  spec test_case_4_a() -> Word[8]^20 { hex"feedfacedeadbeeffeedfacedeadbeef abaddad2" }
+
+  // GCM specification, Test Case 1: AES-128, zero key, zero 96-bit IV, empty
+  // P and A; C is empty and T is the encryption of the length block's hash.
+  test "GCM specification Test Case 1: AES-128, empty P and A" {
+    let key: Word[8]^16 = [0; 16];
+    let iv: Word[8]^12 = [0; 12];
+    gcm_ae_empty(key, iv) == hex"58e2fccefa7e3061367f1d57a4e7455a"
   }
 
-  // Section 7.1, algorithm 4: GCM-AE_K(IV, P, A) with a 96-bit IV and the
-  // full 128-bit tag (t = 128, so MSB_t is the identity); len(C) = len(P).
-  // The result is the 64-byte ciphertext buffer (zero past len_p) followed
-  // by the tag T.
-  spec gcm_ae(
-    key: Word[8]^16,
-    iv: Word[8]^12,
-    p: Word[8]^64,
-    len_p: Int,
-    a: Word[8]^32,
-    len_a: Int,
-  ) -> Word[8]^80 {
-    let w: Word[32]^44 = key_expansion(key);
-    let h: Word[64]^2 = block_words(cipher(w, [0; 16]));
-    let j0: Word[64]^2 = j0_96(iv);
-    let c: Word[8]^64 = gctr(w, inc32(j0), p, len_p);
-    let s: Word[64]^2 = ghash(h, ghash_input(a, len_a, c, len_p), ghash_blocks(len_a, len_p));
-    let t: Word[8]^64 = gctr(w, j0, block_padded(block_bytes(s)), 16);
-    let out: Word[8]^80 = for i in 0..64 with o: Word[8]^80 = [0; 80] { o with [i] = c[i] };
-    for i in 0..16 with o: Word[8]^80 = out { o with [64 + i] = t[i] }
+  // GCM specification, Test Case 2: AES-128, zero key and IV, one zero block
+  // of P, empty A.
+  test "GCM specification Test Case 2: AES-128, one block of P, empty A" {
+    let key: Word[8]^16 = [0; 16];
+    let iv: Word[8]^12 = [0; 12];
+    let p: Word[8]^16 = [0; 16];
+    gcm_ae_empty_a(key, iv, p) ==
+      (hex"0388dace60b6a392f328c2b971b2fe78", hex"ab6e47d42cec13bdf53a67b21257bddf")
   }
 
-  // The formatted input has ceil(len(A) / 16) + ceil(len(C) / 16) + 1 blocks.
-  spec ghash_blocks(len_a: Int, len_c: Int) -> Int { ((len_a + 15) / 16) + ((len_c + 15) / 16) + 1 }
-
-  // One block at the head of a 64-byte GCTR buffer, for the tag.
-  spec block_padded(b: Word[8]^16) -> Word[8]^64 {
-    for i in 0..16 with out: Word[8]^64 = [0; 64] { out with [i] = b[i] }
+  // GCM specification, Test Case 4: AES-128, 96-bit IV, 60-byte P, 20-byte A.
+  test "GCM specification Test Case 4: AES-128, 60-byte P, 20-byte A" {
+    let key: Word[8]^16 = hex"feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^12 = hex"cafebabefacedbaddecaf888";
+    let c: Word[8]^60 =
+      hex"42831ec2217774244b7221b784d0d49c e3aa212f2c02a4e035c17e2329aca12e" ++
+      hex"21d514b25466931c7d8f6a5aac84aa05 1ba30b396a0aac973d58e091";
+    gcm_ae(key, iv, test_case_4_p(), test_case_4_a()) ==
+      (c, hex"5bc94fbc3221a5db94fae95ae7121a47")
   }
 
-  // GCM specification, Test Case 1 (AES-128, 12-byte IV, 0-byte P, 0-byte A): C || T.
-  spec nist_gcm_test_case_1() -> Word[8]^80 {
-    gcm_ae(
-      [0; 16],
-      [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-      [0; 64],
-      0,
-      [0; 32],
-      0,
-    )
+  // GCM specification, Test Case 6: as Test Case 4 with a 60-byte IV, so
+  // that J0 is a GHASH.
+  test "GCM specification Test Case 6: AES-128, 60-byte IV" {
+    let key: Word[8]^16 = hex"feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^60 =
+      hex"9313225df88406e555909c5aff5269aa 6a7a9538534f7da1e4c303d2a318a728" ++
+      hex"c3c0c95156809539fcf0e2429a6b5254 16aedbf5a0de6a57a637b39b";
+    let c: Word[8]^60 =
+      hex"8ce24998625615b603a033aca13fb894 be9112a5c3a211a8ba262a3cca7e2ca7" ++
+      hex"01e4a9a4fba43c90ccdcb281d48c7c6f d62875d2aca417034c34aee5";
+    gcm_ae(key, iv, test_case_4_p(), test_case_4_a()) ==
+      (c, hex"619cc5aefffe0bfa462af43c1699d050")
   }
 
-  spec nist_gcm_test_case_1_expected() -> Word[8]^80 {
-    [
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x58, 0xe2, 0xfc, 0xce, 0xfa, 0x7e, 0x30, 0x61, 0x36, 0x7f, 0x1d, 0x57, 0xa4, 0xe7, 0x45, 0x5a,
-    ]
+  // Wycheproof testvectors_v1/aes_gcm_test.json, tcId 2 (flag Ktv): AES-128,
+  // 96-bit IV, 16-byte msg, 16-byte aad.
+  test "Wycheproof aes_gcm_test.json tcId 2: AES-128" {
+    let key: Word[8]^16 = hex"5b9604fe14eadba931b0ccf34843dab9";
+    let iv: Word[8]^12 = hex"921d2507fa8007b7bd067d34";
+    let msg: Word[8]^16 = hex"001d0c231287c1182784554ca3a21908";
+    let aad: Word[8]^16 = hex"00112233445566778899aabbccddeeff";
+    gcm_ae(key, iv, msg, aad) ==
+      (hex"49d8b9783e911913d87094d1f63cc765", hex"1e348ba07cca2cf04c618cb4d43a5b92")
   }
 
-  // GCM specification, Test Case 2 (AES-128, 12-byte IV, 16-byte P, 0-byte A): C || T.
-  spec nist_gcm_test_case_2() -> Word[8]^80 {
-    gcm_ae(
-      [0; 16],
-      [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-      [0; 64],
-      16,
-      [0; 32],
-      0,
-    )
+  // GCM specification, Test Case 4, decrypted: GCM-AD on its C, A and T
+  // finds T = T' and returns P.
+  test "GCM specification Test Case 4: GCM-AD returns P" {
+    let key: Word[8]^16 = hex"feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^12 = hex"cafebabefacedbaddecaf888";
+    let c: Word[8]^60 =
+      hex"42831ec2217774244b7221b784d0d49c e3aa212f2c02a4e035c17e2329aca12e" ++
+      hex"21d514b25466931c7d8f6a5aac84aa05 1ba30b396a0aac973d58e091";
+    let t: Block = hex"5bc94fbc3221a5db94fae95ae7121a47";
+    gcm_ad(key, iv, c, test_case_4_a(), t) == (true, test_case_4_p())
   }
 
-  spec nist_gcm_test_case_2_expected() -> Word[8]^80 {
-    [
-      0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92, 0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd, 0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf,
-    ]
+  // GCM specification, Test Case 6, decrypted: GCM-AD with the 60-byte IV on
+  // its C, A and T finds T = T' and returns P. It is the accepting
+  // counterpart of the changed-tag row below, on the same path through the
+  // GHASH-derived J0.
+  test "GCM specification Test Case 6: GCM-AD returns P" {
+    let key: Word[8]^16 = hex"feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^60 =
+      hex"9313225df88406e555909c5aff5269aa 6a7a9538534f7da1e4c303d2a318a728" ++
+      hex"c3c0c95156809539fcf0e2429a6b5254 16aedbf5a0de6a57a637b39b";
+    let c: Word[8]^60 =
+      hex"8ce24998625615b603a033aca13fb894 be9112a5c3a211a8ba262a3cca7e2ca7" ++
+      hex"01e4a9a4fba43c90ccdcb281d48c7c6f d62875d2aca417034c34aee5";
+    let t: Block = hex"619cc5aefffe0bfa462af43c1699d050";
+    gcm_ad(key, iv, c, test_case_4_a(), t) == (true, test_case_4_p())
   }
 
-  // GCM specification, Test Case 4 (AES-128, 12-byte IV, 60-byte P, 20-byte A): C || T.
-  spec nist_gcm_test_case_4() -> Word[8]^80 {
-    gcm_ae(
-      [
-        0xfe, 0xff, 0xe9, 0x92, 0x86, 0x65, 0x73, 0x1c, 0x6d, 0x6a, 0x8f, 0x94, 0x67, 0x30, 0x83, 0x08,
-      ],
-      [0xca, 0xfe, 0xba, 0xbe, 0xfa, 0xce, 0xdb, 0xad, 0xde, 0xca, 0xf8, 0x88],
-      [
-        0xd9, 0x31, 0x32, 0x25, 0xf8, 0x84, 0x06, 0xe5, 0xa5, 0x59, 0x09, 0xc5, 0xaf, 0xf5, 0x26, 0x9a,
-        0x86, 0xa7, 0xa9, 0x53, 0x15, 0x34, 0xf7, 0xda, 0x2e, 0x4c, 0x30, 0x3d, 0x8a, 0x31, 0x8a, 0x72,
-        0x1c, 0x3c, 0x0c, 0x95, 0x95, 0x68, 0x09, 0x53, 0x2f, 0xcf, 0x0e, 0x24, 0x49, 0xa6, 0xb5, 0x25,
-        0xb1, 0x6a, 0xed, 0xf5, 0xaa, 0x0d, 0xe6, 0x57, 0xba, 0x63, 0x7b, 0x39, 0x00, 0x00, 0x00, 0x00,
-      ],
-      60,
-      [
-        0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef, 0xfe, 0xed, 0xfa, 0xce, 0xde, 0xad, 0xbe, 0xef,
-        0xab, 0xad, 0xda, 0xd2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      ],
-      20,
-    )
+  // OpenSSL evpciph_aes_common.txt, the Operation = DECRYPT,
+  // Result = CIPHERFINAL_ERROR row that follows Test Case 6: Test Case 6's
+  // key, IV, A and C with the tag's last byte 0x50 changed to 0x51. GCM-AD
+  // returns FAIL.
+  test "OpenSSL evpciph_aes_common.txt: Test Case 6 with a changed tag fails" {
+    let key: Word[8]^16 = hex"feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^60 =
+      hex"9313225df88406e555909c5aff5269aa 6a7a9538534f7da1e4c303d2a318a728" ++
+      hex"c3c0c95156809539fcf0e2429a6b5254 16aedbf5a0de6a57a637b39b";
+    let c: Word[8]^60 =
+      hex"8ce24998625615b603a033aca13fb894 be9112a5c3a211a8ba262a3cca7e2ca7" ++
+      hex"01e4a9a4fba43c90ccdcb281d48c7c6f d62875d2aca417034c34aee5";
+    let t: Block = hex"619cc5aefffe0bfa462af43c1699d051";
+    let result: (Bool, Word[8]^60) = gcm_ad(key, iv, c, test_case_4_a(), t);
+    !result.0
   }
 
-  spec nist_gcm_test_case_4_expected() -> Word[8]^80 {
-    [
-      0x42, 0x83, 0x1e, 0xc2, 0x21, 0x77, 0x74, 0x24, 0x4b, 0x72, 0x21, 0xb7, 0x84, 0xd0, 0xd4, 0x9c,
-      0xe3, 0xaa, 0x21, 0x2f, 0x2c, 0x02, 0xa4, 0xe0, 0x35, 0xc1, 0x7e, 0x23, 0x29, 0xac, 0xa1, 0x2e,
-      0x21, 0xd5, 0x14, 0xb2, 0x54, 0x66, 0x93, 0x1c, 0x7d, 0x8f, 0x6a, 0x5a, 0xac, 0x84, 0xaa, 0x05,
-      0x1b, 0xa3, 0x0b, 0x39, 0x6a, 0x0a, 0xac, 0x97, 0x3d, 0x58, 0xe0, 0x91, 0x00, 0x00, 0x00, 0x00,
-      0x5b, 0xc9, 0x4f, 0xbc, 0x32, 0x21, 0xa5, 0xdb, 0x94, 0xfa, 0xe9, 0x5a, 0xe7, 0x12, 0x1a, 0x47,
-    ]
+  // GCM specification, Test Case 13: AES-256, zero key, zero 96-bit IV,
+  // empty P and A.
+  test "GCM specification Test Case 13: AES-256, empty P and A" {
+    let key: Word[8]^32 = [0; 32];
+    let iv: Word[8]^12 = [0; 12];
+    gcm_ae_empty(key, iv) == hex"530f8afbc74536b9a963b4f1c4cb738b"
+  }
+
+  // GCM specification, Test Case 16: AES-256, the key feffe992...8308 twice,
+  // 96-bit IV, 60-byte P, 20-byte A.
+  test "GCM specification Test Case 16: AES-256, 60-byte P, 20-byte A" {
+    let key: Word[8]^32 =
+      hex"feffe9928665731c6d6a8f9467308308 feffe9928665731c6d6a8f9467308308";
+    let iv: Word[8]^12 = hex"cafebabefacedbaddecaf888";
+    let c: Word[8]^60 =
+      hex"522dc1f099567d07f47f37a32a84427d 643a8cdcbfe5c0c97598a2bd2555d1aa" ++
+      hex"8cb08e48590dbb3da7b08b1056828838 c5f61e6393ba7a0abcc9f662";
+    gcm_ae(key, iv, test_case_4_p(), test_case_4_a()) ==
+      (c, hex"76fc6ece0f4e1768cddf8853bb2d551b")
   }
 }
