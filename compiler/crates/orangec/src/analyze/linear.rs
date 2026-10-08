@@ -31,7 +31,7 @@ const DEFAULT_WORD_BITS: u32 = 8;
 /// The type of a layer's parameter and result: one word, or a
 /// one-dimensional array of words, element i holding bits i w through
 /// i w + w - 1.
-struct Shape {
+pub(super) struct Shape {
     /// The array type, or `None` for a single word.
     array: Option<ArrayType>,
     /// The word type of the parameter or of each element.
@@ -39,13 +39,13 @@ struct Shape {
     /// The bits of `element`.
     element_bits: u32,
     /// All the bits, n.
-    bits: u32,
+    pub(super) bits: u32,
 }
 
 impl Shape {
     /// Returns the shape of `function`, which must take one word or array of
     /// words and return a value of the same type.
-    fn of(function: &CoreFunction) -> Result<Self, String> {
+    pub(super) fn of(function: &CoreFunction) -> Result<Self, String> {
         let signature = || {
             render_cli_error(
                 CliDiagnosticCode::EntryPoint,
@@ -209,7 +209,8 @@ impl Calls<'_, '_> {
 }
 
 /// Which inputs the layer was checked at.
-enum Checked {
+#[derive(Clone, Copy)]
+pub(super) enum Checked {
     /// Every input.
     Every(u128),
     /// Every input of at most two set bits.
@@ -252,10 +253,116 @@ pub(super) fn prepare<'core>(
         ));
     }
 
+    let read = read(
+        options,
+        core,
+        sources,
+        selected,
+        &shape,
+        word_bits,
+        "`--linear` analyzes a map x -> M x + c; analyze an S-box without `--linear`",
+    )?;
+    let (map, constant, checked) = (&read.map, read.constant, read.checked);
+
+    let mut output = Text::new(MAX_STANDARD_OUTPUT_BYTES);
+    let rendered = match analysis.table {
+        None => {
+            let summary = map.summary().map_err(|_| missing())?;
+            let fixed = map
+                .affine_fixed_dimension(constant)
+                .map_err(|_| missing())?;
+            write_summary(
+                &mut output,
+                selected,
+                map,
+                &Layer {
+                    constant,
+                    checked,
+                    fixed,
+                    summary: &summary,
+                },
+            )
+        }
+        Some(Table::Matrix) => {
+            let rows = map.rows().map_err(|_| missing())?;
+            write_matrix(&mut output, map, &rows)
+        }
+        Some(_) => return Err(missing()),
+    };
+    if rendered.is_err() {
+        return Err(output.failure());
+    }
+
+    let mut statistics = Text::new(MAX_STANDARD_ERROR_BYTES);
+    if options.evaluation.stats && read.write_statistics(&mut statistics, selected).is_err() {
+        return Err(statistics.failure());
+    }
+    Ok(PreparedReport {
+        output: output.text,
+        statistics: statistics.text,
+    })
+}
+
+/// A layer read from its values and checked against its matrix, with the
+/// calls that read it.
+pub(super) struct Read {
+    pub(super) map: LinearMap,
+    pub(super) constant: u128,
+    pub(super) checked: Checked,
+    calls: u64,
+    steps: usize,
+    total_steps: usize,
+    largest_call: usize,
+}
+
+impl Read {
+    /// Writes the calls and steps that read the layer.
+    pub(super) fn write_statistics(
+        &self,
+        statistics: &mut Text,
+        selected: &CoreFunction,
+    ) -> fmt::Result {
+        write_numeric_function(statistics, selected)?;
+        writeln!(
+            statistics,
+            ": {} {}, {} {}",
+            self.calls,
+            noun(self.calls, "call", "calls"),
+            self.total_steps,
+            noun(self.total_steps, "step", "steps")
+        )?;
+        writeln!(
+            statistics,
+            "largest call: {} of {} steps",
+            self.largest_call, self.steps
+        )
+    }
+}
+
+/// Reads the matrix of `selected`, of the given shape, from its values at 0
+/// and at each single bit, in words of `word_bits` bits, and checks the
+/// layer against it; `note` explains a layer that is not affine.
+pub(super) fn read<'core>(
+    options: &Options,
+    core: &'core CoreModule,
+    sources: &SourceMap,
+    selected: &'core CoreFunction,
+    shape: &Shape,
+    word_bits: u32,
+    note: &'static str,
+) -> Result<Read, String> {
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "analysis returned no complete artifact",
+            "this is an internal compiler or resource failure",
+        )
+    };
+    let n = shape.bits;
     let mut calls = Calls {
         evaluator: Evaluator::new(core).ok_or_else(missing)?,
         function: selected,
-        shape: &shape,
+        shape,
         sources,
         steps: options.evaluation.steps,
         calls: 0,
@@ -271,62 +378,15 @@ pub(super) fn prepare<'core>(
         columns.push(calls.call(unit(bit), &missing)? ^ constant);
     }
     let map = LinearMap::new(n, word_bits, &columns).ok_or_else(missing)?;
-    let checked = check(&mut calls, &map, constant, &missing)?;
-
-    let mut output = Text::new(MAX_STANDARD_OUTPUT_BYTES);
-    let rendered = match analysis.table {
-        None => {
-            let summary = map.summary().map_err(|_| missing())?;
-            let fixed = map
-                .affine_fixed_dimension(constant)
-                .map_err(|_| missing())?;
-            write_summary(
-                &mut output,
-                selected,
-                &map,
-                &Layer {
-                    constant,
-                    checked,
-                    fixed,
-                    summary: &summary,
-                },
-            )
-        }
-        Some(Table::Matrix) => {
-            let rows = map.rows().map_err(|_| missing())?;
-            write_matrix(&mut output, &map, &rows)
-        }
-        Some(_) => return Err(missing()),
-    };
-    if rendered.is_err() {
-        return Err(output.failure());
-    }
-
-    let mut statistics = Text::new(MAX_STANDARD_ERROR_BYTES);
-    if options.evaluation.stats {
-        let rendered = (|| {
-            write_numeric_function(&mut statistics, selected)?;
-            writeln!(
-                statistics,
-                ": {} {}, {} {}",
-                calls.calls,
-                noun(calls.calls, "call", "calls"),
-                calls.total_steps,
-                noun(calls.total_steps, "step", "steps")
-            )?;
-            writeln!(
-                statistics,
-                "largest call: {} of {} steps",
-                calls.largest_call, calls.steps
-            )
-        })();
-        if rendered.is_err() {
-            return Err(statistics.failure());
-        }
-    }
-    Ok(PreparedReport {
-        output: output.text,
-        statistics: statistics.text,
+    let checked = check(&mut calls, &map, constant, note, &missing)?;
+    Ok(Read {
+        map,
+        constant,
+        checked,
+        calls: calls.calls,
+        steps: calls.steps,
+        total_steps: calls.total_steps,
+        largest_call: calls.largest_call,
     })
 }
 
@@ -337,6 +397,7 @@ fn check(
     calls: &mut Calls<'_, '_>,
     map: &LinearMap,
     constant: u128,
+    note: &'static str,
     missing: &impl Fn() -> String,
 ) -> Result<Checked, String> {
     let n = map.bits();
@@ -356,7 +417,7 @@ fn check(
                 calls.shape.render(value),
                 calls.shape.render(expected)
             ),
-            "`--linear` analyzes a map x -> M x + c; analyze an S-box without `--linear`",
+            note,
         ))
     };
     if n <= MAX_EXHAUSTIVE_BITS {

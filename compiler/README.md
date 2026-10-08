@@ -302,10 +302,23 @@ the layer is maximum distance separable, and the field GF(2^w) whose
 products its blocks are. `--table matrix` prints the matrix itself. The
 library is `orange_compiler::cryptanalysis::linear`.
 
+`--layer MODULE::NAME --rounds R` analyzes rounds of a substitution-permutation
+network instead: the selected function is the S-box, a permutation of 2 to 8
+bits applied to every word of the state, and the layer is a function read and
+checked as `--linear` reads it, which must be invertible. For each number of
+rounds up to R, at most 32, a complete search in the manner of Matsui finds
+the fewest active S-boxes and the least weight of any differential and any
+linear trail, weights being reported when the S-box's tables hold powers of
+two. The command also prints the rounds the network needs for every output
+bit to depend on every input bit. A search that passes 2^28 steps is reported
+as not computed from that round on. The library is
+`orange_compiler::cryptanalysis::trails`.
+
 ```sh
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function aes::sbox compiler/fixtures/analyze/aes.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --table ddt compiler/fixtures/analyze/present.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --linear --function aes::mix_column compiler/fixtures/analyze/aes.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --layer present::player --rounds 4 compiler/fixtures/analyze/present.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test analyze --locked --offline
 ```
 
@@ -315,7 +328,9 @@ one that does not exist at the selected instance, is `ORC1016`; a width beyond
 its type or beyond 16 bits, a result outside the analyzed output bits, a table
 over 10 bits, or a boomerang table of a function that is not a permutation is
 `ORC1017`, and so is a layer wider than 128 bits, a word width that does not
-divide it, or a function that is not affine over GF(2). A property whose
+divide it, a function that is not affine over GF(2), and, for `--layer`, an
+S-box that is not a permutation of 2 to 8 bits, a layer whose width it does
+not divide, or a layer that is not invertible. A property whose
 computation would exceed 2^32 elementary operations is reported as not
 computed, with its cost. Every number is exact for the function under the
 reference evaluator; none is a security claim.

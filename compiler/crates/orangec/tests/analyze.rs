@@ -1099,3 +1099,352 @@ fn malformed_linear_options_are_usage_errors() {
         );
     }
 }
+
+#[test]
+fn present_trails_match_the_published_bounds() {
+    let output = analyze(&[
+        "--function",
+        "present::sbox",
+        "--bits",
+        "4",
+        "--layer",
+        "present::player",
+        "--rounds",
+        "4",
+        "present.or",
+    ]);
+    assert_eq!(
+        success(&output),
+        "round                     present::sbox[] on 16 words of 4 bits, then present::player[]
+layer checked             the 2081 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+full diffusion            3 rounds
+
+differential trails       a trail of weight w has probability 2^-w
+rounds  active S-boxes  least weight
+1       1               2
+2       2               4
+3       4               8
+4       6               12
+
+linear trails             a trail of weight w has correlation 2^-w in magnitude
+rounds  active S-boxes  least weight
+1       1               1
+2       2               2
+3       3               4
+4       4               6
+"
+    );
+    let output = analyze(&[
+        "--function=present::sbox",
+        "--bits=4",
+        "--layer=present::player",
+        "--rounds=1",
+        "--stats",
+        "present.or",
+    ]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "present::sbox[]: 16 calls, 608 steps
+largest call: 38 of 1048576 steps
+present::player[]: 2081 calls, 2784378 steps
+largest call: 1338 of 1048576 steps
+"
+    );
+}
+
+#[test]
+fn aes_trails_meet_the_wide_trail_bound_over_two_rounds() {
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "aes::sbox",
+            "--layer",
+            "aes::linear",
+            "--rounds",
+            "2",
+            "aes.or",
+        ])),
+        "round                     aes::sbox[] on 16 words of 8 bits, then aes::linear[]
+layer checked             the 8257 inputs of at most 2 bits: no term of degree 2, higher degrees unchecked
+full diffusion            2 rounds
+
+differential trails       a trail of weight w has probability 2^-w
+rounds  active S-boxes  least weight
+1       1               6
+2       5               30
+
+linear trails             weights not computed: some |W(a, b)| is not a power of two
+rounds  active S-boxes
+1       1
+2       5
+"
+    );
+}
+
+#[test]
+fn heys_trails_count_active_sboxes_only() {
+    assert_eq!(
+        success(&analyze(&[
+            "--function",
+            "heys::sbox",
+            "--bits",
+            "4",
+            "--layer",
+            "heys::permute",
+            "--rounds",
+            "4",
+            "heys.or",
+        ])),
+        "round                     heys::sbox[] on 4 words of 4 bits, then heys::permute[]
+layer checked             all 65536 inputs
+full diffusion            2 rounds
+
+differential trails       weights not computed: some DDT entry is not a power of two
+rounds  active S-boxes
+1       1
+2       2
+3       4
+4       6
+
+linear trails             weights not computed: some |W(a, b)| is not a power of two
+rounds  active S-boxes
+1       1
+2       2
+3       3
+4       4
+"
+    );
+}
+
+#[test]
+fn rounds_that_are_not_substitution_permutation_rounds_are_refused() {
+    let scratch = Scratch::new("trails");
+    scratch.write(
+        "network.or",
+        b"edition 2026;
+module network {
+  spec sbox(x: Word[8]) -> Word[8] {
+    let table: Word[8]^16 = [0xc, 0x5, 0x6, 0xb, 0x9, 0x0, 0xa, 0xd, 0x3, 0xe, 0xf, 0x8, 0x4, 0x7, 0x1, 0x2];
+    table[x & 0x0f]
+  }
+  spec same(x: Word[16]) -> Word[16] { x }
+  spec rotate(x: Word[16]) -> Word[16] { x <<< 4 }
+  spec fold(x: Word[16]) -> Word[16] { x ^ (x <<< 8) }
+  spec spill(x: Word[16]) -> Word[16] { x + 1 }
+  spec pair(x: Word[16], y: Word[16]) -> Word[16] { x ^ y }
+}
+",
+    );
+    let refused = |arguments: &[&str]| {
+        let mut all = arguments.to_vec();
+        all.extend(["--rounds", "2", "network.or"]);
+        failure(&scratch.analyze(&all), 1)
+    };
+    assert_eq!(
+        refused(&["--function", "network::sbox", "--layer", "network::fold"]),
+        "error[ORC1017]: `network::sbox[]` is not a permutation of 8 bits
+  = note: a trail search needs an invertible S-box; `--bits N` selects its low N bits
+"
+    );
+    for (bits, noun) in [("1", "bit"), ("9", "bits")] {
+        assert_eq!(
+            refused(&[
+                "--function",
+                "network::same",
+                "--bits",
+                bits,
+                "--layer",
+                "network::rotate"
+            ]),
+            format!(
+                "error[ORC1017]: an S-box of {bits} {noun} is outside the 2 to 8 bits of a trail search
+  = note: `--bits N` selects the low N bits of the S-box's parameter and result
+"
+            )
+        );
+    }
+    assert_eq!(
+        refused(&[
+            "--function",
+            "network::same",
+            "--bits",
+            "3",
+            "--layer",
+            "network::rotate"
+        ]),
+        "error[ORC1017]: the 16 bits of `Word[16]` are not a whole number of 3-bit S-boxes
+  = note: a round applies the S-box to each word of the layer's bits, word c holding bits c s through c s + s - 1
+"
+    );
+    assert_eq!(
+        refused(&[
+            "--function",
+            "network::sbox",
+            "--bits",
+            "4",
+            "--layer",
+            "network::fold"
+        ]),
+        "error[ORC1017]: `network::fold[]` is not invertible over GF(2)
+  = note: a round's linear layer must be a bijection; `--linear` reports its rank
+"
+    );
+    assert_eq!(
+        refused(&[
+            "--function",
+            "network::sbox",
+            "--bits",
+            "4",
+            "--layer",
+            "network::spill"
+        ]),
+        "error[ORC1017]: `network::spill[]` is not affine over GF(2): at input 0x0003 it is 0x0004, but its values at 0 and at single bits give 0x0000
+  = note: `--layer` selects the linear layer of a round, a map x -> M x + c
+"
+    );
+    assert_eq!(
+        refused(&[
+            "--function",
+            "network::sbox",
+            "--bits",
+            "4",
+            "--layer",
+            "network::pair"
+        ]),
+        "error[ORC1016]: linear analysis requires one parameter of a word or array type and a result of the same type
+  = note: select a function such as `spec mix(a: Word[8]^4) -> Word[8]^4`
+"
+    );
+    assert_eq!(
+        refused(&[
+            "--function",
+            "network::sbox",
+            "--bits",
+            "4",
+            "--layer",
+            "network::none"
+        ]),
+        "error[ORC1016]: no function `network::none` without size or type parameters
+  = note: `--layer` names a linked module's function with no size or type parameters
+"
+    );
+    let output = scratch.analyze(&[
+        "--function",
+        "network::sbox",
+        "--bits",
+        "4",
+        "--layer",
+        "network::rotate",
+        "--rounds",
+        "3",
+        "network.or",
+    ]);
+    let report = success(&output);
+    assert!(
+        report.contains(
+            "full diffusion            never: some output bit depends on some input bit after no number of rounds\n"
+        ),
+        "{report}"
+    );
+    assert!(
+        report.contains(
+            "1       1               2\n2       2               4\n3       3               6\n"
+        ),
+        "{report}"
+    );
+}
+
+#[test]
+fn malformed_trail_options_are_usage_errors() {
+    let usage = |arguments: &[&str]| {
+        let mut all = vec!["--function", "present::sbox", "--bits", "4"];
+        all.extend_from_slice(arguments);
+        all.push("present.or");
+        failure(&analyze(&all), 2)
+    };
+    for value in ["0", "33", "01", "+3", "3 ", "", "x"] {
+        let stderr = usage(&["--layer", "present::player", "--rounds", value]);
+        assert!(
+            stderr.starts_with(
+                "orangec: option `--rounds` takes a number of rounds from 1 through 32\n"
+            ),
+            "--rounds {value:?}: {stderr}"
+        );
+    }
+    for value in [
+        "present",
+        "present::",
+        "::player",
+        "a::b::c",
+        "1a::b",
+        "a-b::c",
+    ] {
+        let stderr = usage(&["--layer", value, "--rounds", "2"]);
+        assert!(
+            stderr
+                .starts_with("orangec: option `--layer` takes exactly MODULE::NAME identifiers\n"),
+            "--layer {value:?}: {stderr}"
+        );
+    }
+    for (arguments, message) in [
+        (
+            &["--layer", "present::player"][..],
+            "orangec: option `--layer` requires `--rounds`\n",
+        ),
+        (
+            &["--rounds", "2"][..],
+            "orangec: option `--rounds` requires `--layer`\n",
+        ),
+        (
+            &["--layer", "present::player", "--rounds", "2", "--linear"][..],
+            "orangec: option `--layer` does not apply with `--linear`\n",
+        ),
+        (
+            &[
+                "--layer",
+                "present::player",
+                "--rounds",
+                "2",
+                "--table",
+                "ddt",
+            ][..],
+            "orangec: option `--table` does not apply with `--layer`\n",
+        ),
+        (
+            &["--layer", "present::player", "--rounds", "2", "--word", "4"][..],
+            "orangec: option `--word` applies only with `--linear`\n",
+        ),
+        (
+            &[
+                "--layer",
+                "present::player",
+                "--layer=present::player",
+                "--rounds",
+                "2",
+            ][..],
+            "orangec: option `--layer` may be specified at most once\n",
+        ),
+        (
+            &["--layer", "present::player", "--rounds", "2", "--rounds=2"][..],
+            "orangec: option `--rounds` may be specified at most once\n",
+        ),
+    ] {
+        let stderr = usage(arguments);
+        assert!(stderr.starts_with(message), "{arguments:?}: {stderr}");
+    }
+    for (option, value) in [("--layer", "present::player"), ("--rounds", "2")] {
+        let output = Command::new(env!("CARGO_BIN_EXE_orangec"))
+            .current_dir(fixtures())
+            .args(["check", option, value, "present.or"])
+            .output()
+            .unwrap();
+        let stderr = failure(&output, 2);
+        assert!(
+            stderr.starts_with(&format!(
+                "orangec: option `{option}` applies only to analyze\n"
+            )),
+            "{option}: {stderr}"
+        );
+    }
+}
