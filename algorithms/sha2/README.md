@@ -44,8 +44,7 @@ one spec with a type parameter `W in {Word[32], Word[64]}` serves both.
 | 4.1.3, SHA-512 functions | the same names with `_512` |
 | 4.2.2, K{256} | `round_constants` |
 | 4.2.3, K{512} | `round_constants_512` |
-| 5.1.1, padding, 64-bit length | `padding[len]` for `len` in 0 through 64 |
-| 5.1.2, padding, 128-bit length | `padding_512[len]` for `len` in 0 through 112 |
+| 5.1.1 and 5.1.2, padding | `padding[len, s]` for `len` in 0 through 112, `s` = 1 (5.1.1) or 2 (5.1.2) |
 | 5.2.1 and 5.2.2, parsing into words | `as big Word[32]^16` and `as big Word[64]^16` on each block, in `hash` and `hash_512` |
 | 5.3.2 through 5.3.6.2, initial hash values | `initial_hash_224`, `initial_hash_256`, `initial_hash_384`, `initial_hash_512`, `initial_hash_512_256` |
 | 6.2.2, SHA-256 hash computation | `schedule`, `round`, `compress`, `hash[n]`, `sha256[n]` |
@@ -54,18 +53,24 @@ one spec with a type parameter `W in {Word[32], Word[64]}` serves both.
 | 6.5, SHA-384 | `sha384[n]` |
 | 6.7, SHA-512/256 | `sha512_256[n]` |
 
-Padding is one spec per word size with a size parameter, the message length
-`len` in bytes. `padding[len]()` is the string section 5.1.1 appends: the
+Padding is one spec with two size parameters: the message length `len` in
+bytes, and `s`, which picks the subsection. `s` is w / 32 = m / 512, the
+standard's word size w and block size m in units of SHA-256's, so `s = 1` is
+section 5.1.1 (SHA-224 and SHA-256) and `s = 2` is section 5.1.2 (the
+64-bit variants); a block is `64 s` bytes and the length field, two words,
+`8 s` bytes. `padding[len, s]()` is the string the standard appends: the
 byte `0x80` (the 1 bit and the first seven zero bits, since every message
-here is whole bytes) opening a fill of zeros, then `l = 8 len` as a 64-bit
-big-endian integer, `64 ((len + 72) / 64) - len` bytes in all, so that the
-message followed by it is a whole number of blocks. It returns the appended
-string rather than the padded message because an Orange array has at least
-one element: the empty message is no array, and its padded form is
-`padding[0]()` alone. The 56-byte message shows the case the standard's
-example was chosen for: the 1 bit fits in the first block but the length
-does not, so the padding spills into a second block; the 64-byte message
-fills its block exactly and the whole padding is a second block.
+here is whole bytes) opening a fill of zeros, then `l = 8 len` as a
+big-endian integer of `8 s` bytes, `64 s ((len + 72 s) / (64 s)) - len`
+bytes in all, so that the message followed by it is a whole number of
+blocks. It returns the appended string rather than the padded message
+because an Orange array has at least one element: the empty message is no
+array, and its padded form is `padding[0, s]()` alone. The 56-byte message
+shows the case the standard's example was chosen for: the 1 bit fits in the
+first block but the length does not, so the padding spills into a second
+block; the 64-byte message fills its block exactly and the whole padding is
+a second block. The 112-byte message does the same for the 64-bit variants
+as the 56-byte one does for SHA-256.
 
 The hash computations take the padded message as `Word[8]^(64 * n)` (or
 `128 * n`) for `n` of one or two blocks, and run the standard's "for i = 1
@@ -133,24 +138,25 @@ MAC, and comparing digests with data-dependent early exit.
 Nothing in SHA-2 is data-dependent except the values themselves: there are
 no tables indexed by data, no rotations by data-dependent amounts, and no
 branches. In the Orange file every index is a literal or a loop index,
-every slice bound is a loop index times the block length, and every shift
-and rotation amount is a literal, so the checker proves every access in
-range before evaluation and the source contains no conditional at all. The
-`Word[32]` and `Word[64]` rings give the modular additions their meaning
-directly; nothing is masked or cast.
+every slice bound is a literal or a loop index times the block length, plus
+the block length, and every shift and rotation amount is a literal, so the
+checker proves every access in range before evaluation and the source
+contains no conditional at all. The `Word[32]` and `Word[64]` rings give the
+modular additions their meaning directly; nothing is masked or cast.
 
 Byte order is written once, where the standard fixes it: `as big` parses a
 64-byte or 128-byte block into its sixteen words (section 5.2), writes the
 bit length into the padding, reads the round constants from `hex"..."` rows
 printed as section 4.2 prints them, and turns the final hash value into the
-digest's bytes. Lengths are sizes: `padding[len]` has one instance per
-message length from 0 through 64 bytes (`padding_512`, 0 through 112), and
-the checker computes each instance's length from the formula in its
-signature, so a test that names the wrong length for its message finds no
-instance of `sha256` that takes the result, unless the two lengths differ
-by a whole block (a 64-byte message with `padding[0]()`). A test reads as the standard's
-example: `sha256("abc" ++ padding[3]())` against the digest in hex. The
-messages are string literals, and the 64-byte Botan message is hex.
+digest's bytes. Lengths are sizes: `padding[len, s]` has one instance per
+message length from 0 through 112 bytes at each of the two sizes, and the
+checker computes each instance's length from the formula in its signature,
+so a test that names the wrong length for its message finds no instance of
+`sha256` that takes the result, unless the two lengths differ by a whole
+block (a 64-byte message with `padding[0, 1]()`). A test reads as the
+standard's example: `sha256("abc" ++ padding[3, 1]())` against the digest
+in hex. The messages are string literals, and the 64-byte Botan message is
+hex.
 
 The two computations are visibly the same text at two widths, which is how
 the standard presents them, and the truncated variants are visibly the same
@@ -159,18 +165,21 @@ SHA-256 and SHA-512 only in `initial_hash_224` and `initial_hash_384` and in
 which words are kept, and SHA-512/256 only in an initial value that is itself
 a SHA-512 digest (section 5.3.6), which the generator script recomputes.
 
-Measured costs under `orangec test --stats`: one SHA-256 compression costs
-8,936 steps and one SHA-512 compression 11,535, almost all of it the
-message schedule and the rounds; padding costs 17 to 22 steps and reading a
-round-constant table 64 (K{256}) or 214 (K{512}). A one-block SHA-256 test
-costs about 8,975 steps, a two-block one about 17,915; for SHA-512 the
-figures are about 11,595 and 23,145. The thirteen tests together use
-196,481 steps.
+Measured costs under `orangec test --stats` and `orangec eval --stats`:
+each block adds 8,935 steps to `hash` and 11,543 to `hash_512`, of which a
+call to `compress` is 8,912 and a call to `compress_512` 11,511, almost all
+of it the message schedule and the rounds; the rest is slicing out the
+block and parsing it. Within a compression, the call to `round_constants`
+costs 60 steps and the call to `round_constants_512` 210. A padding call
+costs 12 to 14 steps at `s = 1` and 14 to 18 at `s = 2`. A one-block
+SHA-256 or SHA-224 test costs 8,973 to 8,979 steps, a two-block one 17,914
+to 17,917; for the 64-bit variants the figures are 11,591 to 11,596 and
+23,142 to 23,146. The thirteen tests together use 196,481 steps.
 
 Not expressed: a message whose length is not a whole number of bytes (the
 standard's l may be any number of bits), and a message longer than the
-size ranges. Each `padding` covers the lengths listed above and each hash
-one or two blocks; widening a range is a change to one number, up to the
+size ranges. `padding` covers the lengths listed above and each hash one
+or two blocks; widening a range is a change to one number, up to the
 limits under Gaps.
 
 ## Dissemination
@@ -178,9 +187,8 @@ limits under Gaps.
 ### Files
 
 - `sha2.or`: SHA-224, SHA-256, SHA-384, SHA-512 and SHA-512/256 of FIPS
-  180-4, with padding for messages of 0 through 64 bytes (SHA-224 and
-  SHA-256) and 0 through 112 bytes (the 64-bit variants), and the thirteen
-  tests below.
+  180-4, with padding for messages of 0 through 112 bytes at both block
+  sizes, and the thirteen tests below.
 
 ### Running
 
@@ -188,7 +196,7 @@ limits under Gaps.
     python3 algorithms/verify.py algorithms/sha2
 
 `orangec eval` prints every parameterless spec, and each instance of
-`padding` and `padding_512` is one: 178 padding strings before the
+`padding` is one: 226 padding strings (113 lengths at two sizes) before the
 constants.
 
 ### Vectors
@@ -223,22 +231,22 @@ of writing.
 
 ### Provenance and claims
 
-Every constant in `sha2.or` was derived from its definition in FIPS 180-4
-by a generator script, kept with the worker's notes outside the repository,
-using exact integer roots: K{256} and K{512} as the first 32 or 64 bits of the fractional parts
-of the cube roots of the first 64 or 80 primes, the SHA-256, SHA-384 and
-SHA-512 initial values from the square roots of the first sixteen primes,
-the SHA-224 initial value as the second 32 bits of the square roots of the
-ninth through sixteenth primes, and the SHA-512/256 initial value by the
-generation function of section 5.3.6 (SHA-512 with the a5...a5 mask over
-the string "SHA-512/256"). Each table was then matched, as a contiguous
-sequence, against the tables in OpenSSL's `crypto/sha/sha256.c` and
+Every constant in `sha2.or` was derived from its definition in FIPS 180-4 by a
+generator script, kept with the worker's notes outside the repository, using
+exact integer roots: K{256} and K{512} as the first 32 or 64 bits of the
+fractional parts of the cube roots of the first 64 or 80 primes, the SHA-256,
+SHA-384 and SHA-512 initial values from the square roots of the first sixteen
+primes, the SHA-224 initial value as the second 32 bits of the square roots of
+the ninth through sixteenth primes, and the SHA-512/256 initial value by the
+generation function of section 5.3.6 (SHA-512 with the a5...a5 mask over the
+string "SHA-512/256"). Each table was then matched, as a contiguous sequence,
+against the tables in OpenSSL's `crypto/sha/sha256.c` and
 `crypto/sha/sha512.c` and in B-Con's `sha256.c`, and the Orange literals were
-printed by the same script, never typed. The script also holds an
-independent Python SHA-256 and SHA-512, with the padding of section 5.1,
-whose output was checked against `hashlib` and against every published
-value above before the `_expected` literals were emitted; every `_expected`
-value in the file is copied from a named vector file or from `hashlib`, and
+printed by the same script, never typed. The script also holds an independent
+Python SHA-256 and SHA-512, with the padding of section 5.1, whose output was
+checked against `hashlib` and against every published value above before the
+`_expected` literals were emitted; every expected value in the file (formerly
+an `_expected` spec) is copied from a named vector file or from `hashlib`, and
 none was adjusted to match the Orange computation.
 
 The entry was then rewritten in the current language. Every expected value
@@ -246,9 +254,11 @@ is carried over byte for byte from the first form, where each was a
 `<name>_expected` spec of words: the new tests state the same digests as
 the big-endian bytes FIPS 180-4 defines the digest to be, printed from the
 old values by a script and compared with them, and no vector was added or
-dropped. The round-constant tables, now `hex"..."` rows read with `as big`,
-were printed by script from the first form's word literals, and the
-initial hash values are unchanged.
+dropped. The three message arrays of the first form (56, 112 and 64
+bytes) became string and hex literals, compared byte for byte with the
+first form. The round-constant tables, now `hex"..."` rows read with
+`as big`, were printed by script from the first form's word literals, and
+the initial hash values are unchanged.
 
 This entry is a reference evaluation of a specification under
 `orangec test`. It makes no constant-time, side-channel, performance or
@@ -262,12 +272,12 @@ corpus entry in the sense of The Orange Book chapter 12.
   message, and each test joins its message to the padding itself.
 - A sized spec with no array parameter needs its size written at the call,
   so each test names its message length twice, in the literal and in
-  `padding[3]()`; the checker rejects a mismatch unless the two lengths
+  `padding[3, 1]()`; the checker rejects a mismatch unless the two lengths
   differ by a whole block, but cannot infer the length.
-- A function has at most 256 instances, so one `padding` spec covers at most
-  256 message lengths; a hash over arbitrary lengths would pad whole blocks
-  and the final partial block separately. No vector here needs more than
-  112 bytes.
+- A function has at most 256 instances, counting every combination of its
+  sizes, so `padding`, at two block sizes, covers at most 128 message
+  lengths; a hash over arbitrary lengths would pad whole blocks and the
+  final partial block separately. No vector here needs more than 112 bytes.
 - Messages are whole bytes; a message of a bit length that is not a
   multiple of 8 (which FIPS 180-4 allows) would need its last byte padded
   by hand.
