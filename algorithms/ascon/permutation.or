@@ -17,11 +17,13 @@ module permutation {
   type State = Word[64]^5;
 
   // Section 3.1, the constant-addition layer p_C: the round constants of
-  // the twelve rounds of Ascon-p[12], c_i = ((0xf - i) << 4) | i for i = 0
-  // through 11. The standard's table of constants lists sixteen so that up
-  // to sixteen rounds are defined; Ascon-p[12] uses the last twelve, which
-  // are these, and Ascon-p[8] the last eight, indices 4 through 11 here.
-  // The values are those of permutations.h of the reference implementation.
+  // the twelve rounds of Ascon-p[12]. The standard's table lists sixteen
+  // constants so that up to sixteen rounds are defined, and Ascon-p[12] uses
+  // the last twelve of them, 0xf0 through 0x4b. This entry numbers those
+  // twelve c_0 through c_11, its own numbering rather than the table's, and
+  // in it c_i = ((0xf - i) << 4) | i; Ascon-p[8] uses the last eight, c_4
+  // through c_11. Rounds beyond twelve are not written. The values are those
+  // of permutations.h of the reference implementation.
   spec round_constants() -> Word[8]^12 { hex"f0 e1 d2 c3 b4 a5 96 87 78 69 5a 4b" }
 
   // Section 3.1: S2 <- S2 ^ c_i.
@@ -65,9 +67,10 @@ module permutation {
     linear_diffusion_layer(substitution_layer(constant_addition(s, c)))
   }
 
-  // Section 3: Ascon-p[rnd], rnd rounds with the last rnd constants, c_(12
-  // - rnd) through c_11 here: Ascon-p[12] runs all twelve and Ascon-p[8]
-  // the last eight, c_4 through c_11.
+  // Section 3: Ascon-p[rnd] for rnd from 1 through 12, rnd rounds with the
+  // last rnd constants, c_(12 - rnd) through c_11 in this entry's numbering:
+  // Ascon-p[12] runs all twelve and Ascon-p[8] the last eight, c_4 through
+  // c_11.
   spec ascon_p[rnd in 1..13](s: State) -> State {
     let c: Word[8]^12 = round_constants();
     for i in (12 - rnd)..12 with t: State = s { round(t, c[i]) }

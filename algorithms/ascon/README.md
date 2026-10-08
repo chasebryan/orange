@@ -17,7 +17,7 @@ AES-GCM is too heavy, and it is a current NIST standard: the first
 lightweight authenticated cipher NIST has standardized. This entry writes
 the permutation, Ascon-AEAD128 encryption and decryption, and Ascon-Hash256
 in Orange, and reproduces fourteen entries of the designers' known-answer
-files together with one decryption and one rejected tag.
+files together with two decryptions and one rejected tag.
 
 ## Analysis
 
@@ -31,10 +31,12 @@ to each of the 64 columns of the state, which the standard writes as a
 short bitsliced sequence of xor, and and not on the five words; and the
 linear diffusion layer p_L replaces each word S_i by
 S_i xor (S_i >>> r1) xor (S_i >>> r2) with the rotation pairs (19, 28),
-(61, 39), (1, 6), (10, 17) and (7, 41). The round constants are
-c_i = ((0xf - i) << 4) | i; the standard lists sixteen of them so that up
-to sixteen rounds are defined, and Ascon-p[12] and Ascon-p[8] use the last
-twelve and the last eight.
+(61, 39), (1, 6), (10, 17) and (7, 41). The standard's table of round
+constants lists sixteen so that up to sixteen rounds are defined, and
+Ascon-p[12] and Ascon-p[8] use its last twelve and last eight. This entry
+numbers the twelve it uses c_0 through c_11, its own numbering rather than
+the table's: they are 0xf0, 0xe1, ... 0x4b, c_i = ((0xf - i) << 4) | i,
+and `ascon_p[rnd]` is written for rnd from 1 through 12 only.
 
 Ascon-AEAD128 (section 4) is a duplex construction over that permutation
 with a 128-bit rate (S0 and S1) and a 192-bit capacity. Initialization
@@ -206,13 +208,15 @@ Measured with `orangec test --stats`: one round costs about 140 steps,
 Ascon-p[12] about 1,690 and Ascon-p[8] about 1,130 (including the call and
 the constants). Initialization and finalization cost about 1,720 steps each,
 and each further block of associated data or plaintext about 1,170 to
-1,195. The encryption of the empty message with no associated data costs
-3,532 steps, and of 32 bytes of each (Count 1089) 9,427. A verification
-costs 17,130, since it recovers P and then encrypts it, and a decryption
-24,824, the verification and the recovery of P once more. Ascon-Hash256
-costs 8,547 steps for the empty message and about 1,707 for each further
-8-byte block (22,211 for 64 bytes). The twelve tests of `ascon.or` use
-110,888 steps and the five of `ascon-hash256.or` 64,947.
+1,195. By the per-test lines of `--stats`, the test that encrypts the empty
+message with no associated data (Count 1) costs 3,531 steps, and the one
+that encrypts 32 bytes of each (Count 1089) 9,431. The test of a
+verification costs 17,130, since it recovers P and then encrypts it, and
+the test of a decryption 24,832 for Count 1089 and 14,296 for Count 767,
+the verification and the recovery of P once more. The test of Ascon-Hash256
+costs 8,547 steps for the empty message, about 1,707 more for each further
+8-byte block, and 22,211 for 64 bytes. The thirteen tests of `ascon.or`
+use 125,184 steps and the five of `ascon-hash256.or` 64,947.
 
 ## Dissemination
 
@@ -221,7 +225,7 @@ costs 8,547 steps for the empty message and about 1,707 for each further
 - `permutation.or`: the module `permutation`, Ascon-p[rnd] of section 3,
   read by both other files. It carries no vectors of its own.
 - `ascon.or`: Ascon-AEAD128 encryption, verification and decryption, and
-  twelve tests (nine encryptions, one decryption, one verdict and one
+  thirteen tests (nine encryptions, two decryptions, one verdict and one
   rejected tag).
 - `ascon-hash256.or`: Ascon-Hash256, with five tests. It is a second file
   because it is a second algorithm of the standard.
@@ -233,10 +237,6 @@ orangec test algorithms/ascon/ascon.or
 orangec test algorithms/ascon/ascon-hash256.or
 python3 algorithms/verify.py algorithms/ascon
 ```
-
-`orangec eval` prints every parameterless spec, and each instance of
-`padding` is one: 33 padding strings in `ascon.or` and 65 in
-`ascon-hash256.or`.
 
 ### Vectors
 
@@ -254,9 +254,10 @@ in `ascon-hash256.or`.
 | `LWC_AEAD_KAT_128_128 Count 545: 16-byte P, 16-byte A` | same file, Count 545 | 16 bytes of each, whole blocks |
 | `LWC_AEAD_KAT_128_128 Count 767: 23-byte P, 7-byte A` | same file, Count 767 | 23-byte plaintext, 7 bytes of associated data, partial blocks |
 | `LWC_AEAD_KAT_128_128 Count 1089: 32-byte P, 32-byte A` | same file, Count 1089 | 32 bytes of each, the largest entry: C (32 bytes) and T |
+| `LWC_AEAD_KAT_128_128 Count 767: decryption returns P` | same file, Count 767, PT field | decryption of its CT under its Key, Nonce and AD; the last block is partial (7 bytes) |
 | `LWC_AEAD_KAT_128_128 Count 1089: decryption returns P` | same file, Count 1089, PT field | decryption of its CT under its Key, Nonce and AD |
 | `LWC_AEAD_KAT_128_128 Count 1089: the tag verifies` | same file, Count 1089 | the verdict of Algorithm 2: true |
-| `LWC_AEAD_KAT_128_128 Count 1089 with the last tag byte changed: rejected` | by definition of Algorithm 2; the Python reference agrees | Count 1089 with the last tag byte 0xaa changed to 0xab: false |
+| `Derived from Count 1089, last tag byte changed: rejected` | by definition of Algorithm 2; the Python reference agrees | Count 1089 with the last tag byte 0xaa changed to 0xab: false |
 | `LWC_HASH_KAT_128_256 Count 1: the empty message` | ascon-c `LWC_HASH_KAT_128_256.txt`, Count 1 | Ascon-Hash256 of the empty message |
 | `LWC_HASH_KAT_128_256 Count 2: the one-byte message 00` | same file, Count 2 | one byte, 00 |
 | `LWC_HASH_KAT_128_256 Count 9: 8 bytes, one whole block` | same file, Count 9 | 8 bytes, one whole block |
@@ -303,12 +304,23 @@ is carried over byte for byte from the first form, where each was a
 `<name>_expected` spec of byte or Bool literals: the new tests state the
 same bytes as `hex"..."` literals, compared with the old values by a
 script, and the two verdicts as `verify(...)` and `!verify(...)`; no
-vector was added or dropped. The inputs that the first form passed as
+vector was dropped. The inputs that the first form passed as
 32-byte and 64-byte arrays with a length beside them (the generator's
 plaintext, associated data and hash message) are now each test's own
 `hex"..."` PT, AD or message, the prefix of the generator's pattern of the
 test's length. The permutation, which the first form carried twice, is now
 one module read by both files, and its constants are unchanged.
+
+One test was added in the rewrite: the decryption of Count 767, whose
+23-byte ciphertext ends in a partial block, a path no other test takes. Its
+inputs are the Count 767 entry's AD, and its CT split into the 23 bytes of
+C and the 16 of T; its expected value is the entry's PT, 20 21 ... 36. Both
+were recomputed with a second plain Python Ascon-AEAD128 written from the
+standard's description in the rewrite's scratch directory (run with the
+scratch `venv`; it is not in the repository, and pycryptodome and
+cryptography have no Ascon). That script reproduces the CT of Counts 1 and
+1089 and the decryption of Count 1089, decrypts the Count 767 CT to that
+PT, and rejects it with the last tag bit flipped.
 
 This entry is a reference evaluation of a specification under `orangec
 test`. It makes no constant-time, side-channel, performance or certification
@@ -320,15 +332,20 @@ chapter 12.
 - No array has zero elements, so the empty string is not a value: an empty
   associated data or plaintext is a spec of its own (`encrypt_empty_a`,
   `encrypt_empty_p`, `encrypt_empty`), and the hash of the empty message is
-  `hash(padding[0]())`, the padded form alone. Decryption with an empty
-  ciphertext is not written; no vector here needs it.
+  `hash(padding[0]())`, the padded form alone. Decryption and verification
+  (`plaintext_bytes`, `verify`, `decrypt`) are written only for associated
+  data and ciphertext that are both non-empty: their variants with an empty
+  A, an empty C, or both are not written, because no vector here needs
+  them.
 - A spec has at most 256 instances, counting every combination of its sizes
   and types, so `encrypt`, `verify` and `decrypt` cannot take every length
   of both inputs (32 times 32 would be 1,024): the plaintext and ciphertext
   are any of 1 to 32 bytes, and the associated data is one of the listed
-  lengths 1, 7, 8, 16 and 32. Another length is one more entry in the list;
-  longer inputs need the size ranges widened. Ascon-Hash256 takes messages
-  of 1 to 64 bytes.
+  lengths 1, 7, 8, 16 and 32, so that `encrypt`, `plaintext_bytes`, `verify`
+  and `decrypt` have 160 instances each. Another length is one more entry in
+  the list, up to eight lengths (8 times 32 is 256); more lengths, or longer
+  inputs, need a narrower plaintext range. Ascon-Hash256 takes messages of 1
+  to 64 bytes.
 - Slice bounds cannot use `/` or `%`, so the last partial block, |P| mod 16
   bytes, cannot be sliced out of an input by its length: the block loops run
   over the whole padded string and the result is cut with `[..len]`, and

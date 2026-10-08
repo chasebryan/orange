@@ -9,8 +9,9 @@
 // finalization and 8 between blocks. Encryption gives C || T; decryption
 // recovers P and verifies T. The file reproduces nine entries of the
 // designers' known-answer file LWC_AEAD_KAT_128_128.txt (ascon-c, the
-// reference implementation of SP 800-232), one decryption, its verdict, and
-// the rejection of an altered tag.
+// reference implementation of SP 800-232), the decryption of two of them
+// (one ending in a partial block), one verdict, and the rejection of an
+// altered tag.
 edition 2026;
 module ascon {
   use permutation;
@@ -161,7 +162,8 @@ module ascon {
   }
 
   // Section 4, Algorithm 2: the plaintext of |C| bytes, before the tag is
-  // checked.
+  // checked, with A and C not empty; A has one of the listed lengths, as in
+  // encrypt.
   spec plaintext_bytes[
     A in {Word[8]^1, Word[8]^7, Word[8]^8, Word[8]^16, Word[8]^32},
     len in 1..33
@@ -178,7 +180,8 @@ module ascon {
   // Section 4, Algorithm 2: S_r <- C_i is S_r <- S_r ^ P_i, and after the
   // last block S_r <- S_r ^ (P~ || 1 || 0^*) is the state encryption
   // reaches over the same P, so the tag T' is the tag of encrypting the
-  // recovered P, and decryption succeeds when T' = T.
+  // recovered P, and decryption succeeds when T' = T. A and C are not
+  // empty, and A has one of the listed lengths.
   spec verify[
     A in {Word[8]^1, Word[8]^7, Word[8]^8, Word[8]^16, Word[8]^32},
     len in 1..33
@@ -196,7 +199,8 @@ module ascon {
   // Section 4, Algorithm 2, Ascon-AEAD128 decryption: P when T verifies,
   // and fail otherwise. Orange has no value for fail, so the result is then
   // all zeros and the verdict of verify is false; no plaintext is released
-  // before the tag is checked.
+  // before the tag is checked. A and C are not empty, and A has one of the
+  // listed lengths.
   spec decrypt[
     A in {Word[8]^1, Word[8]^7, Word[8]^8, Word[8]^16, Word[8]^32},
     len in 1..33
@@ -274,6 +278,18 @@ module ascon {
     )
   }
 
+  // Count = 767 taken apart for decryption: its CT is the 23 bytes of C,
+  // whose last block is partial (7 bytes), and the tag T. Decryption returns
+  // the file's PT, which also says that the tag verifies, since decrypt
+  // releases P only then.
+  test "LWC_AEAD_KAT_128_128 Count 767: decryption returns P" {
+    let a: Word[8]^7 = hex"30313233343536";
+    let c: Word[8]^23 = hex"6e024bd403f386eb9d1c56f459cfdcde" ++ hex"1b2f6462f27f58";
+    let t: Word[8]^16 = hex"127f1a88644e5d0e79a007ed237cd572";
+    decrypt(kat_key(), kat_nonce(), a, c, t) ==
+      (hex"202122232425262728292a2b2c2d2e2f" ++ hex"30313233343536")
+  }
+
   // Count = 1089 taken apart for decryption: its AD, the 32 bytes of C and
   // the tag T that follow them in CT.
   spec kat_count_1089_a() -> Word[8]^32 {
@@ -297,10 +313,11 @@ module ascon {
     verify(kat_key(), kat_nonce(), kat_count_1089_a(), kat_count_1089_c(), kat_count_1089_t())
   }
 
-  // Count = 1089 with the last tag byte changed from 0xaa to 0xab:
-  // Algorithm 2 returns fail. The verdict is the definition's; the Python
-  // reference written for this entry agrees.
-  test "LWC_AEAD_KAT_128_128 Count 1089 with the last tag byte changed: rejected" {
+  // Derived from Count = 1089, not an entry of the file: the last tag byte
+  // changed from 0xaa to 0xab, for which Algorithm 2 returns fail. The
+  // verdict is the definition's; the Python reference written for this entry
+  // agrees.
+  test "Derived from Count 1089, last tag byte changed: rejected" {
     let t: Word[8]^16 = kat_count_1089_t() with [15] = 0xab;
     !verify(kat_key(), kat_nonce(), kat_count_1089_a(), kat_count_1089_c(), t)
   }
