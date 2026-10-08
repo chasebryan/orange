@@ -97,31 +97,31 @@ The attacks that matter are on implementations. Manger (Crypto 2001)
 showed that a decryptor which reveals whether the first octet Y of EM was
 zero, by a distinct error or by its timing, lets an attacker decrypt any
 ciphertext with a number of queries of the order of the modulus's length
-in bits. RFC 8017 therefore requires, in a note to step 3.g, that the
-failures of the decoding not be distinguishable, and Wycheproof's
-`InvalidOaepPadding` cases, of which tcId 12 is one, exist to test exactly
-that; its notes cite CVE-2020-26939. The same family of attacks on
-RSAES-PKCS1-v1_5 (Bleichenbacher, Crypto 1998) is what moved new designs to
-OAEP. A decryption by the Chinese remainder theorem that suffers a fault in
-one half reveals a factor of n from the faulty output (Boneh, DeMillo and
-Lipton, Eurocrypt 1997), so implementations check the result before
-releasing it; and square-and-multiply exponentiation that branches on the
-bits of the private exponent leaks them through timing (Kocher, Crypto
-1996).
+in bits. RFC 8017 therefore says, in a note to step 3.g, that care must be
+taken that an opponent cannot distinguish the failures of the decoding, and
+Wycheproof's `InvalidOaepPadding` cases, of which tcId 12 is one, exist to
+test exactly that; its notes cite CVE-2020-26939. The same family of attacks
+on RSAES-PKCS1-v1_5 (Bleichenbacher, Crypto 1998) is the reason RFC 3560
+gives for using OAEP for RSA key transport in CMS. A decryption by the
+Chinese remainder theorem that suffers a fault in one half reveals a factor
+of n from the faulty output (Boneh, DeMillo and Lipton, Eurocrypt 1997), so
+implementations check the result before releasing it; and square-and-multiply
+exponentiation that branches on the bits of the private exponent leaks them
+through timing (Kocher, Crypto 1996).
 
 The size of the key is the rest. The 1024-bit key of the RSA Laboratories
 vectors is a test key: NIST SP 800-131A Rev. 2 disallows RSA key transport
-with moduli below 2048 bits. The largest RSA challenge numbers factored in
-public are RSA-768 (Kleinjung and others, 2009) and RSA-250, of 829 bits
+with moduli below 2048 bits. Public factorizations of RSA challenge numbers
+include RSA-768 (Kleinjung and others, 2009) and RSA-250, of 829 bits
 (Boudot, Gaudry, Guillevic, Heninger, Thome and Zimmermann, 2020). Shor's
 algorithm would factor any RSA modulus on a large enough quantum computer,
 and NIST's draft transition plan, NIST IR 8547 (November 2024), proposes to
 deprecate RSA at the 112-bit security level after 2030 and to disallow RSA
 key establishment after 2035, with ML-KEM (FIPS 203) as the replacement.
 The SHA-1 of the RSA Laboratories vectors is the hash of PKCS #1 v2.0's
-time; OAEP does not rely on its collision resistance, and no attack on
-RSA-OAEP from the SHA-1 collisions is known, but new uses take SHA-256, as
-JOSE's `RSA-OAEP-256` does.
+time. The proof of Fujisaki and others assumes only the RSA problem in the
+random oracle model, not collision resistance of the hash, and JOSE's
+`RSA-OAEP-256` uses SHA-256.
 
 ### What the Orange rendering shows
 

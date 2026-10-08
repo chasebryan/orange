@@ -126,9 +126,8 @@ categories is known. The margin of the smallest parameter set has been the
 debated point: NIST's third-round report (NIST IR 8413, 2022) placed
 Kyber-512 in category 1, at least as hard to break as AES-128 by key search,
 with an estimate that depends on how the cost of memory access in lattice
-sieving is counted, and that placement was publicly contested. FIPS 203
-recommends ML-KEM-768 as the default parameter set, and it is the one the
-deployed hybrids use.
+sieving is counted, and that placement was publicly contested. ML-KEM-768 is
+the parameter set of both hybrids named at the head of this entry.
 
 Decryption can fail, because the rounding in decryption can be overwhelmed
 by the error terms; FIPS 203 gives the failure probability of ML-KEM-512 as
@@ -144,9 +143,9 @@ hash of ek inside dk).
 
 The attacks on deployed ML-KEM and Kyber have been on implementations.
 KyberSlash (2024) measured secret-dependent timing in the division by q that
-the reference code's compression used, and recovered keys from libraries
-that copied it; a compiler-introduced branch on the message bit in the
-reference code was shown exploitable the same year. Decapsulation must
+the reference code's compression used, and recovered keys from
+implementations that had it; a compiler-introduced branch on the message bit
+in the reference code was shown exploitable the same year. Decapsulation must
 compare all 768 bytes of the two ciphertexts, and select the key without
 branching on the result. Wycheproof's `Strcmp` vector below checks the
 first: a comparison that stopped at a zero byte would accept a ciphertext it
