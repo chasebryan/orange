@@ -1,100 +1,84 @@
-// SHA-2: SHA-256 and SHA-512 of FIPS 180-4, Secure Hash Standard (NIST,
-// August 2015), https://doi.org/10.6028/NIST.FIPS.180-4: the functions of
-// section 4.1, the constants of section 4.2, the padding and parsing of
-// sections 5.1 and 5.2, the initial hash values of section 5.3, and the hash
-// computations of sections 6.2 and 6.4, written as the standard writes them,
-// with the 64-bit computation a copy of the 32-bit one over Word[64].
-// SHA-224, SHA-384 and SHA-512/256 (sections 6.3, 6.5 and 6.7) are the same
-// computations from their own initial values, truncated. Each message is
-// padded by a loop that builds its blocks from the bytes.
+// SHA-2: SHA-224, SHA-256, SHA-384, SHA-512 and SHA-512/256 of FIPS 180-4,
+// Secure Hash Standard (NIST, August 2015),
+// https://doi.org/10.6028/NIST.FIPS.180-4: the functions of section 4.1, the
+// constants of section 4.2, the padding and parsing of sections 5.1 and 5.2,
+// the initial hash values of section 5.3, and the hash computations of
+// sections 6.2 and 6.4, written as the standard writes them, with the 64-bit
+// computation a copy of the 32-bit one over Word[64]. SHA-224, SHA-384 and
+// SHA-512/256 (sections 6.3, 6.5 and 6.7) are the same computations from
+// their own initial values, truncated. Names without a suffix are the 32-bit
+// (SHA-224 and SHA-256) ones; the 64-bit ones carry the suffix _512.
 //
 // The file reproduces the digests of NIST's examples for SHA-256 ("abc" and
 // the 56-byte two-block message) and SHA-512 ("abc" and the 112-byte
 // two-block message), the empty message and a 64-byte message from Botan's
 // vector file, the SHA-224 and SHA-512/256 digests from OpenSSL's vector
-// file, and the SHA-384 digests from Botan's; every value was cross-checked
-// with Python's hashlib.
+// file, the SHA-384 digests from Botan's, and the SHA-512 digest of the empty
+// message from Python's hashlib; every value was cross-checked with hashlib.
 edition 2026;
 module sha2 {
-  // Bytes to words and back, big-endian, as section 3.1 reads a message.
-  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
-  }
+  // Sections 4.1.2 (equations 4.2 and 4.3) and 4.1.3 (4.8 and 4.9): Ch and
+  // Maj are the same formulas on 32-bit and 64-bit words, so one spec serves
+  // both widths.
+  spec ch[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (~x & z) }
+  spec maj[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (x & z) ^ (y & z) }
 
-  spec load_be64(
-    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
-    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
-  ) -> Word[64] {
-    ((b0 as Word[64]) << 56) | ((b1 as Word[64]) << 48) | ((b2 as Word[64]) << 40)
-      | ((b3 as Word[64]) << 32) | ((b4 as Word[64]) << 24) | ((b5 as Word[64]) << 16)
-      | ((b6 as Word[64]) << 8) | (b7 as Word[64])
-  }
-
-  spec be_bytes64(x: Word[64]) -> Word[8]^8 {
-    [
-      (x >> 56) as Word[8], (x >> 48) as Word[8], (x >> 40) as Word[8], (x >> 32) as Word[8],
-      (x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8],
-    ]
-  }
-
-  // Section 4.1.2: the SHA-224 and SHA-256 functions on 32-bit words.
-  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
-  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  // Section 4.1.2: the SHA-224 and SHA-256 Sigma and sigma functions on 32-bit
+  // words.
   spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
   spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
   spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
   spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
 
-  // Section 4.1.3: the SHA-384, SHA-512, SHA-512/224 and SHA-512/256
-  // functions on 64-bit words. The standard reuses the names Ch, Maj,
-  // Sigma and sigma; here the 64-bit versions carry the suffix _512.
-  spec ch_512(x: Word[64], y: Word[64], z: Word[64]) -> Word[64] { (x & y) ^ (~x & z) }
-  spec maj_512(x: Word[64], y: Word[64], z: Word[64]) -> Word[64] { (x & y) ^ (x & z) ^ (y & z) }
+  // Section 4.1.3: the SHA-384, SHA-512, SHA-512/224 and SHA-512/256 Sigma
+  // and sigma functions on 64-bit words. The standard reuses the names; here
+  // the 64-bit versions carry the suffix _512.
   spec big_sigma0_512(x: Word[64]) -> Word[64] { (x >>> 28) ^ (x >>> 34) ^ (x >>> 39) }
   spec big_sigma1_512(x: Word[64]) -> Word[64] { (x >>> 14) ^ (x >>> 18) ^ (x >>> 41) }
   spec small_sigma0_512(x: Word[64]) -> Word[64] { (x >>> 1) ^ (x >>> 8) ^ (x >> 7) }
   spec small_sigma1_512(x: Word[64]) -> Word[64] { (x >>> 19) ^ (x >>> 61) ^ (x >> 6) }
 
   // Section 4.2.2: K{256}, the first 32 bits of the fractional parts of the
-  // cube roots of the first 64 primes.
+  // cube roots of the first 64 primes, in hex from left to right as the
+  // standard prints them, read as big-endian words.
   spec round_constants() -> Word[32]^64 {
-    [
-      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-    ]
+    (
+      hex"428a2f98 71374491 b5c0fbcf e9b5dba5 3956c25b 59f111f1 923f82a4 ab1c5ed5" ++
+      hex"d807aa98 12835b01 243185be 550c7dc3 72be5d74 80deb1fe 9bdc06a7 c19bf174" ++
+      hex"e49b69c1 efbe4786 0fc19dc6 240ca1cc 2de92c6f 4a7484aa 5cb0a9dc 76f988da" ++
+      hex"983e5152 a831c66d b00327c8 bf597fc7 c6e00bf3 d5a79147 06ca6351 14292967" ++
+      hex"27b70a85 2e1b2138 4d2c6dfc 53380d13 650a7354 766a0abb 81c2c92e 92722c85" ++
+      hex"a2bfe8a1 a81a664b c24b8b70 c76c51a3 d192e819 d6990624 f40e3585 106aa070" ++
+      hex"19a4c116 1e376c08 2748774c 34b0bcb5 391c0cb3 4ed8aa4a 5b9cca4f 682e6ff3" ++
+      hex"748f82ee 78a5636f 84c87814 8cc70208 90befffa a4506ceb bef9a3f7 c67178f2"
+    ) as big Word[32]^64
   }
 
   // Section 4.2.3: K{512}, the first 64 bits of the fractional parts of the
   // cube roots of the first 80 primes.
   spec round_constants_512() -> Word[64]^80 {
-    [
-      0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
-      0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
-      0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
-      0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235, 0xc19bf174cf692694,
-      0xe49b69c19ef14ad2, 0xefbe4786384f25e3, 0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65,
-      0x2de92c6f592b0275, 0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
-      0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f, 0xbf597fc7beef0ee4,
-      0xc6e00bf33da88fc2, 0xd5a79147930aa725, 0x06ca6351e003826f, 0x142929670a0e6e70,
-      0x27b70a8546d22ffc, 0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
-      0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6, 0x92722c851482353b,
-      0xa2bfe8a14cf10364, 0xa81a664bbc423001, 0xc24b8b70d0f89791, 0xc76c51a30654be30,
-      0xd192e819d6ef5218, 0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
-      0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99, 0x34b0bcb5e19b48a8,
-      0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb, 0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3,
-      0x748f82ee5defb2fc, 0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
-      0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b,
-      0xca273eceea26619c, 0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178,
-      0x06f067aa72176fba, 0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
-      0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c,
-      0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
-    ]
+    (
+      hex"428a2f98d728ae22 7137449123ef65cd b5c0fbcfec4d3b2f e9b5dba58189dbbc" ++
+      hex"3956c25bf348b538 59f111f1b605d019 923f82a4af194f9b ab1c5ed5da6d8118" ++
+      hex"d807aa98a3030242 12835b0145706fbe 243185be4ee4b28c 550c7dc3d5ffb4e2" ++
+      hex"72be5d74f27b896f 80deb1fe3b1696b1 9bdc06a725c71235 c19bf174cf692694" ++
+      hex"e49b69c19ef14ad2 efbe4786384f25e3 0fc19dc68b8cd5b5 240ca1cc77ac9c65" ++
+      hex"2de92c6f592b0275 4a7484aa6ea6e483 5cb0a9dcbd41fbd4 76f988da831153b5" ++
+      hex"983e5152ee66dfab a831c66d2db43210 b00327c898fb213f bf597fc7beef0ee4" ++
+      hex"c6e00bf33da88fc2 d5a79147930aa725 06ca6351e003826f 142929670a0e6e70" ++
+      hex"27b70a8546d22ffc 2e1b21385c26c926 4d2c6dfc5ac42aed 53380d139d95b3df" ++
+      hex"650a73548baf63de 766a0abb3c77b2a8 81c2c92e47edaee6 92722c851482353b" ++
+      hex"a2bfe8a14cf10364 a81a664bbc423001 c24b8b70d0f89791 c76c51a30654be30" ++
+      hex"d192e819d6ef5218 d69906245565a910 f40e35855771202a 106aa07032bbd1b8" ++
+      hex"19a4c116b8d2d0c8 1e376c085141ab53 2748774cdf8eeb99 34b0bcb5e19b48a8" ++
+      hex"391c0cb3c5c95a63 4ed8aa4ae3418acb 5b9cca4f7763e373 682e6ff3d6b2b8a3" ++
+      hex"748f82ee5defb2fc 78a5636f43172f60 84c87814a1f0ab72 8cc702081a6439ec" ++
+      hex"90befffa23631e28 a4506cebde82bde9 bef9a3f7b2c67915 c67178f2e372532b" ++
+      hex"ca273eceea26619c d186b8c721c0c207 eada7dd6cde0eb1e f57d4f7fee6ed178" ++
+      hex"06f067aa72176fba 0a637dc5a2c898a6 113f9804bef90dae 1b710b35131c471b" ++
+      hex"28db77f523047d84 32caab7b40c72493 3c9ebe0a15c9bebc 431d67c49c100d4c" ++
+      hex"4cc5d4becb3e42b6 597f299cfc657e2a 5fcb6fab3ad6faec 6c44198c4a475817"
+    ) as big Word[64]^80
   }
 
   // Section 5.3.2: SHA-224's initial hash value, the second 32 bits of the
@@ -145,111 +129,35 @@ module sha2 {
     ]
   }
 
-  // Section 5.1: the padded message ends with its length l in bits as a
-  // big-endian integer, 64 bits for SHA-224 and SHA-256 (5.1.1), 128 bits
-  // for SHA-384, SHA-512 and SHA-512/t (5.1.2). The length is written into
-  // the last eight bytes of the padded message; for the 128-bit length the
-  // eight bytes before them stay zero, since every message here is shorter
-  // than 2^64 bits. The suffix of with_length_n is the buffer's size in
-  // bytes: 64 or 128 for one or two SHA-256 blocks, 128 or 256 for one or
-  // two SHA-512 blocks.
-  spec with_length_64(b: Word[8]^64, l: Word[64]) -> Word[8]^64 {
-    let bytes: Word[8]^8 = be_bytes64(l);
-    for i in 0..8 with out: Word[8]^64 = b { out with [56 + i] = bytes[i] }
+  // Section 5.1.1: the bits appended to a message of len bytes, l = 8 len
+  // bits: the bit 1, k zero bits with l + 1 + k = 448 mod 512, and l as a
+  // 64-bit big-endian integer. Every message here is whole bytes, so the bit
+  // 1 and the first seven zero bits are the byte 0x80 that opens the fill of
+  // (k + 1) / 8 bytes. The padded message M ++ padding[len]() is
+  // 64 ((len + 72) / 64) bytes, a whole number of 512-bit blocks. The spec
+  // returns what is appended rather than the padded message because an array
+  // has at least one element: the empty message has no array of its own, and
+  // its padded form is padding[0]() alone. len runs over 0 through 64, which
+  // covers the vectors' 0, 3, 56 and 64 bytes.
+  spec padding[len in 0..65]() -> Word[8]^(64 * ((len + 72) / 64) - len) {
+    let l: Int = 8 * len;
+    ([0; (64 * ((len + 72) / 64) - len - 8)] with [0] = 0x80) ++ (l as big Word[8]^8)
   }
 
-  spec with_length_128(b: Word[8]^128, l: Word[64]) -> Word[8]^128 {
-    let bytes: Word[8]^8 = be_bytes64(l);
-    for i in 0..8 with out: Word[8]^128 = b { out with [120 + i] = bytes[i] }
+  // Section 5.1.2, likewise with l + 1 + k = 896 mod 1024 and l as a 128-bit
+  // big-endian integer, so that the padded message is
+  // 128 ((len + 144) / 128) bytes. len runs over 0 through 112, which covers
+  // the vectors' 0, 3 and 112 bytes.
+  spec padding_512[len in 0..113]() -> Word[8]^(128 * ((len + 144) / 128) - len) {
+    let l: Int = 8 * len;
+    ([0; (128 * ((len + 144) / 128) - len - 16)] with [0] = 0x80) ++ (l as big Word[8]^16)
   }
 
-  spec with_length_256(b: Word[8]^256, l: Word[64]) -> Word[8]^256 {
-    let bytes: Word[8]^8 = be_bytes64(l);
-    for i in 0..8 with out: Word[8]^256 = b { out with [248 + i] = bytes[i] }
-  }
-
-  // Section 5.2.1: a padded message is parsed into N 512-bit blocks of
-  // sixteen 32-bit words, M(i)_0 the leftmost.
-  spec parse_1(b: Word[8]^64) -> Word[32]^16 {
-    for t in 0..16 with w: Word[32]^16 = [0; 16] {
-      w with [t] = load_be32(b[4 * t], b[4 * t + 1], b[4 * t + 2], b[4 * t + 3])
-    }
-  }
-
-  spec parse_2(b: Word[8]^128) -> Word[32]^32 {
-    for t in 0..32 with w: Word[32]^32 = [0; 32] {
-      w with [t] = load_be32(b[4 * t], b[4 * t + 1], b[4 * t + 2], b[4 * t + 3])
-    }
-  }
-
-  // Section 5.2.2: a padded message is parsed into N 1024-bit blocks of
-  // sixteen 64-bit words.
-  spec parse_512_1(b: Word[8]^128) -> Word[64]^16 {
-    for t in 0..16 with w: Word[64]^16 = [0; 16] {
-      w with [t] = load_be64(
-        b[8 * t], b[8 * t + 1], b[8 * t + 2], b[8 * t + 3],
-        b[8 * t + 4], b[8 * t + 5], b[8 * t + 6], b[8 * t + 7],
-      )
-    }
-  }
-
-  spec parse_512_2(b: Word[8]^256) -> Word[64]^32 {
-    for t in 0..32 with w: Word[64]^32 = [0; 32] {
-      w with [t] = load_be64(
-        b[8 * t], b[8 * t + 1], b[8 * t + 2], b[8 * t + 3],
-        b[8 * t + 4], b[8 * t + 5], b[8 * t + 6], b[8 * t + 7],
-      )
-    }
-  }
-
-  // Section 5.1.1, for the message lengths of the vectors: the message, the
-  // bit 1 (the byte 0x80, since every message is whole bytes), k zero bits
-  // so that l + 1 + k = 448 mod 512, and l as 64 bits. The empty message
-  // has no bytes to copy: its block is the bit 1, zeros, and l = 0.
-  spec pad_empty() -> Word[32]^16 {
-    parse_1(with_length_64([0; 64] with [0] = 0x80, 0))
-  }
-
-  // l = 24: one block, k = 423.
-  spec pad_3(m: Word[8]^3) -> Word[32]^16 {
-    let text: Word[8]^64 = for i in 0..3 with b: Word[8]^64 = [0; 64] { b with [i] = m[i] };
-    parse_1(with_length_64(text with [3] = 0x80, 24))
-  }
-
-  // l = 448: the bit 1 leaves no room for the length, so two blocks, k = 511.
-  spec pad_56(m: Word[8]^56) -> Word[32]^32 {
-    let text: Word[8]^128 = for i in 0..56 with b: Word[8]^128 = [0; 128] { b with [i] = m[i] };
-    parse_2(with_length_128(text with [56] = 0x80, 448))
-  }
-
-  // l = 512: the message fills a block, so the padding is a second block,
-  // k = 447.
-  spec pad_64(m: Word[8]^64) -> Word[32]^32 {
-    let text: Word[8]^128 = for i in 0..64 with b: Word[8]^128 = [0; 128] { b with [i] = m[i] };
-    parse_2(with_length_128(text with [64] = 0x80, 512))
-  }
-
-  // Section 5.1.2, likewise with l + 1 + k = 896 mod 1024 and l as 128 bits.
-  spec pad_512_empty() -> Word[64]^16 {
-    parse_512_1(with_length_128([0; 128] with [0] = 0x80, 0))
-  }
-
-  // l = 24: one block, k = 871.
-  spec pad_512_3(m: Word[8]^3) -> Word[64]^16 {
-    let text: Word[8]^128 = for i in 0..3 with b: Word[8]^128 = [0; 128] { b with [i] = m[i] };
-    parse_512_1(with_length_128(text with [3] = 0x80, 24))
-  }
-
-  // l = 896: two blocks, k = 1023.
-  spec pad_512_112(m: Word[8]^112) -> Word[64]^32 {
-    let text: Word[8]^256 = for i in 0..112 with b: Word[8]^256 = [0; 256] { b with [i] = m[i] };
-    parse_512_2(with_length_256(text with [112] = 0x80, 896))
-  }
-
-  // Section 6.2.2, step 1: the SHA-256 message schedule W_0 through W_63.
+  // Section 6.2.2, step 1: the SHA-256 message schedule. W_0 through W_15 are
+  // the block's words; the zeros after them are placeholders that the
+  // recurrence replaces, W_16 through W_63, in order.
   spec schedule(m: Word[32]^16) -> Word[32]^64 {
-    let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
-    for t in 16..64 with w: Word[32]^64 = head {
+    for t in 16..64 with w: Word[32]^64 = m ++ [0; 48] {
       w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
     }
   }
@@ -270,30 +178,39 @@ module sha2 {
     for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
   }
 
-  // Section 6.2.2, "for i = 1 to N", with N = 2: the blocks in order, each
-  // taken from the parsed message by a loop.
-  spec hash_two_blocks(h0: Word[32]^8, w: Word[32]^32) -> Word[32]^8 {
-    for n in 0..2 with h: Word[32]^8 = h0 {
-      compress(h, for t in 0..16 with m: Word[32]^16 = [0; 16] { m with [t] = w[16 * n + t] })
+  // Section 6.2.2, "for i = 1 to N", over a padded message of N = n blocks,
+  // each parsed as section 5.2.1 parses it: sixteen big-endian 32-bit words,
+  // M(i)_0 the leftmost.
+  spec hash[n in 1..3](h0: Word[32]^8, p: Word[8]^(64 * n)) -> Word[32]^8 {
+    for i in 0..(n) with h: Word[32]^8 = h0 {
+      compress(h, p[64 * i..64 * i + 64] as big Word[32]^16)
     }
   }
 
+  // Section 6.2.2: the SHA-256 digest of a padded message is
+  // H(N)_0 || H(N)_1 || ... || H(N)_7.
+  spec sha256[n in 1..3](p: Word[8]^(64 * n)) -> Word[8]^32 {
+    hash(initial_hash_256(), p) as big Word[8]^32
+  }
+
   // Section 6.3: SHA-224 is SHA-256 from its own initial value, and the
-  // digest is the leftmost 224 bits, H_0 through H_6.
-  spec truncate_224(h: Word[32]^8) -> Word[32]^7 { [h[0], h[1], h[2], h[3], h[4], h[5], h[6]] }
+  // digest is the leftmost 224 bits, H(N)_0 through H(N)_6.
+  spec sha224[n in 1..3](p: Word[8]^(64 * n)) -> Word[8]^28 {
+    hash(initial_hash_224(), p)[..7] as big Word[8]^28
+  }
 
   // Section 6.4.2, step 1: the SHA-512 message schedule W_0 through W_79.
   spec schedule_512(m: Word[64]^16) -> Word[64]^80 {
-    let head: Word[64]^80 = for t in 0..16 with w: Word[64]^80 = [0; 80] { w with [t] = m[t] };
-    for t in 16..80 with w: Word[64]^80 = head {
-      w with [t] = small_sigma1_512(w[t - 2]) + w[t - 7] + small_sigma0_512(w[t - 15]) + w[t - 16]
+    for t in 16..80 with w: Word[64]^80 = m ++ [0; 64] {
+      w with [t] =
+        small_sigma1_512(w[t - 2]) + w[t - 7] + small_sigma0_512(w[t - 15]) + w[t - 16]
     }
   }
 
   // Section 6.4.2, step 3: one SHA-512 round.
   spec round_512(v: Word[64]^8, k: Word[64], w: Word[64]) -> Word[64]^8 {
-    let t1: Word[64] = v[7] + big_sigma1_512(v[4]) + ch_512(v[4], v[5], v[6]) + k + w;
-    let t2: Word[64] = big_sigma0_512(v[0]) + maj_512(v[0], v[1], v[2]);
+    let t1: Word[64] = v[7] + big_sigma1_512(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[64] = big_sigma0_512(v[0]) + maj(v[0], v[1], v[2]);
     [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
   }
 
@@ -305,198 +222,151 @@ module sha2 {
     for i in 0..8 with out: Word[64]^8 = v { out with [i] = out[i] + h[i] }
   }
 
-  // Section 6.4.2, "for i = 1 to N", with N = 2.
-  spec hash_two_blocks_512(h0: Word[64]^8, w: Word[64]^32) -> Word[64]^8 {
-    for n in 0..2 with h: Word[64]^8 = h0 {
-      compress_512(h, for t in 0..16 with m: Word[64]^16 = [0; 16] { m with [t] = w[16 * n + t] })
+  // Section 6.4.2, "for i = 1 to N", each block parsed as section 5.2.2
+  // parses it: sixteen big-endian 64-bit words.
+  spec hash_512[n in 1..3](h0: Word[64]^8, p: Word[8]^(128 * n)) -> Word[64]^8 {
+    for i in 0..(n) with h: Word[64]^8 = h0 {
+      compress_512(h, p[128 * i..128 * i + 128] as big Word[64]^16)
     }
   }
 
+  // Section 6.4.2: the SHA-512 digest is H(N)_0 || ... || H(N)_7.
+  spec sha512[n in 1..3](p: Word[8]^(128 * n)) -> Word[8]^64 {
+    hash_512(initial_hash_512(), p) as big Word[8]^64
+  }
+
   // Section 6.5: SHA-384 is SHA-512 from its own initial value, truncated to
-  // the leftmost 384 bits, H_0 through H_5.
-  spec truncate_384(h: Word[64]^8) -> Word[64]^6 { [h[0], h[1], h[2], h[3], h[4], h[5]] }
+  // the leftmost 384 bits, H(N)_0 through H(N)_5.
+  spec sha384[n in 1..3](p: Word[8]^(128 * n)) -> Word[8]^48 {
+    hash_512(initial_hash_384(), p)[..6] as big Word[8]^48
+  }
 
   // Section 6.7: SHA-512/256 is SHA-512 from the initial value of 5.3.6.2,
-  // truncated to the leftmost 256 bits, H_0 through H_3.
-  spec truncate_512_256(h: Word[64]^8) -> Word[64]^4 { [h[0], h[1], h[2], h[3]] }
-
-  // The messages. "abc", and the two-block messages of NIST's examples:
-  // "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" for SHA-224
-  // and SHA-256, and "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijk
-  // lmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu" for the
-  // 64-bit variants.
-  spec abc() -> Word[8]^3 { [0x61, 0x62, 0x63] }
-
-  spec two_block_message_256() -> Word[8]^56 {
-    [
-      0x61, 0x62, 0x63, 0x64, 0x62, 0x63, 0x64, 0x65, 0x63, 0x64, 0x65, 0x66, 0x64, 0x65, 0x66, 0x67,
-      0x65, 0x66, 0x67, 0x68, 0x66, 0x67, 0x68, 0x69, 0x67, 0x68, 0x69, 0x6a, 0x68, 0x69, 0x6a, 0x6b,
-      0x69, 0x6a, 0x6b, 0x6c, 0x6a, 0x6b, 0x6c, 0x6d, 0x6b, 0x6c, 0x6d, 0x6e, 0x6c, 0x6d, 0x6e, 0x6f,
-      0x6d, 0x6e, 0x6f, 0x70, 0x6e, 0x6f, 0x70, 0x71,
-    ]
+  // truncated to the leftmost 256 bits, H(N)_0 through H(N)_3.
+  spec sha512_256[n in 1..3](p: Word[8]^(128 * n)) -> Word[8]^32 {
+    hash_512(initial_hash_512_256(), p)[..4] as big Word[8]^32
   }
 
-  spec two_block_message_512() -> Word[8]^112 {
-    [
-      0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
-      0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b,
-      0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d,
-      0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f,
-      0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71,
-      0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73,
-      0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
-    ]
-  }
-
-  // The 64-byte message of Botan's sha2_32.vec, [SHA-256], input
-  // 3b47876f88f7c4e7...ba43524d: exactly one block, so the padding is a
-  // whole second block.
-  spec botan_64_byte_message() -> Word[8]^64 {
-    [
-      0x3b, 0x47, 0x87, 0x6f, 0x88, 0xf7, 0xc4, 0xe7, 0xce, 0x09, 0xf8, 0xbb, 0x35, 0x24, 0x09, 0x15,
-      0x39, 0x1c, 0xd5, 0xd3, 0x35, 0xf1, 0x2b, 0x40, 0xb3, 0xda, 0x5e, 0x30, 0xeb, 0x50, 0x4a, 0x19,
-      0x6b, 0x48, 0x4f, 0x86, 0x49, 0x29, 0xc8, 0x97, 0x93, 0xf9, 0x36, 0x91, 0xad, 0x4c, 0x06, 0x2e,
-      0xe4, 0x86, 0x1e, 0x81, 0x1e, 0xf2, 0xc0, 0xc0, 0x47, 0x26, 0x67, 0x52, 0xba, 0x43, 0x52, 0x4d,
-    ]
-  }
+  // The vectors. Each test hashes its message followed by the padding for
+  // its length; the empty message's padded form is the padding alone. The
+  // two-block messages are those of NIST's examples:
+  // "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" (56 bytes) for
+  // SHA-224 and SHA-256, whose bit 1 fits in the first block but whose
+  // length does not, and "abcdefghbcdefghi...nopqrstu" (112 bytes) for the
+  // 64-bit variants, likewise.
 
   // Botan sha2_32.vec, [SHA-256], the empty input (also hashlib).
-  spec botan_sha256_empty() -> Word[32]^8 { compress(initial_hash_256(), pad_empty()) }
-  spec botan_sha256_empty_expected() -> Word[32]^8 {
-    [
-      0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c, 0xa495991b, 0x7852b855,
-    ]
+  test "Botan sha2_32.vec: SHA-256 of the empty message" {
+    sha256(padding[0]()) ==
+      hex"e3b0c442 98fc1c14 9afbf4c8 996fb924 27ae41e4 649b934c a495991b 7852b855"
   }
 
   // NIST, "SHA-256 Examples with Intermediate Values", one-block message
   // "abc"; the value as printed in Botan sha2_32.vec and OpenSSL
   // evpmd_sha.txt.
-  spec nist_sha256_abc() -> Word[32]^8 { compress(initial_hash_256(), pad_3(abc())) }
-  spec nist_sha256_abc_expected() -> Word[32]^8 {
-    [
-      0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad,
-    ]
+  test "NIST example: SHA-256 of abc" {
+    sha256("abc" ++ padding[3]()) ==
+      hex"ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad"
   }
 
   // NIST, "SHA-256 Examples with Intermediate Values", the two-block
   // message; the value as printed in Botan sha2_32.vec and OpenSSL
   // evpmd_sha.txt.
-  spec nist_sha256_two_block() -> Word[32]^8 {
-    hash_two_blocks(initial_hash_256(), pad_56(two_block_message_256()))
-  }
-  spec nist_sha256_two_block_expected() -> Word[32]^8 {
-    [
-      0x248d6a61, 0xd20638b8, 0xe5c02693, 0x0c3e6039, 0xa33ce459, 0x64ff2167, 0xf6ecedd4, 0x19db06c1,
-    ]
+  test "NIST example: SHA-256 of the two-block message" {
+    let m: Word[8]^56 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    sha256(m ++ padding[56]()) ==
+      hex"248d6a61 d20638b8 e5c02693 0c3e6039 a33ce459 64ff2167 f6ecedd4 19db06c1"
   }
 
-  // Botan sha2_32.vec, [SHA-256], the 64-byte input (also hashlib).
-  spec botan_sha256_64_bytes() -> Word[32]^8 {
-    hash_two_blocks(initial_hash_256(), pad_64(botan_64_byte_message()))
-  }
-  spec botan_sha256_64_bytes_expected() -> Word[32]^8 {
-    [
-      0x14609c05, 0x4e038a8c, 0xb4f0886d, 0xe99b3130, 0x7f2e707a, 0x072c674a, 0xbfa64616, 0x1b6bff63,
-    ]
+  // Botan sha2_32.vec, [SHA-256], the 64-byte input 3b47876f...ba43524d
+  // (also hashlib): exactly one block, so the padding is a whole second
+  // block.
+  test "Botan sha2_32.vec: SHA-256 of a 64-byte message" {
+    let m: Word[8]^64 =
+      hex"3b47876f88f7c4e7ce09f8bb35240915391cd5d335f12b40b3da5e30eb504a19" ++
+      hex"6b484f864929c89793f93691ad4c062ee4861e811ef2c0c047266752ba43524d";
+    sha256(m ++ padding[64]()) ==
+      hex"14609c05 4e038a8c b4f0886d e99b3130 7f2e707a 072c674a bfa64616 1b6bff63"
   }
 
   // OpenSSL evpmd_sha.txt, Digest = SHA224, Input = "abc" (also hashlib).
-  spec openssl_sha224_abc() -> Word[32]^7 {
-    truncate_224(compress(initial_hash_224(), pad_3(abc())))
-  }
-  spec openssl_sha224_abc_expected() -> Word[32]^7 {
-    [
-      0x23097d22, 0x3405d822, 0x8642a477, 0xbda255b3, 0x2aadbce4, 0xbda0b3f7, 0xe36c9da7,
-    ]
+  test "OpenSSL evpmd_sha.txt: SHA-224 of abc" {
+    sha224("abc" ++ padding[3]()) ==
+      hex"23097d22 3405d822 8642a477 bda255b3 2aadbce4 bda0b3f7 e36c9da7"
   }
 
   // OpenSSL evpmd_sha.txt, Digest = SHA224, the two-block message (also
   // hashlib).
-  spec openssl_sha224_two_block() -> Word[32]^7 {
-    truncate_224(hash_two_blocks(initial_hash_224(), pad_56(two_block_message_256())))
-  }
-  spec openssl_sha224_two_block_expected() -> Word[32]^7 {
-    [
-      0x75388b16, 0x512776cc, 0x5dba5da1, 0xfd890150, 0xb0c6455c, 0xb4f58b19, 0x52522525,
-    ]
+  test "OpenSSL evpmd_sha.txt: SHA-224 of the two-block message" {
+    let m: Word[8]^56 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    sha224(m ++ padding[56]()) ==
+      hex"75388b16 512776cc 5dba5da1 fd890150 b0c6455c b4f58b19 52522525"
   }
 
   // hashlib.sha512(b"").hexdigest(); no fetched vector file carries the
   // empty message for SHA-512.
-  spec hashlib_sha512_empty() -> Word[64]^8 { compress_512(initial_hash_512(), pad_512_empty()) }
-  spec hashlib_sha512_empty_expected() -> Word[64]^8 {
-    [
-      0xcf83e1357eefb8bd, 0xf1542850d66d8007, 0xd620e4050b5715dc, 0x83f4a921d36ce9ce,
-      0x47d0d13c5d85f2b0, 0xff8318d2877eec2f, 0x63b931bd47417a81, 0xa538327af927da3e,
-    ]
+  test "hashlib: SHA-512 of the empty message" {
+    sha512(padding_512[0]()) == (
+      hex"cf83e1357eefb8bd f1542850d66d8007 d620e4050b5715dc 83f4a921d36ce9ce" ++
+      hex"47d0d13c5d85f2b0 ff8318d2877eec2f 63b931bd47417a81 a538327af927da3e"
+    )
   }
 
   // NIST, "SHA-512 Examples with Intermediate Values", one-block message
   // "abc"; the value as printed in Botan sha2_64.vec and OpenSSL
   // evpmd_sha.txt.
-  spec nist_sha512_abc() -> Word[64]^8 { compress_512(initial_hash_512(), pad_512_3(abc())) }
-  spec nist_sha512_abc_expected() -> Word[64]^8 {
-    [
-      0xddaf35a193617aba, 0xcc417349ae204131, 0x12e6fa4e89a97ea2, 0x0a9eeee64b55d39a,
-      0x2192992a274fc1a8, 0x36ba3c23a3feebbd, 0x454d4423643ce80e, 0x2a9ac94fa54ca49f,
-    ]
+  test "NIST example: SHA-512 of abc" {
+    sha512("abc" ++ padding_512[3]()) == (
+      hex"ddaf35a193617aba cc417349ae204131 12e6fa4e89a97ea2 0a9eeee64b55d39a" ++
+      hex"2192992a274fc1a8 36ba3c23a3feebbd 454d4423643ce80e 2a9ac94fa54ca49f"
+    )
   }
 
   // NIST, "SHA-512 Examples with Intermediate Values", the two-block
   // message; the value as printed in Botan sha2_64.vec and OpenSSL
   // evpmd_sha.txt.
-  spec nist_sha512_two_block() -> Word[64]^8 {
-    hash_two_blocks_512(initial_hash_512(), pad_512_112(two_block_message_512()))
-  }
-  spec nist_sha512_two_block_expected() -> Word[64]^8 {
-    [
-      0x8e959b75dae313da, 0x8cf4f72814fc143f, 0x8f7779c6eb9f7fa1, 0x7299aeadb6889018,
-      0x501d289e4900f7e4, 0x331b99dec4b5433a, 0xc7d329eeb6dd2654, 0x5e96e55b874be909,
-    ]
+  test "NIST example: SHA-512 of the two-block message" {
+    let m: Word[8]^112 =
+      "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn" ++
+      "hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    sha512(m ++ padding_512[112]()) == (
+      hex"8e959b75dae313da 8cf4f72814fc143f 8f7779c6eb9f7fa1 7299aeadb6889018" ++
+      hex"501d289e4900f7e4 331b99dec4b5433a c7d329eeb6dd2654 5e96e55b874be909"
+    )
   }
 
   // Botan sha2_64.vec, [SHA-384], input 616263 (also hashlib).
-  spec botan_sha384_abc() -> Word[64]^6 {
-    truncate_384(compress_512(initial_hash_384(), pad_512_3(abc())))
-  }
-  spec botan_sha384_abc_expected() -> Word[64]^6 {
-    [
-      0xcb00753f45a35e8b, 0xb5a03d699ac65007, 0x272c32ab0eded163, 0x1a8b605a43ff5bed,
-      0x8086072ba1e7cc23, 0x58baeca134c825a7,
-    ]
+  test "Botan sha2_64.vec: SHA-384 of abc" {
+    sha384("abc" ++ padding_512[3]()) == (
+      hex"cb00753f45a35e8b b5a03d699ac65007 272c32ab0eded163" ++
+      hex"1a8b605a43ff5bed 8086072ba1e7cc23 58baeca134c825a7"
+    )
   }
 
   // Botan sha2_64.vec, [SHA-384], the two-block message (also hashlib).
-  spec botan_sha384_two_block() -> Word[64]^6 {
-    truncate_384(hash_two_blocks_512(initial_hash_384(), pad_512_112(two_block_message_512())))
-  }
-  spec botan_sha384_two_block_expected() -> Word[64]^6 {
-    [
-      0x09330c33f71147e8, 0x3d192fc782cd1b47, 0x53111b173b3b05d2, 0x2fa08086e3b0f712,
-      0xfcc7c71a557e2db9, 0x66c3e9fa91746039,
-    ]
+  test "Botan sha2_64.vec: SHA-384 of the two-block message" {
+    let m: Word[8]^112 =
+      "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn" ++
+      "hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    sha384(m ++ padding_512[112]()) == (
+      hex"09330c33f71147e8 3d192fc782cd1b47 53111b173b3b05d2" ++
+      hex"2fa08086e3b0f712 fcc7c71a557e2db9 66c3e9fa91746039"
+    )
   }
 
   // OpenSSL evpmd_sha.txt, Digest = SHA512-256, Input = "abc" (also hashlib).
-  spec openssl_sha512_256_abc() -> Word[64]^4 {
-    truncate_512_256(compress_512(initial_hash_512_256(), pad_512_3(abc())))
-  }
-  spec openssl_sha512_256_abc_expected() -> Word[64]^4 {
-    [
-      0x53048e2681941ef9, 0x9b2e29b76b4c7dab, 0xe4c2d0c634fc6d46, 0xe0e2f13107e7af23,
-    ]
+  test "OpenSSL evpmd_sha.txt: SHA-512/256 of abc" {
+    sha512_256("abc" ++ padding_512[3]()) ==
+      hex"53048e2681941ef9 9b2e29b76b4c7dab e4c2d0c634fc6d46 e0e2f13107e7af23"
   }
 
   // OpenSSL evpmd_sha.txt, Digest = SHA512-256, the two-block message (also
   // hashlib).
-  spec openssl_sha512_256_two_block() -> Word[64]^4 {
-    truncate_512_256(
-      hash_two_blocks_512(initial_hash_512_256(), pad_512_112(two_block_message_512()))
-    )
-  }
-  spec openssl_sha512_256_two_block_expected() -> Word[64]^4 {
-    [
-      0x3928e184fb8690f8, 0x40da3988121d31be, 0x65cb9d3ef83ee614, 0x6feac861e19b563a,
-    ]
+  test "OpenSSL evpmd_sha.txt: SHA-512/256 of the two-block message" {
+    let m: Word[8]^112 =
+      "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn" ++
+      "hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    sha512_256(m ++ padding_512[112]()) ==
+      hex"3928e184fb8690f8 40da3988121d31be 65cb9d3ef83ee614 6feac861e19b563a"
   }
 }
