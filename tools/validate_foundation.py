@@ -306,6 +306,7 @@ compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/cryptanalysis.rs
 compiler/crates/orange-compiler/src/cryptanalysis/linear.rs
+compiler/crates/orange-compiler/src/cryptanalysis/trails.rs
 compiler/crates/orange-compiler/src/diagnostic.rs
 compiler/crates/orange-compiler/src/edition.rs
 compiler/crates/orange-compiler/src/eval.rs
@@ -364,6 +365,7 @@ compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/crypt.rs
 compiler/crates/orangec/src/analyze.rs
 compiler/crates/orangec/src/analyze/linear.rs
+compiler/crates/orangec/src/analyze/trails.rs
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
 compiler/crates/orangec/tests/witness_replay.rs
@@ -400,6 +402,7 @@ compiler/fixtures/analyze/aes.or
 compiler/fixtures/analyze/ascon.or
 compiler/fixtures/analyze/boolean.or
 compiler/fixtures/analyze/des.or
+compiler/fixtures/analyze/heys.or
 compiler/fixtures/analyze/midori.or
 compiler/fixtures/analyze/present.or
 compiler/fixtures/analyze/shapes.or
@@ -868,7 +871,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "14dd26ee964f60b23a568c4806b331bb53791b36402dcd6cb37da2937ad0f42e"
+_RDC = "15638d015442eeab0235a9bb57483f16bb9c3eb4963c635c156b53f8c613c9f7"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -934,7 +937,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "ad6db6d1af46148c7ef1b50e91814797060498865adb346d6e98240ad96e2743"
+_PHD = "9e8cebe2b24148468413256a2f7f33afbb0078061b4663a49357b098a64c9270"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
