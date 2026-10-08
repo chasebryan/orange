@@ -8,8 +8,8 @@
 //!
 //! A differential trail over r rounds is a sequence of differences
 //! a_1 -> b_1, a_2 -> b_2, ..., a_r -> b_r with a_1 != 0, a_(i+1) = M b_i,
-//! and DDT(a_i[c], b_i[c]) != 0 at every word c. A linear trail is a
-//! sequence of masks with W(a_i[c], b_i[c]) != 0 at every word c and
+//! and `DDT(a_i[c], b_i[c]) != 0` at every word c. A linear trail is a
+//! sequence of masks with `W(a_i[c], b_i[c]) != 0` at every word c and
 //! a_(i+1) = (M^-1)^T b_i, since a . (M z) = (M^T a) . z. An S-box is
 //! active in round i when its word of a_i is nonzero. One S-box's
 //! transition has weight s - log2 DDT(a, b), for a probability of
