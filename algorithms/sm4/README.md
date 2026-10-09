@@ -41,21 +41,24 @@ CK_i). T' is T with the linear map replaced by L'(B) = B xor (B <<< 13) xor
 (4i + j) * 7 mod 256, j = 0 to 3, written out in the file as the standard
 lists them and derived from that formula in a comment.
 
-The Orange file follows the standard clause by clause. A block, a key and a
-round-key array are `Word[8]^16`, `Word[8]^16` and `Word[32]^32`; the four
-words in flight through the rounds are a `Word[32]^4` accumulator; the 36
-words K0 through K35 of the key expansion are one `Word[32]^36` array whose
-last 32 entries are the round keys.
+The Orange file follows the standard clause by clause. A block and a key are
+`Word[8]^16`, read as four big-endian words with `as big Word[32]^4` and
+written back with `as big Word[8]^16`; the round keys are a `Word[32]^32`;
+the four words in flight through the rounds are a `Word[32]^4` accumulator;
+the 36 words K0 through K35 of the key expansion are one `Word[32]^36` array
+whose last 32 entries, the slice `k[4..36]`, are the round keys. The S-box is
+the standard's table as a `Word[8]^256`, sixteen `hex"..."` rows of sixteen
+bytes, and FK and CK are `hex"..."` words read with `as big`.
 
 | Standard clause | Orange spec |
 | --- | --- |
 | 6.1, the round function F | `round_f` |
-| 6.2, the nonlinear transformation tau and its S-box | `tau`, `sbox`, `lookup`, `byte_at` |
+| 6.2, the nonlinear transformation tau and its S-box | `tau`, `sbox` |
 | 6.2, the linear transformation L, and T = L o tau | `linear_l`, `composite_t` |
 | 7.1, encryption: 32 rounds and the reverse transformation R | `rounds`, `encrypt` |
 | 7.2, decryption with the round keys reversed | `decrypt` |
 | 7.3, the key expansion with FK, CK, L' and T' | `key_expansion`, `system_parameter_fk`, `fixed_parameters_ck`, `linear_l_prime`, `composite_t_prime` |
-| Appendix A, example 1 | `gbt32907_a_1`, `gbt32907_a_1_decrypt` |
+| Appendix A, example 1 | the tests `GB/T 32907-2016 Appendix A, example 1: encrypts` and `GB/T 32907-2016 Appendix A, example 1: decrypts` |
 
 ### Security status
 
@@ -100,8 +103,9 @@ modes of operation meet the birthday bound after 2^64 blocks under one key.
 Table implementations of SM4 leak through the cache exactly as table
 implementations of AES do (Bernstein 2005; Osvik, Shamir and Tromer 2006);
 deployed software uses the hardware instructions above or bitsliced or
-GFNI-based code. The tables in this entry are the standard's tables, read by
-a selection over all of them; the entry makes no constant-time claim.
+GFNI-based code. The S-box in this entry is the standard's table, indexed
+directly by the secret byte, which is that cache-timing pattern; the entry
+makes no constant-time claim.
 
 On standing: SMS4 was published in 2006 for WAPI (GB 15629.11), became
 GM/T 0002-2012 and then GB/T 32907-2016 (issued August 2016, in force from
@@ -123,62 +127,74 @@ RFC 8998 fail entirely under a repeated nonce), not on the cipher.
 ### What the Orange rendering shows
 
 The only data-dependent operation in SM4 is the S-box lookup, of which there
-are 128 in the 32 rounds and 128 in the key expansion, 256 per block. Orange
-has no data-dependent index, so `lookup` scans the 32 packed words with a
-static index, keeps the one whose position matches the top five bits of the
-byte, and selects one of its eight bytes with a conditional: about 290 steps
-per lookup, where a table-driven implementation spends one memory access.
-Everything else is xor and rotation by a literal on `Word[32]`, one to one
-with the standard's formulas for F, L and L'. The Feistel rounds and the key
-expansion are both loops over an array accumulator; the four words X_i
-through X_{i+3} travel as a `Word[32]^4` whose new last entry is F, and the
-key expansion writes K_{i+4} into a 36-word array at a static index.
+are 128 in the 32 rounds and 128 in the key expansion, 256 per block. In the
+file it is written as the standard writes tau: `a as big Word[8]^4` splits
+the word into a0 through a3, each byte indexes the 256-entry table as
+`s[bytes[0]]`, and `as big Word[32]` joins the four results. A byte indexes
+a table of 256 entries, so the checker proves every lookup in range with no
+mask. `tau` takes the one word the standard gives it and builds the table
+itself from `sbox()`; T, T' and F take exactly the standard's arguments. Every other index is a literal or a loop index, every rotation amount
+is a literal, and there is no conditional in the file. Everything else is xor
+and rotation on `Word[32]`, one to one with the standard's formulas for F, L
+and L'. The Feistel rounds and the key expansion are both loops over an
+array accumulator; the four words X_i through X_{i+3} travel as a
+`Word[32]^4` whose new last entry is F, and the key expansion writes K_{i+4}
+into a 36-word array at an index computed from the loop index. Byte order
+is written once per conversion, with `as big`, where the standard reads a
+key or block as words (Appendix A prints them big-endian) and where it
+writes the ciphertext back.
 
-Measured under `orangec eval`, one block costs between 80,600 and 87,400
-steps to encrypt and the same to decrypt (twelve chained blocks fit in the
-1,048,576-step budget of one file, thirteen do not); the key expansion is
-roughly half of that, since it performs as many lookups as the rounds. The
-six vectors of `sm4.or` come to about 500,000 steps, leaving room for six
-more blocks; nothing was split or dropped. Example 2 of Appendix A, which
-applies the cipher 1,000,000 times to the same block under the same key,
-would cost about 8 x 10^10 steps and is not reproduced. Not expressed:
-constant-time behaviour (the selection idiom is a specification of a lookup,
-not a claim about leakage), any mode of operation, and the SM4-GCM and
-SM4-CCM examples of RFC 8998 Appendix A, which need GHASH and CBC-MAC around
-the cipher and are outside this entry's scope.
+Measured under `orangec test --stats`: one application of tau costs about
+85 steps, of which about 56 build the S-box from its sixteen rows (a
+parameterless spec is evaluated at each call) and the rest are the four
+lookups and the two conversions; one round costs about 111; the key
+expansion about 4,250 and the 32 rounds with R about 4,270. An encryption
+test costs 8,531 steps and a decryption test 8,854 (reversing the round keys
+adds about 320), and the six tests together use 51,832. Example 2 of
+Appendix A, which applies the cipher 1,000,000 times to the same block under
+the same key, would cost one key expansion and 32,000,000 rounds, about
+3.6 x 10^9 steps, more than three times the largest budget `orangec` accepts
+(2^30 = 1,073,741,824 steps), and is not reproduced. Not expressed: constant-time behaviour (the lookup is a
+specification of the S-box, not a claim about leakage), any mode of
+operation, and the SM4-GCM and SM4-CCM examples of RFC 8998 Appendix A,
+which need GHASH and CBC-MAC around the cipher and are outside this entry's
+scope.
 
 ## Dissemination
 
 ### Files
 
-- `sm4.or`: the S-box packed eight entries to a word, tau, L, L', T and T',
-  the round function F, the key expansion with FK and CK, encryption and
-  decryption, and six vector pairs.
+- `sm4.or`: the S-box as a 256-byte table, tau, L, L', T and T', the round
+  function F, the key expansion with FK and CK, encryption and decryption,
+  and the six tests below.
 
 ### Running
 
 ```console
-orangec eval algorithms/sm4/sm4.or
+orangec test algorithms/sm4/sm4.or
 python3 algorithms/verify.py algorithms/sm4
 ```
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `sm4.or`, comparing one block's output with
+the published value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `gbt32907_a_1` | GB/T 32907-2016, Appendix A, example 1 | key 0123456789abcdeffedcba9876543210, plaintext 0123456789abcdeffedcba9876543210, ciphertext 681edf34d206965e86b3e94f536e4246 |
-| `gbt32907_a_1_decrypt` | GB/T 32907-2016, Appendix A, example 1 | the same ciphertext decrypted under the same key gives the plaintext |
-| `botan_sm4_case_2_block_1` | Botan `src/tests/data/block/sm4.vec`, section `[SM4]`, second case (the first "Random tests generated by GmSSL") | key 681edf34d206965e86b3e94f536e4246, first block f42131b002425b6f5cf52a810682a09d, ciphertext ec4b7b1757fee9ce455197e5bf9c3a90 |
-| `botan_sm4_case_4` | Botan `sm4.vec`, `[SM4]`, fourth case (the first "Random tests generated by Botan") | key fd0c5fbdb30201222daea461486b2853, plaintext 000102030405060708090a0b0c0d0e0f, ciphertext 73f102977f15599c61b15d13d3da6064 |
-| `botan_sm4_case_4_decrypt` | Botan `sm4.vec`, `[SM4]`, fourth case | the same ciphertext decrypted under the same key gives the plaintext |
-| `botan_sm4_case_5_block_1` | Botan `sm4.vec`, `[SM4]`, fifth case | key e5ab67c47b9be83f1f37627532d91ab7, first block 000102030405060708090a0b0c0d0e0f, ciphertext 03a595d9af32aa810aa0beb758462f2c |
+| `GB/T 32907-2016 Appendix A, example 1: encrypts` | GB/T 32907-2016, Appendix A, example 1 | key 0123456789abcdeffedcba9876543210, plaintext 0123456789abcdeffedcba9876543210, ciphertext 681edf34d206965e86b3e94f536e4246 |
+| `GB/T 32907-2016 Appendix A, example 1: decrypts` | GB/T 32907-2016, Appendix A, example 1 | the same ciphertext decrypted under the same key gives the plaintext |
+| `Botan sm4.vec case 2, block 1: encrypts` | Botan `src/tests/data/block/sm4.vec`, section `[SM4]`, second case (the first "Random tests generated by GmSSL") | key 681edf34d206965e86b3e94f536e4246, first block f42131b002425b6f5cf52a810682a09d, ciphertext ec4b7b1757fee9ce455197e5bf9c3a90 |
+| `Botan sm4.vec case 4: encrypts` | Botan `sm4.vec`, `[SM4]`, fourth case (the first "Random tests generated by Botan") | key fd0c5fbdb30201222daea461486b2853, plaintext 000102030405060708090a0b0c0d0e0f, ciphertext 73f102977f15599c61b15d13d3da6064 |
+| `Botan sm4.vec case 4: decrypts` | Botan `sm4.vec`, `[SM4]`, fourth case | the same ciphertext decrypted under the same key gives the plaintext |
+| `Botan sm4.vec case 5, block 1: encrypts` | Botan `sm4.vec`, `[SM4]`, fifth case | key e5ab67c47b9be83f1f37627532d91ab7, first block 000102030405060708090a0b0c0d0e0f, ciphertext 03a595d9af32aa810aa0beb758462f2c |
 
 The example 1 values are stated in the standard and in the IETF draft; the
 same case opens Botan's `sm4.vec` and the `SM4-ECB` case of OpenSSL's
 `test/recipes/30-test_evp_data/evpciph_sm4.txt`, from which they were copied
 here. The Botan cases are the first block of a multi-block ECB case or a
 single block. The `cryptography` package (SM4 in ECB mode, over OpenSSL)
-confirms all four ciphertexts; the two decryption pairs state the source's
+confirms all four ciphertexts; the two decryption tests state the source's
 plaintext as their expected value.
 
 ### Provenance and claims
@@ -194,8 +210,8 @@ never transcribed by eye or from memory:
   script: a search over circulant matrices and constants found exactly the
   affine map (first row 11010011, c = 0xd3) and the field polynomial 0x1f5
   named above, and the table equals A(I(A(x) + c)) + c for all 256 inputs.
-  The packed `Word[64]^32` literal was generated by script from the extracted
-  bytes and unpacked again to confirm it.
+  The first form's packed `Word[64]^32` literal was generated by script from
+  the extracted bytes and unpacked again to confirm it.
 - FK and CK came from Botan's `key_schedule` and agree with OpenSSL's `FK`
   and `CK`; CK was also recomputed from the formula (4i + j) * 7 mod 256 and
   found equal.
@@ -205,26 +221,37 @@ never transcribed by eye or from memory:
   with the `cryptography` package on 500 random key and block pairs. The
   Orange specs were written from that reference and the fetched sources; the
   six vectors matched on the first evaluation.
-- The clause numbers in the file's comments (6.1 for F, 6.2 for T, tau and
-  L, 7.1 to 7.3 for encryption, decryption and the key expansion, Appendix A
-  for the examples) follow the outline of GB/T 32907-2016 as the IETF draft
-  reproduces it; a reader with the standard should check them against the
-  text.
+- The clause numbers in the file's comments (6.1 for F, 6.2 for T, tau, L
+  and the S-box, 7.1 to 7.3 for encryption, decryption and the key expansion
+  with FK and CK, Appendix A for the examples) were checked against the
+  outline of draft-ribose-cfrg-sm4-10 (April 2018), which states that its
+  sections 1 to 7 map directly to the section numbers of GB/T 32907-2016 and
+  which has examples 1 and 2 of the standard in its Appendix A.1. The text of
+  the standard itself could not be read, so these numbers rest on the draft.
+  One number is not confirmed: the file and the table give clause 7.3 for L'
+  and T', as draft-crypto-sm4-00 does (its section 7.3.1), but
+  draft-ribose-cfrg-sm4-10 defines them in its section 6.2; a reader with the
+  standard should check that one.
 
 The extraction, generation and measurement scripts were kept with the work
 record and are not part of the repository.
 
-This entry is a reference evaluation of GB/T 32907-2016 under `orangec eval`.
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of bytes: the six tests state the same blocks as
+`hex"..."` literals, compared by script with the old specs' evaluated
+values, and no vector was added or dropped. The sixteen `hex"..."` rows of
+the S-box were printed by script from the first form's packed words (and
+checked again to be a permutation and to equal A(I(A(x) + c)) + c), and the
+CK rows were printed from its CK words and checked against the formula
+(4i + j) * 7 mod 256; FK is unchanged.
+
+This entry is a reference evaluation of GB/T 32907-2016 under `orangec test`.
 It makes no constant-time, side-channel, performance or certification claim,
 and it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Two features of the language shaped the file:
-indices must be static, so each S-box lookup is a 32-word selection costing
-about 290 steps, which makes a block cost about 80,000 to 87,000 steps and
-bounds one file to twelve blocks; and a loop's step is one expression, so
-the key expansion carries all 36 K words in one array rather than binding
-the four latest in the step. Example 2 of Appendix A (10^6 iterations) is
-beyond the step budget by five orders of magnitude and is recorded above as
-not reproduced.
+- Example 2 of Appendix A (10^6 encryptions of one block under one key) is
+  about 3.6 x 10^9 steps, more than the largest step budget the evaluator
+  accepts (2^30), and is recorded above as not reproduced.

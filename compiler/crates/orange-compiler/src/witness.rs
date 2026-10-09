@@ -369,15 +369,15 @@ mod tests {
     #[test]
     fn all_concrete_scalar_and_aggregate_parameters_replay_without_coercion() {
         let core = program(&[concat!(
-            "edition 2026; module m { type Row = Mod[11]^2; type Matrix = Row^2; ",
-            "spec p(a: Int, b: Bool, c: Word[8], d: Word[16], e: Word[32], f: Word[64], g: Mod[7], h: Int^2, i: Matrix, j: (Bool, Matrix, Word[8]^2)) -> Bool { ",
+            "edition 2026; module m { type Row = Mod[11]^2; type Matrix = Row^2; type Cube = Matrix^2; ",
+            "spec p(a: Int, b: Bool, c: Word[8], d: Word[16], e: Word[32], f: Word[64], g: Mod[7], h: Int^2, i: Matrix, j: (Bool, Matrix, Word[8]^2), k: Cube) -> Bool { ",
             "let x: Bool = a == -123; let y: Bool = b == true; let z: Bool = c == 255; ",
-            "x && y && z && (d == 65535) && (e == 4294967295) && (f == 18446744073709551615) && (g == 6) && (h == [1, 2]) && (i[1][1] == 10) && (j.0 == true) } }"
+            "x && y && z && (d == 65535) && (e == 4294967295) && (f == 18446744073709551615) && (g == 6) && (h == [1, 2]) && (i[1][1] == 10) && (j.0 == true) && (k[1][1][0] == 6) } }"
         )]);
         let function = function(&core, "m", "p", &[]);
         let arguments = arguments(
             function,
-            "[-123, true, 0xff, 0xffff, 0xffffffff, 0xffffffffffffffff, 6, [1, 2], [[0, 1], [9, 10]], (true, [[1, 2], [3, 4]], [0x00, 0xff])]",
+            "[-123, true, 0xff, 0xffff, 0xffffffff, 0xffffffffffffffff, 6, [1, 2], [[0, 1], [9, 10]], (true, [[1, 2], [3, 4]], [0x00, 0xff]), [[[0, 1], [2, 3]], [[4, 5], [6, 7]]]]",
         );
         let mut evaluator = Evaluator::new(&core).unwrap();
         assert_eq!(

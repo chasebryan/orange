@@ -32,29 +32,27 @@ output byte, sets i := i + 1 and j := j + S[i], swaps S[i] and S[j], and
 outputs S[S[i] + S[j]]. That is the whole cipher: every step of both loops
 reads and writes S at an index that the key or the previous state chose.
 
-The Orange file follows the two loops as they are written, with these
-correspondences:
+The Orange file `rc4.or` follows the two loops as they are written, with
+these correspondences:
 
 | RC4 | Orange spec |
 | --- | --- |
-| S, j, and the keystream bytes, as one state | the `Word[64]^38` layout described at the top of `rc4.or` |
-| S = identity, j = 0 | `initial_state` |
-| S[x] for a data byte x | `get_byte` (selection over `byte_at`) |
-| S[x] := v for a data byte x | `set_byte` (selection over `put_byte`) |
-| S[i] for the loop index i | `byte_at(t[i / 8], (i % 8) as Word[8])`, inline |
-| swap(S[i], S[j]) | `swap_at_j` (S[j] := S[i], holding the old S[j]), then S[i] := held byte, inline |
-| KSA for L = 5, 16, 32 (and 8 in the second file) | `key_scheduling_40`, `key_scheduling_128`, `key_scheduling_256`, `key_scheduling_64` |
-| PRGA, 32 bytes from i = j = 0 | `keystream` |
-| PRGA, 240 bytes discarded, then bytes 240 through 271 | `discard_240`, `keystream_240` (second file) |
-| ciphertext = message xor keystream | `encrypt` (second file) |
+| S, a permutation of the 256 byte values | `Permutation`, a `Word[8]^256` indexed by a byte |
+| S, i and j, the PRGA's state | `State`, the tuple `(Permutation, Word[8], Word[8])` |
+| KSA: S = identity, then for i = 0 to 255, j := j + S[i] + K[i mod L], swap(S[i], S[j]) | `key_scheduling[L]` for `L` in 1 through 256 |
+| PRGA start: i = j = 0 | `start` |
+| PRGA step: i := i + 1, j := j + S[i], swap(S[i], S[j]) | `advance` |
+| PRGA output: S[S[i] + S[j]] | `output` |
+| n bytes generated and discarded (RFC 6229's offsets, "RC4-drop[n]") | `discard[n]` for `n` in 1 through 256 |
+| n bytes of keystream | `keystream[n]` for `n` in 1 through 256 |
+| ciphertext = message xor keystream | `encrypt[n]` for messages of 1 through 256 bytes |
 
-The permutation is packed eight entries to a 64-bit word, big-endian, so
-that `0x0001020304050607` is S[0] through S[7] of the identity, and the 32
-words travel through the loops in one array together with j (word 32), a
-byte held between the two halves of a swap (word 33), and 32 keystream
-bytes (words 34 through 37). The KSA's key index i mod L has a literal
-modulus, so each key length has its own copy of the six-line loop around
-the shared `swap_at_j`, as the AES key expansion has one per key length.
+S is an array of 256 bytes and i and j are bytes, so the arithmetic modulo
+256 that the posting writes is the arithmetic of `Word[8]`, and every index
+into S, whether a loop index, i, j or S[i] + S[j], is a byte that the
+checker proves in range. There is one KSA for every key length: the key is a
+`Word[8]^L` with the length a size parameter, and the key index is written
+`key[i % L]` as the posting writes K[i mod L].
 
 ### Security status
 
@@ -117,72 +115,73 @@ its key.
 
 ### What the Orange rendering shows
 
-Every access to S in RC4 is data-dependent except S[i], and Orange makes
-each one a visible selection. An index in Orange is static, so S[x] for a
-data byte x cannot be written `s[x]`: `get_byte` walks the 32 packed words
-with a static index, keeps the one whose number equals x / 8, and selects
-its byte x mod 8 with an eight-arm conditional, at a measured 291 steps;
-`set_byte` does the same walk and replaces the byte in the one word at 344
-steps. S[i], with i the loop index, is the ordinary static index `t[i / 8]`
-and byte `i % 8` of that word, a few steps. The PRGA's i is (n + 1) mod 256
-for output byte n, so it too is static; only j and the output index
-S[i] + S[j] are data. The cost accounting makes the count of data-dependent
-accesses plain: one KSA step is one `get_byte` (S[j]), one `set_byte`
-(S[j] := S[i]) and one static write (S[i] := old S[j]), measured at about
-880 steps, so the 256 steps of a key schedule cost about 225,000 steps for
-every key length; one PRGA byte adds the output lookup, `get_byte` twice
-(S[j] and then S[S[i] + S[j]]), for about 1,700 steps, and a discarded byte
-about 900.
+Every access to S in RC4 is at an index the data chose except S[i], and in
+Orange each one is written as the posting writes it: S[j] is `s[j1]`, the
+output is `s[s[i] + s[j]]`, and the swap is the two updates
+`(s with [i] = s[j1]) with [j1] = s[i]`, both reading the S from before
+it. Each index is a `Word[8]` into an array of 256, so the checker proves
+it in range and nothing is masked or reduced by hand. These lookups carry
+no timing claim: an access to S keyed by secret data is the cache-timing
+pattern, and the evaluator makes no attempt to hide it. The PRGA's i
+depends only on the step count, so only j and the output index
+S[i] + S[j] are chosen by the data; the file still carries i as a byte
+from step to step, as the posting does, rather than deriving it from the
+loop index.
 
-Two things are written otherwise than the standard's text, and both are
-explained where they happen. The swap is two steps of an inner loop, since
-a loop step is one expression with no bindings: `swap_at_j` reads S[j],
-writes S[j] := S[i] and holds j and the old S[j] in words 32 and 33; the
-next step writes S[i] from word 33 at the static index. And the key index
-K[i mod L] has a literal modulus, so the KSA loop appears once per key
-length. The keystream bytes are packed into the same array as S because a
-loop has one accumulator; `keystream` unpacks them into a `Word[8]^32` at
-the end.
+Lengths are sizes. The key is a `Word[8]^L`, so one `key_scheduling` serves
+the 40-, 64-, 128- and 256-bit keys of the vectors, the instance chosen by
+the length of the key's `hex"..."` literal. `keystream[n]`, `discard[n]` and
+`encrypt[n]` take their length the same way, `encrypt` from its message and
+the other two written at the call (`keystream[32]`), since their argument
+is the state and not an array of that length. The RFC's offsets are
+`discard`: the rows at offsets 240 and 256 are
+`keystream[32](discard[240](start(key_scheduling(key))))`. The PRGA's
+state is a tuple, `State`, and a tuple cannot hold another tuple, so
+`keystream`'s loop carries S, i and j beside its output bytes rather than a
+`State` beside them. A step names the j it computes `j1`, and the PRGA's new
+i `i1`, because a name is bound once.
 
-The budget sized the vectors. One vector, a key schedule and 32 keystream
-bytes, costs about 280,000 steps; three of them, the three key lengths of
-`rc4.or`, evaluate at about 840,000 of the 1,048,576 steps of a file, and
-a fourth does not fit. The RFC's rows at offsets 240 and 256 need 240 bytes
-generated and discarded before the 32 kept, about 500,000 steps with the
-key schedule, so they are in `rc4-offset-240.or`, with the encryption
-example, about 280,000 more; that file evaluates at about 780,000 steps.
-The RFC's rows at offsets 496 and beyond, up to 4096, were not attempted:
-each further 256-byte block of discarded keystream costs about 230,000
-steps, so offset 496 would need a file of its own and offsets 1008 and
-beyond exceed the budget of one file. Nothing else was dropped.
+Measured costs under `orangec test --stats`, and `orangec eval --stats` for
+the parts: building the identity permutation costs 2,310 steps and the key
+schedule 12,558 in all, about 40 steps for each of its 256 swaps, the same
+for every key length. A keystream byte costs about 95 steps and a discarded
+byte about 45; the keystream costs more because its loop takes the state
+apart and puts it back together around each step to write the output byte.
+A vector of 32 keystream bytes costs about 15,600 steps with its key
+schedule, the offset-240 vector 26,428 and the encryption 15,983; the five
+tests together use 89,290 steps.
+
+The RFC's rows at offsets 496 and beyond, up to 4096, are within reach (a
+row at offset 4096 would cost the key schedule and about 185,000 steps of
+discarded keystream, in sixteen calls of `discard[256]`), but the first
+form did not reproduce them and this rewrite adds no vector.
 
 ## Dissemination
 
 ### Files
 
-- `rc4.or`: the KSA for 40-, 128- and 256-bit keys, the PRGA for 32 bytes,
-  and the RFC 6229 keystream at offsets 0 and 16 for the three keys.
-- `rc4-offset-240.or`: the same algorithm with the KSA for 40- and 64-bit
-  keys, the PRGA discarding 240 bytes and then keeping bytes 240 through
-  271, `encrypt` as xor, the RFC 6229 keystream at offsets 240 and 256 for
+- `rc4.or`: the KSA for keys of 1 to 256 bytes, the PRGA with `discard`
+  and `keystream`, `encrypt` as xor, the RFC 6229 keystream at offsets 0
+  and 16 for the 40-, 128- and 256-bit keys and at offsets 240 and 256 for
   the 40-bit key, and the encryption of a message from Botan's `rc4.vec`.
-  It exists because one file's step budget holds three key schedules.
 
 ### Running
 
-    orangec eval algorithms/rc4/rc4.or
-    orangec eval algorithms/rc4/rc4-offset-240.or
+    orangec test algorithms/rc4/rc4.or
     python3 algorithms/verify.py algorithms/rc4
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `rc4.or`, comparing 32 bytes of keystream or
+ciphertext with the published value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `rfc6229_key_40` | RFC 6229, section 2, key length 40 bits, rows at offsets 0 and 16 | key 0102030405, keystream bytes 0 through 31, b2396305...7a0d0919 |
-| `rfc6229_key_128` | RFC 6229, section 2, key length 128 bits, rows at offsets 0 and 16 | key 0102030405060708090a0b0c0d0e0f10, keystream bytes 0 through 31, 9ac7cc9a...1d1a9e1c |
-| `rfc6229_key_256` | RFC 6229, section 2, key length 256 bits, rows at offsets 0 and 16 | key 01020304...1d1e1f20 (32 bytes), keystream bytes 0 through 31, eaa6bd25...7cb14380 |
-| `rfc6229_key_40_offset_240` | RFC 6229, section 2, key length 40 bits, rows at offsets 240 and 256 | key 0102030405, keystream bytes 240 through 271, 28cb1132...7f8d8c93 |
-| `botan_rc4_vec_encrypt_ones` | Botan `src/tests/data/stream/rc4.vec`, section `[RC4]`, fifth case (Key = 0123456789ABCDEF, In = 0101...) | the first 32 bytes of the message of 0x01 bytes encrypted under the 64-bit key of the 1994 posting, 7595c3e6...778dcad8 |
+| `RFC 6229 section 2: 40-bit key, offsets 0 and 16` | RFC 6229, section 2, key length 40 bits, rows at offsets 0 and 16 | key 0102030405, keystream bytes 0 through 31, b2396305...7a0d0919 |
+| `RFC 6229 section 2: 128-bit key, offsets 0 and 16` | RFC 6229, section 2, key length 128 bits, rows at offsets 0 and 16 | key 0102030405060708090a0b0c0d0e0f10, keystream bytes 0 through 31, 9ac7cc9a...1d1a9e1c |
+| `RFC 6229 section 2: 256-bit key, offsets 0 and 16` | RFC 6229, section 2, key length 256 bits, rows at offsets 0 and 16 | key 01020304...1d1e1f20 (32 bytes), keystream bytes 0 through 31, eaa6bd25...7cb14380 |
+| `RFC 6229 section 2: 40-bit key, offsets 240 and 256` | RFC 6229, section 2, key length 40 bits, rows at offsets 240 and 256 | key 0102030405, keystream bytes 240 through 271, 28cb1132...7f8d8c93 |
+| `Botan rc4.vec [RC4] case 5: encryption of 0x01 bytes, first 32` | Botan `src/tests/data/stream/rc4.vec`, section `[RC4]`, fifth case (Key = 0123456789ABCDEF, In = 0101...) | the first 32 bytes of the message of 0x01 bytes encrypted under the 64-bit key of the 1994 posting, 7595c3e6...778dcad8 |
 
 The four RFC 6229 rows were taken from the copy of the RFC's vectors that
 the `cryptography` project keeps in its `vectors/` tree
@@ -198,51 +197,57 @@ is copied from a fetched vector file.
 
 ### Provenance and claims
 
-RFC 6229 and RFC 7465 are not reachable from the build, so the vectors
-came from the three mirrors above, all fetched from
-`raw.githubusercontent.com` and kept in the scratch directory: the
-`cryptography` project's `rfc-6229-*.txt` files (seven key lengths, 36
-rows each), OpenSSL's `evpciph_rc4.txt`, and Botan's `rc4.vec`, with Go's
-`crypto/rc4/rc4_test.go` for the 1994 posting's cases. A script
-(`crosscheck.py`) ran all 252 RFC 6229 rows and all 69 `[RC4]` cases of
-Botan's file through pycryptodome's `Crypto.Cipher.ARC4`, the
-`cryptography` package's `ARC4` and a plain Python RC4 written from the
-two loops (`rc4_ref.py`, which can also dump S, i and j after any step);
-all agree. The Orange literals, the packed identity permutation, the keys
-and the expected keystreams, were generated from the fetched files by
-`gen_literals.py`, not typed. Section 2 of RFC 6229 is cited as the
-section that holds the test vectors, as the document is known to the
-author; the number was not checked from this machine. The Orange files
-matched all five vectors on their first evaluation, so `rc4_ref.py`'s
-step-by-step dump was not needed. Costs were measured by the loop-and-
-binary-search method of the folder's brief (`measure.py`) and by filling
-each file's remaining budget with a calibrated loop (`headroom.py`).
+RFC 6229 and RFC 7465 are not reachable from the build, so the vectors came
+from the three mirrors above, all fetched from `raw.githubusercontent.com` and
+kept in the scratch directory: the `cryptography` project's `rfc-6229-*.txt`
+files (seven key lengths, 36 rows each), OpenSSL's `evpciph_rc4.txt`, and
+Botan's `rc4.vec`, with Go's `crypto/rc4/rc4_test.go` for the 1994 posting's
+cases. A script (`crosscheck.py`) ran all 252 RFC 6229 rows and all 69 `[RC4]`
+cases of Botan's file through pycryptodome's `Crypto.Cipher.ARC4`, the
+`cryptography` package's `ARC4` and a plain Python RC4 written from the two
+loops (`rc4_ref.py`, which can also dump S, i and j after any step); all
+agree. The Orange literals, the packed identity permutation, the keys and the
+expected keystreams, were generated from the fetched files by
+`gen_literals.py`, not typed. Section 2 of RFC 6229, "Test Vectors for RC4",
+holds the test vectors; the section number and the rows used by the four RFC
+tests were checked against the published
+[RFC 6229](https://www.rfc-editor.org/rfc/rfc6229). The Orange files matched
+all five vectors on their first evaluation, so `rc4_ref.py`'s step-by-step
+dump was not needed. Costs were measured by the loop-and-binary-search method
+of the folder's brief (`measure.py`) and by filling each file's remaining
+budget with a calibrated loop (`headroom.py`).
+
+The entry was then rewritten in the current language, the two files
+folded into one. Every expected value is carried over byte for byte from
+the first form, where each was a `<name>_expected` spec of 32 byte
+literals: the new tests state the same bytes as `hex"..."` in the RFC's
+16-byte rows, compared by script with the first form's values, and no
+vector was added or dropped. The packed identity permutation of the first
+form is gone; the KSA builds S = identity with its first loop, as the
+posting does. Costs are as `orangec test --stats` reports them.
 
 This entry is a reference evaluation of RC4 as the 1994 posting and RFC
-6229 describe it, under `orangec eval`. It makes no constant-time,
+6229 describe it, under `orangec test`. It makes no constant-time,
 side-channel, performance or certification claim, and it is not a corpus
 entry in the sense of The Orange Book chapter 12. It is not a
 recommendation to use RC4 for anything.
 
 ## Gaps
 
-None that prevented a planned vector. The language limits met, and what
-they cost:
+None that prevents a vector here. The language limits met, and what they
+cost:
 
-- Indices are static, so every access to S at a data-chosen index is a
-  32-word walk plus an eight-arm byte selection (`get_byte`, 291 steps;
-  `set_byte`, 344 steps) instead of one array read or write. This is the
-  form in which Orange expresses the cipher's defining operation, and it
-  puts the cost of a key schedule at about 225,000 steps and of a keystream
-  byte at about 1,700, which is what forced the vectors into two files.
-- A loop step is one expression with no bindings and one accumulator, so
-  the swap is two steps of an inner loop with j and the byte in flight
-  carried in spare words of the state array, and the keystream bytes are
-  packed into that array and unpacked afterwards.
-- Loop bounds and index moduli are literals, so the KSA is written once per
-  key length and the PRGA once per range of output positions
-  (`keystream` for bytes 0 through 31, `discard_240` and `keystream_240`
-  for the second file).
-- The step budget of one file, 1,048,576 steps, holds three key schedules
-  with 32 bytes of keystream each; the RFC's rows at offsets 496 through
-  4096 were not attempted, as described above.
+- A function has at most 256 instances, so `keystream`, `discard` and
+  `encrypt` cover 1 to 256 bytes a call. A longer discard is a chain of
+  calls (`discard[256]` then `discard[n]`), but `encrypt` starts the PRGA
+  afresh, so a message longer than 256 bytes would need an `encrypt` that
+  takes and returns the PRGA's state, which this file does not write. No
+  vector here needs more than 32 bytes of keystream after the discard.
+- No array has zero elements, so the empty message is not a value; every
+  key RC4 admits, 1 to 256 bytes, is.
+- `keystream[n]` and `discard[n]` have no array parameter of their length,
+  so each call names the length (`keystream[32]`); the checker cannot infer
+  it from the expected value.
+- A tuple cannot hold a tuple, so `keystream`'s loop carries S, i and j as
+  three elements beside the output bytes instead of one `State`, and takes
+  the state apart and back together around each step.

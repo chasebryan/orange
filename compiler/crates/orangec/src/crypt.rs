@@ -149,7 +149,8 @@ pub(crate) fn run(
         | CompilerCommand::Test
         | CompilerCommand::Fmt
         | CompilerCommand::Doc
-        | CompilerCommand::Replay => Err(render_cli_error(
+        | CompilerCommand::Replay
+        | CompilerCommand::Analyze => Err(render_cli_error(
             CliDiagnosticCode::MissingPhaseArtifact,
             "a compiler command reached the sealing commands",
             "this is an internal compiler failure",

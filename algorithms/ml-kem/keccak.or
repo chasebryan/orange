@@ -1,0 +1,187 @@
+// The hash functions of FIPS 202 that ML-KEM needs: SHA3-256, SHA3-512,
+// SHAKE128 and SHAKE256, from "SHA-3 Standard: Permutation-Based Hash and
+// Extendable-Output Functions", NIST, August 2015,
+// https://doi.org/10.6028/NIST.FIPS.202. The file transcribes
+// Keccak-p[1600, 24] (sections 3.1 to 3.3, with the state as the standard
+// indexes it, a 5 x 5 array of 64-bit lanes A[x][y]), the sponge
+// construction (section 4, Algorithm 8) with pad10*1 (section 5.1) after the
+// domain suffix of section 6, and the four functions of sections 6.1 and
+// 6.2. It holds no tests: ml-kem.or uses it, and the ML-KEM vectors check
+// it.
+//
+// Departure in form: the step mappings theta, rho, pi and chi are written
+// out lane by lane, with rho's offsets taken from Table 2 and the
+// coordinates of pi and chi reduced modulo 5 by hand, and the round
+// constants of iota are a literal table, rather than the loops of
+// Algorithms 1 to 6. The looped form costs about 96,000 evaluation steps a
+// permutation against about 21,600 here, and the ML-KEM tests run about 400
+// permutations, which in the looped form would take them past the 25
+// million steps an entry is kept under. The ML-KEM vectors check every
+// literal.
+edition 2026;
+module keccak {
+  // A sheet is the five lanes A[x][0] through A[x][4] of one x.
+  type Sheet = Word[64]^5;
+  type State = Sheet^5;
+
+  // Section 3.2.1, Algorithm 1, theta: C[x] is the parity of the five
+  // lanes of sheet x, D[x] = C[x - 1] ^ rot(C[x + 1], 1), and every lane of
+  // sheet x takes in D[x].
+  spec parity(s: Sheet) -> Word[64] { s[0] ^ s[1] ^ s[2] ^ s[3] ^ s[4] }
+
+  spec add_lane(s: Sheet, d: Word[64]) -> Sheet {
+    [s[0] ^ d, s[1] ^ d, s[2] ^ d, s[3] ^ d, s[4] ^ d]
+  }
+
+  spec theta(a: State) -> State {
+    let c: Word[64]^5 = [parity(a[0]), parity(a[1]), parity(a[2]), parity(a[3]), parity(a[4])];
+    for x in 0..5 with b: State = a {
+      b with [x] = add_lane(a[x], c[(x + 4) % 5] ^ (c[(x + 1) % 5] <<< 1))
+    }
+  }
+
+  // Section 3.2.2, Algorithm 2, rho: lane A[x][y] turns by the offset of
+  // Table 2, (t + 1)(t + 2)/2 mod 64 for the step t at which the walk from
+  // (1, 0) to (y, 2x + 3y) reaches (x, y); lane (0, 0) stays. One line per
+  // sheet x, its lanes y = 0 through 4.
+  spec rho(a: State) -> State {
+    [
+      [a[0][0], a[0][1] <<< 36, a[0][2] <<< 3, a[0][3] <<< 41, a[0][4] <<< 18],
+      [a[1][0] <<< 1, a[1][1] <<< 44, a[1][2] <<< 10, a[1][3] <<< 45, a[1][4] <<< 2],
+      [a[2][0] <<< 62, a[2][1] <<< 6, a[2][2] <<< 43, a[2][3] <<< 15, a[2][4] <<< 61],
+      [a[3][0] <<< 28, a[3][1] <<< 55, a[3][2] <<< 25, a[3][3] <<< 21, a[3][4] <<< 56],
+      [a[4][0] <<< 27, a[4][1] <<< 20, a[4][2] <<< 39, a[4][3] <<< 8, a[4][4] <<< 14],
+    ]
+  }
+
+  // Section 3.2.3, Algorithm 3, pi: A'[x][y] = A[x + 3y][x], modulo 5.
+  spec pi(a: State) -> State {
+    [
+      [a[0][0], a[3][0], a[1][0], a[4][0], a[2][0]],
+      [a[1][1], a[4][1], a[2][1], a[0][1], a[3][1]],
+      [a[2][2], a[0][2], a[3][2], a[1][2], a[4][2]],
+      [a[3][3], a[1][3], a[4][3], a[2][3], a[0][3]],
+      [a[4][4], a[2][4], a[0][4], a[3][4], a[1][4]],
+    ]
+  }
+
+  // Section 3.2.4, Algorithm 4, chi: A'[x][y] = A[x][y] ^ (~A[x + 1][y] &
+  // A[x + 2][y]), the only non-linear step, written for sheet x from sheets
+  // x, x + 1 and x + 2.
+  spec chi_sheet(s: Sheet, t: Sheet, u: Sheet) -> Sheet {
+    [
+      s[0] ^ (~t[0] & u[0]), s[1] ^ (~t[1] & u[1]), s[2] ^ (~t[2] & u[2]),
+      s[3] ^ (~t[3] & u[3]), s[4] ^ (~t[4] & u[4]),
+    ]
+  }
+
+  spec chi(a: State) -> State {
+    [
+      chi_sheet(a[0], a[1], a[2]), chi_sheet(a[1], a[2], a[3]), chi_sheet(a[2], a[3], a[4]),
+      chi_sheet(a[3], a[4], a[0]), chi_sheet(a[4], a[0], a[1]),
+    ]
+  }
+
+  // Section 3.2.5, Algorithms 5 and 6: round i_r's constant RC has bit
+  // 2^j - 1 equal to rc(j + 7 i_r), where rc(t) is bit 0 of the linear
+  // feedback shift register x^8 + x^6 + x^5 + x^4 + 1 after t steps. The 24
+  // constants were printed by a script that runs Algorithm 5.
+  spec round_constants() -> Word[64]^24 {
+    [
+      0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
+      0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+      0x000000000000008a, 0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
+      0x000000008000808b, 0x800000000000008b, 0x8000000000008089, 0x8000000000008003,
+      0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
+      0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    ]
+  }
+
+  // Section 3.3, Algorithm 7: Keccak-p[1600, 24] is 24 rounds
+  // Rnd = iota o chi o pi o rho o theta, iota adding round i_r's constant
+  // to A[0][0].
+  spec keccak_p(a: State) -> State {
+    let rc: Word[64]^24 = round_constants();
+    for round in 0..24 with s: State = a {
+      let b: State = chi(pi(rho(theta(s))));
+      b with [0][0] = b[0][0] ^ rc[round]
+    }
+  }
+
+  // Section 4, Algorithm 8, lines 1 to 6: the sponge absorbs the padded
+  // string P, r bytes at a time, into the zero state. Here r is 8 * lanes
+  // bytes; section 3.1.2 puts byte 8(5y + x) of a block in lane A[x][y],
+  // read little-endian, so lane i of a block is xored into
+  // A[i mod 5][i div 5].
+  spec absorb[lanes in 9..22, blocks in 1..14](p: Word[8]^(8 * lanes * blocks)) -> State {
+    for n in 0..(blocks) with s: State = [[0; 5]; 5] {
+      let block: Word[64]^lanes =
+        p[8 * lanes * n..8 * lanes * n + 8 * lanes] as little Word[64]^lanes;
+      let mixed: State = for i in 0..(lanes) with t: State = s {
+        t with [i % 5][i / 5] = s[i % 5][i / 5] ^ block[i]
+      };
+      keccak_p(mixed)
+    }
+  }
+
+  // Section 4, Algorithm 8, lines 7 to 10: the sponge squeezes Trunc_r(S),
+  // lanes A[0][0], A[1][0], ... little-endian, and permutes again before
+  // each further block; here for a whole number of blocks, of which the
+  // caller keeps the first d bits.
+  spec squeeze[lanes in 9..22, blocks in 1..5](a: State) -> Word[8]^(8 * lanes * blocks) {
+    let start: (Word[8]^(8 * lanes * blocks), State) = ([0; (8 * lanes * blocks)], a);
+    let out: (Word[8]^(8 * lanes * blocks), State) =
+      for n in 0..(blocks) with (z: Word[8]^(8 * lanes * blocks), s: State) = start {
+        let block: Word[64]^lanes = for i in 0..(lanes) with b: Word[64]^lanes = [0; lanes] {
+          b with [i] = s[i % 5][i / 5]
+        };
+        (
+          z with [8 * lanes * n..8 * lanes * n + 8 * lanes] = block as little Word[8]^(8 * lanes),
+          if (n + 1) < blocks { keccak_p(s) } else { s },
+        )
+      };
+    out.0
+  }
+
+  // Sections 5.1, 6.1, 6.2 and B.2: each function pads the message M with
+  // its domain suffix and the first bit of pad10*1 (the byte 06 for SHA-3,
+  // 1f for SHAKE), zeros, and the last bit of pad10*1 in the byte 80, to
+  // the next whole number of r-byte blocks. A function has at most 256
+  // instances, so a message length is written 32w + t, with w from 1
+  // through 25 and t from 0 through 2: every string ML-KEM-512 hashes is a
+  // run of 32-byte seeds and encodings followed by at most two index bytes,
+  // at most 800 bytes in all. For every such length at least one zero byte
+  // falls between the suffix byte and the byte 80, as the check of each
+  // instance confirms.
+
+  // Section 6.1: SHA3-256(M) = KECCAK[512](M || 01, 256), rate 136 bytes.
+  spec sha3_256[w in 1..26, t in 0..3](m: Word[8]^(32 * w + t)) -> Word[8]^32 {
+    let p: Word[8]^(136 * (((32 * w + t) / 136) + 1)) =
+      m ++ hex"06" ++ [0; (136 * (((32 * w + t) / 136) + 1) - (32 * w + t) - 2)] ++ hex"80";
+    squeeze[17, 1](absorb[17, ((32 * w + t) / 136) + 1](p))[..32]
+  }
+
+  // Section 6.1: SHA3-512(M) = KECCAK[1024](M || 01, 512), rate 72 bytes.
+  spec sha3_512[w in 1..26, t in 0..3](m: Word[8]^(32 * w + t)) -> Word[8]^64 {
+    let p: Word[8]^(72 * (((32 * w + t) / 72) + 1)) =
+      m ++ hex"06" ++ [0; (72 * (((32 * w + t) / 72) + 1) - (32 * w + t) - 2)] ++ hex"80";
+    squeeze[9, 1](absorb[9, ((32 * w + t) / 72) + 1](p))[..64]
+  }
+
+  // Section 6.2: SHAKE128(M, d) = KECCAK[256](M || 1111, d), rate 168
+  // bytes. The function returns the state after absorbing; `squeeze[21, n]`
+  // reads n blocks of output from it.
+  spec shake128[w in 1..26, t in 0..3](m: Word[8]^(32 * w + t)) -> State {
+    let p: Word[8]^(168 * (((32 * w + t) / 168) + 1)) =
+      m ++ hex"1f" ++ [0; (168 * (((32 * w + t) / 168) + 1) - (32 * w + t) - 2)] ++ hex"80";
+    absorb[21, ((32 * w + t) / 168) + 1](p)
+  }
+
+  // Section 6.2: SHAKE256(M, d) = KECCAK[512](M || 1111, d), rate 136
+  // bytes; `squeeze[17, n]` reads its output.
+  spec shake256[w in 1..26, t in 0..3](m: Word[8]^(32 * w + t)) -> State {
+    let p: Word[8]^(136 * (((32 * w + t) / 136) + 1)) =
+      m ++ hex"1f" ++ [0; (136 * (((32 * w + t) / 136) + 1) - (32 * w + t) - 2)] ++ hex"80";
+    absorb[17, ((32 * w + t) / 136) + 1](p)
+  }
+}

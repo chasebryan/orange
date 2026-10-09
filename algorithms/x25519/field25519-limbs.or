@@ -1,9 +1,11 @@
-// OEP-0022 P2 representations and partial P4 mathematical products of the field
-// p = 2^255 - 19. Limb order is least significant first. This radix and
-// carry schedule are original executable definitions, not an RFC 7748
-// storage requirement. The aliases are transparent; none enforces a range.
-// Boolean examples are not refinement proofs, and reference evaluation
-// establishes no machine layout, constant-time, or native-code property.
+// OEP-0022 P2 representations and partial P4 mathematical field operations
+// for p = 2^255 - 19: products, biased subtraction, dedicated squaring, and
+// multiplication by the ladder constant a24 = 121665. Limb order is least
+// significant first. This radix and these carry schedules are original
+// executable definitions, not an RFC 7748 storage requirement. The aliases
+// are transparent; none enforces a range. Boolean examples are not
+// refinement proofs, and reference evaluation establishes no machine layout,
+// constant-time, or native-code property.
 edition 2026;
 module field25519 {
   type Limbs = Word[64]^5;
@@ -130,6 +132,98 @@ module field25519 {
   spec multiply_canonical(x: Limbs, y: Limbs) -> Limbs {
     canonicalize_tight(multiply_tight(x, y))
   }
+
+  // RFC 7748 section 5: a24 = (A - 2) / 4 = 121665. Kept as an exact Int
+  // factor; wrapping Word[64] multiplication is not this operation.
+  spec a24() -> Int { 121665 }
+
+  // 2p as five limbs. Reconstructs to 2 * (B^5 - 19) = 2p, so subtracting
+  // y and adding this bias preserves the residue class of x - y.
+  spec two_p() -> Limbs {
+    [4503599627370458, 4503599627370494, 4503599627370494, 4503599627370494, 4503599627370494]
+  }
+
+  // Intended input contract: tight(x) && tight(y). Each limb equals
+  // x[i] + 2p[i] - y[i] and therefore lies in [B - 37, 3B - 3] ⊂ [0, 4B).
+  // That range is wider than loose; the biased difference is not a loose
+  // value by convention and does not reuse carry_loose's contract.
+  spec sub_biased(x: Limbs, y: Limbs) -> Limbs {
+    for i in 0..5 with diff: Limbs = [0; 5] {
+      diff with [i] = ((x[i] as Int) + (two_p()[i] as Int) - (y[i] as Int)) as Word[64]
+    }
+  }
+
+  // Ordinary predicate for the biased-difference bound. The Limbs alias
+  // does not enforce it.
+  spec bounded_difference(x: Limbs) -> Bool {
+    for i in 0..5 with valid: Bool = true { valid && ((x[i] as Int) < (4 * radix())) }
+  }
+
+  // Carry schedule for nonnegative limbs below 4B. Under that bound the
+  // first top carry is at most 3 and the second at most 1; adding 19 times
+  // the second carry into the low digit stays below B, so the result is
+  // tight and retains the residue class modulo p.
+  spec carry_difference(x: Limbs) -> Limbs {
+    let first: (Limbs, Int) = carry_pass(x, 0);
+    let second: (Limbs, Int) = carry_pass(first.0, 19 * first.1);
+    second.0 with [0] = ((second.0[0] as Int) + 19 * second.1) as Word[64]
+  }
+
+  // Intended input contract: tight(x) && tight(y). Executable biased
+  // subtraction with its own carry schedule; not a checked P3 contract.
+  spec subtract_tight(x: Limbs, y: Limbs) -> Limbs {
+    carry_difference(sub_biased(x, y))
+  }
+
+  spec subtract_canonical(x: Limbs, y: Limbs) -> Limbs {
+    canonicalize_tight(subtract_tight(x, y))
+  }
+
+  // Dedicated square: the same folded convolution as product_accumulators,
+  // counting each off-diagonal pair once with the factor 2. Complementary
+  // positions share the same 1-or-19 weight, so the doubling is exact.
+  // Intended input contract: tight(x). Bounds match bounded_product.
+  spec square_accumulators(x: Limbs) -> ProductAccumulators {
+    for k in 0..5 with product: ProductAccumulators = [0; 5] {
+      let coefficient: Int = for i in 0..5 with sum: Int = 0 {
+        let weight: Int = if i > k { 19 } else { 1 };
+        if i < ((k + 5 - i) % 5) {
+          sum + weight * 2 * (x[i] as Int) * (x[(k + 5 - i) % 5] as Int)
+        } else {
+          if i == ((k + 5 - i) % 5) {
+            sum + weight * (x[i] as Int) * (x[i] as Int)
+          } else {
+            sum
+          }
+        }
+      };
+      product with [k] = coefficient
+    }
+  }
+
+  spec square_tight(x: Limbs) -> Limbs { carry_product(square_accumulators(x)) }
+
+  spec square_canonical(x: Limbs) -> Limbs { canonicalize_tight(square_tight(x)) }
+
+  // Intended input contract: tight(x). Each coefficient is x[i] * a24 and
+  // at most (B - 1) * 121665 < 2^68, so it does not fit in Word[64].
+  spec mul_a24_accumulators(x: Limbs) -> ProductAccumulators {
+    for i in 0..5 with h: ProductAccumulators = [0; 5] {
+      h with [i] = (x[i] as Int) * a24()
+    }
+  }
+
+  spec bounded_a24(h: ProductAccumulators) -> Bool {
+    for i in 0..5 with valid: Bool = true {
+      valid && (h[i] >= 0) && (h[i] <= ((radix() - 1) * a24()))
+    }
+  }
+
+  // Reuses the three-pass product carry. Under bounded_a24 the first top
+  // carry is at most 121664, the second at most 1, and the third zero.
+  spec mul_a24_tight(x: Limbs) -> Limbs { carry_product(mul_a24_accumulators(x)) }
+
+  spec mul_a24_canonical(x: Limbs) -> Limbs { canonicalize_tight(mul_a24_tight(x)) }
 
   // Intended input contract: loose(x). Fold B^5 into 19 twice, using
   // B^5 = p + 19, and return tight digits with the same abstraction.
@@ -260,6 +354,64 @@ module field25519 {
     (zero(), [1, 0, 0, 0, 0], zero(), [1, 0, 0, 0, 0], [324, 0, 0, 0, 0])
   }
 
+  // Biased difference of zero is the limb form of 2p; after carrying it is
+  // the noncanonical tight representation of p, then canonical zero.
+  spec subtract_zero() -> Limbs { subtract_tight(zero(), zero()) }
+  spec subtract_zero_expected() -> Limbs { p_limbs() }
+
+  spec subtract_boundaries() -> (Limbs, Limbs, Limbs, Limbs, Limbs) {
+    (subtract_canonical(zero(), zero()), subtract_canonical(zero(), [1, 0, 0, 0, 0]),
+     subtract_canonical(p_minus_one(), p_minus_one()), subtract_canonical(maximum_tight(), maximum_tight()),
+     subtract_canonical(zero(), maximum_tight()))
+  }
+  spec subtract_boundaries_expected() -> (Limbs, Limbs, Limbs, Limbs, Limbs) {
+    (zero(), p_minus_one(), zero(), zero(),
+     [2251799813685211, 2251799813685247, 2251799813685247, 2251799813685247, 2251799813685247])
+  }
+
+  // Forces the high end of the biased-difference limb bound before carrying.
+  spec subtract_wide() -> Limbs { sub_biased(maximum_tight(), zero()) }
+  spec subtract_wide_expected() -> Limbs {
+    [6755399441055705, 6755399441055741, 6755399441055741, 6755399441055741, 6755399441055741]
+  }
+
+  spec square_accumulator_maxima() -> ProductAccumulators {
+    square_accumulators(maximum_tight())
+  }
+  spec square_accumulator_maxima_expected() -> ProductAccumulators {
+    product_accumulator_maxima_expected()
+  }
+
+  spec square_maximum() -> Limbs { square_canonical(maximum_tight()) }
+  spec square_maximum_expected() -> Limbs { [324, 0, 0, 0, 0] }
+
+  spec square_boundaries() -> (Limbs, Limbs, Limbs, Limbs) {
+    (square_canonical(zero()), square_canonical(p_minus_one()), square_canonical(p_limbs()),
+     square_canonical(maximum_tight()))
+  }
+  spec square_boundaries_expected() -> (Limbs, Limbs, Limbs, Limbs) {
+    (zero(), [1, 0, 0, 0, 0], zero(), [324, 0, 0, 0, 0])
+  }
+
+  spec a24_accumulator_maxima() -> ProductAccumulators {
+    mul_a24_accumulators(maximum_tight())
+  }
+  spec a24_accumulator_maxima_expected() -> ProductAccumulators {
+    [273965224332015576255, 273965224332015576255, 273965224332015576255,
+     273965224332015576255, 273965224332015576255]
+  }
+
+  spec a24_maximum() -> Limbs { mul_a24_canonical(maximum_tight()) }
+  spec a24_maximum_expected() -> Limbs { [2189970, 0, 0, 0, 0] }
+
+  spec a24_boundaries() -> (Limbs, Limbs, Limbs, Limbs) {
+    (mul_a24_canonical(zero()), mul_a24_canonical([1, 0, 0, 0, 0]), mul_a24_canonical(p_limbs()),
+     mul_a24_canonical(maximum_tight()))
+  }
+  spec a24_boundaries_expected() -> (Limbs, Limbs, Limbs, Limbs) {
+    (zero(), [121665, 0, 0, 0, 0], zero(), [2189970, 0, 0, 0, 0])
+  }
+
   test "tight does not imply canonical" { tight(p_limbs()) && !canonical(p_limbs()) }
   test "distinct admitted representations can denote zero" {
     loose(p_limbs()) && (alpha(p_limbs()) == alpha(zero()))
@@ -289,5 +441,29 @@ module field25519 {
     let h: ProductAccumulators = [390436384870294308883813279727694, 0, 0, 0, 0];
     !bounded_product(h) && !bounded_product([-1, 0, 0, 0, 0]) &&
     (alpha(carry_product(h)) == (reconstruct_product(h) as Field))
+  }
+  test "biased subtraction retains the difference residue" {
+    let x: Limbs = p_minus_one();
+    let y: Limbs = maximum_tight();
+    tight(subtract_tight(x, y)) &&
+    (alpha(subtract_tight(x, y)) == (alpha(x) - alpha(y)))
+  }
+  test "the biased difference bound is wider than loose" {
+    let wide: Limbs = subtract_wide();
+    bounded_difference(wide) && !loose(wide) && tight(carry_difference(wide))
+  }
+  test "dedicated squaring agrees with the product schedule" {
+    bounded_product(square_accumulator_maxima()) &&
+    (square_accumulator_maxima() == product_accumulator_maxima()) &&
+    (square_maximum() == product_maximum())
+  }
+  test "a24 multiplication exceeds a wrapping Word[64] limb product" {
+    let h: ProductAccumulators = a24_accumulator_maxima();
+    bounded_a24(h) && (h[0] > 18446744073709551615) &&
+    tight(a24_maximum()) && canonical(a24_maximum())
+  }
+  test "correct a24 residue does not admit a nontight input" {
+    let x: Limbs = [2251799813685248, 0, 0, 0, 0];
+    !tight(x) && (alpha(mul_a24_tight(x)) == (alpha(x) * (a24() as Field)))
   }
 }

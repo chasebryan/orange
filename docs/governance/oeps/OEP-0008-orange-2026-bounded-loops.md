@@ -134,6 +134,10 @@ summary:
   bounds nested loops. The deepest admitted sources still fit in 1 MiB of
   stack.
 
+Amended 2026-10-09: the evaluator now charges ceil(n / 64) steps per update
+or fill (CTL-028); see `bulk_cost` in
+`compiler/crates/orange-compiler/src/eval.rs`.
+
 ## Alternatives
 
 A general `while` loop was rejected. Its number of steps is not visible, it

@@ -170,17 +170,17 @@ lines. What the rendering does not express is the constant-time property
 discussed above: `orangec eval` evaluates a specification, and its step count
 is a measure of the specification's size, not of any implementation's timing.
 
-The costs were measured with filler specs sharing a file's budget
-(`probe.py` and `probe2.py` in the scratch directory): one `quarter_round`
-is about 46 steps, one `inner_block` about 411, and one `chacha20_block`
-about 11,400, of which the 64 single-byte updates of `serialize` are about
-4,100 (an update of an n-element array costs n steps); `hchacha20`, which
-serializes only 32 bytes and skips the addition, is about 6,800. The
-256-byte `encrypt` is about 116,500 steps, four blocks plus four times 64
-updates of a 256-byte array, so placing the keystream costs more than
-computing it. The whole file, 20 vector pairs with 30 block functions and 6
-HChaCha20 calls, uses about 672,000 of the 1,048,576 steps, and 33 more
-blocks would fit; no vector had to be moved or dropped.
+The costs below are from `orangec eval --stats` on this file.
+`rfc8439_2_3_2_state`, the block after the final addition and before
+`serialize`, takes 4,909 steps. `rfc8439_2_3_2`, that same block through
+`chacha20_block`, takes 6,944, so serialization accounts for about 2,035.
+`rfc8439_a2_2_head`, the 256-byte `encrypt`, takes 32,771. The whole file,
+20 vector pairs with 30 block functions and 6 HChaCha20 calls, takes
+270,926 of the 1,048,576 steps of a file, about 26 percent. The 777,650
+steps left would hold 111 more evaluations the size of that 6,944-step
+block, so no vector had to be moved or dropped. Updating a 256-byte array
+does not cost one step per element: one update takes 11 steps, and 64
+updates take 518.
 
 ## Dissemination
 
@@ -225,13 +225,15 @@ blocks would fit; no vector had to be moved or dropped.
 | `botan_xchacha_3` | Botan `src/tests/data/stream/chacha.vec`, third case under "XChaCha tests" | 128 bytes of XChaCha20 keystream, key 00:01:...:1f, nonce 00:01:...:17 |
 
 Every expected value is copied from the named source; none was produced by
-an oracle. A message longer than 256 bytes cannot be one Orange array, so
-A.2 test vector 2 (375 bytes) and the draft's two examples (304 bytes each)
-are each passed as two arrays, the second encrypted from the block counter
-its first block has (5, 4 and 5), which is what the RFC's `chacha20_encrypt`
-loop would have reached; the two halves together are the source's whole
-ciphertext. The draft prints each example twice, as a hex dump in A.2 and as
-continuous hex in A.3.2; `ref.py` parses both and asserts they agree.
+an oracle. These sources were written when an array held at most 256
+elements. `orangec` now admits 1 through 65,536, so the 375-byte and 304-byte
+messages fit in one array. The sources still pass A.2 test vector 2 (375
+bytes) and the draft's two examples (304 bytes each) as two arrays, the
+second encrypted from the block counter its first block has (5, 4 and 5),
+which is what the RFC's `chacha20_encrypt` loop would have reached; the two
+halves together are the source's whole ciphertext. The draft prints each
+example twice, as a hex dump in A.2 and as continuous hex in A.3.2; `ref.py`
+parses both and asserts they agree.
 
 ### Provenance and claims
 
@@ -267,10 +269,11 @@ corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the two messages longer than that
-  (375 and 304 bytes) are passed as two arrays with the second array's
-  block counter set by hand; the RFC's single `chacha20_encrypt` call over
-  the whole message is not one spec here.
+- The two messages longer than 256 bytes (375 and 304) are still passed as
+  two arrays, with the second array's block counter set by hand. An array
+  holds 1 through 65,536 elements, so that split is no longer required by
+  the language; the RFC's single `chacha20_encrypt` call over the whole
+  message is not one spec here.
 - Arrays have no length parameter, so the partial-block case of section
   2.4.1 is written once per message length (`encrypt_48`, `encrypt_64`,
   `encrypt_114`, `encrypt_119`, `encrypt_127`, `encrypt_128`), six copies
@@ -279,8 +282,8 @@ corpus entry in the sense of The Orange Book chapter 12.
   expression (ORC0101 on a `let` inside it), so the keystream block of
   iteration j cannot be bound and written at `64 * j + i` in one loop;
   `xor_block` selects the offset with a four-arm conditional on j instead,
-  costing four comparisons per block.
-- An update of an n-element array costs n steps, so placing 64 bytes into a
-  256-byte ciphertext costs about 16,400 steps, more than the 11,400 of the
-  block function; the file still uses about two thirds of its budget, so nothing
-  was split or dropped.
+  costing at most three comparisons per block.
+- Updating a 256-byte array takes 11 steps, and 64 such updates take 518,
+  not one step per element. The file uses 270,926 of 1,048,576 steps, about
+  26 percent, with room for 111 more evaluations the size of the 6,944-step
+  `chacha20_block`, so nothing was split or dropped.

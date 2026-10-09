@@ -13,12 +13,12 @@ lengths in a 16-byte tag. XChaCha20-Poly1305 is the same construction with
 a 192-bit nonce, the first 128 bits of which pass through HChaCha20 to make
 a subkey, described in
 [draft-irtf-cfrg-xchacha](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha)
-(Arciszewski, versions 00 to 03, 2018 to January 2020). ChaCha20-Poly1305
-is a cipher suite of TLS 1.2 and 1.3, an OpenSSH transport cipher, an IPsec
-ESP algorithm, a QUIC packet protection cipher, a Noise cipher and the only
-cipher of WireGuard; RFC 8439 is a current IETF specification, and
-XChaCha20-Poly1305 is an expired draft that libsodium, Botan, Go's x/crypto
-and other libraries implement as written.
+(Arciszewski, versions 00 to 03, April 2019 to January 2020).
+ChaCha20-Poly1305 is a cipher suite of TLS 1.2 and 1.3, an OpenSSH transport
+cipher, an IPsec ESP algorithm, a QUIC packet protection cipher, a Noise
+cipher and the only cipher of WireGuard; RFC 8439 is a current IETF
+specification, and XChaCha20-Poly1305 is an expired draft that libsodium,
+Botan, Go's x/crypto and other libraries implement as written.
 
 ## Analysis
 
@@ -27,14 +27,14 @@ and other libraries implement as written.
 The file follows RFC 8439 in the order of its section 2, then the draft.
 
 ChaCha20 (RFC 8439 sections 2.1 to 2.4) is the ARX cipher of the
-[chacha20 entry](../chacha20/README.md), carried again here because an
-Orange file has no imports: the quarter round with its rotations 16, 12, 8
-and 7, the double round of four column and four diagonal quarter rounds
-(`inner_block`), the 4 by 4 state of the constants "expand 32-byte k", the
-256-bit key, a 32-bit block counter and the 96-bit nonce, twenty rounds
-followed by the addition of the initial state, and serialization into 64
-little-endian bytes. Encryption XORs the keystream of blocks `counter`,
-`counter + 1`, ... with the message.
+[chacha20 entry](../chacha20/README.md), carried again here because a
+module can be read only from its own folder: the quarter round with its
+rotations 16, 12, 8 and 7, the double round of four column and four
+diagonal quarter rounds (`inner_block`), the 4 by 4 state of the constants
+"expand 32-byte k", the 256-bit key, a 32-bit block counter and the 96-bit
+nonce, twenty rounds followed by the addition of the initial state, and
+serialization into 64 little-endian bytes. Encryption XORs the keystream of
+blocks `counter`, `counter + 1`, ... with the message.
 
 Poly1305 (section 2.5) is a polynomial evaluation modulo the prime
 `p = 2^130 - 5`. The 32-byte one-time key is two little-endian numbers: `r`,
@@ -68,53 +68,63 @@ AEAD_CHACHA20_POLY1305 under the subkey with the 12-byte nonce
 | --- | --- |
 | RFC 8439, 2.1, the quarter round | `quarter_round` |
 | 2.3, the eight quarter rounds of a double round | `inner_block` |
-| 2.3, bytes and words | `load_le32`, `le_bytes` |
-| 2.3, the initial state, its serialization, `chacha20_block` | `initial_state`, `serialize`, `chacha20_block` |
-| 2.4.1, `chacha20_encrypt` for 114, 47, 256 and 9 bytes | `chacha20_encrypt`, `chacha20_encrypt_47`, `chacha20_encrypt_256`, `chacha20_encrypt_9` |
-| 2.5, `p = 2^130 - 5` and the clamping of `r` | `prime`, `clamp` |
-| 2.5.1, `le_bytes_to_num`, `r` and `s` | `le_bytes_to_num`, `poly1305_r`, `poly1305_s` |
-| 2.5.1, `a = ((a + n) * r) mod p` | `absorb` |
-| 2.5.1, the number of a block with its `0x01` byte, the loop over the blocks | `block_byte`, `poly1305_blocks` |
-| 2.5.1, `num_to_16_le_bytes` | `byte_weights`, `num_to_16_le_bytes` |
-| 2.5.1, `poly1305_mac` for up to 256 bytes, and for 257 to 512 | `poly1305_mac`, `poly1305_mac_long` |
+| 2.3, the initial state, the twenty rounds, the serialization | `chacha20_block` |
+| 2.4.1, `chacha20_encrypt` | `chacha20_encrypt[n]` for `n` from 16 through 271 bytes |
+| 2.5, `p = 2^130 - 5` | `type P = Mod[(1 << 130) - 5]` |
+| 2.5.1, `clamp(r)` and `le_bytes_to_num` of `r` | `clamp` |
+| 2.5.1, the loop body `a += n; a = (r * a) % p` | `absorb` |
+| 2.5.1, `a += s` and `num_to_16_le_bytes` | `finish` |
+| 2.5.1, `poly1305_mac` | `poly1305_mac[h, q, k]` for messages of `256 h + 16 q + k` bytes |
+| 2.5.1, `poly1305_mac` on whole blocks | `poly1305_mac_blocks[b]` for 1 through 24 blocks |
 | 2.6.1, `poly1305_key_gen` | `poly1305_key_gen` |
-| 2.8, the MAC input, block by block | `whole_block`, `absorb_aad_12`, `absorb_aad_8`, `absorb_ciphertext_114`, `absorb_ciphertext_47`, `absorb_ciphertext_265`, `num_to_8_le_bytes`, `absorb_lengths` |
-| 2.8, the tag | `aead_tag`, `aead_tag_8_47`, `aead_tag_12_265` |
-| 2.8.1, `chacha20_aead_encrypt` | `chacha20_aead_encrypt`, `chacha20_aead_encrypt_8_47` |
-| 2.8, decryption: the tag comparison and the plaintext | `chacha20_aead_verify`, `chacha20_aead_decrypt`, `chacha20_aead_verify_265`, `chacha20_aead_decrypt_265_head`, `chacha20_aead_decrypt_265_tail` |
+| 2.8.1, `x \|\| pad16(x)` and `num_to_8_le_bytes(x.length)` | `padded16[q, k]`, `length_bytes[q, k]` |
+| 2.8.1, `mac_data` and the tag | `aead_tag` |
+| 2.8.1, `chacha20_aead_encrypt` | `chacha20_aead_encrypt` |
+| 2.8, decryption: the tag comparison and the plaintext | `chacha20_aead_decrypt`, `withheld[n]` |
 | draft, 2.2, HChaCha20 | `hchacha20` |
-| draft, 2, steps 1 and 2: the nonce halves | `hchacha20_nonce`, `chacha20_nonce` |
-| draft, 2, AEAD_XChaCha20_Poly1305 | `xchacha20_aead_encrypt`, `xchacha20_aead_encrypt_8_47` |
+| draft, 2, AEAD_XChaCha20_Poly1305, steps 1 and 2 (the same steps as 2.3 gives for XChaCha20) | `xchacha20_aead_encrypt` |
 
-Poly1305 is written over `Int`, as the S3f fixture `valid-aead.or` writes
-it, but for a message of any length: `poly1305_mac` takes a 256-byte buffer
-and the message length as an `Int`, and `poly1305_blocks` loops over the
-sixteen possible blocks, absorbing block `j` when `16j` is inside the
-message. Each block's number is folded from byte 15 down to byte 0 by
-`block_byte`, which contributes the byte when its position is inside the
-message, the `0x01` when its position equals the length, and nothing
-beyond; a whole block starts the fold from 1 so that the `0x01` lands above
-byte 15, a partial one from 0. That is the RFC's `le_bytes_to_num(msg[...] | [0x01])`
-for both the whole and the final block in one expression. The 375-byte text
-of appendix A.3 exceeds an array, so `poly1305_mac_long` absorbs a 256-byte
-head and a second segment starting at byte 256 with the same loop.
+Byte strings are typed by their lengths, and each function over strings of
+several lengths takes the length as a size parameter, within the limit of
+256 instances a function may have. `chacha20_encrypt[n]` takes 16 through
+271 bytes and writes the RFC's loop over blocks as one keystream of
+`ceil(n / 64)` blocks, each laid in place by a slice update, exclusive-ored
+with the message byte by byte. `poly1305_mac` takes a message of
+`256 h + 16 q + k` bytes, `16 h + q` whole blocks and a last block of `k`
+bytes with `1 <= k <= 16`: one size for every length from 1 through 375
+would need 375 instances, so the length is split, `h` in 0 and 1 and `q` in
+0 through 7, and the instances cover 1 through 128 and 257 through 384
+bytes, which take in every message the RFC's Poly1305 vectors use (16, 34,
+48, 64, 127 and 375 bytes). The loop over the blocks reads each whole
+block followed by `hex"01"` as a 17-byte little-endian number of `P`, and
+the last block from a copy of the message with its `0x01` already
+appended, so the zeros above it add nothing; that is the RFC's
+`le_bytes_to_num(msg[...] | [0x01])` for the whole and the final block.
 
-The AEAD's MAC input is never laid out as one array. Every block of it is
-whole, so `aead_tag` absorbs it in parts with the same `absorb`: the padded
-additional data (one block for 12 or 8 bytes), the ciphertext with its last
-block zero-padded, and the block of the two lengths; the accumulator
-carries between the parts exactly as it would over the concatenation, and
-the comment on `whole_block` says so. Message sizes are types, so the
-ciphertext parts and the tag exist once per size the vectors use: 12 bytes
-of additional data with 114 (section 2.8.2 and the draft's example) and 265
-bytes (appendix A.5), 8 with 47 (the two Wycheproof cases). Decryption is
-two specs, because a spec has one result: `chacha20_aead_verify` returns the
-verdict of the tag comparison as a `Bool`, and `chacha20_aead_decrypt`
-returns the plaintext when the verdict is `true` and 114 zero bytes when it
-is not. The 265-byte ciphertext of appendix A.5 is passed as a 256-byte
-head and a 9-byte tail with the tag apart, and its plaintext comes back in
-the same two parts, the tail decrypted under block counter 5, the counter
-the RFC's loop reaches after the four blocks of the head.
+The AEAD's tag follows the RFC's pseudocode: `mac_data` is
+`padded16(aad) ++ padded16(ciphertext) ++ length_bytes(aad) ++
+length_bytes(ciphertext)`, and Poly1305 runs over it. Its lengths (80,
+160 and 304 bytes for the vectors) are whole blocks but not all among the
+instances of `poly1305_mac`, so the AEAD calls `poly1305_mac_blocks`, the
+same loop over whole blocks only. `padded16` and `length_bytes` take
+`16 q + k` bytes with `k` from 1 through 15, every length up to 271 bytes
+whose last block is partial (255 instances), which covers the vectors' 8
+and 12 bytes of additional data and 47, 114 and 265 of ciphertext; RFC
+8439's `pad16` of a string that fills its last block is empty, and no array
+is empty. The AEAD functions take two strings of independent lengths, and
+a size parameter for each would multiply far past 256 instances, so
+`chacha20_aead_encrypt`, `chacha20_aead_decrypt`, `aead_tag` and
+`xchacha20_aead_encrypt` take type parameters instead, `A` among
+`Word[8]^8` and `Word[8]^12` for the additional data and `M` among
+`Word[8]^47`, `Word[8]^114` and `Word[8]^265` for the message: six
+instances, each checked as written out, and each call inside them picks the
+instance of `chacha20_encrypt`, `padded16` or `length_bytes` that fits the
+argument's length. Encryption returns the pair `(ciphertext, tag)`, as the
+RFC's pseudocode does. Decryption returns the pair of the verdict and the
+plaintext: the received tag is compared with the recomputed one as one
+16-byte value, and the plaintext is released only when they are equal;
+otherwise it is zeros of the message's length (`withheld`, a sized spec,
+because a type parameter carries no length to write a fill with).
 
 ### Security status
 
@@ -241,128 +251,122 @@ known as of 2026.
 
 Nothing in ChaCha20 depends on data: the rotation amounts are literals,
 every index of `inner_block` is a constant, and the loops run 10 and 16
-times. In Poly1305 the arithmetic is exact: `absorb` is the RFC's
-`Acc = ((Acc+Block)*r) % P` on `Int`, one 5-limb product and one reduction,
-about 93 steps, and there are no limbs, no partial reduction and no
-carries. Appendix A.3 test vectors 5 to 11 therefore test something
-different here from what they test in a limb implementation: not carry
-propagation but the reading of the specification itself, the `0x01` above
-the last byte present, the reduction modulo `2^130 - 5` rather than
-`2^130`, and the truncation of `a + s` to 128 bits, which `num_to_16_le_bytes`
-performs by dividing by 256^i and converting to `Word[8]`. Vector 6 (the
-sum passes 2^128), vector 8 (the polynomial part is exactly `p`, so the
-accumulator is 0) and vectors 10 and 11 (a 130-bit `r` product) are the ones
-that would expose a wrong reading.
+times. The byte orders are written where the RFC fixes them, with
+`as little`: the state is `"expand 32-byte k" ++ key ++ counter ++ nonce`
+read as sixteen little-endian words, the counter becomes its four bytes the
+same way, and the sum of the rounds and the state is serialized back to 64
+bytes in one conversion; HChaCha20 reads its sixteen nonce bytes in place
+of the counter and the nonce, and writes its eight output words with the
+same conversion. The one-time key is `chacha20_block(key, 0, nonce)[..32]`
+and the XChaCha20 nonce `hex"00000000" ++ nonce[16..]`, slices and joins as
+the standards write them.
 
-The conditionals are on lengths and on the verdict. `block_byte` compares
-each byte position with the message length, `poly1305_blocks` compares each
-block's offset with it, and `chacha20_aead_decrypt` selects the plaintext or
-zeros on the tag verdict; the message length is public, and the tag
-comparison is a fold of `&&` over sixteen byte equalities, which Orange
-evaluates in full (both sides of `&&` are always evaluated), so the spec
-compares all sixteen bytes whatever the first says. That is the shape
-section 4 asks for, and nothing more: `orangec eval` counts steps, it does
-not measure time, and the entry makes no constant-time claim. `Int` has no
-bitwise operators, so `clamp` is written on the sixteen bytes of `r` before
-they become a number, with the RFC's mask as bytes.
+In Poly1305 the arithmetic is exact: `P` is `Mod[(1 << 130) - 5]`, and
+`absorb` is the RFC's `a += n; a = (r * a) % p` on residues, with no limbs,
+no partial reduction and no carries. `clamp` applies the RFC's mask to the
+two little-endian 64-bit halves of `r` and reads them as a residue; `finish`
+adds `s` as an `Int` and keeps the low 128 bits by converting the sum to
+sixteen little-endian bytes, which is the RFC's truncation. Appendix A.3
+test vectors 5 to 11 therefore test something different here from what
+they test in a limb implementation: not carry propagation but the reading
+of the specification itself, the `0x01` above the last byte present, the
+reduction modulo `2^130 - 5` rather than `2^130`, and the truncation of
+`a + s` to 128 bits. Vector 6 (the sum passes 2^128), vector 8 (the
+polynomial part is exactly `p`, so the accumulator is 0) and vectors 10 and
+11 (a 130-bit `r` product) are the ones that would expose a wrong reading.
 
-Costs, measured with filler specs sharing a file's budget (`micro2.py`,
-`measure.py` and `headroom.py` in the entry's scratch work, not in the
-repository): a `quarter_round` is about 50 steps, an `inner_block` 434, and
-a `chacha20_block` about 5,900, half the chacha20 entry's figure because
-`serialize` builds the 64 bytes as one literal (about 500 steps) instead of
-64 single-byte updates; `hchacha20` is about 7,300 and `poly1305_key_gen`
-7,100. One Poly1305 block costs about 850 steps, of which the sixteen
-`block_byte` calls are 580 and the `absorb` 93, so `poly1305_blocks` over
-256 bytes is about 13,600 and `poly1305_mac` over 256 bytes about 15,900
-with `r`, `s` and the tag bytes. What dominates the Poly1305 vectors is not
-the arithmetic but the copy of the message into the 256-byte buffer: an
-update of an n-element array costs n steps, so each message byte costs 256
-steps to place, and test vector 1 (64 zero bytes) costs 22,800 of which
-16,400 are the copy. Likewise `chacha20_encrypt_256` is about 87,400 steps,
-of which the four blocks are 23,400 and the 256 updates of the 256-byte
-ciphertext 65,500. A 114-byte seal (`chacha20_aead_encrypt`) is about
-58,300 steps: three ChaCha20 blocks, the eleven `absorb`s of the tag, and
-the placement of the 114 ciphertext bytes; the XChaCha20 seal adds
-`hchacha20` for 65,500; the tag check on 130 bytes is 30,000 and the
-decryption 43,700, the check being recomputed inside it. The vector specs
-measure 14,400 (section 2.5.2), 7,200 (each one-time key), 7,700 to 55,200
-(the A.3 vectors, the two over the 375-byte text the largest), 61,700 (the
-2.8.2 seal), 31,800 and 74,900 (its tag check and its opening), 25,600,
-131,100 and 31,800 (the A.5 check, head and tail), 69,900 (the draft's
-example) and 26,200 and 33,800 (the Wycheproof cases): 832,000 steps in
-all by that method, and 806,000 by measuring how large a filler the
-committed file still admits, which leaves about 240,000 steps, room for
-four more seals of the 2.8.2 size. No vector was moved to a second file or
-dropped, and appendix A.5 is reproduced whole.
+The conditionals are on lengths and on the verdict. In `poly1305_mac` the
+loop index is compared with the number of whole blocks, a size, to choose
+between a whole block and the last one; `chacha20_aead_decrypt` selects the
+plaintext or zeros on the tag verdict. The tag comparison is one `==` on
+two 16-byte arrays, which Orange evaluates in full: its cost does not
+depend on where the arrays differ. That is the shape section 4 asks for,
+and nothing more: `orangec test` counts steps, it does not measure time,
+and the entry makes no constant-time claim. The checker proves every index
+and slice in range for every instance before evaluation.
 
-Not expressed: a message of arbitrary length in one spec (the Poly1305 MAC
-takes any length up to 256 bytes through its buffer and length, and up to
-512 in two segments; the AEAD's ciphertext parts and encryption exist per
-size), the RFC's single `chacha20_aead_decrypt` returning either the
-plaintext or a failure (two specs here), and the 64-bit block counter of
-the original ChaCha20 that section 2.8 mentions for messages over 256 GB.
+Measured costs, with `orangec test --stats`. The figures for one call come
+from scratch tests that make that call alone, and hold to within a few
+steps; the figures for tests are the ones `--stats` prints for the tests
+of the table below. One call of `quarter_round` is about 41 steps,
+`inner_block` about 412, `chacha20_block` about 4,320 and `hchacha20`
+about 4,160; each one-time key test costs 4,333. One call of
+`chacha20_encrypt` costs about 10,050 steps on 114 bytes (two blocks) and
+25,690 on 265 (five blocks), the byte-by-byte exclusive-or being 12 to 15
+steps a byte. One `absorb` is about 90 steps, a residue product of five
+32-bit digits being 51 of them, so a Poly1305 block costs 110 to 120 steps
+with its slice and `0x01`: one call of `poly1305_mac` over 64 bytes is
+about 555 steps and over the 375-byte text about 2,920, and the 2.8.2 tag
+over ten blocks of `mac_data` about 1,180. These depend a little on the
+data (an all-zero key and message cost less). One sealing of the 114-byte
+text is about 15,560 steps, three ChaCha20 blocks and the tag. As whole
+tests, the seal of section 2.8.2 costs 15,598 steps and its opening
+15,608, the XChaCha20 seal of the draft's A.1 adds `hchacha20` for 19,766,
+and the opening of appendix A.5, six ChaCha20 blocks and a tag over
+nineteen blocks, costs 32,271. The 22 tests use 135,961 steps in all.
+
+Not expressed: a message of any length in one function (each function
+takes the lengths its comment names, and the AEAD the lengths of its
+vectors), empty additional data or an empty plaintext, which RFC 8439
+allows, and the 64-bit block counter of the original ChaCha20 that section
+2.8 mentions for messages over 256 GB.
 
 ## Dissemination
 
 ### Files
 
 - `chacha20-poly1305.or`: module `chacha20_poly1305`. ChaCha20 (quarter
-  round, double round, block function, serialization, encryption for the
-  four message sizes), Poly1305 (clamping, the block fold, the accumulator,
-  the tag, for up to 256 and up to 512 bytes), the one-time key generation,
-  the AEAD's tag, sealing, tag check and opening, HChaCha20,
-  AEAD_XChaCha20_Poly1305, and every vector below.
+  round, double round, block function, encryption), Poly1305 (clamping, the
+  accumulator, the tag, for messages of the lengths above and for whole
+  blocks), the one-time key generation, the AEAD's padding, lengths, tag,
+  sealing and opening, HChaCha20, AEAD_XChaCha20_Poly1305, and the 22 tests
+  below.
 
 ### Running
 
-    orangec eval algorithms/chacha20-poly1305/chacha20-poly1305.or
+    orangec test algorithms/chacha20-poly1305/chacha20-poly1305.or
     python3 algorithms/verify.py algorithms/chacha20-poly1305
 
-`eval` also prints `prime`, `byte_weights` and the input specs
-`rfc8439_2_8_2_key`, `rfc8439_2_8_2_nonce`, `rfc8439_2_8_2_aad`,
-`sunscreen`, `ietf_text_head`, `ietf_text_tail`, `rfc8439_a5_key`,
-`rfc8439_a5_nonce`, `rfc8439_a5_aad`, `rfc8439_a5_ciphertext_head`,
-`rfc8439_a5_ciphertext_tail` and `rfc8439_a5_tag`, which have no
-`_expected` twin and are not vectors.
+`orangec eval` prints the parameterless specs that hold inputs shared by
+several tests: `ietf_text` (the 375-byte text of A.3), `key_a5`,
+`key_2_8_2`, `nonce_2_8_2`, `aad_2_8_2`, `sunscreen` (the 114-byte
+plaintext of 2.8.2) and `sealed_2_8_2` (its published ciphertext and tag).
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `chacha20-poly1305.or`.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `rfc8439_2_5_2` | RFC 8439, section 2.5.2 | Poly1305 of the 34-byte text "Cryptographic Forum Research Group" under the key 85:d6:be:78:...:f5:1b; the tag a8:06:1d:c1:...:27:a9 |
-| `rfc8439_a3_1` | RFC 8439, appendix A.3, test vector 1 | zero key, 64 zero bytes; the zero tag |
-| `rfc8439_a3_2` | RFC 8439, appendix A.3, test vector 2 | r = 0, s = 36e5f6b5..., the 375-byte IETF boilerplate text; the tag is s |
-| `rfc8439_a3_3` | RFC 8439, appendix A.3, test vector 3 | r = 36e5f6b5... (before clamping), s = 0, the same text; the tag is the polynomial alone |
-| `rfc8439_a3_4` | RFC 8439, appendix A.3, test vector 4 | key 1c:92:40:a5:..., the 127-byte "Jabberwocky" text: seven whole blocks and a 15-byte final block |
-| `rfc8439_a3_5` | RFC 8439, appendix A.3, test vector 5 | r = 2, s = 0, one block of ff bytes: the partially reduced result 2^130 - 2 reduces to 3 |
-| `rfc8439_a3_6` | RFC 8439, appendix A.3, test vector 6 | r = 2, s = 2^128 - 1, one block 02 00 ... 00: the addition of s overflows 2^128 |
-| `rfc8439_a3_7` | RFC 8439, appendix A.3, test vector 7 | r = 1, s = 0, three blocks: a data limb of all ones with a carry from below; the tag 05 |
-| `rfc8439_a3_8` | RFC 8439, appendix A.3, test vector 8 | r = 1, s = 0, three blocks whose polynomial part is exactly 2^130 - 5; the zero tag |
-| `rfc8439_a3_9` | RFC 8439, appendix A.3, test vector 9 | r = 2, s = 0, one block fd ff ... ff: the polynomial part is exactly 2^130 - 6; the tag fa ff ... ff |
-| `rfc8439_a3_10` | RFC 8439, appendix A.3, test vector 10 | r = 2^66 + 1, s = 0, four blocks: a 5*H+L reduction with a 131-bit intermediate result; the tag 14 00 ... 55 00 ... |
-| `rfc8439_a3_11` | RFC 8439, appendix A.3, test vector 11 | the same r over the first three blocks: a 131-bit final result; the tag 13 00 ... 00 |
-| `rfc8439_2_6_2` | RFC 8439, section 2.6.2 | the one-time key under the key 80:81:...:9f and the nonce 00 00 00 00 00 01 02 03 04 05 06 07: 8a d5 a0 8b ... |
-| `rfc8439_a4_1` | RFC 8439, appendix A.4, test vector 1 | zero key, zero nonce: 76 b8 e0 ad ... (ChaCha20 block 0 of the zero state) |
-| `rfc8439_a4_3` | RFC 8439, appendix A.4, test vector 3 | key 1c:92:40:a5:..., nonce 00 ... 00 02: 96 5e 3b c6 ... |
-| `rfc8439_2_8_2` | RFC 8439, section 2.8.2 | AEAD_CHACHA20_POLY1305 of the 114-byte "sunscreen" plaintext, key 80:81:...:9f, nonce 07 00 00 00 40 41 ... 47, aad 50 51 52 53 c0 c1 ... c7; the 114-byte ciphertext d3 1a 8d 34 ... followed by the tag 1a:e1:0b:59:...:06:91 |
-| `rfc8439_2_8_2_verify` | RFC 8439, section 2.8.2, decrypted | the tag of the published ciphertext recomputed and compared: `true` |
-| `rfc8439_2_8_2_open` | RFC 8439, section 2.8.2, decrypted | the published ciphertext opened: the sunscreen plaintext |
-| `rfc8439_2_8_2_tampered_verify` | not a published vector: the 2.8.2 ciphertext with the last bit of its tag flipped (0x91 to 0x90); oracle: `cryptography` `ChaCha20Poly1305.decrypt` raises `InvalidTag` | the verdict `false` |
-| `rfc8439_a5_verify` | RFC 8439, appendix A.5 | the 265-byte ciphertext, key 1c:92:40:a5:..., nonce 00 00 00 00 01 02 ... 08, aad f3 33 88 86 00 00 00 00 00 00 4e 91, received tag ee:ad:9d:67:...:1f:38: the tag verifies, `true` |
-| `rfc8439_a5_head` | RFC 8439, appendix A.5 | bytes 0 to 255 of its plaintext, the Internet-Drafts boilerplate, released by the decryption |
-| `rfc8439_a5_tail` | RFC 8439, appendix A.5 | bytes 256 to 264 of the same plaintext, under block counter 5 |
-| `xchacha_draft_a1` | draft-irtf-cfrg-xchacha-03, appendix A.1 (repeated as continuous hex in A.3.1) | AEAD_XCHACHA20_POLY1305 of the sunscreen plaintext under the 2.8.2 key and aad and the 24-byte nonce 40 41 ... 57; the ciphertext bd 6d 17 9d ... and the tag c0:87:59:24:...:cf:49 |
-| `wycheproof_chacha20_poly1305_tc_71` | Wycheproof `testvectors_v1/chacha20_poly1305_test.json`, tcId 71 (`valid`, flag `Pseudorandom`) | a 47-byte message with 8 bytes of aad, 96-bit nonce: an independent source with a partial final ciphertext block |
-| `wycheproof_xchacha20_poly1305_tc_71` | Wycheproof `testvectors_v1/xchacha20_poly1305_test.json`, tcId 71 (`valid`, flag `Pseudorandom`) | a 47-byte message with 8 bytes of aad, 192-bit nonce |
+| `RFC 8439 2.5.2: Poly1305 tag` | RFC 8439, section 2.5.2 | Poly1305 of the 34-byte text "Cryptographic Forum Research Group" under the key 85:d6:be:78:...:f5:1b; the tag a8:06:1d:c1:...:27:a9 |
+| `RFC 8439 A.3 #1: Poly1305, zero key` | RFC 8439, appendix A.3, test vector 1 | zero key, 64 zero bytes; the zero tag |
+| `RFC 8439 A.3 #2: Poly1305, r = 0` | RFC 8439, appendix A.3, test vector 2 | r = 0, s = 36e5f6b5..., the 375-byte IETF boilerplate text; the tag is s |
+| `RFC 8439 A.3 #3: Poly1305, s = 0` | RFC 8439, appendix A.3, test vector 3 | r = 36e5f6b5... (before clamping), s = 0, the same text; the tag is the polynomial alone |
+| `RFC 8439 A.3 #4: Poly1305, the Jabberwocky text` | RFC 8439, appendix A.3, test vector 4 | key 1c:92:40:a5:..., the 127-byte "Jabberwocky" text: seven whole blocks and a 15-byte final block |
+| `RFC 8439 A.3 #5: Poly1305, 2^130 - 2 reduces to 3` | RFC 8439, appendix A.3, test vector 5 | r = 2, s = 0, one block of ff bytes: the partially reduced result 2^130 - 2 reduces to 3 |
+| `RFC 8439 A.3 #6: Poly1305, a + s overflows 2^128` | RFC 8439, appendix A.3, test vector 6 | r = 2, s = 2^128 - 1, one block 02 00 ... 00: the addition of s overflows 2^128 |
+| `RFC 8439 A.3 #7: Poly1305, the sum passes p` | RFC 8439, appendix A.3, test vector 7 | r = 1, s = 0, three blocks: a data limb of all ones with a carry from below; the tag 05 |
+| `RFC 8439 A.3 #8: Poly1305, the sum is a multiple of p` | RFC 8439, appendix A.3, test vector 8 | r = 1, s = 0, three blocks whose polynomial part is exactly 2^130 - 5; the zero tag |
+| `RFC 8439 A.3 #9: Poly1305, the sum is p - 1` | RFC 8439, appendix A.3, test vector 9 | r = 2, s = 0, one block fd ff ... ff: the polynomial part is exactly 2^130 - 6; the tag fa ff ... ff |
+| `RFC 8439 A.3 #10: Poly1305, a 131-bit intermediate result` | RFC 8439, appendix A.3, test vector 10 | r = 2^66 + 1, s = 0, four blocks: a 5*H+L reduction with a 131-bit intermediate result; the tag 14 00 ... 55 00 ... |
+| `RFC 8439 A.3 #11: Poly1305, a 131-bit final result` | RFC 8439, appendix A.3, test vector 11 | the same r over the first three blocks: a 131-bit final result; the tag 13 00 ... 00 |
+| `RFC 8439 2.6.2: Poly1305 key generation` | RFC 8439, section 2.6.2 | the one-time key under the key 80:81:...:9f and the nonce 00 00 00 00 00 01 02 03 04 05 06 07: 8a d5 a0 8b ... |
+| `RFC 8439 A.4 #1: Poly1305 key generation, zero key` | RFC 8439, appendix A.4, test vector 1 | zero key, zero nonce: 76 b8 e0 ad ... (ChaCha20 block 0 of the zero state) |
+| `RFC 8439 A.4 #3: Poly1305 key generation` | RFC 8439, appendix A.4, test vector 3 | key 1c:92:40:a5:..., nonce 00 ... 00 02: 96 5e 3b c6 ... |
+| `RFC 8439 2.8.2: AEAD seal` | RFC 8439, section 2.8.2 | AEAD_CHACHA20_POLY1305 of the 114-byte "sunscreen" plaintext, key 80:81:...:9f, nonce 07 00 00 00 40 41 ... 47, aad 50 51 52 53 c0 c1 ... c7; the 114-byte ciphertext d3 1a 8d 34 ... and the tag 1a:e1:0b:59:...:06:91 |
+| `RFC 8439 2.8.2: AEAD open` | RFC 8439, section 2.8.2, decrypted | the published ciphertext and tag: the tag verifies (`true`) and the plaintext is the sunscreen text |
+| `RFC 8439 2.8.2: a tag with its last bit flipped is rejected` | not a published vector: the 2.8.2 ciphertext with the last bit of its tag flipped (0x91 to 0x90); oracle: `cryptography` `ChaCha20Poly1305.decrypt` raises `InvalidTag` | the verdict `false` |
+| `RFC 8439 A.5: AEAD open` | RFC 8439, appendix A.5 | the 265-byte ciphertext, key 1c:92:40:a5:..., nonce 00 00 00 00 01 02 ... 08, aad f3 33 88 86 00 00 00 00 00 00 4e 91, received tag ee:ad:9d:67:...:1f:38: the tag verifies (`true`) and the plaintext is the 265-byte Internet-Drafts boilerplate |
+| `draft-irtf-cfrg-xchacha A.1: AEAD seal` | draft-irtf-cfrg-xchacha-03, appendix A.1 (repeated as continuous hex in A.3.1) | AEAD_XCHACHA20_POLY1305 of the sunscreen plaintext under the 2.8.2 key and aad and the 24-byte nonce 40 41 ... 57; the ciphertext bd 6d 17 9d ... and the tag c0:87:59:24:...:cf:49 |
+| `Wycheproof chacha20_poly1305 tcId 71` | Wycheproof `testvectors_v1/chacha20_poly1305_test.json`, tcId 71 (`valid`, flag `Pseudorandom`) | a 47-byte message with 8 bytes of aad, 96-bit nonce: an independent source with a partial final ciphertext block |
+| `Wycheproof xchacha20_poly1305 tcId 71` | Wycheproof `testvectors_v1/xchacha20_poly1305_test.json`, tcId 71 (`valid`, flag `Pseudorandom`) | a 47-byte message with 8 bytes of aad, 192-bit nonce |
 
 Every expected value except the tampered verdict is copied from the named
 source; the tampered case is stated so that the tag comparison is seen to
-reject as well as accept. The A.5 ciphertext and plaintext are longer than
-an array, so each is two specs whose concatenation is the RFC's value. The
-draft's example uses the RFC's key, plaintext and additional data with its
-own nonce, and appears in the draft twice, as a hex dump in A.1 and as
-continuous hex in A.3.1; both were parsed and agree.
+reject as well as accept. The draft's example uses the RFC's key,
+plaintext and additional data with its own nonce, and appears in the draft
+twice, as a hex dump in A.1 and as continuous hex in A.3.1; both were
+parsed and agree.
 
 ### Provenance and claims
 
@@ -397,43 +401,59 @@ pycryptodome's `ChaCha20` (block 0 for the one-time keys),
 `r || s` keys. The Orange literals were emitted from those bytes by
 `emit_vectors.py`, never typed by hand, and `recheck.py` re-parsed the
 committed file's `eval` output and its inline input literals against them.
-The four ChaCha20 constants are "expand 32-byte k" by `struct.pack`,
-`prime` is `2^130 - 5`, the clamping mask is the RFC's
+In that first form the four ChaCha20 constants were "expand 32-byte k" by
+`struct.pack`, `prime` was `2^130 - 5`, the clamping mask was the RFC's
 `0x0ffffffc0ffffffc0ffffffc0fffffff` written as sixteen bytes, and
-`byte_weights` is `256^i`, each asserted in the script.
+`byte_weights` was `256^i`, each asserted in the script.
+
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec: the generator of the new literals read the bytes
+from the first form's `eval` output and source, and the texts now written
+as string literals (the sunscreen plaintext, the A.3 texts and the A.5
+plaintext, whose curly quotation marks are `\xe2\x80\x9c` and
+`\xe2\x80\x9d`) were compared byte for byte with the old values by
+evaluating both. The 2.8.2 and A.5 openings, which were a verdict and a
+plaintext (in two parts for A.5) in the first form, are each one test of
+the pair `(true, plaintext)`; the A.5 ciphertext and plaintext are whole.
+No vector was added or dropped. The constants are now the string
+"expand 32-byte k" read with `as little`, the modulus `(1 << 130) - 5` of
+`P`, and the clamping mask as the two 64-bit words `0x0ffffffc0fffffff` and
+`0x0ffffffc0ffffffc`, the RFC's mask read in halves.
 
 This entry is a reference evaluation of RFC 8439 and
-draft-irtf-cfrg-xchacha-03 under `orangec eval`: it shows that the Orange
+draft-irtf-cfrg-xchacha-03 under `orangec test`: it shows that the Orange
 text computes the standards' values on the cases listed. It makes no
 constant-time, side-channel, performance or certification claim; the
 remarks on constant time above are about the specification's requirements,
-not about this evaluator, whose `Int` arithmetic is exactly the generic
-big-number form section 4 warns against. It is not an implementation
+not about this evaluator, whose arithmetic modulo `p` is exactly the
+generic big-number form section 4 warns against. It is not an implementation
 anyone should deploy, and it is not a corpus entry in the sense of The
 Orange Book chapter 12.
 
 ## Gaps
 
-- Arrays hold at most 256 elements, so the 375-byte text of A.3 vectors 2
-  and 3 is authenticated in two segments (`poly1305_mac_long`), and the
-  265-byte ciphertext and plaintext of A.5 are a 256-byte head and a
-  9-byte tail, the tail's block counter (5) set by hand; the RFC's single
-  call over the whole message is not one spec.
-- No length polymorphism: the message length of the Poly1305 MAC is a
-  value beside a fixed buffer, but the AEAD's encryption, ciphertext
-  absorption, tag and seal are written once per size the vectors need
-  (114, 47, 265 bytes of ciphertext; 12 and 8 of additional data), eleven
-  specs that differ only in their bounds.
-- Static indices only: the final partial block cannot be sliced at the
-  message length, so `block_byte` decides per byte position with two
-  comparisons, 580 of the 850 steps of a Poly1305 block.
-- One result per spec: decryption is a `Bool` spec and a plaintext spec,
-  and the plaintext spec recomputes the tag check, about 30,000 steps
-  twice for the 2.8.2 opening.
-- An update of an n-element array costs n steps: placing a message in the
-  256-byte Poly1305 buffer costs 256 steps per byte, and placing the
-  keystream in a 256-byte ciphertext costs three times the block
-  functions; the file still uses about 810,000 of its 1,048,576 steps and
-  nothing was split or dropped.
-- `Int` has no bitwise operators, so `clamp` masks the bytes of `r` before
-  `le_bytes_to_num` rather than the number after it.
+- A function has at most 256 instances, and every length is part of a
+  type, so no function here takes a byte string of any length:
+  `chacha20_encrypt` and `withheld` take 16 through 271 bytes,
+  `poly1305_mac` 1 through 128 and 257 through 384 (the length split as
+  `256 h + 16 q + k` to reach the 375-byte text of A.3),
+  `poly1305_mac_blocks` 1 through 24 whole blocks, and `padded16` and
+  `length_bytes` the lengths up to 271 bytes that are not multiples of 16.
+  Another length needs a range widened, within that limit.
+- The AEAD functions take two strings of independent lengths, and a size
+  parameter for each would exceed the limit, so they list the vectors'
+  lengths as types (8 and 12 bytes of additional data; 47, 114 and 265 of
+  message). A type parameter carries no length, so the lengths of
+  `mac_data` come from sized helpers called by fit, and the zeros of a
+  withheld plaintext from `withheld`.
+- The AEAD's `mac_data` (80, 160 and 304 bytes for the vectors) does not
+  fall entirely among the instances of `poly1305_mac`, so the tag uses
+  `poly1305_mac_blocks`, the same loop over whole blocks, rather than the
+  RFC's single `poly1305_mac`.
+- No array has zero elements: RFC 8439's `pad16(x)` is empty when `x`
+  fills its last block, so `padded16` writes `x || pad16(x)` and takes only
+  lengths whose last block is partial, and empty additional data or an
+  empty plaintext cannot be passed.
+- The RFC's decryption fails without output; here it returns the verdict
+  with zeros in place of the plaintext.

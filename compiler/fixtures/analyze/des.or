@@ -1,0 +1,16 @@
+// S1, the first S-box of DES (FIPS 46-3, 1999, appendix 1): six input bits
+// b5 b4 b3 b2 b1 b0 select row b5 b0 and column b4 b3 b2 b1 of a 4 x 16
+// table of 4-bit values. `--bits 6,4` analyzes it as the 6-bit to 4-bit
+// function it is.
+edition 2026;
+module des {
+  spec s1(x: Word[8]) -> Word[8] {
+    let table: Word[8]^64 = [
+      14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7,
+      0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8,
+      4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0,
+      15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
+    ];
+    table[(((x >> 4) & 0x02) | (x & 0x01)) * 16 + ((x >> 1) & 0x0f)]
+  }
+}
