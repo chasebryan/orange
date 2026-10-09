@@ -1,0 +1,31 @@
+edition 2026;
+module alias_forms {
+  // Used inside `K in {T, Int}`. The listed use adds no diagnostic.
+  type W1 = Word[1];
+  type W7 = Word[7];
+  type Row5 = Word[1]^5;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Bare = Word;
+  type Both = Word[1]^0;
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type Nested = (Word[1], Int);
+
+  spec list_W1[K in {W1, Int}](x: K) -> K { x }
+  spec list_W7[K in {W7, Int}](x: K) -> K { x }
+  spec list_Row5[K in {Row5, Int}](x: K) -> K { x }
+  spec list_Zero[K in {Zero, Int}](x: K) -> K { x }
+  spec list_Huge[K in {Huge, Int}](x: K) -> K { x }
+  spec list_Flags[K in {Flags, Int}](x: K) -> K { x }
+  spec list_BadMod[K in {BadMod, Int}](x: K) -> K { x }
+  spec list_OneMod[K in {OneMod, Int}](x: K) -> K { x }
+  spec list_Bare[K in {Bare, Int}](x: K) -> K { x }
+  spec list_Both[K in {Both, Int}](x: K) -> K { x }
+  spec list_Unbound[K in {Unbound, Int}](x: K) -> K { x }
+  spec list_Scaled[K in {Scaled, Int}](x: K) -> K { x }
+  spec list_Nested[K in {Nested, Int}](x: K) -> K { x }
+}

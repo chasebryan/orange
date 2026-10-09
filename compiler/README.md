@@ -15,8 +15,8 @@ conditional, lookup, module, residue, block, and tuple fragment (`Bool`, compari
 qualified calls `m::f(...)`, `Mod[m]`, `type` declarations, `let` bindings
 at the start of a loop step or a conditional branch, tuples with `.k`
 and tuple patterns, bytes: `"..."`, `hex"..."`, `++`, slices, and slice
-updates, and size parameters `spec f[n in a..b]` with lengths, loop bounds,
-and calls written from those sizes) without the Rust
+updates, size parameters `spec f[n in a..b]` with lengths, loop bounds,
+and calls written from those sizes, and type parameters `K in {T1, T2}`) without the Rust
 toolchain. The Rust frontend in this workspace remains the implementation
 through the later slices.
 

@@ -1,0 +1,16 @@
+// Paired module for s3o/valid-nested.or. `deep` calls `m` with no
+// brackets, so the caller's concrete type parameter chooses the instance.
+edition 2026;
+module nestlib {
+  spec m[K in {Int, Word[8]}]() -> K { 0 - 1 }
+
+  spec deep[K in {Int, Word[8]}]() -> K { m() }
+
+  spec pair[K in {Int, Word[8]}]() -> (K, K) { (m(), m()) }
+
+  spec wrapped[K in {Int, Word[8]}]() -> (K, K) { pair() }
+
+  spec tm[K in {Int, Word[8]}]() -> (K, K) { (0, 0 - 1) }
+
+  spec tpair[K in {Int, Word[8]}]() -> (K, K) { tm() }
+}

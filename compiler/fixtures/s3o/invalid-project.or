@@ -1,0 +1,39 @@
+// Projecting, indexing, slicing, joining, ordering, or comparing does not
+// choose which instance a bracket-less call returns. Both instances fit,
+// so the call is ORC0239. An update and an argument place do choose it;
+// those are in valid-nested.or. A nested tuple result is a parse error, so
+// it lives in s3k/invalid-tuple-syntax.or.
+edition 2026;
+module project {
+  spec m[K in {Int, Word[8]}]() -> (K, K) { (0, 0 - 1) }
+
+  spec pick[K in {Int, Word[8]}]() -> K { m().0 }
+
+  spec rows[K in {Int, Word[8]}]() -> (K^2, K) { ([0, 1], 0) }
+
+  spec cell[K in {Int, Word[8]}]() -> K { rows().0[1] }
+
+  spec elems[K in {Int, Word[8]}]() -> K^2 { [0 - 1, 1] }
+
+  spec item[K in {Int, Word[8]}]() -> K { elems()[0] }
+
+  spec arr[K in {Int, Word[8]}]() -> K^2 { [0 - 1, 1] }
+
+  spec first[K in {Int, Word[8]}]() -> K { let x: K = arr()[0]; x }
+
+  spec sliced[K in {Int, Word[8]}]() -> K^1 { elems()[..1] }
+
+  spec whole[K in {Int, Word[8]}]() -> K^2 { elems()[..2] }
+
+  spec joined[K in {Int, Word[8]}]() -> K^3 { elems() ++ [0] }
+
+  spec ordered[K in {Int, Word[8]}]() -> Word[8]^2 { elems() as big Word[8]^2 }
+
+  spec compared[K in {Int, Word[8]}]() -> Bool { elems() == [0, 1] }
+
+  spec flipped[K in {Int, Word[8]}]() -> Bool { [0, 1] == elems() }
+
+  spec added[K in {Int, Word[8]}]() -> K { elems()[0] + 1 }
+
+  spec branched[K in {Int, Word[8]}]() -> K { if elems()[0] == 0 { 0 } else { 1 } }
+}

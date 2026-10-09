@@ -1,0 +1,84 @@
+// A nested call with no brackets is chosen by the type its place expects.
+// The values depend on K, so selecting the other instance cannot pass.
+edition 2026;
+module nested {
+  use nestlib;
+
+  spec m[K in {Int, Word[8]}]() -> K { 0 - 1 }
+
+  spec deep[K in {Int, Word[8]}]() -> K { m() }
+
+  spec deeper[K in {Int, Word[8]}]() -> K {
+    for i in 0..2 with a: K = deep() { a + m() }
+  }
+
+  // The same nesting across a module boundary.
+  spec from_lib[K in {Int, Word[8]}]() -> K { nestlib::deep() }
+
+  // A non-generic caller. The result type chooses `m[Int]`.
+  spec plain() -> Int { m() }
+
+  // The caller names K in brackets.
+  spec named[K in {Int, Word[8]}]() -> K { m[K]() }
+
+  // The argument's type chooses the instance.
+  spec bump[K in {Int, Word[8]}](x: K) -> K { x + m() }
+
+  spec by_arg[K in {Int, Word[8]}]() -> K { bump(m()) }
+
+  // A direct call of the other module's function, chosen by the result type.
+  spec direct_int() -> Int { nestlib::m() }
+
+  spec direct_word() -> Word[8] { nestlib::m() }
+
+  // Each element of a tuple is a place of type K, so `m()` is chosen by K.
+  spec elems[K in {Int, Word[8]}]() -> (K, K) { (m(), m()) }
+
+  // The call itself returns a tuple. The place's tuple type chooses `pair[K]`.
+  spec pair[K in {Int, Word[8]}]() -> (K, K) { (m(), m()) }
+
+  spec wrapped[K in {Int, Word[8]}]() -> (K, K) { pair() }
+
+  // A binding's declared type is the place that chooses `m()`.
+  spec bound[K in {Int, Word[8]}]() -> K {
+    let x: K = m();
+    x
+  }
+
+  // Both arms are places of type K. Each `if` evaluates one of them.
+  spec arms[K in {Int, Word[8]}]() -> K^2 {
+    [if true { m() } else { m() }, if false { m() } else { m() }]
+  }
+
+  // The argument is a place of type K.
+  spec take[K in {Int, Word[8]}](x: K) -> K { x }
+
+  spec passed[K in {Int, Word[8]}]() -> K { take(m()) }
+
+  // The accumulator's initial value is a place of type K.
+  spec summed[K in {Int, Word[8]}]() -> K {
+    for i in 0..2 with a: K = m() { a + m() }
+  }
+
+  // Each array element is a place of type K.
+  spec row[K in {Int, Word[8]}]() -> K^2 { [m(), m()] }
+
+  // Opening the tuple still chooses `pair` from the tuple type of the binding.
+  spec opened[K in {Int, Word[8]}]() -> K {
+    let (a: K, b: K) = pair();
+    a + b
+  }
+
+  // The same tuple-result call across a module boundary, and it is evaluated.
+  spec from_lib_pair[K in {Int, Word[8]}]() -> (K, K) { nestlib::wrapped() }
+
+  // An update's type is the call's result type, so it chooses the instance.
+  spec vec[K in {Int, Word[8]}]() -> K^2 { [0 - 1, 1] }
+
+  spec revised[K in {Int, Word[8]}]() -> K^2 { vec() with [0] = 1 }
+
+  // The parameter type of `head` chooses `vec`.
+  spec head[K in {Int, Word[8]}](x: K^2) -> K { x[0] }
+
+  spec through[K in {Int, Word[8]}]() -> K { head(vec()) }
+}

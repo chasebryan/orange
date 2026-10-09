@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the standalone C compiler with the Rust frontend on the S3a–S3n fixtures."""
+"""Compare the standalone C compiler with the Rust frontend on the S3a–S3o fixtures."""
 
 import re
 import subprocess
@@ -64,6 +64,11 @@ VALID = [
     "s3n/valid-chacha20.or",
     "s3n/valid-poly1305.or",
     "s3n/valid-x25519.or",
+    "s3o/valid-types.or",
+    "s3o/valid-fields.or",
+    "s3o/valid-sha2.or",
+    "s3o/valid-nested.or",
+    "s3o/valid-tuple.or",
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
 # large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
@@ -160,6 +165,11 @@ INVALID = [
     "s3m/invalid-sizes-syntax.or",
     "s3n/invalid-order.or",
     "s3n/invalid-order-syntax.or",
+    "s3o/invalid-alias-listed.or",
+    "s3o/invalid-types.or",
+    "s3o/invalid-types-syntax.or",
+    "s3o/invalid-nested.or",
+    "s3o/invalid-project.or",
 ]
 
 
@@ -656,6 +666,9 @@ def residue_modules(rust_compiler: Path, c_compiler: Path) -> int:
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
+    if len(sys.argv) > 1:
+        given = Path(sys.argv[1])
+        c_compiler = given if given.is_absolute() else (C_DIR / given).resolve()
     if not c_compiler.is_file() or not rust_compiler.is_file():
         print("missing compiler binary", file=sys.stderr)
         return 2

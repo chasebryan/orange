@@ -1,9 +1,11 @@
 // S3k conformance: malformed tuple types, tuples, positions, and tuple
-// patterns. Each function holds one syntax error, reported at its token.
+// patterns. Each function holds one syntax error, reported at its token,
+// except `deep`, whose result and `let` each repeat the nested-tuple error.
 edition 2026;
 module tuple_syntax {
   spec one() -> (Int) { 0 }
   spec nested(p: ((Int, Int), Int), q: Int) -> Int { q }
+  spec deep[K in {Int, Word[8]}]() -> ((K, K), K) { let p: ((K, K), K) = (0, 1); p }
   spec array(p: (Int, Int)^2) -> Int { 0 }
   spec lonely() -> (Int, Int) { (1,) }
   spec leading(p: (Int, Int)) -> Int { p.01 }
