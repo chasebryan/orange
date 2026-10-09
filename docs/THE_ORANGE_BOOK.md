@@ -5798,6 +5798,16 @@ The amount slice let rotations by data be written as their designers write
 them: RC6 encrypts and decrypts its paper's vectors, SHA3-256 computes its
 rotation offsets and round constants as FIPS 202 defines them, and ML-KEM's
 transform constants are derived by reversing bits.
+The nested-array slice let a state be a table of rows: the first two
+quadratic factors of FIPS 203 are multiplied as pairs, each axis checked on
+its own, and the products match the hand-derived answers.
+The static-modulus slice let one `spec` serve every modulus in a finite size
+range: addition, reduction, and inversion are written once, and each instance
+keeps its own residue domain.
+The dimension slice let a standard draw its state on every axis it has:
+AES-128's state is the 4 × 4 array FIPS 197 draws and reproduces Appendix
+A.1 and Appendices B and C.1, SHA3-256 indexes its lanes as FIPS 202 does,
+and ML-KEM-512's NTT runs over a matrix of polynomials.
 These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
