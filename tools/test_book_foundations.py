@@ -1433,15 +1433,15 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertNotIn('S3t', text)
 
     def test_rendered_book_shows_planned_chapters_without_pages(self):
-        import tempfile
+        import shutil
         sys_path = str(ROOT / 'tools')
         if sys_path not in __import__('sys').path:
             __import__('sys').path.insert(0, sys_path)
         from render_book import render
 
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / 'book'
-            render(ROOT, output)
+        output = ROOT / 'build' / 'book'
+        try:
+            self.assertEqual(render(ROOT), output.resolve())
             index = (output / 'index.html').read_text(encoding='utf-8')
             self.assertIn('Living, in-progress manuscript', index)
             self.assertIn('J2', index)
@@ -1454,24 +1454,39 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertIn('Draft.', opening)
             self.assertNotIn('<script', opening.lower())
             self.assertIn('&lt;', (output / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.html').read_text(encoding='utf-8')[:5000] or 'skip')
+        finally:
+            shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
     def test_renderer_cli_writes_the_index(self):
+        import shutil
         import subprocess
         import sys
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as directory:
+        output = ROOT / 'build' / 'book'
+        script = str(ROOT / 'tools' / 'render_book.py')
+        try:
+            rejected = subprocess.run(
+                [sys.executable, script, '/tmp/elsewhere'],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(rejected.returncode, 2, rejected.stderr)
+            self.assertFalse(output.exists())
             completed = subprocess.run(
-                [sys.executable, str(ROOT / 'tools' / 'render_book.py'), directory],
+                [sys.executable, script],
                 cwd=ROOT,
                 check=False,
                 capture_output=True,
                 text=True,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            index = (Path(directory) / 'index.html').read_text(encoding='utf-8')
+            index = (output / 'index.html').read_text(encoding='utf-8')
             self.assertIn('Living, in-progress manuscript', index)
             self.assertIn('planned', index)
+        finally:
+            shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
 
 def rotate_byte(value: int, amount: int) -> int:

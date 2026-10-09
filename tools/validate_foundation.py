@@ -172,6 +172,7 @@ coverage/
 dist/
 out/
 tmp/
+build/
 .env
 .env.*
 !.env.example
@@ -844,7 +845,7 @@ GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
 scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundation.py""".split()
 )
-GATE0_ALLOWED_WRITE_PERMISSIONS = {_BOOK: {"actions"}, _SC: {"security-events"}}
+GATE0_ALLOWED_WRITE_PERMISSIONS = {_SC: {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
     "snapshot_date": _D,
     "review_due_date": "2026-10-11",
@@ -955,7 +956,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "904d0b8c92f566428ab43896723c2f11489f3718b46458f55653d519e1e9c0c4"
+_PHD = "0fd377eae4d98b470fa9c8e310832f3890e69793cbd295ebfdcba7883fdfe3dc"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4803,7 +4804,7 @@ class FoundationValidator:
                     block_text,
                 ):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
-                extra = { _SC: "\n      security-events: write", _BOOK: "\n      actions: write" }.get(n, "")
+                extra = { _SC: "\n      security-events: write" }.get(n, "")
                 q = "    permissions:\n      contents: read" + extra
                 if f"{q}\n    steps:" not in block_text:
                     self.add("workflow.job_permissions", path, f"job {job_name} permission drift")
@@ -5089,7 +5090,7 @@ class FoundationValidator:
         elif n == _BOOK:
             commands = {
                 "Validate the manuscript": "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/test_book_foundations.py",
-                "Render the manuscript": "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/render_book.py \"$RUNNER_TEMP/orange-book\"",
+                "Render the manuscript": "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/render_book.py",
             }
             for step_name, command in commands.items():
                 expected = f"      - name: {step_name}\n        {command}"
@@ -5101,7 +5102,7 @@ class FoundationValidator:
         with:
           if-no-files-found: error
           name: orange-book
-          path: ${{ runner.temp }}/orange-book
+          path: build/book
           retention-days: 14"""
             if upload != expected_upload:
                 self.add("workflow.book_contract", path, f"{job_name}/Upload the rendered book must match its reviewed artifact contract")

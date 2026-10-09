@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -122,34 +124,58 @@ def heading_anchors(text: str) -> set[str]:
     return anchors
 
 
-def render(root: Path, output: Path) -> None:
-    """Write the rendered book under ``output``, which must be outside ``root``."""
-    output = output.resolve()
+def book_output(root: Path) -> Path:
+    """Return the only directory the renderer may write: ``<root>/build/book``."""
     root = root.resolve()
-    if output == root or root in output.parents:
-        raise ValueError("refusing to write the rendered book inside the repository")
-    manifest = load_manifest(root)
-    output.mkdir(parents=True, exist_ok=True)
-    (output / "manifest.json").write_text(
+    output = (root / "build" / "book").resolve()
+    output.relative_to(root)
+    if os.path.commonpath((os.fspath(output), os.fspath(root))) != os.fspath(root):
+        raise ValueError("rendered book must stay inside the repository")
+    if output != (root / "build" / "book").resolve():
+        raise ValueError("rendered book must stay in build/book")
+    return output
+
+
+def within_output(output: Path, relative_path: str) -> Path:
+    """Resolve one render-relative path and refuse anything outside ``output``."""
+    output = output.resolve()
+    if relative_path.startswith("/") or ".." in Path(relative_path).parts:
+        raise ValueError(f"render path escapes build/book: {relative_path}")
+    target = (output / relative_path).resolve()
+    target.relative_to(output)
+    if os.path.commonpath((os.fspath(target), os.fspath(output))) != os.fspath(output):
+        raise ValueError(f"render path escapes build/book: {relative_path}")
+    return target
+
+
+def render(root: Path = ROOT) -> Path:
+    """Write the rendered book under ``<root>/build/book`` and return that directory."""
+    output = book_output(root)
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    manifest = load_manifest(root.resolve())
+    within_output(output, "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     pages: dict[str, str] = {}
     for source in manuscript_files(manifest):
-        text = (root / source).read_text(encoding="utf-8")
+        text = (root.resolve() / source).read_text(encoding="utf-8")
         destination = html_path(source)
         pages[source] = destination
-        target = output / destination
+        target = within_output(output, destination)
         target.parent.mkdir(parents=True, exist_ok=True)
         banner = page_banner(manifest, source)
         target.write_text(
             page(title_of(text, source), body(text, source), banner, index_href(destination)),
             encoding="utf-8",
         )
-    (output / "index.html").write_text(
+    within_output(output, "index.html").write_text(
         page("The Orange Book", index_body(manifest, pages), "", ""),
         encoding="utf-8",
     )
+    return output
 
 
 def manuscript_files(manifest: dict) -> list[str]:
@@ -428,11 +454,11 @@ def image(alt: str, url: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("usage: render_book.py OUTPUT_DIR", file=sys.stderr)
+    if argv:
+        print("usage: render_book.py", file=sys.stderr)
         return 2
     try:
-        render(ROOT, Path(argv[0]))
+        render(ROOT)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"orange book render failed: {error}", file=sys.stderr)
         return 1

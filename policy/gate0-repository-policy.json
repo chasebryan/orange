@@ -781,13 +781,13 @@
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/book.yml": "18e6e905287b10a22d814eae764e407bf8cc30e41993fe5e81042a0bc6cb0259",
+    ".github/workflows/book.yml": "c8cdceba6c3e155cf1789abf84ed0def7b62fb23ca7f3c3530a136f802092231",
     ".github/workflows/ci.yml": "e717471c5a9fe9875a6021987c266a383b67a1c07ed993d99f9878831e17248a",
     ".github/workflows/dependency-review.yml": "2441791a4f5f952c9fdd482190d333357bc7e50fbabaad730830a104866a4972",
     ".github/workflows/external-links.yml": "907e36b6d107f3eeb7529616fbd355d7e60b1f63c39eb19ecf03f3938cb52ea9",
     ".github/workflows/scorecard.yml": "36b64d89e862167b722d03fd31d1579211d48a42dea4eb273977c778bc417110",
     ".github/workflows/workflow-online-audit.yml": "2639479836f5a10568bbfcee6153feddc902af6b57b8f1e1b657097905b52a6a",
-    ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
+    ".gitignore": "fadc32282fb018ce1ea2113e8911b16c0045a40bb8d5373b8f1e3ca3b1ac095f",
     ".markdownlint-cli2.jsonc": "a2e0c960a3420ac9feb5a945f7146d901b0138309310248d9984850f5437fd31",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
@@ -990,9 +990,6 @@
       "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
     ],
     "allowed_write_permissions": {
-      "book.yml": [
-        "actions"
-      ],
       "scorecard.yml": [
         "security-events"
       ]
