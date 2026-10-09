@@ -1,0 +1,8 @@
+// The caller's type list is wider than the callee's. `wide[Bool]` is
+// rejected at check: `n` has no `Bool` instance.
+edition 2026;
+module wide {
+  spec n[K in {Int}]() -> K { 1 }
+
+  spec wide[K in {Int, Bool}]() -> K { n() }
+}

@@ -67,6 +67,7 @@ VALID = [
     "s3o/valid-types.or",
     "s3o/valid-fields.or",
     "s3o/valid-sha2.or",
+    "s3o/valid-nested.or",
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
 # large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
@@ -165,6 +166,7 @@ INVALID = [
     "s3n/invalid-order-syntax.or",
     "s3o/invalid-types.or",
     "s3o/invalid-types-syntax.or",
+    "s3o/invalid-nested.or",
 ]
 
 

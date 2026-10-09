@@ -1,0 +1,33 @@
+// A nested call with no brackets is chosen by the type its place expects.
+// The values depend on K, so selecting the other instance cannot pass.
+edition 2026;
+module nested {
+  use nestlib;
+
+  spec m[K in {Int, Word[8]}]() -> K { 0 - 1 }
+
+  spec deep[K in {Int, Word[8]}]() -> K { m() }
+
+  spec deeper[K in {Int, Word[8]}]() -> K {
+    for i in 0..2 with a: K = deep() { a + m() }
+  }
+
+  // The same nesting across a module boundary.
+  spec from_lib[K in {Int, Word[8]}]() -> K { nestlib::deep() }
+
+  // A non-generic caller. The result type chooses `m[Int]`.
+  spec plain() -> Int { m() }
+
+  // The caller names K in brackets.
+  spec named[K in {Int, Word[8]}]() -> K { m[K]() }
+
+  // The argument's type chooses the instance.
+  spec bump[K in {Int, Word[8]}](x: K) -> K { x + m() }
+
+  spec by_arg[K in {Int, Word[8]}]() -> K { bump(m()) }
+
+  // A direct call of the other module's function, chosen by the result type.
+  spec direct_int() -> Int { nestlib::m() }
+
+  spec direct_word() -> Word[8] { nestlib::m() }
+}

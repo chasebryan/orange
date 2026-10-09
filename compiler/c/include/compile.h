@@ -2395,7 +2395,11 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         uint32_t resolved = expr->inst_id;
         /* Checking stores the instance chosen for the last value of the
            caller's sizes. Resolve again for the instance now running, so a
-           call inside a sized function follows this instance. */
+           call inside a sized function follows this instance.
+           A callee with type parameters is resolved against the concrete type
+           this place expects. Stamps for the caller's instance have already
+           substituted its type parameters, so `m()` inside `deep[Word[8]]`
+           selects `m[Word[8]]` rather than every instance whose arguments fit. */
         if (c->cur_func < c->nfuncs && expr->callee != UINT32_MAX) {
             Compiler *lookup_target = c;
             uint32_t callee_index = expr->callee;
@@ -2413,17 +2417,39 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 int caller_types = c->cur_func < c->nfuncs && tp_func_has_types(&c->funcs[c->cur_func]);
                 if (!(callee_types && !caller_types)) {
                     int saved_fit = c->fit_set;
+                    TypeKind saved_kind = c->fit_kind;
+                    uint32_t saved_len = c->fit_len;
+                    uint16_t saved_mod = c->fit_mod;
+                    uint32_t saved_tup0 = c->fit_tup0;
+                    uint16_t saved_tup_n = c->fit_tup_n;
                     uint32_t fresh = UINT32_MAX;
-                    if (callee_types) {
+                    if (callee_types && expr->ty != TY_NONE && expr->ty != TY_TUPLE) {
+                        c->fit_set = 1;
+                        c->fit_kind = expr->ty;
+                        c->fit_len = expr->ty_len;
+                        c->fit_mod = expr->ty_mod;
+                        c->fit_tup0 = 0;
+                        c->fit_tup_n = 0;
+                    } else if (callee_types) {
                         c->fit_set = 0;
                     }
                     if (!lookup_call(c, &c->exprs[index], lookup_target, callee_index, 0, c->cur_func,
                                      c->funcs[c->cur_func].nlocals, &fresh)) {
                         c->fit_set = saved_fit;
+                        c->fit_kind = saved_kind;
+                        c->fit_len = saved_len;
+                        c->fit_mod = saved_mod;
+                        c->fit_tup0 = saved_tup0;
+                        c->fit_tup_n = saved_tup_n;
                         c->failed = 1;
                         return 0;
                     }
                     c->fit_set = saved_fit;
+                    c->fit_kind = saved_kind;
+                    c->fit_len = saved_len;
+                    c->fit_mod = saved_mod;
+                    c->fit_tup0 = saved_tup0;
+                    c->fit_tup_n = saved_tup_n;
                     resolved = fresh;
                 }
             }
@@ -4836,6 +4862,19 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     if (command == 1) {
         status = evaluate_source(root, out);
         if (status != 0) {
+            int seen = 0;
+            int mod_index;
+            for (mod_index = 0; mod_index < program->nmods; mod_index++) {
+                if (program->mods[mod_index] != NULL && program->mods[mod_index]->ndiags > 0) {
+                    seen = 1;
+                    break;
+                }
+            }
+            /* A failing evaluation with nothing to print is a compiler bug.
+               Say so, instead of exiting 1 with empty stdout and stderr. */
+            if (!seen) {
+                fputs("internal error: evaluation failed without a diagnostic\n", err);
+            }
             render_program_diags(program, err, 0);
         }
     } else {
