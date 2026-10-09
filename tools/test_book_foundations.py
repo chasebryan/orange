@@ -1823,6 +1823,46 @@ class ManuscriptManifest(unittest.TestCase):
             page = (root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html').read_text(encoding='utf-8')
             self.assertIn('href="book/alias.html"', page)
 
+    def test_wrapped_number_stays_in_the_paragraph(self):
+        import tempfile
+
+        opening = '# Shift\n\nshift by 11 and\n54. Exclusive or\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>shift by 11 and 54. Exclusive or</p>', page)
+            self.assertNotIn('<ol', page)
+
+    def test_ordered_list_after_blank_line_keeps_its_start(self):
+        import tempfile
+
+        opening = '# Count\n\nA paragraph.\n\n3. alpha\n4. beta\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>A paragraph.</p>', page)
+            self.assertIn('<ol start="3"><li>alpha</li><li>beta</li></ol>', page)
+
+    def test_ordered_list_starting_at_one_interrupts_a_paragraph(self):
+        import tempfile
+
+        opening = '# Count\n\nA paragraph\n1. item\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>A paragraph</p>', page)
+            self.assertIn('<ol><li>item</li></ol>', page)
+            self.assertNotIn('1. item', page)
+
 
 def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
     import json

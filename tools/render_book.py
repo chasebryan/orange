@@ -633,14 +633,24 @@ def body(text: str, source: str, root: Path = ROOT, manuscript: set[str] | None 
             rows, index = table_rows(lines, index)
             blocks.append(render_table(rows, source, root, manuscript))
             continue
-        if re.match(r"^ {0,3}[-*+][ \t]+", line) or re.match(r"^ {0,3}\d+[.)][ \t]+", line):
+        ordered_start = _ordered_start(line)
+        if re.match(r"^ {0,3}[-*+][ \t]+", line) or ordered_start is not None:
+            # CommonMark: an ordered list interrupts a paragraph only when it starts at 1.
+            if ordered_start is not None and paragraph and not _ordered_list_interrupts(ordered_start):
+                paragraph.append(line.strip())
+                index += 1
+                continue
             flush()
-            items, index, ordered = list_items(lines, index)
-            tag = "ol" if ordered else "ul"
+            items, index, ordered, start = list_items(lines, index)
+            if ordered:
+                open_tag = "ol" if start == 1 else f'ol start="{start}"'
+                close_tag = "ol"
+            else:
+                open_tag = close_tag = "ul"
             rendered = "".join(
                 f"<li>{inline(item, source, root, manuscript)}</li>" for item in items
             )
-            blocks.append(f"<{tag}>{rendered}</{tag}>")
+            blocks.append(f"<{open_tag}>{rendered}</{close_tag}>")
             continue
         if line.startswith(">"):
             flush()
@@ -749,8 +759,23 @@ def render_table(
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
 
 
-def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool]:
-    ordered = bool(re.match(r"^ {0,3}\d+[.)][ \t]+", lines[index]))
+def _ordered_start(line: str) -> int | None:
+    """Return the marker number, or None when the line is not an ordered marker."""
+    match = re.match(r"^ {0,3}(\d+)[.)][ \t]+", line)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _ordered_list_interrupts(start: int) -> bool:
+    """An ordered list may interrupt a paragraph only when it starts at 1."""
+    return start == 1
+
+
+def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool, int]:
+    start_number = _ordered_start(lines[index])
+    ordered = start_number is not None
+    start = 1 if start_number is None else start_number
     pattern = r"^ {0,3}\d+[.)][ \t]+" if ordered else r"^ {0,3}[-*+][ \t]+"
     items: list[str] = []
     while index < len(lines):
@@ -777,7 +802,7 @@ def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool]:
                 continue
             break
         items.append(" ".join(part for part in parts if part))
-    return items, index, ordered
+    return items, index, ordered, start
 
 
 def _is_list_continuation(line: str) -> bool:
