@@ -5,6 +5,8 @@
 edition 2026;
 module share {
   type F4 = Mod[(1 << 16) + 1];
+  type Row = Word[8]^2;
+  type Mat = Row^2;
 
   spec kept() -> (Word[8]^4, Word[8]^4) {
     let a: Word[8]^4 = [1, 2, 3, 4];
@@ -52,5 +54,12 @@ module share {
     let b: Int^3 = a;
     let c: Int^3 = a with [0] = 0 - 1;
     (b[0], c[0])
+  }
+
+  spec matrix() -> (Mat, Mat) {
+    let a: Mat = [[1, 2], [3, 4]];
+    let b: Mat = a;
+    let c: Mat = a with [1] = (a[1] with [0] = 9);
+    (b, c)
   }
 }
