@@ -1,0 +1,8 @@
+// S3r probes: only words shift. An `Int` shifted by a large or negative
+// amount is rejected, as is `Word[1]`, which is not a width.
+edition 2026;
+module invalid_shift_probes {
+  spec narrow(x: Word[1]) -> Word[1] { x << 0 }
+  spec far(n: Int) -> Int { n << 4096 }
+  spec down(n: Int) -> Int { n >> -1 }
+}

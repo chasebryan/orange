@@ -3466,43 +3466,90 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
     }
     case EX_SHIFT: {
         Value left;
+        Value amount_value;
         const Expr *amount;
-        Big magnitude = big_zero();
-        uint32_t shift;
+        int negative = 0;
+        int known = 0;
+        uint64_t magnitude = 0;
+        uint64_t low = 0;
         int width;
-        uint64_t mask;
-        uint64_t value;
         memset(&left, 0, sizeof left);
+        memset(&amount_value, 0, sizeof amount_value);
         if (!eval_expr(c, expr->left, params, locals, depth, &left)) {
             return 0;
         }
         amount = &c->exprs[expr->right];
-        if (!decode_literal(c, amount, &magnitude) || magnitude.nlimbs == 0) {
-            shift = 0;
+        /* A literal amount is a constant. Evaluating it would charge a step
+           the Rust Shift node does not charge. */
+        if (amount->kind == EX_LIT) {
+            Big decoded = big_zero();
+            if (amount->negative || !decode_literal(c, amount, &decoded)) {
+                value_clear(&left);
+                c->failed = 1;
+                return 0;
+            }
+            known = big_bits(&decoded) <= 64;
+            if (known) {
+                decoded.negative = 0;
+                if (!big_as_u64(&decoded, &magnitude)) {
+                    known = 0;
+                    magnitude = 0;
+                }
+            }
+            decoded.negative = 0;
+            if (!big_mod_pow2(&decoded, 64, &low)) {
+                value_clear(&left);
+                c->failed = 1;
+                return 0;
+            }
         } else {
-            shift = magnitude.limbs[0];
+            int amount_width;
+            if (!eval_expr(c, expr->right, params, locals, depth, &amount_value)) {
+                value_clear(&left);
+                return 0;
+            }
+            amount_width = type_width(amount_value.type);
+            if (amount_width != 0 && amount_value.length == 0) {
+                uint64_t word = amount_value.word;
+                if (amount_width < 64) {
+                    word &= (UINT64_C(1) << (unsigned)amount_width) - 1u;
+                }
+                known = 1;
+                magnitude = word;
+                low = word;
+            } else if (amount_value.type == TY_INT && amount_value.length == 0) {
+                Big decoded = amount_value.big;
+                negative = decoded.negative != 0;
+                known = big_bits(&decoded) <= 64;
+                decoded.negative = 0;
+                if (known && !big_as_u64(&decoded, &magnitude)) {
+                    known = 0;
+                    magnitude = 0;
+                }
+                if (!big_mod_pow2(&amount_value.big, 64, &low)) {
+                    value_clear(&left);
+                    value_clear(&amount_value);
+                    c->failed = 1;
+                    return 0;
+                }
+            } else {
+                value_clear(&left);
+                value_clear(&amount_value);
+                c->failed = 1;
+                return 0;
+            }
         }
         width = type_width(left.type);
-        mask = word_mask_of(width);
-        value = left.word & mask;
         if (!charge(c, expr->op_start, expr->op_end, 1)) {
             value_clear(&left);
+            value_clear(&amount_value);
             return 0;
         }
-        if (shift == 0) {
-            out->word = value;
-        } else if (expr->op == TK_LSHIFT) {
-            out->word = (value << shift) & mask;
-        } else if (expr->op == TK_RSHIFT) {
-            out->word = value >> shift;
-        } else if (expr->op == TK_ROL) {
-            out->word = ((value << shift) | (value >> (width - (int)shift))) & mask;
-        } else {
-            out->word = ((value >> shift) | (value << (width - (int)shift))) & mask;
-        }
+        out->word = orange_word_shift(expr->op, width, left.word, negative, known, magnitude, low);
         out->type = left.type;
         out->big = big_zero();
         value_clear(&left);
+        value_clear(&amount_value);
         return 1;
     }
     case EX_CONV: {
@@ -6056,7 +6103,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3q\n", stdout);
+            fputs("orangec (standalone C) slice S3r\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {

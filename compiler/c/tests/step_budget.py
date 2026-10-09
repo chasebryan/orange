@@ -243,6 +243,18 @@ def main() -> int:
             4252,
             {"words", "truths", "residues", "states", "long", "compared_first", "compared_last"},
         )
+        # Measured with `orangec eval --stats`. abc is the only SHA3 pin;
+        # the other SHA3 tests stay out of this budget.
+        one_under("sha3", FIXTURES / "s3r" / "valid-sha3.or", 116225, {"abc"})
+        one_under("rc6", FIXTURES / "s3r" / "valid-rc6.or", 8908, {"zero_key_zero_block"})
+        one_under("zetas", FIXTURES / "s3r" / "valid-zetas.or", 98576, {"first_row"})
+        # charge_huge shifts by 2^64 and costs the same 6 steps as charge_small.
+        one_under(
+            "shift probes",
+            FIXTURES / "s3r" / "valid-shift-probes.or",
+            522,
+            {"charge_small", "charge_huge"},
+        )
 
         # The loops cost 1048576 steps and `~` is one more. The default budget
         # stops on that extra step and does not record it.

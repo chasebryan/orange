@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "amounts.h"
 #include "orange.h"
 #include "tests.h"
 #include "typeparams.h"
@@ -9756,7 +9757,26 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             snprintf(message, sizeof message, "`%s` on `%s` needs an amount from 0 through %d", shift_name(expr->op),
                      type_text, highest);
             snprintf(label, sizeof label, "a literal amount is from 0 through %d", highest);
-            if (amount->kind != EX_LIT || amount->negative) {
+            if (amount->kind != EX_LIT) {
+                TypeKind leaf_type = TY_NONE;
+                uint32_t leaf_len = 0;
+                uint32_t leaf = 0;
+                int silent = 0;
+                int saved_set = c->fit_set;
+                int saved_report = c->fit_report;
+                int state;
+                TypeKind amount_ty = TY_INT;
+                c->fit_set = 0;
+                c->fit_report = 0;
+                state = find_leaf(c, expr->right, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+                c->fit_set = saved_set;
+                c->fit_report = saved_report;
+                if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+                    amount_ty = leaf_type;
+                }
+                return check_expr(c, expr->right, amount_ty, 0, func_index, locals_in_scope);
+            }
+            if (amount->negative) {
                 add_diag(c, "ORC0216", amount->start, amount->end, message, label, SHIFT_AMOUNT_NOTE, 2);
                 return 1;
             }
