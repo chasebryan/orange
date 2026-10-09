@@ -170,17 +170,17 @@ lines. What the rendering does not express is the constant-time property
 discussed above: `orangec eval` evaluates a specification, and its step count
 is a measure of the specification's size, not of any implementation's timing.
 
-The costs were measured with filler specs sharing a file's budget
-(`probe.py` and `probe2.py` in the scratch directory): one `quarter_round`
-is about 46 steps, one `inner_block` about 411, and one `chacha20_block`
-about 11,400, of which the 64 single-byte updates of `serialize` are about
-4,100 (an update of an n-element array costs n steps); `hchacha20`, which
-serializes only 32 bytes and skips the addition, is about 6,800. The
-256-byte `encrypt` is about 116,500 steps, four blocks plus four times 64
-updates of a 256-byte array, so placing the keystream costs more than
-computing it. The whole file, 20 vector pairs with 30 block functions and 6
-HChaCha20 calls, uses about 672,000 of the 1,048,576 steps, and 33 more
-blocks would fit; no vector had to be moved or dropped.
+The costs below are from `orangec eval --stats` on this file.
+`rfc8439_2_3_2_state`, the block after the final addition and before
+`serialize`, takes 4,909 steps. `rfc8439_2_3_2`, that same block through
+`chacha20_block`, takes 6,944, so serialization accounts for about 2,035.
+`rfc8439_a2_2_head`, the 256-byte `encrypt`, takes 32,771. The whole file,
+20 vector pairs with 30 block functions and 6 HChaCha20 calls, takes
+270,926 of the 1,048,576 steps of a file, about 26 percent. The 777,650
+steps left would hold 111 more evaluations the size of that 6,944-step
+block, so no vector had to be moved or dropped. Updating a 256-byte array
+does not cost one step per element: one update takes 11 steps, and 64
+updates take 518.
 
 ## Dissemination
 
@@ -282,8 +282,8 @@ corpus entry in the sense of The Orange Book chapter 12.
   expression (ORC0101 on a `let` inside it), so the keystream block of
   iteration j cannot be bound and written at `64 * j + i` in one loop;
   `xor_block` selects the offset with a four-arm conditional on j instead,
-  costing four comparisons per block.
-- An update of an n-element array costs n steps, so placing 64 bytes into a
-  256-byte ciphertext costs about 16,400 steps, more than the 11,400 of the
-  block function; the file still uses about two thirds of its budget, so nothing
-  was split or dropped.
+  costing at most three comparisons per block.
+- Updating a 256-byte array takes 11 steps, and 64 such updates take 518,
+  not one step per element. The file uses 270,926 of 1,048,576 steps, about
+  26 percent, with room for 111 more evaluations the size of the 6,944-step
+  `chacha20_block`, so nothing was split or dropped.
