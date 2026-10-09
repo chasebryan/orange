@@ -8,6 +8,7 @@
 
 pub mod arguments;
 pub mod core;
+pub mod cryptanalysis;
 pub mod diagnostic;
 pub mod documentation;
 pub mod edition;
@@ -29,6 +30,12 @@ pub use core::{
     CoreFunctionId, CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType,
     CoreValue, ExactInteger, MAX_ARRAY_DIMENSIONS, MAX_ARRAY_LENGTH, MAX_LOOP_BOUND,
     MAX_MODULUS_BITS, MAX_TUPLE_ELEMENTS, Modulus, Residue, TupleType,
+};
+pub use cryptanalysis::{
+    AnalysisError, BitFunction, Computed, MAX_ANALYSIS_BITS, MAX_ANALYSIS_OPERATIONS,
+    MAX_TABLE_BITS,
+    linear::{LinearMap, MAX_LAYER_BITS},
+    trails::{MAX_SBOX_BITS, MAX_TRAIL_ROUNDS, MAX_TRAIL_STEPS, Network, TrailBounds},
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use documentation::{

@@ -13,8 +13,8 @@ published as [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869) (May 2010),
 with the analysis in his CRYPTO 2010 paper. HMAC is the MAC of the non-AEAD
 cipher suites of TLS 1.2, of IPsec and of SSH, and the pseudorandom function
 inside PBKDF2, HKDF, JWT's HS256 and TOTP; HKDF derives the keys of TLS 1.3,
-the Signal protocol, HPKE and the Noise framework. Both are current standards with no known attack better than the
-generic ones.
+the Signal protocol, HPKE and the Noise framework. Both are current
+standards with no known attack better than the generic ones.
 
 ## Analysis
 
@@ -46,55 +46,69 @@ string info and a length L at most 255 HashLen, and computes
     T(i) = HMAC-Hash(PRK, T(i-1) || info || i)   for 2 <= i <= N = ceil(L / HashLen)
     OKM  = the first L octets of T(1) || T(2) || ... || T(N)
 
-where i is a single octet. The two files follow the standards section by
-section, with SHA-256 carried along from FIPS 180-4 because an Orange module
-has no imports.
+where i is a single octet. The root file `hmac-hkdf.or` follows FIPS 198-1
+and RFC 5869 section by section, and takes SHA-256 from the module
+`sha256.or`, which writes FIPS 180-4 as the `sha2` entry does, for messages
+of 1 through 256 bytes.
 
 | Standard section | Orange spec |
 | --- | --- |
-| FIPS 180-4, 3.1, a word to bytes | `be_bytes` |
-| FIPS 180-4, 4.1.2, the SHA-256 functions | `ch`, `maj`, `big_sigma0`, `big_sigma1`, `small_sigma0`, `small_sigma1` |
-| FIPS 180-4, 4.2.2, K{256} | `round_constants` |
-| FIPS 180-4, 5.3.3, H(0) | `initial_hash` |
-| FIPS 180-4, 5.1.1, padding | `put_byte`, `pad` |
-| FIPS 180-4, 6.2.2, the hash computation | `schedule`, `round`, `compress`, `sha256` |
+| FIPS 180-4, 4.1.2, the SHA-256 functions | `sha256::ch`, `maj`, `big_sigma0`, `big_sigma1`, `small_sigma0`, `small_sigma1` |
+| FIPS 180-4, 4.2.2, K{256} | `sha256::round_constants` |
+| FIPS 180-4, 5.3.3, H(0) | `sha256::initial_hash` |
+| FIPS 180-4, 5.1.1, padding | `sha256::padding[len]` for `len` in 1 through 256 |
+| FIPS 180-4, 5.2.1, parsing into words | `as big Word[32]^16` on each block, in `sha256::hash` |
+| FIPS 180-4, 6.2.2, the hash computation | `sha256::schedule`, `round`, `compress`, `hash[n]`, `digest[len]` |
 | FIPS 198-1, 4, ipad and opad | `ipad`, `opad` |
-| FIPS 198-1, 4, steps 1 to 3, the key K0 | `k0` |
-| FIPS 198-1, 4, steps 4 and 7 | `xor_pad` |
-| FIPS 198-1, 4, steps 4 to 9, the MAC | `hmac_sha256` |
-| FIPS 198-1 truncated output, RFC 2104, 5 | `leftmost_128` |
-| RFC 5869, 2.2, HKDF-Extract | `hkdf_extract` |
-| RFC 5869, 2.3, T(i) | `t_i` |
-| RFC 5869, 2.3, HKDF-Expand with L = 42 and L = 82 | `hkdf_expand_42`, `hkdf_expand_82` |
+| FIPS 198-1, 4, steps 1 to 3, the key K0 | `k0[key_len]` for keys of 1 through 256 bytes |
+| FIPS 198-1, 4, steps 4 and 7 | `xor` |
+| FIPS 198-1, 4, steps 4 to 9, the MAC | `hmac[text_len]` for texts of 1 through 192 bytes |
+| FIPS 198-1, 5, and RFC 2104, 5, truncated output | the slice `[..16]` in the test of RFC 4231 test case 5 |
+| RFC 5869, 2.2, HKDF-Extract | `hkdf_extract[ikm_len]`, and `no_salt` for a salt not provided |
+| RFC 5869, 2.3, HKDF-Expand | `hkdf_expand[nb, info_len]`, and `hkdf_expand_no_info[nb]` for a zero-length info |
 
-Orange has no length-generic arrays, and HMAC hashes messages of many
-lengths: the key itself when it is long, the 64-byte inner pad followed by
-the text, the 96-byte outer message, and in HKDF-Expand the 32-byte T(i-1)
-followed by info and a counter. Rather than one padding spec per length, as
-the `sha2` entry writes, this entry carries every byte string as a pair: its
-length in bytes and a `Word[32]^64` buffer of the big-endian words of FIPS
-180-4 section 5.2.1, zero beyond the last byte. The buffer is four SHA-256
-blocks, 256 bytes, enough for the 131-byte keys of RFC 4231, the 216-byte
-inner message of its test case 7, and the 177-byte inner messages of T(2)
-and T(3) in RFC 5869 A.2. `pad` writes the 0x80 byte at the length and the
-bit length in the last word of the last block, both at positions computed
-from the length, which is the one place a byte position depends on a value
-rather than on a literal: `put_byte` puts it there by walking the 64 words
-with a static index and matching the one whose index equals `p / 4`, and by
-a four-way conditional on `p % 4` because a shift amount must be a literal.
-`sha256` runs "for i = 1 to N" over the four possible blocks and compresses
-only the first N. `k0` hashes the key only when its length exceeds 64,
-inside the chosen branch of a conditional. `t_i` builds T(i-1) || info, with
-T(i-1) as eight whole words so info starts at word 8, and appends the counter
-octet with `put_byte`. Inputs are placed in the buffer by the `words_n`
-helpers, one per word count in use.
+Every byte string is a byte array, `Word[8]^n`, and its length is a size of
+the spec that takes it: a key, text, salt, IKM or info is written in a test
+as a string literal, `hex"..."` or a fill such as `[0x0b; 20]`, and the
+checker picks the instance of `k0`, `hmac` or `hkdf_extract` whose size
+matches. The messages HMAC hashes are joined with `++` as the standard
+joins them, `xor(k0, ipad()) ++ text` and `xor(k0, opad()) ++ inner`, and
+`sha256::digest` pads each with `padding[len]` and hashes its blocks.
+
+A function has at most 256 instances, counting every combination of its
+sizes, and that limit shapes three specs. HMAC of a key of `key_len` bytes
+and a text of `text_len` bytes would need the product of both ranges, so
+FIPS 198-1's steps 1 to 3 are `k0[key_len]`, with one size, and steps 4 to
+9 are `hmac[text_len]`, whose parameter `k0` is K0; a test writes
+HMAC(K, text) as `hmac(k0(key), text)`, and HKDF-Extract takes K0 of its
+salt the same way, as `hkdf_extract(k0(salt), ikm)`. HKDF-Expand has
+the info length and the block count N = ceil(L / HashLen) as its sizes,
+240 instances for N of 1 through 3 and info of 1 through 80 bytes, and
+returns all of T(1) || ... || T(N); each test keeps the first L octets with
+a slice. And an array has at least one element, so the zero-length info of
+RFC 5869 A.3 is `hkdf_expand_no_info`, the same loop with info left out,
+and the empty salt of A.3 is the HashLen zeros that section 2.2 puts in its
+place, `no_salt()`.
+
+`k0` compares its size `key_len` with B: a key of more than 64 bytes is
+hashed and 32 zeros appended, any other key is followed by 64 zeros and cut
+to its first 64 bytes, which is step 1 for a key of exactly 64 bytes and
+step 3 for a shorter one. `hkdf_expand` runs the standard's chain as a loop
+over the N blocks, its index j being the standard's i - 1, that carries T
+and the last T(i-1); T(0) is empty and has no array, so the first step
+hashes info || 0x01 alone, and the 32 zeros that start the carried block
+are never read. `hkdf_expand_no_info` repeats that loop without info, and
+the two must stay identical apart from it.
 
 ### Security status
 
 Record as written in September 2026. The standards themselves, FIPS 198-1,
-SP 800-107 and the RFCs, are unreachable from the build machine; their
-section numbers and the literature below are cited from the worker's
-knowledge and were not re-read for this entry.
+SP 800-107 and the RFCs, were unreachable from the build machine when this
+entry was written. Their section numbers were later checked against the
+published texts: FIPS 198, FIPS 198-1 and FIPS 180-4 at nvlpubs.nist.gov and
+csrc.nist.gov, RFC 2104, RFC 4231 and RFC 5869 at rfc-editor.org. The
+literature below was cited from the worker's knowledge and was not re-read
+for this entry.
 
 HMAC was designed with a proof. Bellare, Canetti and Krawczyk (CRYPTO 1996)
 showed that NMAC, and HMAC as its single-key variant, is a secure MAC when
@@ -141,16 +155,18 @@ but HMAC is defined for any approved hash, SHA-3 included.
 Key length and truncation. RFC 2104 section 3 recommends keys of at least L
 bytes; longer keys do not add strength, since a key longer than B is hashed
 to L bytes anyway, and a key of less than L bytes gives at most its own
-entropy. FIPS 198-1 section 3 requires a key of at least L / 2 bytes and
-notes that keys above L bytes do not add strength; SP 800-107 Rev. 1 (2012)
-ties HMAC's security strength to the key's and to the hash's state size.
-Truncating the MAC (FIPS 198-1's truncated output, RFC 2104 section 5)
-keeps the leftmost t bytes; RFC 2104 asks for t at least L / 2 and at least
-80 bits, SP 800-107 states the corresponding conditions, and RFC 4231 test
-case 5 is such a truncation to 128 bits. Two implementation pitfalls are not attacks on the
-construction: comparing tags byte by byte with early exit leaks the first
-differing position, and using a hash of a password as an HMAC key without a
-slow derivation leaves the key guessable.
+entropy. The original FIPS 198 (2002) section 3 required a key of at least
+L / 2 bytes and noted that keys above L bytes do not add strength; FIPS 198-1
+section 3 asks only for a key of appropriate security strength, as SP 800-107
+discusses, and SP 800-107 Rev. 1 (2012) ties HMAC's security strength to the
+key's and to the hash's state size. Truncating the MAC (FIPS 198-1's
+truncated output, RFC 2104 section 5) keeps the leftmost t bytes; RFC 2104
+asks for t at least L / 2 and at least 80 bits, SP 800-107 states the
+corresponding conditions, and RFC 4231 test case 5 is such a truncation to
+128 bits. Two implementation pitfalls are not attacks on the construction:
+comparing tags byte by byte with early exit leaks the first differing
+position, and using a hash of a password as an HMAC key without a slow
+derivation leaves the key guessable.
 
 HKDF's rationale (Krawczyk, CRYPTO 2010) is that key derivation has two
 jobs that should not be conflated. Extract turns input keying material of
@@ -181,89 +197,102 @@ has been finalized was not checked from this machine.
 
 ### What the Orange rendering shows
 
-Nothing in HMAC or HKDF is data-dependent except through lengths. The Orange
-source has no table lookups and no data-dependent rotation; its conditionals
-are on lengths and counters only: whether the key exceeds the block
-(`k0`), how many blocks a message has (`pad`, `sha256`), where the 0x80 byte
-and the counter octet fall (`put_byte`), whether the salt is empty
-(`hkdf_extract`), and whether i = 1 (`t_i`). Every index is a literal or a
-loop index, so the checker proves every access in range before evaluation.
+Nothing in HMAC or HKDF is data-dependent except through lengths, and the
+lengths here are sizes, fixed for each instance by the checker. The only
+table is K{256}, built once per block by `sha256::round_constants` and read
+as `k[t]` with the round's loop index t, as the message schedule is read as
+`w[t]`, `w[t - 2]` and the like; no index depends on the key or the
+message, and every rotation amount is a literal. The two conditionals are
+`key_len > 64` in `k0`, whose size makes it fixed in each instance, and
+`j == 0` in the Expand loops, on the loop index; both choose between
+branches of the standard's own text, and only the chosen branch is
+evaluated, so a short key is never hashed and a long one never padded.
+Every index is a literal or a loop index, and every slice bound a literal,
+a loop index times 32 or 64, or a size, so the checker proves every access
+in range before evaluation.
 The XOR of the pads, the two nested hashes and the chaining of T(i) are
-visible as written in the standard; the word ring `Word[32]` gives SHA-256's
-additions their meaning without masks.
+visible as written in the standards; the word ring `Word[32]` gives
+SHA-256's additions their meaning without masks.
 
-Measured costs under `orangec eval` (a ballast loop added to the file and
-its largest size found by bisection): one SHA-256 compression, with its
-schedule, costs about 13,300 steps, of which the 48 updates of the 64-word
-schedule are about 4,100; an HMAC of a short key and a short text is four
-compressions and about 57,000 steps; RFC 4231 test cases 6 and 7, with the
-131-byte key hashed first, are about 101,000 and 130,000; an HKDF with
-L = 42 is about 176,000 and RFC 5869 A.2, with its 80-byte salt, IKM and
-info and L = 82, about 325,000. All the planned vectors together are about
-1,730,000 steps, so they are split between two files: `hmac-hkdf.or` uses
-about 841,000 of the 1,048,576-step budget and `hmac-hkdf-rfc5869.or` about
-893,000. No vector was dropped.
+Byte order appears only inside `sha256`, where FIPS 180-4 fixes it: `as big`
+parses each 64-byte block into sixteen words, writes the bit length into
+the padding, reads the round constants from `hex"..."` rows and turns the
+final hash value into the digest's 32 bytes. HMAC and HKDF are written over
+bytes, as their standards are, and the vectors compare byte strings printed
+as the sources print them.
 
-Not expressed: a message of arbitrary length, and an OKM of arbitrary L.
-Every input travels as its length and a 256-byte buffer, so a key, text,
-salt, IKM or info longer than 183 bytes (the buffer less the 64-byte pad and
-the 9 bytes of SHA-256 padding), and an info longer than 150 bytes in
-Expand, would need a larger buffer, which `Word[32]^64` cannot be. Expand
-is written for L = 42 and L = 82 (N = 2 and N = 3), one spec per L, since
-an output array's length is part of its type; the counter is written with
-`put_byte` exactly as the standard's single octet.
+Measured costs under `orangec test --stats`: each 64-byte block adds 8,938
+steps to `sha256::digest` (8,978 for one block, 17,916 for two, 35,790 for
+four); `xor` costs about 710 steps; `k0` costs about 14 steps for a key of
+at most 64 bytes and 26,862 for the 131-byte key of RFC 4231, which pads to
+three blocks. An HMAC of a text of up to 55 bytes is four blocks and two
+`xor`s, 37,254 steps, and one of the 152-byte text of test case 7 is six
+blocks, 55,132. `hkdf_expand` costs 74,596 steps for N = 2 with a 10-byte
+info and 138,703 for N = 3 with the 80-byte info of A.2. The RFC 4231 tests
+cost 37,266 to 37,270 steps each, except test cases 6 and 7 (64,109 and
+81,992, with the long key hashed first), and the Wycheproof HMAC test,
+whose 65-byte key is hashed too, 55,177; the PRK tests 37,270 to 64,122;
+the OKM tests, which compute their PRK too, 111,862 to 202,832. The sixteen
+tests together use 1,101,975 steps.
+
+Not expressed: a key longer than 256 bytes, a text or IKM longer than 192
+bytes (the inner message, 64 bytes more, is at most the 256 that
+`sha256::digest` takes), an info longer than 80 bytes, an output of more
+than three blocks (L above 96), and a message whose length is not a whole
+number of bytes. Each range is one number in a signature, up to the
+256-instance limit under Gaps.
 
 ## Dissemination
 
 ### Files
 
-- `hmac-hkdf.or`: SHA-256, HMAC-SHA-256, HKDF-Extract and HKDF-Expand, with
-  the seven HMAC-SHA-256 test cases of RFC 4231 (test case 5 both in full
-  and truncated to 128 bits), Wycheproof's `hmac_sha256_test.json` tcId 171
-  and Wycheproof's `hkdf_sha256_test.json` tcId 69.
-- `hmac-hkdf-rfc5869.or`: the same algorithm text, with the PRK and OKM of
-  the three SHA-256 test cases of RFC 5869 appendix A.
-
-The two files are one file split by the step budget: their algorithm part,
-from `edition 2026;` through `words_8`, is the same text, generated
-from one source by a script kept with the worker's notes and compared byte
-for byte; only the header's last paragraph, the `words_n` helpers each
-file's vectors call, and the vector specs differ. `leftmost_128` is
-exercised only by the first file and `hkdf_expand_82` only by the second.
+- `sha256.or`: the module `sha256`, SHA-256 of FIPS 180-4 for messages of
+  1 through 256 bytes. It has no tests of its own; `hmac-hkdf.or` uses it.
+- `hmac-hkdf.or`: HMAC-SHA-256, HKDF-Extract and HKDF-Expand, with the
+  seven HMAC-SHA-256 test cases of RFC 4231 (test case 5 both in full and
+  truncated to 128 bits), the PRK and OKM of the three SHA-256 test cases
+  of RFC 5869 appendix A, Wycheproof's `hmac_sha256_test.json` tcId 171 and
+  Wycheproof's `hkdf_sha256_test.json` tcId 69.
 
 ### Running
 
-    orangec eval algorithms/hmac-hkdf/hmac-hkdf.or
-    orangec eval algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or
+    orangec test --steps 1073741824 algorithms/hmac-hkdf/hmac-hkdf.or
     python3 algorithms/verify.py algorithms/hmac-hkdf
+
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 1,101,975), so the command raises it, as
+`verify.py` does.
+
+`orangec test` reads `sha256.or` from the same folder through `use sha256;`.
 
 ### Vectors
 
-Each row is a pair `<spec>` and `<spec>_expected`; `verify.py` requires them
-equal. The RFCs are unreachable from the build machine, so each value was
-read from the fetched files named in the row, which reproduce the RFCs'
-cases, and every value was recomputed with Python's `hmac` (HMAC and PRK) or
-the `cryptography` package's `HKDF` (OKM). Where no fetched file carries a
-case, the row says so and the oracle is the only source.
+Each row is a `test` block in `hmac-hkdf.or`, comparing a MAC, PRK or OKM
+with the published value. The RFCs are unreachable from the build machine,
+so each value was read from the fetched files named in the row, which
+reproduce the RFCs' cases, and every value was recomputed with Python's
+`hmac` (HMAC and PRK) or the `cryptography` package's `HKDF` (OKM). Where no
+fetched file carries a case, the row says so and the oracle is the only
+source.
 
-| Spec | Source | Case |
+| Test | Source | Case |
 | --- | --- | --- |
-| `rfc4231_case_1` | RFC 4231, 4.2; Go `src/crypto/hmac/hmac_test.go`; `hmac` | key 0x0b x 20, "Hi There" |
-| `rfc4231_case_2` | RFC 4231, 4.3; Botan `src/tests/data/mac/hmac.vec`, `[HMAC(SHA-256)]`; Go `hmac_test.go`; `hmac` | key "Jefe", "what do ya want for nothing?" |
-| `rfc4231_case_3` | RFC 4231, 4.4; Go `hmac_test.go`; `hmac` | key 0xaa x 20, data 0xdd x 50 |
-| `rfc4231_case_4` | RFC 4231, 4.5; Go `hmac_test.go`; `hmac` | key 0x01..0x19, data 0xcd x 50 |
-| `rfc4231_case_5` | RFC 4231, 4.6; `hmac` only (no fetched file carries the full MAC) | key 0x0c x 20, "Test With Truncation", full 256-bit MAC |
-| `rfc4231_case_5_truncated` | RFC 4231, 4.6; `hmac` only (no fetched file carries this case) | the same MAC truncated to 128 bits, as the RFC prints it |
-| `rfc4231_case_6` | RFC 4231, 4.7; Botan `hmac.vec`; Go `hmac_test.go`; `hmac` | key 0xaa x 131 (hashed first), 54-byte text |
-| `rfc4231_case_7` | RFC 4231, 4.8; Botan `hmac.vec`; Go `hmac_test.go`; `hmac` | key 0xaa x 131, 152-byte text |
-| `wycheproof_hmac_tc_171` | Wycheproof `testvectors_v1/hmac_sha256_test.json`, tcId 171 ("long key"); `hmac` | 65-byte key (one over the block), 32-byte message |
-| `wycheproof_hkdf_tc_69` | Wycheproof `testvectors_v1/hkdf_sha256_test.json`, tcId 69; `cryptography` `HKDF` | 32-byte IKM, 64-byte salt (exactly the block), 20-byte info, L = 42 |
-| `rfc5869_a_1_prk` | RFC 5869, A.1; Botan `src/tests/data/kdf/hkdf.vec`, `[HKDF-Extract(HMAC(SHA-256))]`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography `rfc-5869-HKDF-SHA256.txt`; `hmac` | IKM 0x0b x 22, salt 00..0c |
-| `rfc5869_a_1_okm` | RFC 5869, A.1; Botan `hkdf.vec`, `[HKDF(HMAC(SHA-256))]`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof `hkdf_sha256_test.json` tcId 1; `cryptography` `HKDF` | info f0..f9, L = 42 |
-| `rfc5869_a_2_prk` | RFC 5869, A.2; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; `hmac` | IKM 00..4f, salt 60..af (80 bytes, hashed first) |
-| `rfc5869_a_2_okm` | RFC 5869, A.2; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof tcId 3; `cryptography` `HKDF` | info b0..ff, L = 82, N = 3 |
-| `rfc5869_a_3_prk` | RFC 5869, A.3; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; `hmac` | IKM 0x0b x 22, empty salt (32 zero bytes) |
-| `rfc5869_a_3_okm` | RFC 5869, A.3; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof tcId 2; `cryptography` `HKDF` | empty info, L = 42 |
+| `RFC 4231 4.2: test case 1` | RFC 4231, 4.2; Go `src/crypto/hmac/hmac_test.go`; Python `hmac` | key 0x0b x 20, "Hi There" |
+| `RFC 4231 4.3: test case 2` | RFC 4231, 4.3; Botan `src/tests/data/mac/hmac.vec`, `[HMAC(SHA-256)]`; Go `hmac_test.go`; Python `hmac` | key "Jefe", "what do ya want for nothing?" |
+| `RFC 4231 4.4: test case 3` | RFC 4231, 4.4; Go `hmac_test.go`; Python `hmac` | key 0xaa x 20, data 0xdd x 50 |
+| `RFC 4231 4.5: test case 4` | RFC 4231, 4.5; Go `hmac_test.go`; Python `hmac` | key 0x01..0x19, data 0xcd x 50 |
+| `RFC 4231 4.6: test case 5, the full MAC` | RFC 4231, 4.6; Python `hmac` only (no fetched file carries the full MAC) | key 0x0c x 20, "Test With Truncation", full 256-bit MAC |
+| `RFC 4231 4.6: test case 5, truncated to 128 bits` | RFC 4231, 4.6; Python `hmac` only (no fetched file carries this case) | the same MAC truncated to 128 bits, as the RFC prints it |
+| `RFC 4231 4.7: test case 6` | RFC 4231, 4.7; Botan `hmac.vec`; Go `hmac_test.go`; Python `hmac` | key 0xaa x 131 (hashed first), 54-byte text |
+| `RFC 4231 4.8: test case 7` | RFC 4231, 4.8; Botan `hmac.vec`; Go `hmac_test.go`; Python `hmac` | key 0xaa x 131, 152-byte text |
+| `Wycheproof hmac_sha256_test tcId 171` | Wycheproof `testvectors_v1/hmac_sha256_test.json`, tcId 171 ("long key"); Python `hmac` | 65-byte key (one over the block), 32-byte message |
+| `Wycheproof hkdf_sha256_test tcId 69` | Wycheproof `testvectors_v1/hkdf_sha256_test.json`, tcId 69; `cryptography` `HKDF` | 32-byte IKM, 64-byte salt (exactly the block), 20-byte info, L = 42 |
+| `RFC 5869 A.1: PRK` | RFC 5869, A.1; Botan `src/tests/data/kdf/hkdf.vec`, `[HKDF-Extract(HMAC(SHA-256))]`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography `rfc-5869-HKDF-SHA256.txt`; Python `hmac` | IKM 0x0b x 22, salt 00..0c |
+| `RFC 5869 A.1: OKM` | RFC 5869, A.1; Botan `hkdf.vec`, `[HKDF(HMAC(SHA-256))]`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof `hkdf_sha256_test.json` tcId 1; `cryptography` `HKDF` | info f0..f9, L = 42 |
+| `RFC 5869 A.2: PRK` | RFC 5869, A.2; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Python `hmac` | IKM 00..4f, salt 60..af (80 bytes, hashed first) |
+| `RFC 5869 A.2: OKM` | RFC 5869, A.2; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof tcId 3; `cryptography` `HKDF` | info b0..ff, L = 82, N = 3 |
+| `RFC 5869 A.3: PRK` | RFC 5869, A.3; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Python `hmac` | IKM 0x0b x 22, empty salt (32 zero bytes) |
+| `RFC 5869 A.3: OKM` | RFC 5869, A.3; Botan `hkdf.vec`; OpenSSL `evpkdf_hkdf.txt`; pyca/cryptography; Wycheproof tcId 2; `cryptography` `HKDF` | empty info, L = 42 |
 
 The fetched files are, all at `master` or `main` on the day of writing:
 `randombit/botan` `src/tests/data/mac/hmac.vec` and
@@ -289,30 +318,52 @@ lengths, and then against every HMAC-SHA-256 entry of Botan's `hmac.vec`,
 every valid case of both Wycheproof files, the RFC 5869 entries of Botan's
 `hkdf.vec`, OpenSSL's `evpkdf_hkdf.txt` and pyca/cryptography's copy, and
 the RFC 4231 cases in Go's test file. The Orange input and `_expected`
-literals were printed by that script from the parsed bytes, never typed,
-and the two `.or` files were generated from one master by a second script
-that compares their algorithm parts byte for byte. No `_expected` value was
-adjusted to match the Orange computation.
+literals of the first form were printed by that script from the parsed
+bytes, never typed, and its two `.or` files were generated from one master
+by a second script that compared their algorithm parts byte for byte. No
+`_expected` value was adjusted to match the Orange computation.
+
+The entry was then rewritten in the current language, as one root file
+over a `sha256` module in place of the two files the old step budget
+required. Every expected value is carried over byte for byte from the first
+form, where each was a `<name>_expected` spec: the eight-word MACs and PRKs
+are now the 32 big-endian bytes that FIPS 180-4 defines the digest to be,
+printed from the old word literals by a script, and the 16-byte truncated
+MAC and the 42- and 82-byte OKMs were byte arrays already and are the same
+bytes in `hex"..."`. The inputs, which the first form carried as zero-padded
+word buffers with a length, are now string literals, `hex"..."` and fills;
+a script rebuilt each old input from its words and length and compared it
+byte for byte with the new literal. No vector was added or dropped. The
+round constants, now `hex"..."` rows read with `as big`, are the old word
+literals in the same order, and the initial hash value is unchanged.
 
 This entry is a reference evaluation of a specification under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim, it has not been independently reviewed, and it is not a
 corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- No length-generic arrays, so every byte string is carried as a length and
-  a fixed `Word[32]^64` buffer, with one `words_n` placement helper per word
-  count in use (fifteen distinct across the two files) and one HKDF-Expand
-  spec per
-  output length. Inputs above 183 bytes, or info above 150 bytes, would
-  need a buffer larger than the 256-byte `Word[32]^64` used here. A
-  `Word[32]` array may hold 65,536 elements; this entry has not been widened.
-- A shift amount must be a literal, so placing one byte at a computed
-  position (`put_byte`) is a four-way conditional over `p % 4` and a walk
-  over the 64 words; about 830 steps each, twice per hash.
-- The evaluation budget: a SHA-256 compression costs about 13,300 steps in
-  this style, so one HMAC is about 57,000 and the sixteen planned pairs
-  about 1,730,000 together, above the 1,048,576 of one file. The vectors
-  are split between two files with identical algorithm text; none was
-  dropped.
+- A function has at most 256 instances, counting every combination of its
+  sizes. HMAC of a key length and a text length is therefore two specs,
+  `k0[key_len]` and `hmac[text_len]`, joined at each call as
+  `hmac(k0(key), text)`, and
+  HKDF-Extract takes its salt the same way; HKDF-Expand cannot take L as a
+  size beside the info length, so it returns N whole blocks and each test
+  slices off the first L octets.
+- A sized spec with no array parameter of that size needs the size written
+  at the call: a test names N and the info length in
+  `hkdf_expand[2, 10](prk, info)`, since N cannot be inferred from the
+  arguments.
+- No array has zero elements, so a zero-length info (RFC 5869 A.3) is a
+  second spec, `hkdf_expand_no_info`, and T(0) is never a value; a
+  zero-length salt is written as the HashLen zeros RFC 5869 section 2.2
+  puts in its place, which is the standard's own rule, and a zero-length
+  key or text has no instance at all.
+- `sha256::digest` takes 1 through 256 bytes, its 256 instances, so HMAC
+  texts stop at 192 bytes; a hash over longer messages would pad whole
+  blocks and the final partial block separately. No vector here needs more
+  than 216 bytes.
+- Messages are whole bytes; FIPS 180-4 allows any bit length, and a key or
+  text of a bit length that is not a multiple of 8 would need its last byte
+  padded by hand.

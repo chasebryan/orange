@@ -48,41 +48,51 @@ places (otherwise), and K_n is the permuted choice PC-2 of the 56 bits C_n
 D_n. The sixteen subkeys are therefore sixteen selections of 48 of the 56 key
 bits, and the schedule is linear.
 
-TDEA, in SP 800-67 rev. 2 section 3, is the forward transformation
-O = E_K3(D_K2(E_K1(I))) and the inverse transformation
-O = D_K1(E_K2(D_K3(I))) on one 64-bit block under a key bundle (K1, K2, K3).
-Keying option 1 takes three independent keys; keying option 2 sets K3 = K1.
-With K1 = K2 = K3 the transformation collapses to single DES, which is how
-Triple DES hardware interoperated with DES.
+TDEA, in SP 800-67 rev. 2 section 3.1, is the forward cipher operation
+O = E_K3(D_K2(E_K1(I))) and the inverse cipher operation
+O = D_K1(E_K2(D_K3(I))) on one 64-bit block under a key bundle (K1, K2, K3);
+the SP writes the DEA transformations F and I, and FIPS 46-3 writes them E_K
+and D_K, as here. Keying option 1 (FIPS 46-3; SP 800-67 rev. 1 section 3.2)
+takes three independent keys; keying option 2 sets K3 = K1. Rev. 2 dropped the
+numbered options and calls these three-key TDEA and two-key TDEA, the latter
+for legacy use only. With K1 = K2 = K3 (keying option 3 of FIPS 46-3) the
+transformation collapses to single DES, which is how Triple DES hardware
+interoperated with DES.
 
-The Orange file follows the standard's own layout. A block, a half block, an
-expanded half block and a key in flight are arrays of bits, `Word[8]^65`,
-`Word[8]^33`, `Word[8]^49` and `Word[8]^57`, each holding 0 or 1 with position
-0 unused, so that the standard's tables can be transcribed in the standard's
-1-based numbering: the first row of IP is `b[58], b[50], b[42], ...` in the
-file exactly as it is in the standard. Each S-box is four `Word[64]` words, one
-per row, sixteen nibbles per word with column 0 in the most significant
-nibble, so that `0xe4d12fb83a6c5907` reads as the first row of S1, `14 4 13 1
-2 15 11 8 3 10 6 12 5 9 0 7`. The sixteen subkeys are 768 bits. One bit per
-element is 768 elements, and an array holds 1 through 65,536, so they fit.
-The schedule still delivers them as `Word[64]^16`, the packing written when
-the bound was 256, and each iteration unpacks its subkey back to bits.
-FIPS 46-3 does not number the sections of its body; the table uses the
-standard's own headings.
+The Orange file follows the standard's own layout. Every permutation of the
+standard is a table of its 1-based bit numbers, written as an array literal
+of `Word[8]` in the rows the standard prints: the first row of IP is
+`58, 50, 42, 34, 26, 18, 10,  2` in the file exactly as it is in the
+standard, and E, P, PC-1 and PC-2 likewise. One spec, `permute[n]`, applies
+any of them: a block of w bits is a word holding them in its low w bits,
+bit 1 the most significant, so bit t of the input is
+`(x >> (w - t)) & 1`, and entry i of a table of n entries gives bit i + 1
+of the output. A 64-bit block is a `Word[64]` (`input as big Word[64]`), the
+halves L and R are the `Word[32]^2` that the permuted block reads as
+big-endian, and the expanded half block, C, D and the subkeys K_n are the
+low 48, 28 or 56 bits of a `Word[64]`. The S-boxes are the standard's
+tables of four rows and sixteen columns in decimal, `type SBox = Row^4` with
+`type Row = Word[8]^16`, and the eight of them a `SBoxes = SBox^8`, so the
+lookup of the standard is `s[j][row][column]`. The key schedule delivers the
+sixteen subkeys as `Word[64]^16`, K_n at position n - 1. FIPS 46-3 does not
+number the sections of its body, and the key schedule has no heading of its
+own (it is in Appendix 1, with Figure 3, Key schedule calculation); the table
+uses the standard's own headings.
 
 | Standard section | Orange spec |
 | --- | --- |
-| FIPS 46-3, Enciphering: IP, the sixteen iterations, the preoutput block, IP^-1 | `initial_permutation`, `iteration`, `right_half`, `preoutput`, `inverse_initial_permutation`, `dea` |
-| FIPS 46-3, The Cipher Function f: E, S1 through S8, P | `e_bit_selection`, `s1` through `s8`, `selection`, `nibble_at`, `selection_bits`, `permutation`, `f` |
-| FIPS 46-3, Key Schedule Calculation: PC-1, the left shifts, PC-2, KS | `permuted_choice_1`, `left_shifts`, `left_shift`, `permuted_choice_2`, `schedule_iteration`, `key_schedule`, `pack_c`, `pack_d`, `cd_bits`, `pack48`, `subkey_bits` |
+| FIPS 46-3, the bit numbering of the tables | `permute[n]` |
+| FIPS 46-3, Enciphering: IP, the sixteen iterations, the preoutput block, IP^-1 | `initial_permutation`, `inverse_initial_permutation`, `dea` |
+| FIPS 46-3, The Cipher Function f: E, S1 through S8, P | `bit_selection`, `s1` through `s8`, `selection_functions`, `permutation`, `f` |
+| FIPS 46-3, Appendix 1 and Figure 3 (Key schedule calculation): PC-1, the left shifts, PC-2, KS | `permuted_choice_1`, `left_shifts`, `left_shift`, `permuted_choice_2`, `key_schedule` |
 | FIPS 46-3, Deciphering: the subkeys in reverse order | `reversed_schedule`, `decrypt` (and `encrypt`) |
 | FIPS 46-3, the tables of the body and of Appendix 1 (Primitive Functions for the Data Encryption Algorithm): IP, IP^-1, E, S1 to S8, P, PC-1, PC-2 and the shift schedule | the array literals of the specs above |
-| SP 800-67 rev. 2, section 3: the forward and inverse transformations, keying options 1 and 2 | `tdea_encrypt`, `tdea_decrypt` |
-| SP 800-67 rev. 2, Appendix B: the example, three blocks in ECB | `tdea_encrypt_blocks`, `sp800_67_b_tdea` (in `des.or`) |
+| SP 800-67 rev. 2, section 3.1: the forward and inverse cipher operations; keying options 1 and 2 (FIPS 46-3; SP 800-67 rev. 1, section 3.2) | `tdea_encrypt`, `tdea_decrypt` |
+| SP 800-67 rev. 1, Appendix B.1: the example, three blocks in ECB | `tdea_encrypt_ecb[n]` |
 
-The bit and byte helpers are `bits64` and `bytes64`; bit 1 of the standard is
-the most significant bit of the first byte, the convention of every DES
-implementation and vector file.
+Bit 1 of the standard is the most significant bit of the first byte, the
+convention of every DES implementation and vector file; `as big` states it
+where a block enters and leaves the cipher.
 
 ### Security status
 
@@ -124,13 +134,15 @@ designed with published resistance criteria.
 DES_{~K}(~P) = ~DES_K(P), since complementing both the key and the block
 complements E(R) and K_n alike and leaves their xor unchanged; it halves an
 exhaustive search to 2^55 when the attacker can obtain the encryptions of a
-plaintext and its complement (`botan_des_case_2_complement` reproduces the
-property on a published vector). Four keys are weak: their C0 and D0 are each
-all zeros or all ones, so every subkey is the same and encryption is an
-involution, E_K(E_K(P)) = P. Twelve keys are semi-weak, in six pairs: their
+plaintext and its complement (the test `Botan des.vec [DES] case 2
+complemented: the complementation property` reproduces the property on a
+published vector). Four keys are weak: their C0 and D0 are each all zeros
+or all ones, so every subkey is the same and encryption is an involution,
+E_K(E_K(P)) = P. Twelve keys are semi-weak, in six pairs: their
 C0 and D0 are each constant or alternating, so a key has only two distinct
 subkeys and its partner has the same subkeys in the reverse order, and
-E_K2(E_K1(P)) = P. With odd parity, as FIPS 46-3 requires, they are:
+E_K2(E_K1(P)) = P. With odd parity, as FIPS 46-3 sets the parity bits, they
+are:
 
 ```text
 weak keys
@@ -145,10 +157,12 @@ semi-weak key pairs
 The list was derived from the key schedule by script (the sixteen keys whose
 C0 and D0 are each constant or alternating), checked for the involution
 properties with the Python reference and with pycryptodome, and agrees with
-the list of FIPS 74 (1981) and SP 800-67 rev. 2, which forbids these keys in
-a TDEA key bundle. `weak_key_0101_involution` reproduces the involution under
-the first of them. The weak keys are a property of the schedule, not an
-attack: a random key is weak with probability 2^-52.
+the lists of FIPS 74 (1981, section 3.6) and SP 800-67 rev. 2 (section 3.3.2),
+which says these keys should be avoided in a TDEA key bundle. The test
+`Botan des.vec [DES] case 2, weak key 0101010101010101: enciphering twice is
+the identity` reproduces the involution under the first of them. The weak
+keys are a property of the schedule, not an attack: a random key is weak with
+probability 2^-52.
 
 **Triple DES.** Double encryption is no answer to the short key, because the
 meet-in-the-middle attack of Diffie and Hellman (1977) breaks it in about
@@ -170,58 +184,69 @@ Triple DES cipher suites.
 
 **Standing.** FIPS 46-3 was withdrawn on 19 May 2005, after AES (FIPS 197,
 2001) replaced it. NIST proposed the deprecation of TDEA in 2017 and fixed it
-in SP 800-131A rev. 2 (March 2019): TDEA encryption is deprecated through
-2023 and disallowed after 31 December 2023, and decryption is allowed only
-for legacy use; NIST has since announced the withdrawal of SP 800-67 rev. 2
-itself (the date was not checked from this machine). TLS 1.3 (RFC 8446,
-2018) defines no cipher suite with Triple DES, and the IETF's TLS
-recommendations (BCP 195) advise against the TLS 1.2 suites that use it.
-Triple DES survives where hardware and formats are slow to change, notably in
-the payment card industry, which is migrating its key blocks and PIN
-encryption to AES. Nothing here is a claim about a particular deployment;
-this entry evaluates the algorithm as specified.
+in SP 800-131A rev. 2 (March 2019): TDEA encryption is deprecated through 2023
+and disallowed after 31 December 2023, and decryption is allowed only for
+legacy use; NIST has since withdrawn SP 800-67 rev. 2 itself (on 1 January
+2024). TLS 1.3 (RFC 8446, 2018, since obsoleted by RFC 9846) defines no cipher
+suite with Triple DES, and the IETF's TLS recommendations (BCP 195) advise
+against the TLS 1.2 suites that use it. Triple DES survives where hardware and
+formats are slow to change, notably in the payment card industry, which is
+migrating its key blocks and PIN encryption to AES. Nothing here is a claim
+about a particular deployment; this entry evaluates the algorithm as
+specified.
 
 ### What the Orange rendering shows
 
 The rendering makes the structure of DES legible in a way a word-oriented
-implementation does not. Every table of the standard is an array literal of
-its bit numbers, so IP, E, P, PC-1 and PC-2 read in the file exactly
-as they read in the standard, and a reader can see that they are wirings: no
-arithmetic, no key, no data decides where a bit goes. The one data-dependent
-step of the whole cipher is the S-box lookup, and it is the one place where
-the file departs from a table: an index in Orange must be static, so the row
-is a four-arm conditional on b1 b6 and the column a sixteen-arm conditional
-on b2 b3 b4 b5 (`selection`, `nibble_at`), the row and column addressing of
-the standard written out. The key schedule is visibly linear: PC-1, a
-rotation by a count read from the shift table, PC-2, and no other operation.
-Decryption is the encryption spec with `reversed_schedule`, and TDEA is three
-calls.
+implementation does not. Every permutation is a table of the standard's bit
+numbers read by the one spec `permute`, so IP, E, P, PC-1 and PC-2 read in
+the file exactly as they read in the standard, and a reader can see that
+they are wirings: the table decides where each bit goes, and no key or data
+does. The one data-dependent step of the whole cipher is the S-box lookup,
+and it is written as the standard describes the use of its tables: the six
+bits of B_j are cut from K xor E(R) by a shift computed from j, the outer
+bits b1 b6 form the row and the inner four the column, and the entry is
+`s[j][row & 3][column & 15]`. The masks change no value; the checker proves
+an index in range from its syntax, and a value bound by `let` ranges over
+its whole type, so the masks show it that the row is below 4 and the column
+below 16. The key schedule is visibly linear: PC-1, a rotation of each
+28-bit half by a count read from the shift table, PC-2, and no other
+operation; the loop carries C, D and the subkeys found so far as one tuple
+and writes K_n at its own position. Decryption is the encryption spec with
+`reversed_schedule`, TDEA is three calls, and the ECB example slices its
+blocks out of the message and writes each ciphertext block back at its
+place.
 
-Two departures from the standard's text are forced by the language and said
-where they happen. The sixteen subkeys cannot travel as one array of bits
-(768 entries, above the limit of 256), so `pack48` and `subkey_bits` move
-each subkey through a `Word[64]`, and the schedule's loop carries C, D and
-the subkeys found so far in one `Word[64]^18`, with C and D as 28-bit words
-whose left shifts are 28-bit rotations; a loop's step is a single expression
-that may not store at an index it computes, so each new subkey is appended at
-the end of that array rather than written at position n. Neither changes a
-value; both are stated in comments.
+Byte order is written where the standard fixes it: `as big Word[64]` reads
+a block or a key with bit 1 most significant, `as big Word[32]^2` splits the
+permuted block into L and R, and `as big Word[8]^8` writes the output block.
+Keys, blocks and expected values are `hex"..."` as the vector files print
+them; the Appendix B.1 plaintext is the string `"The qufck brown fox jump"`.
+The widths 32, 48, 56 and 28 have no word type of their own: they live in
+the low bits of a `Word[64]`, and `permute` takes the input width w as an
+argument beside the table, which the checker does not compare with the
+table's entries; the masks `& 0x0fffffff` in `left_shift` and the shift
+`42 - 6 j` in `f` carry the 28-bit and 48-bit widths by hand.
 
-Measured under `orangec eval`, one call of `dea` (sixteen iterations, each
-about 2,200 steps, of which f is about 1,800 and the eight S-box selections
-about half of that) costs about 36,000 steps, a key schedule about 14,000,
-and so an `encrypt` or `decrypt` about 50,000. A single-block TDEA
-transformation, three schedules and three DEA calls, costs about 150,000, and
-the Appendix B example, three schedules and nine DEA calls through
-`tdea_encrypt_blocks`, about 375,000. The thirteen vector pairs of the entry
-come to about 1.5 million steps, more than the 1,048,576 of one file, so they
-are split across two files: `des.or` holds six pairs, about 845,000 steps,
-with room for four more encryptions, and `des-vectors.or` seven pairs, about
-690,000 steps, with room for seven. Nothing was dropped. Not expressed:
-constant-time behaviour (the selection idiom specifies a lookup, it does not
-claim anything about leakage); the parity check of the key, which FIPS 46-3
-describes and no vector exercises; and the modes of operation of SP 800-38A
-beyond the three-block ECB of the Appendix B example.
+Measured with `orangec eval --stats` on a scratch copy of the file:
+`permute` costs about 15 steps per output bit (1,094 for IP with its table,
+822 for E or PC-2, 550 for P); building the eight S-boxes costs 1,073
+steps, done once per block in `dea`; one call of `f` costs about 1,725
+steps, of which E is 822, P 550 and the eight lookups the rest; a key
+schedule 14,943; one `dea` call 31,069 (the S-boxes, IP, IP^-1 and sixteen
+iterations of about 1,740); and an `encrypt` 46,013. Under
+`orangec test --stats` a single-DES test costs 46,015 steps (46,178 for a
+decryption, which reverses the schedule), a single-block TDEA test 138,207
+(138,370 decrypting), the weak-key involution 92,028, and the Appendix B.1
+example, three schedules and nine `dea` calls, 324,681. The thirteen tests
+together use 1,384,323 steps.
+
+Not expressed: constant-time behaviour (the lookup `s[j][row][column]` is
+the classic cache-timing pattern, and the language makes no claim about
+it); the parity check of the key, which FIPS 46-3 describes and no vector
+exercises; and the modes of operation of SP 800-38A beyond the ECB of the
+Appendix B.1 example, which `tdea_encrypt_ecb` covers for one to three
+blocks.
 
 ## Dissemination
 
@@ -229,61 +254,66 @@ beyond the three-block ECB of the Appendix B example.
 
 - `des.or`: the Data Encryption Algorithm (IP, E, S1 to S8, P, PC-1, PC-2,
   the shift schedule, KS, the sixteen iterations, IP^-1), encryption and
-  decryption, the TDEA forward and inverse transformations, the three-block
-  ECB helper for the Appendix B example, and six vector pairs: the SP 800-67
-  rev. 2 Appendix B example, two single-DES cases of Botan (one decrypted),
-  one of OpenSSL, a two-key TDEA case and a three-key TDEA decryption.
-- `des-vectors.or`: the same algorithm, spec for spec, without the
-  three-block helper, and seven vector pairs that do not fit in the first
-  file's step budget: two single-DES cases of OpenSSL, the complementation
-  property, a weak key, a three-key TDEA case of Botan, and the DES-EDE3-ECB
-  and DES-EDE-ECB cases of OpenSSL (the latter decrypted).
+  decryption, the TDEA forward and inverse transformations, ECB over one to
+  three blocks for the Appendix B.1 example, and the thirteen tests below:
+  the SP 800-67 rev. 1 Appendix B.1 example, single-DES cases of Botan and
+  OpenSSL (one decrypted), the complementation property, a weak key, and
+  two-key and three-key TDEA cases of Botan and OpenSSL (two decrypted).
 
 ### Running
 
 ```console
-orangec eval algorithms/des/des.or
-orangec eval algorithms/des/des-vectors.or
+orangec test --steps 1073741824 algorithms/des/des.or
 python3 algorithms/verify.py algorithms/des
 ```
 
-`eval` also prints the eight S-box tables and the shift table, since they
-are parameterless specs.
+The tests need more than `orangec test`'s default budget of 1,048,576
+evaluation steps (they use 1,384,323), so the command raises it, as
+`verify.py` does.
+
+`orangec eval` prints the parameterless specs: the permutation tables, the
+eight S-boxes, the eight together and the shift table.
 
 ### Vectors
 
-| Spec | File | Source | Case |
-| --- | --- | --- | --- |
-| `sp800_67_b_tdea` | `des.or` | SP 800-67 rev. 2, Appendix B; value from pycryptodome `DES3` (ECB), confirmed by `cryptography` `TripleDES` | three-key TDEA of `The qufck brown fox jump` (the standard's spelling) under 0123456789abcdef, 23456789abcdef01, 456789abcdef0123: a826fd8ce53b855f cce21c8112256fe6 68d5c05dd9b6b900 |
-| `botan_des_case_2` | `des.or` | Botan `src/tests/data/block/des.vec`, `[DES]`, second case (lines 6 to 8) | key 0123456789abcdef, block `Now is t` = 4e6f772069732074, ciphertext 3fa40e8a984d4815 (the first block of the FIPS 81 example) |
-| `botan_des_case_1_decrypt` | `des.or` | Botan `des.vec`, `[DES]`, first case (lines 2 to 4) | decryption: key 0113b970fd34f2ce, ciphertext 86a560f10ec6d85b gives 059b5e0851cf143a |
-| `openssl_des_ecb_7` | `des.or` | OpenSSL `test/recipes/30-test_evp_data/evpciph_des.txt`, seventh `DES-ECB` case (lines 48 to 51) | key fedcba9876543210, plaintext 0123456789abcdef, ciphertext ed39d950fa74bcc4 |
-| `botan_tripledes_case_1` | `des.or` | Botan `des.vec`, `[TripleDES]`, first case (lines 1036 to 1038) | two-key TDEA (keying option 2): K1 = 0123456789abcdef, K2 = fedcba9876543210, block 0123456789abcde7, ciphertext 7f1d0a77826b8aff |
-| `botan_tripledes_case_20_decrypt` | `des.or` | Botan `des.vec`, `[TripleDES]`, case 20 (lines 1112 to 1114) | three-key TDEA decryption: K1 = 0123456789abcdef, K2 = 5555555555555555, K3 = fedcba9876543210, ciphertext 18d748e563620572 gives `somedata` = 736f6d6564617461 |
-| `openssl_des_ecb_1` | `des-vectors.or` | OpenSSL `evpciph_des.txt`, `DES-ECB` case 1 (lines 12 to 15) | key 0000000000000000, plaintext 0000000000000000, ciphertext 8ca64de9c1b123a7 |
-| `openssl_des_ecb_2` | `des-vectors.or` | OpenSSL `evpciph_des.txt`, `DES-ECB` case 2 (lines 18 to 21) | key ffffffffffffffff, plaintext ffffffffffffffff, ciphertext 7359b2163e4edc58 |
-| `botan_des_case_2_complement` | `des-vectors.or` | the complement of Botan `des.vec`, `[DES]`, second case (lines 6 to 8); confirmed by pycryptodome `DES` | key fedcba9876543210 and block b19088df968cdf8b (the case's key and block complemented), ciphertext c05bf17567b2b7ea (the case's output complemented) |
-| `weak_key_0101_involution` | `des-vectors.or` | the weak key 0101010101010101 on the block of Botan `des.vec`, `[DES]`, second case; confirmed by pycryptodome `DES` | E_K(E_K(P)) = P for P = 4e6f772069732074 |
-| `botan_tripledes_case_20` | `des-vectors.or` | Botan `des.vec`, `[TripleDES]`, case 20 (lines 1112 to 1114) | three-key TDEA: K1 = 0123456789abcdef, K2 = 5555555555555555, K3 = fedcba9876543210, block `somedata` = 736f6d6564617461, ciphertext 18d748e563620572 |
-| `openssl_des_ede3_ecb_block_1` | `des-vectors.or` | OpenSSL `evpciph_des3_common.txt`, `DES-EDE3-ECB` (lines 29 to 32), first of four blocks | three-key TDEA: key 0123456789abcdef f1e0d3c2b5a49786 fedcba9876543210, block "7654321 " = 3736353433323120, ciphertext 62c10cc9efbf15aa |
-| `openssl_des_ede_ecb_block_1_decrypt` | `des-vectors.or` | OpenSSL `evpciph_des3_common.txt`, `DES-EDE-ECB` (lines 36 to 39), first of four blocks | two-key TDEA decryption: key 0123456789abcdef fedcba9876543210, ciphertext 4d1332e49f380e23 gives "7654321 " = 3736353433323120 |
+Each row is a `test` block in `des.or`.
 
-The Appendix B ciphertext is the only value that comes from an oracle rather
-than from a fetched file: SP 800-67 rev. 2 could not be read from the machine
-this entry was written on, so its plaintext and keys were taken from the task
-description and the ciphertext computed with pycryptodome `DES3` and
-confirmed with the `cryptography` package; the writer's recollection of the
-standard's printed value agrees with it, and a reader with the standard should
-compare. Every other expected value is copied from the cited line of the
-cited file and was re-checked against pycryptodome before it was written.
-Botan's TripleDES section holds the vectors with 16-byte keys as two-key
-bundles; Botan's `3des.vec` does not exist (the name returns 404), and the
-Triple DES cases are in `des.vec`. "Now is the time for all " under
+| Test | Source | Case |
+| --- | --- | --- |
+| `SP 800-67r1 Appendix B.1: three-key TDEA of three blocks in ECB` | SP 800-67 rev. 1, Appendix B.1; value from pycryptodome `DES3` (ECB), confirmed by `cryptography` `TripleDES` and by the ciphertext the standard prints | three-key TDEA of `The qufck brown fox jump` (as the standard's hex spells it) under 0123456789abcdef, 23456789abcdef01, 456789abcdef0123: a826fd8ce53b855f cce21c8112256fe6 68d5c05dd9b6b900 |
+| `Botan des.vec [DES] case 2: DES encrypts` | Botan `src/tests/data/block/des.vec`, `[DES]`, second case (lines 6 to 8) | key 0123456789abcdef, block `Now is t` = 4e6f772069732074, ciphertext 3fa40e8a984d4815 (the first block of the FIPS 81 example) |
+| `Botan des.vec [DES] case 1: DES decrypts` | Botan `des.vec`, `[DES]`, first case (lines 2 to 4) | decryption: key 0113b970fd34f2ce, ciphertext 86a560f10ec6d85b gives 059b5e0851cf143a |
+| `OpenSSL evpciph_des.txt DES-ECB case 1` | OpenSSL `test/recipes/30-test_evp_data/evpciph_des.txt`, `DES-ECB` case 1 (lines 12 to 15) | key 0000000000000000, plaintext 0000000000000000, ciphertext 8ca64de9c1b123a7 |
+| `OpenSSL evpciph_des.txt DES-ECB case 2` | OpenSSL `evpciph_des.txt`, `DES-ECB` case 2 (lines 18 to 21) | key ffffffffffffffff, plaintext ffffffffffffffff, ciphertext 7359b2163e4edc58 |
+| `OpenSSL evpciph_des.txt DES-ECB case 7` | OpenSSL `evpciph_des.txt`, seventh `DES-ECB` case (lines 48 to 51) | key fedcba9876543210, plaintext 0123456789abcdef, ciphertext ed39d950fa74bcc4 |
+| `Botan des.vec [DES] case 2 complemented: the complementation property` | the complement of Botan `des.vec`, `[DES]`, second case (lines 6 to 8); confirmed by pycryptodome `DES` | key fedcba9876543210 and block b19088df968cdf8b (the case's key and block complemented), ciphertext c05bf17567b2b7ea (the case's output complemented) |
+| `Botan des.vec [DES] case 2, weak key 0101010101010101: enciphering twice is the identity` | the weak key 0101010101010101 on the block of Botan `des.vec`, `[DES]`, second case; confirmed by pycryptodome `DES` | E_K(E_K(P)) = P for P = 4e6f772069732074 |
+| `Botan des.vec [TripleDES] case 1: two-key TDEA encrypts` | Botan `des.vec`, `[TripleDES]`, first case (lines 1036 to 1038) | two-key TDEA (keying option 2): K1 = 0123456789abcdef, K2 = fedcba9876543210, block 0123456789abcde7, ciphertext 7f1d0a77826b8aff |
+| `Botan des.vec [TripleDES] case 20: three-key TDEA encrypts` | Botan `des.vec`, `[TripleDES]`, case 20 (lines 1112 to 1114) | three-key TDEA: K1 = 0123456789abcdef, K2 = 5555555555555555, K3 = fedcba9876543210, block `somedata` = 736f6d6564617461, ciphertext 18d748e563620572 |
+| `Botan des.vec [TripleDES] case 20: three-key TDEA decrypts` | Botan `des.vec`, `[TripleDES]`, case 20 (lines 1112 to 1114) | three-key TDEA decryption: the same keys, ciphertext 18d748e563620572 gives `somedata` = 736f6d6564617461 |
+| `OpenSSL evpciph_des3_common.txt DES-EDE3-ECB: block 1` | OpenSSL `evpciph_des3_common.txt`, `DES-EDE3-ECB` (lines 29 to 32), first of four blocks | three-key TDEA: key 0123456789abcdef f1e0d3c2b5a49786 fedcba9876543210, block "7654321 " = 3736353433323120, ciphertext 62c10cc9efbf15aa |
+| `OpenSSL evpciph_des3_common.txt DES-EDE-ECB: block 1 decrypts` | OpenSSL `evpciph_des3_common.txt`, `DES-EDE-ECB` (lines 36 to 39), first of four blocks | two-key TDEA decryption: key 0123456789abcdef fedcba9876543210, ciphertext 4d1332e49f380e23 gives "7654321 " = 3736353433323120 |
+
+The Appendix B.1 ciphertext is the only value that comes from an oracle rather
+than from a fetched file: the standard could not be read from the machine this
+entry was written on, so its plaintext and keys were taken from the task
+description and the ciphertext computed with pycryptodome `DES3` and confirmed
+with the `cryptography` package. It was later compared with the published
+text: SP 800-67 rev. 1 (January 2012), Appendix B.1, prints the same three
+keys and the same three ciphertext blocks over the plaintext bytes
+5468652071756663 6b2062726f776e20 666f78206a756d70, whose first block spells
+"The qufc" where the standard's label reads "The quic". SP 800-67 rev. 2
+(November 2017) no longer holds the example: its Appendix B points to the
+examples on the NIST web site. Every other expected value is copied from the
+cited line of the cited file and was re-checked against pycryptodome before it
+was written. Botan's TripleDES section holds the vectors with 16-byte keys as
+two-key bundles; Botan's `3des.vec` does not exist (the name returns 404), and
+the Triple DES cases are in `des.vec`. "Now is the time for all " under
 0123456789abcdef, the example of FIPS 81 (1980), encrypts in ECB to
-3fa40e8a984d4815 6a271787ab8883f9 893d51ec4b563b53 with the Python
-reference; Botan's second and third `[DES]` cases hold its first block and
-its last two blocks (the third case lists them in the order "for all ",
-"he time "), and the entry reproduces the first block.
+3fa40e8a984d4815 6a271787ab8883f9 893d51ec4b563b53 with the Python reference;
+Botan's second and third `[DES]` cases hold its first block and its last two
+blocks (the third case lists them in the order "for all ", "he time "), and
+the entry reproduces the first block.
 
 ### Provenance and claims
 
@@ -306,46 +336,59 @@ memory:
   directions, the ten ECB cases of OpenSSL's `evpciph_des.txt` and
   `evpciph_des3_common.txt`, and agrees with pycryptodome `DES` and `DES3`
   and with `cryptography`'s `TripleDES` on 200 random keys.
-- The Orange array literals were generated by script from the extracted
-  tables (the S-box words by packing each row's sixteen entries), and the
-  vector specs by a second script that cites each case's file and lines and
-  checks each expected value against pycryptodome before writing it. The
-  thirteen vectors matched on the first evaluation.
+- In the first form, the Orange array literals were generated by script
+  from the extracted tables (the S-box words by packing each row's sixteen
+  entries), and the vector specs by a second script that cites each case's
+  file and lines and checks each expected value against pycryptodome before
+  writing it. The thirteen vectors matched on the first evaluation.
 - The weak and semi-weak keys were derived from the schedule and checked as
   described above.
-- The section names in the files' comments are FIPS 46-3's own headings
-  (Enciphering; The Cipher Function f; Key Schedule Calculation; Deciphering;
-  Appendix 1, Primitive Functions for the Data Encryption Algorithm) and
-  SP 800-67 rev. 2's section 3 and Appendix B, as recalled; a reader with
-  the standards should check them against the text.
+- The section names in the comments are FIPS 46-3's own headings
+  (Enciphering; Deciphering; The Cipher Function f; Appendix 1, Primitive
+  Functions for the Data Encryption Algorithm, which holds the key schedule
+  and its Figure 3, Key schedule calculation), SP 800-67 rev. 2's section 3.1
+  and SP 800-67 rev. 1's section 3.2 and Appendix B.1. They were checked
+  against the published texts of
+  [FIPS 46-3](https://csrc.nist.gov/pubs/fips/46-3/final),
+  [SP 800-67 rev. 2](https://doi.org/10.6028/NIST.SP.800-67r2) and
+  [SP 800-67 rev. 1](https://doi.org/10.6028/NIST.SP.800-67r1).
 
 The extraction, generation, measurement and weak-key scripts were kept with
 the work record and are not part of the repository.
 
+The entry was then rewritten in the current language, and its two files,
+split only by the old step budget, were folded into `des.or`. Every expected
+value is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of byte literals: the new tests state the same bytes
+as `hex"..."`, printed from the old values by script and compared with them,
+and no vector was added or dropped; the inputs were carried over the same
+way, the Appendix B.1 plaintext as the string it spells. The permutation
+tables were extracted by script from the first form's literal-index
+selections (identical in its two files), and the S-box rows unpacked from
+its packed words; the script checks that IP^-1 inverts IP, that P and IP
+are permutations and that every S-box row is a permutation of 0 through 15,
+and prints the Orange literals. A Python model of the new formulation
+(words with bit 1 most significant, the shift-based `permute`, the
+`s[j][row][column]` lookup) built from those tables agrees with
+pycryptodome `DES` in both directions on 300 random keys and blocks.
+
 This entry is a reference evaluation of FIPS 46-3 and SP 800-67 rev. 2 under
-`orangec eval`. It makes no constant-time, side-channel, performance or
+`orangec test`. It makes no constant-time, side-channel, performance or
 certification claim, and it is not a corpus entry in the sense of The Orange
 Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Three features of the language shaped the
-files:
+None that prevented anything. What the language still cannot say shaped the
+file:
 
-- Indices are static, so a bit permutation cannot be a loop over a position
-  table; each table is an array literal of literal-index selections, which
-  reads like the standard but costs one step per bit plus the literal, and
-  the S-box lookup is a four-arm and a sixteen-arm conditional (about 110
-  steps per S-box, about 900 of the 1,800 steps of f).
-- The sixteen 48-bit subkeys are packed into `Word[64]` words and unpacked
-  in every iteration (about 240 steps of the 2,200 of an iteration). One bit
-  per element is 768 elements, inside the current bound of 65,536; the
-  packing remains from when the bound was 256.
-- A loop's step is one expression without bindings and cannot store at a
-  computed index, so the schedule appends each subkey to a rotating array
-  rather than writing K_n at position n.
-
-The step budget of one file (1,048,576) holds about twenty DES encryptions
-with their key schedules, so the thirteen vectors are split across `des.or`
-and `des-vectors.or` as recorded above; the second file repeats the whole
-algorithm because a module has no imports.
+- There are no words of 28, 48 or 56 bits, so C, D, E(R) and the subkeys
+  live in the low bits of a `Word[64]`, and their widths are carried by
+  hand: the mask in `left_shift`, the shift `42 - 6 j` that cuts B_j, and
+  the width argument of `permute`, which the checker does not compare with
+  the entries of the table it is given.
+- An index is proved in range from its syntax alone: a `let` or an `|`
+  ranges over its whole type, so the S-box lookup masks a row that is
+  already below 4 and a column already below 16. For the same reason a
+  table entry cannot index a 64-element bit array without a mask, and the
+  permutations select bits by shifting a word instead.

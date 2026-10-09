@@ -1,0 +1,19 @@
+// MixColumn of Midori64 (Banik et al., ASIACRYPT 2015, section 2.2): the
+// product of a column of four 4-bit cells with the involutive binary
+// matrix whose rows are 0 1 1 1, 1 0 1 1, 1 1 0 1 and 1 1 1 0, so each
+// cell becomes the sum of the other three. The column is a Word[16] whose
+// cell i is bits 4 i through 4 i + 3. `orangec analyze --linear --word 4
+// --function midori::mix_column` finds it an involution with branch number
+// 4, one short of maximum distance separable, at a cost of 32 XOR gates.
+edition 2026;
+module midori {
+  spec mix_column(x: Word[16]) -> Word[16] {
+    // Every cell of the sum holds x0 + x1 + x2 + x3.
+    let sum: Word[16] = x ^ (x >>> 4) ^ (x >>> 8) ^ (x >>> 12);
+    sum ^ x
+  }
+
+  test "each cell becomes the sum of the other three" {
+    (mix_column(0x0001) == 0x1110) && (mix_column(0x4321) == 0x0765)
+  }
+}
