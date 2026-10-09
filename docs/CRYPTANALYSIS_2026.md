@@ -51,7 +51,10 @@ does not exist at that instance is `ORC1016`. Named tests are never selected.
 largest call to standard error. `--edition 2026` and `--` keep their
 ordinary meanings. `--bits`, `--linear`, `--word`, `--table`, `--layer` and
 `--rounds` belong to `analyze` alone, and each of them, like `--function`,
-`--instance` and `--steps`, may appear at most once. `--bits` does not combine
+`--instance` and `--steps`, may appear at most once. `--rounds R` is a
+canonical decimal from 1 through 32, `MAX_TRAIL_ROUNDS` in
+[`analyze.rs`](../compiler/crates/orangec/src/analyze.rs): no sign, no leading
+zero. `--bits` does not combine
 with `--linear`, `--word` requires it, and with it `--table` takes only
 `matrix`, which in turn requires it. `--layer` and `--rounds` require each
 other and combine with neither `--linear` nor `--table`. A malformed,
@@ -311,7 +314,8 @@ operations, while words of 32 or more bits are out of reach.
 ## Substitution-permutation networks
 
 `--layer MODULE::NAME --rounds R` analyzes rounds of a key-alternating
-substitution-permutation network: the function selected by `--function` is
+substitution-permutation network. `R` is a canonical decimal from 1 through
+32, the same `MAX_TRAIL_ROUNDS`. The function selected by `--function` is
 its S-box, applied to every word of the state, and the function `--layer`
 names is its linear layer. For each number of rounds r from 1 through R it
 reports the least number of active S-boxes and the least weight of any
