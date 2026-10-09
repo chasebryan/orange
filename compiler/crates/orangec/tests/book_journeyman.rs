@@ -1,5 +1,10 @@
-//! Execute J4's fenced listings, not copied fixtures.
-//! Educational regression evidence only; not a compiler or security proof.
+//! Execute J4's fenced listings. Educational regression evidence only.
+//! A passing test is a Match of the Bool the listing writes. It is not a
+//! cryptographic security claim, and it does not transcribe FIPS 180-4 §6.2.2.
+//!
+//! `orders` reads one four-byte group both ways. `wrong_order` is the
+//! big-endian load of those bytes compared with the RFC 8439 §2.3 word.
+//! `length_field` checks the FIPS 180-4 §5.1.1 length and the first message word.
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
@@ -27,9 +32,9 @@ fn module_name(source: &str) -> &str {
         .expect("complete listing must name its module")
 }
 
-fn run(command: &str, source: &str) -> Output {
+fn run_with(arguments: &[&str], source: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_orangec"))
-        .args([command, "-"])
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -44,94 +49,153 @@ fn run(command: &str, source: &str) -> Output {
     child.wait_with_output().expect("wait for orangec")
 }
 
-fn text_eq(blocks: &[&str], got: &str) -> bool {
-    blocks.iter().any(|block| got == format!("{block}\n"))
+fn j4_sources() -> Vec<&'static str> {
+    fences(J4, "orange")
+}
+
+fn j4_text() -> Vec<&'static str> {
+    fences(J4, "text")
+}
+
+fn j4_source(name: &str) -> &'static str {
+    j4_sources()
+        .into_iter()
+        .find(|source| module_name(source) == name)
+        .unwrap_or_else(|| panic!("missing J4 listing {name}"))
+}
+
+fn one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
+    let matches: Vec<_> = j4_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
+    assert_eq!(matches.len(), 1, "{label}");
+    matches[0]
+}
+
+fn assert_silent_check(name: &str, source: &str) {
+    let check = run_with(&["check", "-"], source);
+    assert!(
+        check.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(check.stdout.is_empty(), "{name}: check printed a value");
+    assert!(check.stderr.is_empty(), "{name}: check diagnostics");
+}
+
+fn assert_stdout(name: &str, arguments: &[&str], source: &str, body: &str, status: i32) {
+    let expected = format!("{body}\n");
+    let first = run_with(arguments, source);
+    assert_eq!(first.status.code(), Some(status), "{name}: {arguments:?}");
+    assert!(first.stderr.is_empty(), "{name}: {arguments:?} diagnostics");
+    assert_eq!(
+        String::from_utf8(first.stdout.clone()).expect("UTF-8"),
+        expected,
+        "{name}: {arguments:?}"
+    );
+    let second = run_with(arguments, source);
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
 }
 
 #[test]
-fn j4_listings_match_the_compiler_on_this_tree() {
-    let sources = fences(J4, "orange");
-    let texts = fences(J4, "text");
-    assert_eq!(sources.len(), 18, "update coverage when adding listings");
-    assert!(J4.contains("orangec 0.0.1 (Orange edition 2026; implemented slice S3t)"));
-    assert!(!J4.contains("0x428a2f98"));
-    assert!(!J4.contains("spec compress("));
-    assert!(!J4.contains("spec schedule("));
-    assert!(J4.contains("The locked label is J4."));
-    for source in sources {
-        let name = module_name(source);
-        if name == "short" {
-            let check = run("check", source);
-            assert_eq!(check.status.code(), Some(1), "{name}");
-            assert!(check.stdout.is_empty(), "{name}");
-            let diagnostic = String::from_utf8(check.stderr).expect("UTF-8 diagnostic");
-            assert!(
-                text_eq(&texts, &diagnostic),
-                "{name} diagnostic was not copied into the lesson:\n{diagnostic}"
-            );
-            for command in ["eval", "test"] {
-                let result = run(command, source);
-                assert_eq!(result.status.code(), Some(1), "{name}: {command}");
-                assert!(result.stdout.is_empty(), "{name}: {command}");
-                let again = String::from_utf8(result.stderr).expect("UTF-8 diagnostic");
-                assert_eq!(again, diagnostic, "{name}: {command}");
-            }
-            continue;
-        }
-        let check = run("check", source);
-        assert!(
-            check.status.success(),
-            "{name}: {}",
-            String::from_utf8_lossy(&check.stderr)
-        );
-        assert!(check.stdout.is_empty() && check.stderr.is_empty(), "{name}");
-        let evaluation = run("eval", source);
-        assert!(evaluation.status.success(), "{name}");
-        assert!(evaluation.stderr.is_empty(), "{name}");
-        let printed = String::from_utf8(evaluation.stdout).expect("UTF-8 value");
-        let claimed: Vec<_> = texts
-            .iter()
-            .filter(|block| block.starts_with(&format!("{name}::")))
-            .collect();
-        if printed.is_empty() {
-            assert!(
-                claimed.is_empty(),
-                "{name} evaluated to nothing, but a fence claims a value"
-            );
-        } else {
-            assert_eq!(claimed.len(), 1, "{name}");
-            assert_eq!(printed, format!("{}\n", claimed[0]), "{name}");
-            let again = run("eval", source);
-            let again_printed = String::from_utf8(again.stdout).expect("UTF-8 value");
-            assert_eq!(printed, again_printed, "{name}");
-            assert_eq!(evaluation.status.code(), again.status.code(), "{name}");
-        }
-        if !source.contains("test \"") {
-            let report = run("test", source);
-            assert!(report.status.success(), "{name}");
-            assert_eq!(
-                String::from_utf8(report.stdout).expect("UTF-8 report"),
-                "0 tests: 0 passed, 0 failed\n",
-                "{name}"
-            );
-            assert!(report.stderr.is_empty(), "{name}");
-            continue;
-        }
-        let report = run("test", source);
-        assert!(
-            report.stderr.is_empty(),
-            "{name}: a test report is not a diagnostic"
-        );
-        let body = String::from_utf8(report.stdout).expect("UTF-8 report");
-        assert!(
-            text_eq(&texts, &body),
-            "{name} test report was not copied into the lesson:\n{body}"
-        );
-        let failed = body.contains("... FAILED");
-        assert_eq!(report.status.success(), !failed, "{name}");
-        let again = run("test", source);
-        let again_body = String::from_utf8(again.stdout).expect("UTF-8 report");
-        assert_eq!(body, again_body, "{name}");
-        assert_eq!(report.status.code(), again.status.code(), "{name}");
+fn j4_listings_read_both_orders_and_fail_the_swapped_word() {
+    let sources = j4_sources();
+    let names: Vec<_> = sources.iter().copied().map(module_name).collect();
+    assert_eq!(names, vec!["orders", "wrong_order", "length_field"]);
+    assert!(!J4.contains("\n## Chapter "));
+    assert!(!J4.contains("this chapter"));
+    assert!(!J4.contains("S3u"));
+    assert!(J4.contains("implemented slice S3t"));
+    assert!(J4.contains("The prediction is left `0x65787061` and right `0x61707865`."));
+    for forbidden in [
+        "spec compress(",
+        "spec schedule(",
+        "small_sigma0",
+        "0x428a2f98",
+    ] {
+        assert!(!J4.contains(forbidden), "{forbidden}");
     }
+
+    let orders = j4_source("orders");
+    assert!(orders.contains("as little Word[32]"));
+    assert!(orders.contains("as big Word[32]"));
+    assert_silent_check("orders", orders);
+    assert_stdout(
+        "orders eval",
+        &["eval", "-"],
+        orders,
+        one_text(|text| text.starts_with("orders::first_little:"), "orders eval"),
+        0,
+    );
+    assert_stdout(
+        "orders test",
+        &["test", "-"],
+        orders,
+        one_text(
+            |text| text.starts_with("test \"RFC 8439 2.3 first constant word\" ... ok"),
+            "orders test",
+        ),
+        0,
+    );
+
+    let wrong = j4_source("wrong_order");
+    assert!(wrong.contains("as big Word[32]"));
+    assert!(!wrong.contains("as little"));
+    assert_silent_check("wrong_order", wrong);
+    assert_stdout(
+        "wrong_order eval",
+        &["eval", "-"],
+        wrong,
+        one_text(
+            |text| text.starts_with("wrong_order::first:"),
+            "wrong_order eval",
+        ),
+        0,
+    );
+    assert_stdout(
+        "wrong_order test",
+        &["test", "-"],
+        wrong,
+        one_text(
+            |text| {
+                text.starts_with("test \"RFC 8439 2.3 first constant word\" ... FAILED")
+                    && text.contains("left:  0x65787061")
+                    && text.contains("right: 0x61707865")
+                    && text.contains("1 test: 0 passed, 1 failed")
+            },
+            "wrong_order test",
+        ),
+        1,
+    );
+
+    let length = j4_source("length_field");
+    assert!(length.contains("length_be() == 24"));
+    assert!(length.contains("word0() == 0x61626380"));
+    assert_silent_check("length_field", length);
+    assert_stdout(
+        "length_field eval",
+        &["eval", "-"],
+        length,
+        one_text(
+            |text| text.starts_with("length_field::bits:"),
+            "length_field eval",
+        ),
+        0,
+    );
+    assert_stdout(
+        "length_field test",
+        &["test", "-"],
+        length,
+        one_text(
+            |text| {
+                text.contains("test \"FIPS 180-4 5.1.1 length field is the bit length\" ... ok")
+                    && text.contains("3 tests: 3 passed, 0 failed")
+            },
+            "length_field test",
+        ),
+        0,
+    );
 }

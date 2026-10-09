@@ -260,17 +260,18 @@ Orange is the working language, not decoration around prose.
   number. This lesson does not transcribe the SHA-256 compression
   function or its message schedule, and it does not pack bytes into a word.
 - **J4.** [Byte Order and Format Boundaries](JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#j4-byte-order-and-format-boundaries):
-  little-endian and big-endian as functions, with the bijection, the
-  inverse, and the reversal relation proved elementarily; the byte
-  conventions of FIPS 180-4, RFC 8439, RFC 7748, and FIPS 197 checked
-  with `as little` and `as big` before a later lesson compares a full
-  construction; bit order distinguished from byte order; length fields
-  and padding treated as format boundaries; a wrong-order load of a
-  ChaCha20 key and of a SHA-256 word, each with the failing test and
-  the one-token repair. Twelve exercises with worked answers. The five
-  outcomes in that section are the finish line. The lesson does not
-  transcribe the SHA-256 compression function or its message schedule.
-  The locked label is J4. It is not a manuscript chapter numeral.
+  where byte order is decided, from the hex a standard prints, through
+  the bytes, through the word, to the Orange value. The fixture is the
+  ChaCha constant bytes J2 keeps unpacked. One listing reads those bytes
+  with `as little` and with `as big`. A wrong-endianness load fails a
+  corpus test, and the reader predicts the computed word before the
+  report. The 64-bit length field of FIPS 180-4 §5.1.1, the bit length
+  24 rather than the byte length 3, is checked in Orange. A self-check
+  asks for the first message word and the length bytes J5 will take,
+  and does not build the schedule. The six outcomes in §J4.1 are the
+  finish line. The locked label is J4. It is not a manuscript chapter
+  numeral. The manuscript chapter *From Core to Native Bytes* keeps
+  that title and that number.
   [Worked answers](JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#worked-answers).
 
 ### Existing manuscript integrated here
@@ -422,7 +423,7 @@ answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
 integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
-J3 integer ledger, the 12 lesson-J4 answers and the J4 integer ledgers, and
+J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, and
 document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
@@ -498,12 +499,13 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j3 --locke
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 The Rust integration test `compiler/crates/orangec/tests/book_journeyman.rs`
-reads the eighteen Orange listings in J4. It checks each accepted
-listing's printed evaluation, when the lesson fences one, and each
-printed test report. It checks the `ORC0240` diagnostic of a three-byte
-value converted as a `Word[32]`, on `check`, `eval`, and `test`. A
-failing report is the wrong order or the unclamped scalar. A passing
-report is the repaired order or the relation the lesson states. Run it
+reads the three Orange listings in J4. It checks silent `check`, the
+printed `eval` lines, the passing tests, and the one failing test
+whose report prints `left` `0x65787061` and `right` `0x61707865` with
+status 1 and empty standard error. A passing test in that file is a
+Match of the `Bool` the listing writes. It does not establish a
+cryptographic security claim, it does not transcribe FIPS 180-4
+§6.2.2, and it does not rerun the ChaCha20 block function. Run it
 in a build-capable checkout:
 
 ```sh
