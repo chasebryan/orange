@@ -10,6 +10,13 @@ Snapshot: 2026-10-05
 
 Manuscript version: 0.27
 
+The earlier manuscript is this file. It is an earlier draft, and its chapters
+keep their current numbers until one later renumbering pass.
+[The curriculum (in progress)](book/) is the Novice, Journeyman and Master
+parts being written now. Which chapters in each part are drafted, and which
+are only planned, is recorded in the
+[Drafted / Only planned](book/README.md#manuscript-status) table.
+
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
 > normative language specification, proof, assurance report, license grant, or
