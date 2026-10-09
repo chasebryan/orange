@@ -4627,9 +4627,11 @@ parameter's name used as a value, and `ORC0101` for a malformed list. The
 length slice adds no language code: its limits are the old codes with 65536
 in their messages, a number too wide for the evaluator is the `ORC0301` of
 every exact integer, and `orangec` adds `ORC1016` for a `--spec` or
-`--function` name that selects nothing, and for an analysis whose selector
-or shape the command cannot take, and `ORC1017` for an
-analysis whose bits, table, or layer the search cannot accept. A step overrun
+`--function` name that selects nothing or is ambiguous, a `--instance` on
+`replay` or `analyze` that selects nothing, a replay function whose result
+is not `Bool`, or an analysis whose selector or shape the command cannot
+take, and `ORC1017` for an analysis whose function, bits, table, or layer
+the search cannot accept. A step overrun
 during that analysis is still `ORC0301`. The test slice adds `ORC0242` for a
 test's title that is empty, longer than 128 bytes, not printable ASCII,
 holding a backslash, or repeating another's, and it reuses `ORC0101` for a
@@ -7086,7 +7088,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
 | `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1017` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` or `--function` name that selects nothing, an analysis whose selector or shape the command cannot take, an analysis whose bits, table, or layer the search cannot accept |
+| `ORC1001`–`ORC1017` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` or `--function` name that selects nothing or is ambiguous, a `--instance` on `replay` or `analyze` that selects nothing, a replay function whose result is not `Bool`, an analysis whose selector or shape the command cannot take, an analysis whose function, bits, table, or layer the search cannot accept |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
