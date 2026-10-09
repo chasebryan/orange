@@ -504,7 +504,10 @@ fn n10_source(name: &str) -> &'static str {
 }
 
 fn n10_one(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
-    let matches: Vec<_> = n10_text().into_iter().filter(|text| predicate(text)).collect();
+    let matches: Vec<_> = n10_text()
+        .into_iter()
+        .filter(|text| predicate(text))
+        .collect();
     assert_eq!(matches.len(), 1, "{label}");
     matches[0]
 }
@@ -974,19 +977,91 @@ fn n13_one_text(predicate: impl Fn(&str) -> bool, label: &str) -> &'static str {
     matches[0]
 }
 
+fn lesson_root() -> &'static Path {
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+}
+
+fn single_segment(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none()
+}
+
+fn lesson_directory_name(label: &str) -> &'static str {
+    match label {
+        "sha256" => "sha256",
+        "hmac" => "hmac",
+        "seam-repaired" => "seam-repaired",
+        "seam_gap" => "seam_gap",
+        "wrong_name" => "wrong_name",
+        "missing_file" => "missing_file",
+        "n14-pad" => "n14-pad",
+        "n14-seam" => "n14-seam",
+        other => panic!("unlisted lesson directory {other}"),
+    }
+}
+
+fn lesson_file_name(name: &str) -> &'static str {
+    match name {
+        "sha256" => "sha256.or",
+        "hmac" => "hmac.or",
+        "seam_repaired" => "seam_repaired.or",
+        "wrong_name" => "wrong_name.or",
+        "missing_file" => "missing_file.or",
+        "pad" => "pad.or",
+        "pad_seam" => "pad_seam.or",
+        other => panic!("unlisted lesson file {other}"),
+    }
+}
+
 fn n13_dir(label: &str) -> PathBuf {
+    let label = lesson_directory_name(label);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let dir =
-        std::env::temp_dir().join(format!("orange-n13-{}-{label}-{nanos}", std::process::id()));
+    let leaf = format!("orange-book-{label}-{}-{nanos}", std::process::id());
+    assert!(
+        single_segment(&leaf),
+        "lesson directory must be one path segment"
+    );
+    let root = lesson_root();
+    let dir = root.join(&leaf);
+    assert!(
+        dir.starts_with(root),
+        "lesson directory escaped the Cargo test root"
+    );
     fs::create_dir_all(&dir).expect("temp dir");
     dir
 }
 
 fn write_or(dir: &Path, name: &str, source: &str) {
-    fs::write(dir.join(format!("{name}.or")), source.as_bytes()).expect("write module");
+    let root = lesson_root();
+    assert!(
+        dir.starts_with(root),
+        "refusing to write outside the Cargo test root"
+    );
+    let file_name = lesson_file_name(name);
+    assert!(
+        single_segment(file_name),
+        "lesson file must be one path segment"
+    );
+    let path = dir.join(file_name);
+    assert!(path.starts_with(dir), "lesson file escaped its directory");
+    fs::write(&path, source.as_bytes()).expect("write module");
+}
+
+fn remove_lesson_dir(directory: &Path) {
+    let root = lesson_root();
+    let leaf = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    assert!(
+        directory.starts_with(root) && leaf.starts_with("orange-book-") && single_segment(leaf),
+        "refusing to remove a path outside the lesson test root"
+    );
+    let _ = fs::remove_dir_all(directory);
 }
 
 fn run_at(dir: &Path, arguments: &[&str]) -> Output {
@@ -1148,9 +1223,9 @@ fn n13_modules_check_evaluate_and_pass_from_separate_files() {
         &repaired_test,
     );
 
-    let _ = fs::remove_dir_all(sha_dir);
-    let _ = fs::remove_dir_all(hmac_dir);
-    let _ = fs::remove_dir_all(repaired_dir);
+    remove_lesson_dir(&sha_dir);
+    remove_lesson_dir(&hmac_dir);
+    remove_lesson_dir(&repaired_dir);
 }
 
 #[test]
@@ -1191,7 +1266,7 @@ fn n13_seam_failures_match_the_printed_diagnostics() {
                 "{name}: {command}"
             );
         }
-        let _ = fs::remove_dir_all(dir);
+        remove_lesson_dir(&dir);
     }
 }
 
@@ -1316,6 +1391,6 @@ fn n14_gate_listings_check_evaluate_and_pass() {
     assert!(test_result.stderr.is_empty());
     assert_eq!(test_result.stdout, empty.as_bytes());
 
-    let _ = fs::remove_dir_all(pad_dir);
-    let _ = fs::remove_dir_all(seam_dir);
+    remove_lesson_dir(&pad_dir);
+    remove_lesson_dir(&seam_dir);
 }

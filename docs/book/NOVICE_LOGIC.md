@@ -1366,7 +1366,7 @@ not establish a cryptographic security claim.
 
 The compiler used to produce the printed value and the test report
 identifies itself as `orangec 0.0.1 (Orange edition 2026; implemented
-slice S3t)`. The listing uses a bounded `for` and a `test` that this
+slice S3u)`. The listing uses a bounded `for` and a `test` that this
 binary accepts. Implementation of those slices is not acceptance of the
 proposals, and it adds no cryptographic claim.
 

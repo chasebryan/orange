@@ -142,7 +142,7 @@ the proof.** The listings use the forms N7 and N8 already ran: `edition`,
 tuples, and bounded `for`. They also use the residue type `Mod[m]`, which
 this compiler accepts: arithmetic on `Mod[m]` yields a representative in
 `0` through `m - 1`. The version line of the binary used to run the
-listings reports implemented slice S3t. That report is an identification
+listings reports implemented slice S3u. That report is an identification
 of a tool, as Chapter 4 required of a compiler identity. It is not an
 acceptance of the modular proposal, and it adds no cryptographic claim.
 A listing that the checker rejects is evidence about that source and that
@@ -2558,7 +2558,7 @@ of a language proposal.
 
 The compiler used to produce the printed values and the three diagnostics
 identifies itself as `orangec 0.0.1 (Orange edition 2026; implemented
-slice S3t)`. The listings use residue types, bounded loops, and tests
+slice S3u)`. The listings use residue types, bounded loops, and tests
 that this binary accepts. Implementation of those slices is not
 acceptance of the proposals, and it adds no cryptographic claim.
 
