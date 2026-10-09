@@ -100,18 +100,7 @@ fn assert_stdout(name: &str, arguments: &[&str], source: &str, body: &str, statu
 fn j2_listings_pin_an_edition_and_reject_a_mismatched_one() {
     let sources = j2_sources();
     let names: Vec<_> = sources.iter().copied().map(module_name).collect();
-    assert_eq!(
-        names,
-        vec![
-            "byte_limit",
-            "constants",
-            "wrong_edition",
-            "iv",
-            "wrong_section",
-            "width",
-            "role_mismatch",
-        ]
-    );
+    assert_eq!(names, vec!["byte_limit", "wrong_edition"]);
     assert!(!J2.contains("\n## Chapter "));
     assert!(!J2.contains("Chapter 11"));
     for forbidden in [
@@ -146,29 +135,6 @@ fn j2_listings_pin_an_edition_and_reject_a_mismatched_one() {
         0,
     );
 
-    let constants = j2_source("constants");
-    assert_silent_check("constants", constants);
-    assert_stdout(
-        "constants eval",
-        &["eval", "-"],
-        constants,
-        one_text(
-            |text| text.starts_with("constants::word0:"),
-            "constants eval",
-        ),
-        0,
-    );
-    assert_stdout(
-        "constants test",
-        &["test", "-"],
-        constants,
-        one_text(
-            |text| text.starts_with("test \"RFC 8439 2.3 and RFC 7539 2.3"),
-            "constants test",
-        ),
-        0,
-    );
-
     let wrong_edition = j2_source("wrong_edition");
     assert_silent_check("wrong_edition", wrong_edition);
     assert_stdout(
@@ -190,101 +156,5 @@ fn j2_listings_pin_an_edition_and_reject_a_mismatched_one() {
             "wrong_edition test",
         ),
         1,
-    );
-
-    let iv = j2_source("iv");
-    assert_silent_check("iv", iv);
-    assert_stdout(
-        "iv word",
-        &["eval", "--spec", "word", "-"],
-        iv,
-        one_text(|text| text.starts_with("iv::word:"), "iv word"),
-        0,
-    );
-    assert_stdout(
-        "iv stable_quot",
-        &["eval", "--spec", "stable_quot", "-"],
-        iv,
-        one_text(
-            |text| text.starts_with("iv::stable_quot:"),
-            "iv stable_quot",
-        ),
-        0,
-    );
-    assert_stdout(
-        "iv test",
-        &["test", "-"],
-        iv,
-        one_text(
-            |text| text.starts_with("test \"FIPS 180-4 5.3.3 first word\""),
-            "iv test",
-        ),
-        0,
-    );
-
-    let wrong_section = j2_source("wrong_section");
-    assert_silent_check("wrong_section", wrong_section);
-    assert_stdout(
-        "wrong_section word",
-        &["eval", "--spec", "word", "-"],
-        wrong_section,
-        one_text(
-            |text| text.starts_with("wrong_section::word:"),
-            "wrong_section word",
-        ),
-        0,
-    );
-    assert_stdout(
-        "wrong_section test",
-        &["test", "-"],
-        wrong_section,
-        one_text(
-            |text| text.starts_with("test \"FIPS 180-4 5.3.3 copied from 5.3.1\""),
-            "wrong_section test",
-        ),
-        1,
-    );
-
-    let role_mismatch = j2_source("role_mismatch");
-    assert_silent_check("role_mismatch", role_mismatch);
-    assert_stdout(
-        "role_mismatch bytes",
-        &["eval", "--spec", "bytes", "-"],
-        role_mismatch,
-        one_text(
-            |text| text.starts_with("role_mismatch::bytes:"),
-            "role_mismatch bytes",
-        ),
-        0,
-    );
-    assert_stdout(
-        "role_mismatch test",
-        &["test", "-"],
-        role_mismatch,
-        one_text(
-            |text| text.starts_with("test \"RFC 8439 2.8 C_MAX\""),
-            "role_mismatch test",
-        ),
-        1,
-    );
-
-    let width = j2_source("width");
-    assert_silent_check("width", width);
-    assert_stdout(
-        "width eval",
-        &["eval", "-"],
-        width,
-        one_text(|text| text.starts_with("width::prose_bytes:"), "width eval"),
-        0,
-    );
-    assert_stdout(
-        "width test",
-        &["test", "-"],
-        width,
-        one_text(
-            |text| text.starts_with("test \"RFC 8439 2.8 prose, 64-bit length\""),
-            "width test",
-        ),
-        0,
     );
 }

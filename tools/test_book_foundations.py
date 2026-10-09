@@ -1372,13 +1372,15 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
     def test_j2_exercises_label_anchor_and_epigraph(self):
         exercises = re.findall(r'^\*\*Exercise (J2\.\d+) —', self.text, re.M)
         answers = re.findall(r'^\*\*(J2\.\d+)\.\*\*', self.text, re.M)
-        self.assertEqual(exercises, [f'J2.{n}' for n in range(1, 20)])
+        self.assertEqual(exercises, [f'J2.{n}' for n in range(1, 11)])
         self.assertEqual(sorted(exercises), sorted(answers))
         self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
         self.assertNotIn('Chapter 11', self.text)
+        self.assertNotIn('this chapter', self.text)
         self.assertRegex(self.text, r'(?m)^## J2: Standards as Versioned Inputs$')
-        for number in range(1, 15):
+        for number in range(1, 7):
             self.assertRegex(self.text, rf'(?m)^### J2\.{number} ')
+        self.assertNotRegex(self.text, r'(?m)^### J2\.(?:[7-9]|1\d) ')
         quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
         self.assertEqual(quotes, [
             'RFC 7539, the predecessor of this document, was meant to serve as a '
@@ -1406,6 +1408,21 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertIn('**[C3] Pin surface.**', self.text)
         self.assertIn('A Match is not called verified.', self.text)
         self.assertIn('constant-time claim', self.text)
+        self.assertIn('implemented slice S3t', self.text)
+        self.assertNotIn('S3u', self.text)
+        self.assertIn(
+            'first sentence of the Abstract\'s second paragraph',
+            self.text,
+        )
+        self.assertIn(
+            'It was a product of the Crypto Forum Research Group (CFRG).',
+            self.text,
+        )
+        self.assertIn('December 2005', self.text)
+        self.assertIn('FIPS 180-2', self.text)
+        self.assertIn('BA7816BF', self.text)
+        self.assertIn('no `Obsoletes` line and no `Updates` line', self.text)
+        self.assertNotIn('spec pack(', self.text)
 
     def test_j2_listings_do_not_transcribe_sha256_compression(self):
         sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
@@ -1413,12 +1430,7 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
             [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
             [
                 'byte_limit',
-                'constants',
                 'wrong_edition',
-                'iv',
-                'wrong_section',
-                'width',
-                'role_mismatch',
             ],
         )
         for forbidden in (
@@ -1445,10 +1457,6 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         blocks = 2 ** 32 - 1
         p_max = blocks * 64
         p_max_old = 247877906880
-        two_33 = 2 ** 33
-        n = 2 ** 65
-        step1 = (two_33 + n // two_33) // 2
-        root = 6074000999
         expected = {
             'blocks': blocks,
             'block-bytes': 64,
@@ -1460,21 +1468,10 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
             'c-max-old': p_max_old + 16,
             'length-7539': 4,
             'length-8439': 8,
-            'two-33': two_33,
-            'step1': step1,
-            'root': root,
-            'stable-quot': n // root,
-            'iv-word': root - 2 ** 32,
-            'sha1-word': 0x67452301,
-            'step1-quot': n // step1,
-            'step1-rem': n % step1,
-            'prose-bytes': 64 // 8,
-            'code-bits': 4 * 8,
+            'iv-word': 0x6A09E667,
         }
         self.assertEqual(printed, expected)
-        self.assertEqual(expected['step1'], 6442450944)
-        self.assertEqual(expected['iv-word'], 0x6A09E667)
-        self.assertEqual(expected['stable-quot'], root + 1)
+        self.assertEqual(expected['iv-word'], 1779033703)
         self.assertEqual(expected['p-gap'], 27 * 10 ** 9)
         self.assertLess(expected['iv-word'], 2 ** 32)
 
