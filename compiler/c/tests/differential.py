@@ -72,6 +72,9 @@ VALID = [
     "s3p/valid-rfc8439.or",
     "s3p/valid-share.or",
     "s3p/valid-rank2.or",
+    "s3q/valid-equality.or",
+    "s3q/valid-rfc8439-tests.or",
+    "s3q/failing-tests.or",
 ]
 # Pepin's test does not finish in the default 1048576 steps. Rust's
 # conformance run uses this budget and prints --stats.
@@ -180,6 +183,8 @@ INVALID = [
     "s3o/invalid-project.or",
     "s3p/invalid-lengths.or",
     "s3p/invalid-rank2.or",
+    "s3q/invalid-tests.or",
+    "s3q/invalid-test-syntax.or",
 ]
 
 # Rust evaluates these matrices. This slice rejects the value and pins C's
@@ -959,6 +964,36 @@ def main() -> int:
             print(f"ok   check {relative}")
 
     failures += rank2_pins(rust_compiler, c_compiler)
+
+    for relative, expect in (
+        ("s3q/valid-rfc8439-tests.or", 0),
+        ("s3q/failing-tests.or", 1),
+    ):
+        path = str(FIXTURES / relative)
+        rust = run(rust_compiler, ["test", path])
+        c_result = run(c_compiler, ["test", path])
+        check = run(c_compiler, ["check", path])
+        if (
+            rust.returncode != expect
+            or c_result.returncode != expect
+            or rust.stdout != c_result.stdout
+            or rust.stderr != c_result.stderr
+            or check.returncode != 0
+            or check.stderr != ""
+        ):
+            failures += 1
+            print(f"FAIL test {relative}")
+            print(f"  rust exit {rust.returncode} c exit {c_result.returncode} check {check.returncode}")
+            if rust.stdout != c_result.stdout:
+                print("  stdout mismatch")
+                print("  rust:", rust.stdout)
+                print("  c:   ", c_result.stdout)
+            if rust.stderr != c_result.stderr:
+                print("  stderr mismatch")
+                print("  rust:", rust.stderr)
+                print("  c:   ", c_result.stderr)
+        else:
+            print(f"ok   test {relative}")
 
     sample = FIXTURES / "s3b" / "valid-int-arithmetic.or"
     first = run(c_compiler, ["lex", str(sample)])

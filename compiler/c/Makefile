@@ -5,14 +5,14 @@ CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O2
 CPPFLAGS ?= -Iinclude
 LDFLAGS ?=
 
-SRCS = src/main.c src/compile.c src/bigint.c src/typeparams.c src/pack.c
+SRCS = src/main.c src/compile.c src/bigint.c src/typeparams.c src/pack.c src/tests.c
 OUT = out/orangec
 
 .PHONY: all test clean
 
 all: $(OUT)
 
-$(OUT): $(SRCS) include/compile.h include/bigint.h include/orange.h include/typeparams.h include/pack.h
+$(OUT): $(SRCS) include/compile.h include/bigint.h include/orange.h include/typeparams.h include/pack.h include/tests.h
 	mkdir -p out
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $(OUT) $(SRCS) $(LDFLAGS)
 

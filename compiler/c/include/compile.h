@@ -1410,8 +1410,14 @@ static void analyze(Compiler *c) {
         uint16_t local_index;
         c->nfinished = 0;
         c->nframes = 0;
+        if (func->is_test && c->self_index != 0) {
+            continue;
+        }
         for (uint32_t previous = 0; previous < index; previous++) {
             Func *earlier = &c->funcs[previous];
+            if (func->is_test || earlier->is_test) {
+                continue;
+            }
             if (earlier->is_impl == func->is_impl &&
                 same_span(c, earlier->name_start, earlier->name_end, func->name_start, func->name_end)) {
                 char message[128];
@@ -1430,6 +1436,9 @@ static void analyze(Compiler *c) {
                 func->duplicate = 1;
                 break;
             }
+        }
+        if (func->is_test) {
+            check_test_title(c, index);
         }
         if (!func->typed) {
             continue;
@@ -3200,10 +3209,36 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             return 1;
         }
+        if (expr->op == TK_EQEQ || expr->op == TK_BANGEQ) {
+            int equal = 0;
+            /* A test whose body is this comparison keeps both operands. The
+               comparison itself still visits every element. */
+            if (c->capture_eq && depth == 1 && index == c->capture_expr && expr->op == TK_EQEQ) {
+                if (!value_clone(c, &c->capture_left, &left, expr->start, expr->end) ||
+                    !value_clone(c, &c->capture_right, &right, expr->start, expr->end)) {
+                    value_clear(&left);
+                    value_clear(&right);
+                    return 0;
+                }
+                c->captured = 1;
+            }
+            if (!orange_values_equal(c, &left, &right, &equal)) {
+                value_clear(&left);
+                value_clear(&right);
+                return 0;
+            }
+            out->type = TY_BOOL;
+            out->word = (expr->op == TK_EQEQ ? equal : !equal) ? 1u : 0u;
+            out->length = 0;
+            out->big = big_zero();
+            value_clear(&left);
+            value_clear(&right);
+            return 1;
+        }
         if (is_compare_op(expr->op)) {
             int ordering = 0;
             uint64_t cost = 1;
-            if (left.type != right.type || left.length != 0 || right.length != 0) {
+            if (left.type != right.type || left.length != 0 || right.length != 0 || left.is_tuple || right.is_tuple) {
                 c->failed = 1;
                 value_clear(&left);
                 value_clear(&right);
@@ -4873,6 +4908,17 @@ static void stamp_exact_limit(Compiler *c, const Func *func) {
     if (strcmp(diag->message, "exact integer result exceeds the 16384-significant-bit limit") != 0) {
         return;
     }
+    if (func->is_test) {
+        uint32_t op_start = diag->start;
+        uint32_t op_end = diag->end;
+        diag->start = func->name_start;
+        diag->end = func->name_end;
+        copy_text(diag->label, sizeof diag->label, "evaluation stopped while evaluating this test");
+        diag_add_secondary(c, op_start, op_end, "result is too large for the reference evaluator");
+        copy_text(diag->note2, sizeof diag->note2, "no test outcome is reported");
+        diag->has_note2 = 1;
+        return;
+    }
     diag_add_secondary(c, func->name_start, func->name_end, "evaluation of this function");
 }
 
@@ -4880,19 +4926,27 @@ static void report_step_limit(Compiler *c, const Func *func, uint64_t steps_befo
     char note[160];
     Diag *diag;
     uint64_t limit = c->step_limit == 0 ? MAX_STEPS : c->step_limit;
-    const char *label = steps_before == c->steps ? "evaluation stopped before this function"
-                                                 : "evaluation stopped while evaluating this function";
+    const char *label;
+    if (func->is_test) {
+        label = steps_before == c->steps ? "evaluation stopped before this test"
+                                         : "evaluation stopped while evaluating this test";
+    } else {
+        label = steps_before == c->steps ? "evaluation stopped before this function"
+                                         : "evaluation stopped while evaluating this function";
+    }
     snprintf(note, sizeof note, "at most %llu evaluation steps are permitted", (unsigned long long)limit);
     add_diag(c, "ORC0301", func->name_start, func->name_end, "reference evaluation step limit exceeded", label, note, 2);
     if (c->ndiags == 0) {
         return;
     }
     diag = &c->diags[c->ndiags - 1];
-    copy_text(diag->note2, sizeof diag->note2, "no partial value set is returned");
+    copy_text(diag->note2, sizeof diag->note2,
+              func->is_test ? "no test outcome is reported" : "no partial value set is returned");
     diag->has_note2 = 1;
     if (limit < MAX_STEP_LIMIT) {
         copy_text(diag->note3, sizeof diag->note3,
-                  "`orangec eval --steps N` sets the budget, up to 1073741824 steps");
+                  func->is_test ? "`orangec test --steps N` sets the budget, up to 1073741824 steps"
+                                : "`orangec eval --steps N` sets the budget, up to 1073741824 steps");
         diag->has_note3 = 1;
     }
 }
@@ -4929,7 +4983,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
         TextBuf value = {0};
         char type_text[768];
         int stop = 0;
-        if (!func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
+        if (func->is_test || !func->typed || func->duplicate || func->nparams != 0 || !func->signature_ok) {
             continue;
         }
         if (func->nsizes > 0) {
@@ -5615,6 +5669,142 @@ static void render_program_diags(Program *program, FILE *err, int dependency_ord
     }
 }
 
+static int run_tests(Compiler *c, FILE *out) {
+    TextBuf report = {0};
+    TextBuf stats = {0};
+    uint32_t index;
+    uint32_t count = 0;
+    uint32_t failed = 0;
+    int stopped = 0;
+    for (index = 0; index < c->nfuncs && !stopped; index++) {
+        Func *func = &c->funcs[index];
+        Value result;
+        uint64_t steps_before;
+        char title[160];
+        char line[256];
+        uint32_t title_start = 0;
+        uint32_t title_end = 0;
+        size_t title_len;
+        int wrote;
+        if (!func->is_test || !func->signature_ok || func->body == UINT32_MAX) {
+            continue;
+        }
+        title_inner(c, func, &title_start, &title_end);
+        title_len = (size_t)(title_end - title_start);
+        if (title_len >= sizeof title) {
+            title_len = sizeof title - 1;
+        }
+        memcpy(title, c->text + title_start, title_len);
+        title[title_len] = '\0';
+        count++;
+        memset(&result, 0, sizeof result);
+        value_clear(&c->capture_left);
+        value_clear(&c->capture_right);
+        c->captured = 0;
+        c->capture_eq = 1;
+        c->capture_expr = func->body;
+        c->cur_func = index;
+        c->cur_inst = UINT32_MAX;
+        c->ncur = 0;
+        steps_before = c->steps;
+        if (!eval_function(c, index, NULL, 1, &result)) {
+            value_clear(&result);
+            value_clear(&c->capture_left);
+            value_clear(&c->capture_right);
+            c->capture_eq = 0;
+            c->captured = 0;
+            if (c->step_hit) {
+                report_step_limit(c, func, steps_before);
+            } else {
+                stamp_exact_limit(c, func);
+            }
+            stopped = 1;
+            break;
+        }
+        c->capture_eq = 0;
+        if (result.type == TY_BOOL && result.length == 0 && result.word != 0) {
+            wrote = snprintf(line, sizeof line, "test \"%s\" ... ok\n", title);
+            if (wrote > 0) {
+                text_append(&report, line, (size_t)wrote);
+            }
+        } else {
+            failed++;
+            wrote = snprintf(line, sizeof line, "test \"%s\" ... FAILED\n", title);
+            if (wrote > 0) {
+                text_append(&report, line, (size_t)wrote);
+            }
+            if (c->captured) {
+                TextBuf left_text = {0};
+                TextBuf right_text = {0};
+                char place[160];
+                if (!format_value(&c->capture_left, &left_text) || !format_value(&c->capture_right, &right_text)) {
+                    c->failed = 1;
+                    add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a value",
+                             "resource limit reached", "no test outcome is reported", 2);
+                    stopped = 1;
+                } else {
+                    text_append(&report, "    left:  ", 11);
+                    text_append(&report, left_text.data == NULL ? "" : left_text.data, left_text.length);
+                    text_append(&report, "\n    right: ", 12);
+                    text_append(&report, right_text.data == NULL ? "" : right_text.data, right_text.length);
+                    text_append(&report, "\n", 1);
+                    if (orange_first_difference(&c->capture_left, &c->capture_right, place, sizeof place)) {
+                        wrote = snprintf(line, sizeof line, "    first difference at %s\n", place);
+                        if (wrote > 0) {
+                            text_append(&report, line, (size_t)wrote);
+                        }
+                    }
+                }
+                free(left_text.data);
+                free(right_text.data);
+            }
+        }
+        if (c->show_stats && !stopped) {
+            uint64_t used = c->steps - steps_before;
+            const char *unit = used == 1 ? "step" : "steps";
+            wrote = snprintf(line, sizeof line, "test \"%s\": %llu %s\n", title, (unsigned long long)used, unit);
+            if (wrote > 0) {
+                text_append(&stats, line, (size_t)wrote);
+            }
+        }
+        value_clear(&result);
+        value_clear(&c->capture_left);
+        value_clear(&c->capture_right);
+        c->captured = 0;
+    }
+    c->capture_eq = 0;
+    if (!stopped && !c->failed) {
+        char summary[96];
+        const char *noun = count == 1 ? "test" : "tests";
+        int wrote = snprintf(summary, sizeof summary, "%u %s: %u passed, %u failed\n", count, noun, count - failed, failed);
+        if (wrote > 0) {
+            text_append(&report, summary, (size_t)wrote);
+        }
+        if (report.data != NULL) {
+            fwrite(report.data, 1, report.length, out);
+        }
+        if (c->show_stats) {
+            char total[96];
+            uint64_t limit = c->step_limit == 0 ? MAX_STEPS : c->step_limit;
+            wrote = snprintf(total, sizeof total, "total: %llu of %llu steps\n", (unsigned long long)c->steps,
+                             (unsigned long long)limit);
+            if (stats.data != NULL) {
+                fwrite(stats.data, 1, stats.length, stderr);
+            }
+            if (wrote > 0) {
+                fputs(total, stderr);
+            }
+        }
+    }
+    free(report.data);
+    free(stats.data);
+    release_loop_values(c);
+    if (stopped || c->failed) {
+        return 1;
+    }
+    return failed == 0 ? 0 : 1;
+}
+
 static int compile_text(char *text, size_t length, const char *filename, int command, uint64_t step_limit, int show_stats,
                         FILE *out, FILE *err) {
     Program *program = calloc(1, sizeof *program);
@@ -5677,9 +5867,9 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         program_free(program);
         return 1;
     }
-    if (command == 1) {
-        status = evaluate_source(root, out);
-        if (status != 0) {
+    if (command == 1 || command == 3) {
+        status = command == 1 ? evaluate_source(root, out) : run_tests(root, out);
+        if (status != 0 && (command == 1 || root->ndiags > 0)) {
             int seen = 0;
             int mod_index;
             for (mod_index = 0; mod_index < program->nmods; mod_index++) {
@@ -5689,11 +5879,14 @@ static int compile_text(char *text, size_t length, const char *filename, int com
                 }
             }
             /* A failing evaluation with nothing to print is a compiler bug.
-               Say so, instead of exiting 1 with empty stdout and stderr. */
-            if (!seen) {
+               Say so, instead of exiting 1 with empty stdout and stderr.
+               A test that fails its claim prints the report and no diagnostic. */
+            if (!seen && command == 1) {
                 fputs("internal error: evaluation failed without a diagnostic\n", err);
             }
-            render_program_diags(program, err, 0);
+            if (seen) {
+                render_program_diags(program, err, 0);
+            }
         }
     } else {
         status = 0;
@@ -5797,7 +5990,7 @@ static char *read_path(const char *path, size_t *length, char *error, size_t err
 
 static void print_usage(FILE *out) {
     fputs(
-        "Usage: orangec <check|eval|lex> <FILE>\n"
+        "Usage: orangec <check|eval|lex|test> <FILE>\n"
         "       orangec --self-test\n"
         "\n"
         "Standalone C frontend for the Orange 2026 expression, binding,\n"
@@ -5808,6 +6001,7 @@ static void print_usage(FILE *out) {
         "  check    Lex, parse, and check one program\n"
         "  eval     Check one program and reference-evaluate its root\n"
         "  lex      Print the token stream of one source\n"
+        "  test     Check one program and run its tests\n"
         "\n"
         "  --self-test  Run exact-integer self-tests\n"
         "  -h, --help   Print this help\n"
@@ -5860,7 +6054,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3p\n", stdout);
+            fputs("orangec (standalone C) slice S3q\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
@@ -5923,6 +6117,8 @@ int orange_main(int argc, char **argv) {
                 command = 1;
             } else if (strcmp(argv[index], "lex") == 0) {
                 command = 2;
+            } else if (strcmp(argv[index], "test") == 0) {
+                command = 3;
             } else {
                 fputs("error: expected check, eval, or lex\n", stderr);
                 print_usage(stderr);
@@ -5936,11 +6132,11 @@ int orange_main(int argc, char **argv) {
         }
         path = argv[index];
     }
-    if (command >= 0 && command != 1 && steps_seen) {
+    if (command >= 0 && command != 1 && command != 3 && steps_seen) {
         reject_steps("option `--steps` applies only to eval, test, and replay");
         return 2;
     }
-    if (command >= 0 && command != 1 && show_stats) {
+    if (command >= 0 && command != 1 && command != 3 && show_stats) {
         reject_steps("option `--stats` applies only to eval, test, and replay");
         return 2;
     }

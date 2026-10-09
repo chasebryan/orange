@@ -235,6 +235,14 @@ def main() -> int:
         check(eval_case(rust_bin, c_bin, "limit 3 while evaluating", while_eval, 3))
         check(eval_case(rust_bin, c_bin, "int limit in a loop", int_limit, None))
         check(eval_case(rust_bin, c_bin, "int limit in a call", called, None))
+        # Each `==` of Word[8]^65536 costs 1024 steps. The run at 4252 is the
+        # module total; one step under stops inside that function.
+        one_under(
+            "equality",
+            FIXTURES / "s3q" / "valid-equality.or",
+            4252,
+            {"words", "truths", "residues", "states", "long", "compared_first", "compared_last"},
+        )
 
         # The loops cost 1048576 steps and `~` is one more. The default budget
         # stops on that extra step and does not record it.

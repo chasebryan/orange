@@ -308,11 +308,13 @@ compiler/c/include/bigint.h
 compiler/c/include/compile.h
 compiler/c/include/orange.h
 compiler/c/include/pack.h
+compiler/c/include/tests.h
 compiler/c/include/typeparams.h
 compiler/c/src/bigint.c
 compiler/c/src/compile.c
 compiler/c/src/main.c
 compiler/c/src/pack.c
+compiler/c/src/tests.c
 compiler/c/src/typeparams.c
 compiler/c/tests/differential.py
 compiler/c/tests/step_budget.py

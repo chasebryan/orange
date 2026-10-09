@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "orange.h"
+#include "tests.h"
 #include "typeparams.h"
 
 static const char *TOKEN_NAMES[] = {
@@ -3811,6 +3812,160 @@ static int parse_size_params(Compiler *c, Func *func) {
     return tp_parse_params(c, func);
 }
 
+static const char TEST_SHAPE_NOTE[] =
+    "a test is written `test \"TITLE\" { EXPRESSION }`, its expression a `Bool`";
+static const char TITLE_NOTE[] =
+    "a test's title is 1 through 128 printable ASCII characters, with no backslash, and no two tests of a module "
+    "share one";
+
+static void title_inner(const Compiler *c, const Func *func, uint32_t *start, uint32_t *end) {
+    *start = func->name_start;
+    *end = func->name_end;
+    if (*end > *start && c->text[*start] == '"') {
+        (*start)++;
+    }
+    if (*end > *start && c->text[*end - 1] == '"') {
+        (*end)--;
+    }
+}
+
+static int titles_match(const Compiler *c, const Func *left, const Func *right) {
+    uint32_t left_start = 0;
+    uint32_t left_end = 0;
+    uint32_t right_start = 0;
+    uint32_t right_end = 0;
+    title_inner(c, left, &left_start, &left_end);
+    title_inner(c, right, &right_start, &right_end);
+    return same_span(c, left_start, left_end, right_start, right_end);
+}
+
+static void check_test_title(Compiler *c, uint32_t index) {
+    Func *func = &c->funcs[index];
+    uint32_t start = 0;
+    uint32_t end = 0;
+    size_t offset = 0;
+    uint32_t codepoint = 0;
+    int fault;
+    uint32_t earlier;
+    title_inner(c, func, &start, &end);
+    fault = orange_title_fault(c->text + start, (size_t)(end - start), &offset, &codepoint);
+    if (fault == TITLE_EMPTY) {
+        add_diag(c, "ORC0242", func->name_start, func->name_end, "this test's title is empty",
+                 "a title names the test in every report", TITLE_NOTE, 2);
+        return;
+    }
+    if (fault == TITLE_BACKSLASH) {
+        add_diag(c, "ORC0242", func->name_start, func->name_end, "a test's title holds no backslash",
+                 "titles have no escapes", TITLE_NOTE, 2);
+        return;
+    }
+    if (fault == TITLE_CHAR) {
+        char message[160];
+        char label[64];
+        snprintf(message, sizeof message, "a test's title holds U+%04X, which is not printable ASCII", codepoint);
+        snprintf(label, sizeof label, "at byte %zu of the title", offset);
+        add_diag(c, "ORC0242", func->name_start, func->name_end, message, label, TITLE_NOTE, 2);
+        return;
+    }
+    if (fault == TITLE_LONG) {
+        char message[80];
+        add_diag(c, "ORC0242", func->name_start, func->name_end, "", "a title holds at most 128 bytes", TITLE_NOTE, 2);
+        snprintf(message, sizeof message, "this test's title is %zu bytes long", offset);
+        if (c->ndiags > 0) {
+            copy_text(c->diags[c->ndiags - 1].message, sizeof c->diags[c->ndiags - 1].message, message);
+        }
+        return;
+    }
+    for (earlier = 0; earlier < index; earlier++) {
+        Func *before = &c->funcs[earlier];
+        if (!before->is_test || !titles_match(c, before, func)) {
+            continue;
+        }
+        add_diag(c, "ORC0242", func->name_start, func->name_end, "two tests of this module share a title",
+                 "this title repeats an earlier test's", TITLE_NOTE, 2);
+        diag_add_secondary(c, before->name_start, before->name_end, "first test is here");
+        return;
+    }
+}
+
+static int parse_test_body(Compiler *c, Func *func) {
+    if (peek_kind(c) != TK_LBRACE) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{`", "expected a test body",
+                 TEST_SHAPE_NOTE, 1);
+        skip_function_body(c, 0);
+        return 1;
+    }
+    advance_token(c);
+    func->local0 = c->nlocals;
+    while (starts_let_binding(c)) {
+        if (!parse_binding(c, func)) {
+            skip_function_body(c, 1);
+            return 1;
+        }
+    }
+    if (peek_kind(c) == TK_RBRACE) {
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                 "expected a result expression after the last binding", label,
+                 "a typed `spec` body ends with the expression that gives its value", 1);
+        advance_token(c);
+        return 1;
+    }
+    if (!parse_expr(c, &func->body)) {
+        skip_function_body(c, 1);
+        return 1;
+    }
+    if (peek_kind(c) != TK_RBRACE) {
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}`",
+                 "extra tokens after the result expression", NULL, 1);
+        skip_function_body(c, 1);
+        return 1;
+    }
+    advance_token(c);
+    return 1;
+}
+
+static int parse_test(Compiler *c) {
+    Token title;
+    Func *func;
+    advance_token(c);
+    if (peek_kind(c) != TK_STRING) {
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a quoted title after `test`", label,
+                 TEST_SHAPE_NOTE, 1);
+        if (peek_kind(c) == TK_LBRACE) {
+            skip_function_body(c, 0);
+        }
+        return 1;
+    }
+    title = peek_token(c);
+    advance_token(c);
+    if (!ensure_cap((void **)&c->funcs, &c->func_cap, c->nfuncs + 1, sizeof(Func), MAX_EXPRS)) {
+        resource_diag(c, "ORC0106", title.start, title.end, "parser could not retain functions");
+        return 0;
+    }
+    func = &c->funcs[c->nfuncs];
+    memset(func, 0, sizeof *func);
+    c->parsing_func = func;
+    func->is_test = 1;
+    func->typed = 1;
+    func->result = TY_BOOL;
+    func->result_ok = 1;
+    func->body = UINT32_MAX;
+    func->result_site = UINT32_MAX;
+    func->name_start = title.start;
+    func->name_end = title.end;
+    if (!parse_test_body(c, func)) {
+        c->parsing_func = NULL;
+        return 0;
+    }
+    c->nfuncs++;
+    c->parsing_func = NULL;
+    return 1;
+}
+
 static int parse_function(Compiler *c) {
     Token kind = peek_token(c);
     Token name;
@@ -4120,6 +4275,13 @@ static int parse_source(Compiler *c) {
                 }
                 continue;
             }
+            if (peek_kind(c) == TK_IDENT && ident_token_is(c, peek_token(c), "test")) {
+                saw_function = 1;
+                if (!parse_test(c) || c->resource) {
+                    return 1;
+                }
+                continue;
+            }
             if (peek_kind(c) == TK_SPEC || peek_kind(c) == TK_IMPL) {
                 saw_function = 1;
                 if (!parse_function(c) || c->resource) {
@@ -4219,7 +4381,7 @@ static int find_function_in(const Compiler *mod, const char *text, uint32_t star
     *index = UINT32_MAX;
     for (cursor = 0; cursor < mod->nfuncs; cursor++) {
         const Func *func = &mod->funcs[cursor];
-        if (func->duplicate || (size_t)(func->name_end - func->name_start) != length ||
+        if (func->is_test || func->duplicate || (size_t)(func->name_end - func->name_start) != length ||
             memcmp(mod->text + func->name_start, text + start, length) != 0) {
             continue;
         }
@@ -4246,7 +4408,7 @@ static int module_declares_spec(const Compiler *mod, const char *text, uint32_t 
     size_t length = (size_t)(end - start);
     for (cursor = 0; cursor < mod->nfuncs; cursor++) {
         const Func *func = &mod->funcs[cursor];
-        if (func->is_impl || func->duplicate) {
+        if (func->is_test || func->is_impl || func->duplicate) {
             continue;
         }
         if ((size_t)(func->name_end - func->name_start) == length &&
