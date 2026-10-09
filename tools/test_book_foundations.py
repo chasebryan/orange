@@ -1546,43 +1546,16 @@ class ManuscriptManifest(unittest.TestCase):
         import tempfile
 
         script = ROOT / 'tools' / 'render_book.py'
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            notes = root / 'notes'
-            notes.mkdir()
-            canary = notes / 'canary'
-            canary.write_text('canary', encoding='utf-8')
-            (root / 'build').mkdir()
-            (root / 'build' / 'book').symlink_to('../notes')
-            tools = root / 'tools'
-            tools.mkdir()
-            shutil.copy(script, tools / 'render_book.py')
-            completed = subprocess.run(
-                [
-                    sys.executable, '-S', '-P', '-B', '-X', 'utf8',
-                    '-W', 'error::ResourceWarning', 'tools/render_book.py',
-                ],
-                cwd=root,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.assertNotEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
-            self.assertTrue((root / 'build' / 'book').is_symlink())
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from render_book import remove_rendered_book
 
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            docs = root / 'docs'
-            docs.mkdir()
-            marker = docs / 'kept.md'
-            marker.write_text('keep', encoding='utf-8')
-            (root / 'build').mkdir()
-            (root / 'build' / 'book').symlink_to('../docs')
+        def render_cli(root: Path) -> subprocess.CompletedProcess[str]:
             tools = root / 'tools'
             tools.mkdir()
             shutil.copy(script, tools / 'render_book.py')
-            completed = subprocess.run(
+            return subprocess.run(
                 [
                     sys.executable, '-S', '-P', '-B', '-X', 'utf8',
                     '-W', 'error::ResourceWarning', 'tools/render_book.py',
@@ -1592,10 +1565,93 @@ class ManuscriptManifest(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+
+        def tree_names(directory: Path) -> list[str]:
+            if not directory.exists():
+                return []
+            return sorted(
+                path.relative_to(directory).as_posix() for path in directory.rglob('*')
+            )
+
+        def assert_cli_refuses(completed: subprocess.CompletedProcess[str], part: str) -> None:
             self.assertNotEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(marker.read_text(encoding='utf-8'), 'keep')
-            self.assertTrue(docs.is_dir())
-            self.assertFalse(docs.is_symlink())
+            self.assertEqual(completed.stdout, '')
+            self.assertEqual(
+                completed.stderr,
+                f'orange book render failed: rendered book path is a symlink: {part}\n',
+            )
+
+        def assert_removal_refuses(
+            root: Path, tree: Path, expected: list[str], canary: Path, text: str,
+        ) -> None:
+            # The CLI stops in book_output. Call the deleter too: plain shutil.rmtree
+            # follows a symlinked build/ and deletes the real book directory.
+            resolved = root.resolve()
+            caught = None
+            try:
+                remove_rendered_book(resolved, resolved / 'build' / 'book')
+            except (OSError, ValueError) as error:
+                caught = error
+            self.assertEqual(tree_names(tree), expected)
+            self.assertTrue(canary.is_file())
+            self.assertEqual(canary.read_text(encoding='utf-8'), text)
+            self.assertIsInstance(caught, ValueError)
+            self.assertEqual(str(caught), 'rendered book path is a symlink')
+
+        with self.subTest(shape='build/book -> notes'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                notes = root / 'notes'
+                notes.mkdir()
+                canary = notes / 'canary'
+                canary.write_text('canary', encoding='utf-8')
+                (root / 'build').mkdir()
+                (root / 'build' / 'book').symlink_to('../notes')
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'book')
+                self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
+                self.assertTrue((root / 'build' / 'book').is_symlink())
+                self.assertEqual((root / 'build' / 'book').readlink(), Path('../notes'))
+                self.assertEqual(tree_names(notes), ['canary'])
+                assert_removal_refuses(root, notes, ['canary'], canary, 'canary')
+
+        with self.subTest(shape='build/book -> docs'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / 'docs'
+                docs.mkdir()
+                marker = docs / 'kept.md'
+                marker.write_text('keep', encoding='utf-8')
+                (root / 'build').mkdir()
+                (root / 'build' / 'book').symlink_to('../docs')
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'book')
+                self.assertEqual(marker.read_text(encoding='utf-8'), 'keep')
+                self.assertTrue(docs.is_dir())
+                self.assertFalse(docs.is_symlink())
+                self.assertTrue((root / 'build' / 'book').is_symlink())
+                self.assertEqual(tree_names(docs), ['kept.md'])
+                assert_removal_refuses(root, docs, ['kept.md'], marker, 'keep')
+
+        with self.subTest(shape='build -> vault/book'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vault = root / 'vault'
+                book = vault / 'book'
+                book.mkdir(parents=True)
+                canary = book / 'canary'
+                canary.write_text('canary', encoding='utf-8')
+                (root / 'build').symlink_to('vault', target_is_directory=True)
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'build')
+                self.assertTrue((root / 'build').is_symlink())
+                self.assertEqual((root / 'build').readlink(), Path('vault'))
+                self.assertFalse((vault / 'book').is_symlink())
+                self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
+                self.assertEqual(tree_names(vault), ['book', 'book/canary'])
+                assert_removal_refuses(
+                    root, vault, ['book', 'book/canary'], canary, 'canary',
+                )
 
     def test_render_rejects_malformed_dead_and_hollow_manuscripts(self):
         import json
