@@ -81,8 +81,8 @@ at most 65,536 scalar elements,
 tuples, transparent type aliases, array concatenation and slicing, and bounded
 size and type parameters within those proposed slices.
 [OEP-0023](OEP-0023-orange-2026-nested-arrays.md) supplies bounded scalar-row
-arrays and chained indexing as one P1/P6 vocabulary slice; arrays of matrices
-and tuples remain unsupported. It has no refined representation types,
+arrays and chained indexing as one P1/P6 vocabulary slice; arrays of tuples
+remain unsupported. It has no refined representation types,
 typed implementation bodies, proof
 checking, or native output. The
 [compiler guide](../../../compiler/README.md) and proposed
@@ -313,8 +313,10 @@ Use the ML-KEM coefficient field modulo q = 3329, with prime evidence where
 field laws are used, and the quotient ring R = F_q[X] / (X^256 + 1). The
 quotient ring does not inherit field division laws from its coefficients.
 The bounded scalar-row surface of S3s supports polynomial vectors and
-scalar matrices. Matrices whose entries are polynomials need a further
-collection slice; rank three and structured array elements remain unsupported.
+scalar matrices. S3u, implemented and in owner review under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md), admits rank three and
+four, including a matrix whose entries are polynomials. A quotient-ring
+type distinct from that array, and the criteria below, remain open.
 
 Acceptance criteria:
 

@@ -1,0 +1,84 @@
+// SHA-256 of FIPS 180-4, Secure Hash Standard (NIST, August 2015),
+// https://doi.org/10.6028/NIST.FIPS.180-4: the functions of section 4.1.2,
+// the constants of section 4.2.2, the padding and parsing of sections 5.1.1
+// and 5.2.1, the initial hash value of section 5.3.3, and the hash
+// computation of section 6.2.2. It is the hash and the MGF1 hash of the
+// Wycheproof RSA-OAEP cases that `rsa-oaep.or` reproduces; that file runs
+// the tests, and this one holds none of its own.
+edition 2026;
+module sha256 {
+  // Section 4.1.2.
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  // Section 4.2.2: K{256}, the first 32 bits of the fractional parts of the
+  // cube roots of the first 64 primes, as the standard prints them.
+  spec round_constants() -> Word[32]^64 {
+    (
+      hex"428a2f98 71374491 b5c0fbcf e9b5dba5 3956c25b 59f111f1 923f82a4 ab1c5ed5" ++
+      hex"d807aa98 12835b01 243185be 550c7dc3 72be5d74 80deb1fe 9bdc06a7 c19bf174" ++
+      hex"e49b69c1 efbe4786 0fc19dc6 240ca1cc 2de92c6f 4a7484aa 5cb0a9dc 76f988da" ++
+      hex"983e5152 a831c66d b00327c8 bf597fc7 c6e00bf3 d5a79147 06ca6351 14292967" ++
+      hex"27b70a85 2e1b2138 4d2c6dfc 53380d13 650a7354 766a0abb 81c2c92e 92722c85" ++
+      hex"a2bfe8a1 a81a664b c24b8b70 c76c51a3 d192e819 d6990624 f40e3585 106aa070" ++
+      hex"19a4c116 1e376c08 2748774c 34b0bcb5 391c0cb3 4ed8aa4a 5b9cca4f 682e6ff3" ++
+      hex"748f82ee 78a5636f 84c87814 8cc70208 90befffa a4506ceb bef9a3f7 c67178f2"
+    ) as big Word[32]^64
+  }
+
+  // Section 5.3.3: H(0).
+  spec initial_hash() -> Word[32]^8 {
+    hex"6a09e667 bb67ae85 3c6ef372 a54ff53a 510e527f 9b05688c 1f83d9ab 5be0cd19"
+      as big Word[32]^8
+  }
+
+  // Section 6.2.2, steps 1 through 4, for one 512-bit block M(i), parsed
+  // into sixteen big-endian words (section 5.2.1).
+  spec compress(h: Word[32]^8, block: Word[8]^64) -> Word[32]^8 {
+    let k: Word[32]^64 = round_constants();
+    let m: Word[32]^16 = block as big Word[32]^16;
+    // Step 1: the message schedule W_0 through W_63.
+    let w: Word[32]^64 = for t in 16..64 with s: Word[32]^64 = m ++ [0; 48] {
+      s with [t] = small_sigma1(s[t - 2]) + s[t - 7] + small_sigma0(s[t - 15]) + s[t - 16]
+    };
+    // Steps 2 and 3: the working variables a through h from H(i-1), then
+    // 64 steps with T1 and T2.
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h {
+      let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k[t] + w[t];
+      let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+      [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+    };
+    // Step 4: H(i) = H(i-1) + (a, ..., h).
+    for i in 0..8 with out: Word[32]^8 = v { out with [i] = v[i] + h[i] }
+  }
+
+  // Section 5.1.1: a message of l = 8 len bits, the bit 1, k zero bits
+  // with l + 1 + k = 448 mod 512, and l as a 64-bit big-endian integer.
+  // The message is whole octets, so the 1 bit is the octet 0x80; the zero
+  // bits and the 64-bit length together are l written big-endian over the
+  // rest of the last block, which always has eight octets or more.
+  spec pad[len in 1..256](message: Word[8]^len) -> Word[8]^(64 * ((len + 72) / 64)) {
+    let l: Int = 8 * len;
+    message ++ hex"80" ++ (l as big Word[8]^(64 * ((len + 72) / 64) - len - 1))
+  }
+
+  // Section 6.2.2, "for i = 1 to N", and the digest H(N) as 32 octets.
+  spec hash_blocks[blocks in 1..6](padded: Word[8]^(64 * blocks)) -> Word[8]^32 {
+    let h: Word[32]^8 = for i in 0..(blocks) with h: Word[32]^8 = initial_hash() {
+      compress(h, padded[64 * i..64 * i + 64])
+    };
+    h as big Word[8]^32
+  }
+
+  // SHA-256 of a message of 1 through 255 octets.
+  spec digest[len in 1..256](message: Word[8]^len) -> Word[8]^32 { hash_blocks(pad(message)) }
+
+  // SHA-256 of the empty message: an array has at least one element, so its
+  // one padded block, the octet 0x80 and 63 zero octets (l = 0), is written
+  // out.
+  spec digest_empty() -> Word[8]^32 { hash_blocks(hex"80" ++ [0; 63]) }
+}

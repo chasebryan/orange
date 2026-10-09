@@ -48,7 +48,8 @@ nonce by rows. The encryption function (section 10) takes n = (v, i), the
 nonce is words 6 and 7 and the counter words 8 (low) and 9 (high); the
 keystream is the blocks Salsa20_k(v, 0), Salsa20_k(v, 1), ..., and the
 ciphertext is the message XORed with it, the surplus of the last block being
-discarded. Salsa20/r replaces the ten doublerounds with r/2.
+discarded. Salsa20/r, defined in Salsa20/8 and Salsa20/12 (Bernstein, 2006)
+and not in the specification, replaces the ten doublerounds with r/2.
 
 HSalsa20 (Extending the Salsa20 nonce) runs the same twenty rounds
 on the expansion of a 32-byte key and a 16-byte n, omits the final addition,
@@ -60,32 +61,47 @@ HSalsa20_k(n[0..15]) with Salsa20 and the 8-byte nonce n[16..23].
 
 | Standard section | Orange spec |
 | --- | --- |
-| Specification, 3, quarterround | `quarter_round` |
-| 4, rowround | `row_round` |
-| 5, columnround | `column_round` |
-| 6, doubleround | `double_round` |
-| 7, littleendian and its inverse | `load_le32`, `le_bytes`, `little_endian_16`, `little_endian_32` |
-| 8, the Salsa20 hash function | `double_rounds`, `salsa20_hash`, `serialize` |
+| Specification, 3, quarterround | `quarterround` |
+| 4, rowround | `rowround` |
+| 5, columnround | `columnround` |
+| 6, doubleround | `doubleround` |
+| 7, littleendian and its inverse | `as little Word[32]^16` and `as little Word[8]^64` in `salsa20[r]`; `as little Word[8]^8` in `nonce_counter` |
+| 8, the Salsa20 hash function; Salsa20/r is from Salsa20/8 and Salsa20/12 (2006), not the specification | `doublerounds[r]`, `salsa20[r]` for r = 20, 12 and 8 |
 | 9, the expansion for 32-byte and 16-byte keys | `expand_32`, `expand_16` |
-| 10, n = (v, i) and one keystream block | `nonce_counter`, `salsa20_block`, `keystream_block` |
-| 10, encryption, for the message lengths of the vectors | `encrypt_32`, `encrypt_39`, `encrypt_64`, `encrypt_111`, `encrypt_128`, `encrypt_139`, `encrypt_192`, `encrypt_238` |
+| 10, n = (v, i) and the keystream blocks | `nonce_counter`, `keystream[r, b]` for b of 1 to 4 blocks |
+| 10, encryption | `encrypt[n]` for messages of 1 to 256 bytes |
 | Extending the Salsa20 nonce, HSalsa20 | `hsalsa20` |
-| XSalsa20 | `xsalsa20_state` with the `encrypt_` specs |
+| XSalsa20 | `xsalsa20`, with `keystream` and `encrypt` |
 
-`quarter_round` takes and returns its four words; `row_round` and
-`column_round` place each result back into the state in one array literal,
-with the specification's index pattern visible in the literal. The two
-constant strings are written as their little-endian words with the ASCII in
-the comment (`0x61707865` is "expa"). `double_rounds` takes the round count
-as an `Int` and runs a loop of ten iterations in which those past r/2 leave
-the state unchanged, because a loop's bounds must be literals; the same spec
-serves Salsa20/20, Salsa20/12 and Salsa20/8. The 64-bit block counter is one
-`Word[64]` assembled from words 8 and 9 in `keystream_block`, so the carry
-from word 8 into word 9 at counter 2^32 is computed as the specification's
-64-bit integer, and two vectors cross that boundary. HSalsa20 differs from
-the block function in two lines: no final addition and a selection of eight
-words. An Orange array has a fixed length, so the section 10 encryption is
-written once per message length the vectors need, as the ChaCha20 entry does.
+Every spec works on the strings the specification works on. The hash
+`salsa20[r]` takes and returns 64 bytes, reading them as sixteen words with
+`as little Word[32]^16` (section 7's littleendian, applied to each 4-byte
+group) and writing the sum back with `as little Word[8]^64`; between the two
+it runs `doublerounds[r]`, r/2 doublerounds, where r is a size, so one spec
+is Salsa20/20, Salsa20/12 and Salsa20/8 and the loop runs exactly r/2 times.
+`quarterround` takes and returns its four words; `rowround` and
+`columnround` place each result back into the state in one array literal,
+with the specification's index pattern visible in the literal. The
+expansions of section 9 are the specification's formula as a join of
+strings: `"expa" ++ k[..16] ++ "nd 3" ++ n ++ "2-by" ++ k[16..] ++ "te k"`
+for a 32-byte key, and the same with "nd 1", "6-by" and the 16-byte key in
+both places for a 16-byte key. `nonce_counter` is n = (v, i), the nonce
+followed by the counter as 8 little-endian bytes.
+
+Section 10 is two specs. `keystream[r, b]` takes the hash input of the
+first block, an expansion with n = (v, i), reads the counter i back from its
+bytes 32 to 39 (words 8 and 9) as one `Word[64]`, and for block j writes
+i + j there and hashes, so the carry from word 8 into word 9 at counter 2^32
+is the ordinary addition of a 64-bit word; two vectors cross that boundary.
+b runs from 1 to 4 blocks, enough for the 256 bytes of `encrypt`; that is a
+choice of this file, not a limit of the specification. `encrypt[n]` XORs an
+n-byte message with the first n bytes of `keystream[20, (n + 63) / 64]`, the
+surplus of the last block discarded. HSalsa20 differs from the hash in two
+lines: no final addition and a selection of eight words, written back with
+`as little Word[8]^32`.
+`xsalsa20` returns the hash input of XSalsa20's first block, the 32-byte
+expansion of the subkey HSalsa20_k(n[..16]) and (n[16..], 0), which
+`keystream` and `encrypt` take like any other.
 
 ### Security status
 
@@ -102,8 +118,10 @@ that a quarter of every input is fixed and public. Without the constants the
 core alone is not collision-resistant: Hernandez-Castro, Tapiador and
 Quisquater (FSE 2008) showed that adding 2^31 to every word of the input
 leaves the core's output unchanged, which Bernstein's expansion excludes by
-fixing the diagonal, and the specification itself says the hash function is
-not meant as a cryptographic hash.
+fixing the diagonal, and Bernstein's page on the
+[Salsa20 core](https://cr.yp.to/salsa20.html), the later name of the
+specification's hash function, says that it does not compress and is not
+collision-resistant.
 
 Every published key-recovery attack is on a reduced number of rounds, and
 none reaches the twelve of Salsa20/12. Crowley (2005) attacked 5 rounds with
@@ -166,90 +184,105 @@ vectors.
 ### What the Orange rendering shows
 
 Nothing in the cipher depends on data. The rotation amounts are the literals
-7, 9, 13 and 18, every index in `row_round` and `column_round` is a
-constant, the loop bounds are 10 (doublerounds) and the block and byte
-counts, and the file's only `if` is in `double_rounds`, on the loop index
-against the round count, so that one spec serves Salsa20/20, Salsa20/12 and
-Salsa20/8; it is a consequence of literal loop bounds, not a property of the
-cipher. The layout of the expansion is written out as one sixteen-element
-literal in `expand_32` and `expand_16`, so the diagonal constants, the two
-key halves and the (v, i) block are read directly, and the difference
-between the 32-byte and 16-byte keys, sigma against tau and k1 against a
-second copy of k, is two words and four positions. The 64-bit counter is a
-`Word[64]` split into words 8 and 9 and reassembled, so the carry that the
-counter-crossing vectors exercise is the ordinary addition of a 64-bit word.
-HSalsa20's difference from the block function, no final addition and a
-selection of eight words, is two lines, and the reader can see that the
-selected positions are the ones the expansion fills with public words. What
-the rendering does not express is the constant-time property discussed
-above: `orangec eval` evaluates a specification, and its step count measures
+7, 9, 13 and 18, every index in `rowround`, `columnround` and `hsalsa20` is
+a literal, every slice bound is a literal or a loop index times 64, and the
+file has no conditional at all: the round count of Salsa20/r is the size r
+of `doublerounds[r]` and `salsa20[r]`, and the loop's bound `0..(r / 2)`
+is computed from it when the instance is checked. The checker proves every
+index and slice in range before evaluation. The `Word[32]` additions are the
+specification's additions modulo 2^32, and the counter's `Word[64]` addition
+wraps modulo 2^64 where the specification stops at 2^64 blocks.
+
+Byte order is written where the specification fixes it, as `as little`:
+the sixteen words of the hash input and output (section 7), the counter
+inside n = (v, i) (section 10), and HSalsa20's eight output words. The
+layout of the expansion is one join of strings in `expand_32` and
+`expand_16`, so the diagonal constants, the two key halves and the (v, i)
+block are read directly as the specification writes them, and the
+difference between the 32-byte and 16-byte keys is two of the four pieces of
+the constant ("nd 3" and "2-by" against "nd 1" and "6-by") and the key
+written twice in place of its two halves. Lengths are sizes:
+`keystream[r, b]` returns `64 b` bytes, and `encrypt[n]` is chosen by the
+length of the message, takes the `(n + 63) / 64` blocks that cover it, and
+returns n bytes, so a test reads as
+`encrypt(expand_32(k, nonce_counter(v, 0)), m)` against the published
+ciphertext. Keys, nonces, messages and expected values are `hex"..."`
+literals in the tests, four bytes to a group with a shorter last group where
+the length is not a multiple of four, and the all-zero keys and nonces are
+fills such as `[0; 8]`. HSalsa20's difference from the hash function, no
+final addition and a selection of eight words, is two lines, and the reader
+can see that the selected positions are the ones the expansion fills with
+public bytes.
+
+What the rendering does not express is the constant-time property discussed
+above: `orangec test` evaluates a specification, and its step count measures
 the specification's size, not any implementation's timing.
 
-The costs were measured with a loop of N calls sharing a file's budget
-(`probe.py` in the scratch directory): one `quarter_round` is about 35
-steps, one `double_round` about 430, and one `salsa20_block` with its
-expansion about 11,900 (Salsa20/12: about 10,100), of which the 64
-single-byte updates of `serialize` are about 4,100, since an update of an
-n-element array costs n steps. `hsalsa20` is about 7,300. `encrypt_64` is
-about 16,600 and `encrypt_238` about 105,000: four blocks plus 238 updates
-of a 238-byte array, so placing the keystream costs more than computing it.
-The whole file, 19 vector pairs with 27 block functions and 5 HSalsa20
-calls, uses about 558,000 of the 1,048,576 steps, with headroom for about
-40 more blocks; no vector had to be moved or dropped.
+Measured costs under `orangec test --stats`: one `quarterround` is about 36
+steps and one `doubleround` about 430. One call of the hash `salsa20[20]` is
+about 4,500 steps (`salsa20[12]` about 2,780, `salsa20[8]` about 1,920),
+almost all of it the doublerounds; the reads and writes with `as little` and
+the final addition cost about 170. `keystream[20, b]` costs about 4,530
+steps per block, and `encrypt` adds 11 to 14 steps per message byte for the
+XOR. `hsalsa20` is about 4,370 steps and the expansions about 25. A one-block
+test costs 4,560 to 4,570 steps, the 238-byte XSalsa20 encryption 25,919,
+and the nineteen tests together 145,404.
 
 ## Dissemination
 
 ### Files
 
 - `salsa20.or`: the algorithm (quarterround, rowround, columnround,
-  doubleround, the hash function, both expansions, the counter and
-  encryption of section 10, HSalsa20, XSalsa20) and every vector below.
+  doubleround, the hash function and Salsa20/r, both expansions, the counter,
+  keystream and encryption of section 10, HSalsa20, XSalsa20) and the
+  nineteen tests below.
 
 ### Running
 
-    orangec eval algorithms/salsa20/salsa20.or
+    orangec test algorithms/salsa20/salsa20.or
     python3 algorithms/verify.py algorithms/salsa20
 
-`eval` also prints the input specs `estream_set6_vector3_key`,
-`estream_set1_vector0_key`, `nacl_first_key`, `botan_13_message_head` and
-`botan_4_message`, which have no `_expected` twin and are not vectors.
+The file has no parameterless spec, so `orangec eval` prints nothing.
 
 ### Vectors
 
-Botan's `salsa20.vec` states no set or vector numbers; where a case is an
-eSTREAM vector, the row says how it was identified. Crypto++'s `salsa.txt`
-labels its eSTREAM cases and cites the eSTREAM `verified.test-vectors`
-files it copied them from.
+Each row is a `test` block in `salsa20.or`. Botan's `salsa20.vec` states no
+set or vector numbers; where a case is an eSTREAM vector, the row says how
+it was identified. A Botan case with no In line encrypts a zero message, so
+its Out is the keystream, and the test states it as the keystream.
+Crypto++'s `salsa.txt` labels its eSTREAM cases and cites the eSTREAM
+`verified.test-vectors` files it copied them from.
 
-| Spec | Source | Case |
+| Test | Source | Case |
 | --- | --- | --- |
-| `botan_salsa20_1` | Botan `src/tests/data/stream/salsa20.vec`, first case | 128-bit key 00 01 ... 0f, zero nonce, first 39 bytes of keystream; by its key, eSTREAM set 3, vector 0 (128-bit) |
-| `botan_salsa20_2` | Botan `salsa20.vec`, second case | 256-bit key 1b 1c ... 3a, zero nonce, first 111 bytes of keystream; by its key, eSTREAM set 3, vector 27 (256-bit) |
-| `botan_salsa20_9` | Botan `salsa20.vec`, ninth case | key 0f 62 b5 08 ..., nonce 28 8f f6 5d c4 2b 92 f9, stream[0..63]; the key and IV Crypto++ labels eSTREAM set 6, vector 3 |
-| `botan_salsa20_10` | Botan `salsa20.vec`, tenth case | the same key and nonce, Seek 65472 = block counter 1023, stream[65472..65535] |
-| `botan_salsa20_13_head` | Botan `salsa20.vec`, thirteenth case ("Long random inputs/outputs") | key 00 01 ... 1f, nonce a0 a1 ... a7, the first 128 bytes of the 2600-byte message and ciphertext |
-| `botan_salsa20_14` | Botan `salsa20.vec`, fourteenth case | 128-bit key b0 b1 ... bf, nonce c0 c1 ... c7, the first 64 of 1300 keystream bytes |
-| `botan_salsa20_16_head` | Botan `salsa20.vec`, sixteenth case | key ff fe ... e0, nonce d0 d1 ... d7, Seek 274877906816 = counter 0xfffffffe, the first 192 of 2048 keystream bytes: counters 0xfffffffe, 0xffffffff, 0x100000000 |
-| `botan_xsalsa20_3` | Botan `salsa20.vec`, third case | XSalsa20, key 1b 27 55 64 ..., 24-byte nonce 69 69 6e e9 ..., first 139 bytes of keystream (NaCl's stream test key and nonce) |
-| `botan_xsalsa20_4` | Botan `salsa20.vec`, fourth case | XSalsa20, key a6 a7 25 1c ..., nonce 9e 64 5a 74 ..., a 238-byte message |
-| `cryptopp_set1_vector0` | Crypto++ `TestVectors/salsa.txt`, "Set 1, vector# 0" (eSTREAM 128-bit key file) | key 80 00 ... 00, zero IV, stream[0..63] |
-| `cryptopp_set1_vector0_seek448` | Crypto++ `salsa.txt`, the same case, Seek 448 | block counter 7, stream[448..511] |
-| `cryptopp_set3_vector243` | Crypto++ `salsa.txt`, "Set 3, vector#243" (eSTREAM 256-bit key file) | key f3 f4 ... 12, zero IV, stream[0..63] |
-| `cryptopp_salsa20_12_set1_vector0` | Crypto++ `salsa.txt`, Rounds 12, "Set 1, vector# 0" (eSTREAM reduced/12-rounds) | Salsa20/12, key 80 00 ... 00, zero IV, stream[0..63] |
-| `cryptopp_salsa20_8_set1_vector0` | Crypto++ `salsa.txt`, Rounds 8, "Set 1, vector# 0" (eSTREAM reduced/8-rounds) | Salsa20/8, the same key and IV, stream[0..63] |
-| `cryptopp_counter_crossing_head` | Crypto++ `salsa.txt`, "Counter crosses 32-bit boundary (0xffffffff*64)" | zero key and IV, Seek64 0x3fffffffc0 = counter 0xffffffff, the first 128 of 1024 bytes: counters 0xffffffff and 0x100000000 |
-| `libsodium_core4` | libsodium `test/default/core4.c` and `core4.exp` | `crypto_core_salsa20`: the hash of the 32-byte-key expansion with key 1, 2, ..., 216 and input 101, ..., 116 |
-| `libsodium_core1` | libsodium `test/default/core1.c` and `core1.exp` | `crypto_core_hsalsa20`: HSalsa20 of the shared key 4a 5d 9d 5b ... and a zero input |
-| `libsodium_core2` | libsodium `test/default/core2.c` and `core2.exp` | HSalsa20 of core1's first key and the nonce prefix 69 69 6e e9 ... |
-| `libsodium_stream3` | libsodium `test/default/stream3.c` and `stream3.exp` | `crypto_stream` (XSalsa20) under the first key and the 24-byte nonce 69 69 ... 0b 37, first 32 bytes |
+| `Botan salsa20.vec case 1: 128-bit key, 39 bytes` | Botan `src/tests/data/stream/salsa20.vec`, first case | 128-bit key 00 01 ... 0f, zero nonce, first 39 bytes of keystream; by its key, eSTREAM set 3, vector 0 (128-bit) |
+| `Botan salsa20.vec case 2: 256-bit key, 111 bytes` | Botan `salsa20.vec`, second case | 256-bit key 1b 1c ... 3a, zero nonce, first 111 bytes of keystream; by its key, eSTREAM set 3, vector 27 (256-bit) |
+| `Botan salsa20.vec case 9: eSTREAM set 6, vector 3, block 0` | Botan `salsa20.vec`, ninth case | key 0f 62 b5 08 ..., nonce 28 8f f6 5d c4 2b 92 f9, stream[0..63]; the key and IV Crypto++ labels eSTREAM set 6, vector 3 |
+| `Botan salsa20.vec case 10: eSTREAM set 6, vector 3, block 1023` | Botan `salsa20.vec`, tenth case | the same key and nonce, Seek 65472 = block counter 1023, stream[65472..65535] |
+| `Botan salsa20.vec case 13: first 128 bytes of a 2600-byte message` | Botan `salsa20.vec`, thirteenth case ("Long random inputs/outputs") | key 00 01 ... 1f, nonce a0 a1 ... a7, the first 128 bytes of the 2600-byte message and ciphertext |
+| `Botan salsa20.vec case 14: 128-bit key, first block` | Botan `salsa20.vec`, fourteenth case | 128-bit key b0 b1 ... bf, nonce c0 c1 ... c7, the first 64 of 1300 keystream bytes |
+| `Botan salsa20.vec case 16: counter 0xfffffffe, first 192 bytes` | Botan `salsa20.vec`, sixteenth case | key ff fe ... e0, nonce d0 d1 ... d7, Seek 274877906816 = counter 0xfffffffe, the first 192 of 2048 keystream bytes: counters 0xfffffffe, 0xffffffff, 0x100000000 |
+| `Botan salsa20.vec case 3: XSalsa20, 139 bytes` | Botan `salsa20.vec`, third case | XSalsa20, key 1b 27 55 64 ..., 24-byte nonce 69 69 6e e9 ..., first 139 bytes of keystream (NaCl's stream test key and nonce) |
+| `Botan salsa20.vec case 4: XSalsa20, 238-byte message` | Botan `salsa20.vec`, fourth case | XSalsa20, key a6 a7 25 1c ..., nonce 9e 64 5a 74 ..., a 238-byte message |
+| `Crypto++ salsa.txt: Set 1, vector# 0` | Crypto++ `TestVectors/salsa.txt`, "Set 1, vector# 0" (eSTREAM 128-bit key file) | key 80 00 ... 00, zero IV, stream[0..63] |
+| `Crypto++ salsa.txt: Set 1, vector# 0, Seek 448` | Crypto++ `salsa.txt`, the same case, Seek 448 | block counter 7, stream[448..511] |
+| `Crypto++ salsa.txt: Set 3, vector#243` | Crypto++ `salsa.txt`, "Set 3, vector#243" (eSTREAM 256-bit key file) | key f3 f4 ... 12, zero IV, stream[0..63] |
+| `Crypto++ salsa.txt: Salsa20/12, Set 1, vector# 0` | Crypto++ `salsa.txt`, Rounds 12, "Set 1, vector# 0" (eSTREAM reduced/12-rounds) | Salsa20/12, key 80 00 ... 00, zero IV, stream[0..63] |
+| `Crypto++ salsa.txt: Salsa20/8, Set 1, vector# 0` | Crypto++ `salsa.txt`, Rounds 8, "Set 1, vector# 0" (eSTREAM reduced/8-rounds) | Salsa20/8, the same key and IV, stream[0..63] |
+| `Crypto++ salsa.txt: counter crosses 32-bit boundary, first 128 bytes` | Crypto++ `salsa.txt`, "Counter crosses 32-bit boundary (0xffffffff*64)" | zero key and IV, Seek64 0x3fffffffc0 = counter 0xffffffff, the first 128 of 1024 bytes: counters 0xffffffff and 0x100000000 |
+| `libsodium core4: crypto_core_salsa20` | libsodium `test/default/core4.c` and `core4.exp` | `crypto_core_salsa20`: the hash of the 32-byte-key expansion with key 1, 2, ..., 216 and input 101, ..., 116 |
+| `libsodium core1: crypto_core_hsalsa20 of the shared key` | libsodium `test/default/core1.c` and `core1.exp` | `crypto_core_hsalsa20`: HSalsa20 of the shared key 4a 5d 9d 5b ... and a zero input |
+| `libsodium core2: crypto_core_hsalsa20, the XSalsa20 subkey` | libsodium `test/default/core2.c` and `core2.exp` | HSalsa20 of core1's first key and the nonce prefix 69 69 6e e9 ... |
+| `libsodium stream3: XSalsa20 keystream, 32 bytes` | libsodium `test/default/stream3.c` and `stream3.exp` | `crypto_stream` (XSalsa20) under the first key and the 24-byte nonce 69 69 ... 0b 37, first 32 bytes |
 
 Every expected value is copied from the named file; none was produced by an
-oracle. Vectors longer than one Orange array, or longer than needed, are
-reproduced as their first 64, 128 or 192 bytes, as the row says; the rest of
-each file's value was checked with the Python reference. `botan_salsa20_9`,
-`botan_salsa20_10` and Crypto++'s "Set 6, vector# 3" are one eSTREAM case:
-Crypto++ gives only the XOR of its 2048 blocks, which is not a reproducible
-spec here, and Botan gives blocks 0 and 1023 of the same stream.
+oracle. Cases longer than needed are reproduced as their first 64, 128 or
+192 bytes, as the row says, the lengths the first form of the entry
+recorded; the rest of each file's value was checked with the Python
+reference. Botan's ninth and tenth cases and Crypto++'s "Set 6, vector# 3"
+are one eSTREAM case: Crypto++ gives only the XOR of its 2048 blocks, which
+the entry does not record, and Botan gives blocks 0 and 1023 of the same
+stream.
 
 ### Provenance and claims
 
@@ -280,37 +313,53 @@ nothing was typed by hand. pycryptodome 3.23 rejects a 24-byte nonce for
 and `ref.py` reproduces them through both routes (HSalsa20 then Salsa20, and
 Salsa20 under libsodium's published second key).
 
+The section numbers of the specification cited in this entry (3 to 10) were
+later checked against the published
+[specification](https://cr.yp.to/snuffle/spec.pdf).
+
 The identification of Botan's first and second cases as eSTREAM set 3,
 vectors 0 and 27, rests on the set's construction (the key bytes are the
 vector number and its successors), which Crypto++'s labelled "Set 3,
 vector#243" case (key f3 f4 f5 ...) exhibits; Botan does not say so.
 
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of byte arrays: the new tests state the same bytes
+as `hex"..."` literals, printed from the first form's evaluated values by a
+script and compared with them again after the rewrite, and no vector was
+added or dropped. The keys, nonces and messages, formerly array literals
+and input specs, became `hex"..."` literals in the tests, and every test
+passes against the unchanged expected values. The constants, formerly the
+little-endian words above, are now the strings "expand 32-byte k" and
+"expand 16-byte k" in four-byte pieces, checked against those words by
+`struct.unpack`.
+
 This entry is a reference evaluation of the Salsa20 specification and of
-Extending the Salsa20 nonce under `orangec eval`. It makes no constant-time,
+Extending the Salsa20 nonce under `orangec test`. It makes no constant-time,
 side-channel, performance or certification claim; the constant-time
 discussion above is about the design, not about this evaluator. It is not a
 corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-- The files' long cases (1024 to 2600 bytes) are reproduced as their first
-  128 or 192 bytes. Those lengths fit in one array (the bound is 65,536);
-  the sources were written when it was 256 and were not widened. Crypto++'s
-  131,072-byte figure for set 6, vector 3 is the stream covered by the XOR
-  of 2,048 blocks. The stored result is one 64-byte block, which a loop of
-  2,048 iterations can accumulate under the current loop bound. The entry
-  does not record that pair; the omission is not an array-length gap past
-  65,536.
-- Arrays have no length parameter, so the encryption of section 10 is
-  written once per message length (`encrypt_32` to `encrypt_238`), eight
-  copies of the same few lines.
-- Loop bounds are literals, so Salsa20/r is a ten-iteration loop with an
-  `if` on the iteration index rather than a loop of r/2 iterations; the
-  unused iterations cost one comparison each.
-- An update of an n-element array costs n steps, so placing four keystream
-  blocks into a 238-byte ciphertext costs about 57,000 steps against 47,600
-  for computing them; the file still uses about half its budget, so nothing
-  was split or dropped.
+- A function has at most 256 instances, counting every combination of its
+  sizes, so `encrypt[n]` covers messages of 1 to 256 bytes and fixes the
+  round count at 20: `encrypt[r, n]` over the thirteen round counts of
+  `keystream` would have 3,328 instances. Salsa20/12 and Salsa20/8 have
+  no encryption spec, and their vectors are stated as keystream. A message
+  of the files' long cases (1024 to 2600 bytes) would need an encryption over
+  whole blocks and a final partial block.
+- The long cases are reproduced as their first 64, 128 or 192 bytes, the
+  values the first form recorded; the full values are in the vector files,
+  which are not on the build machine, and the rewrite only carries values
+  over. The same holds for Crypto++'s XOR of the 2048 blocks of set 6,
+  vector 3: one 64-byte value over a loop of 2048 blocks, about 9.3 million
+  steps by the cost above, which the language can now express, but the
+  value is not recorded in the entry.
+- A size ranges over an interval, so `doublerounds[r]`, `salsa20[r]` and
+  `keystream[r, b]` take every r from 8 to 20, odd ones included; Salsa20/r
+  is defined for even r, and an odd r, which no test uses, would run
+  (r - 1)/2 doublerounds.
 - pycryptodome 3.23 does not implement XSalsa20 (a 24-byte nonce is
   rejected), so the XSalsa20 vectors have the files and the Python reference
   as their only checks.

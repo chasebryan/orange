@@ -1,0 +1,1318 @@
+// ML-KEM-512 of FIPS 203, "Module-Lattice-Based Key-Encapsulation Mechanism
+// Standard", NIST, August 2024, https://doi.org/10.6028/NIST.FIPS.203.
+// The file transcribes the hash functions of section 4.1 over the module
+// `keccak` (FIPS 202), the encodings, compression and sampling of section
+// 4.2 (Algorithms 3 to 8), the number-theoretic transform of section 4.3
+// (Algorithms 9 to 12), K-PKE of section 5 (Algorithms 13 to 15) and the
+// internal ML-KEM algorithms of section 6 (Algorithms 16 to 18), with the
+// parameter set ML-KEM-512 of section 8: n = 256, q = 3329, k = 2,
+// eta_1 = 3, eta_2 = 2, d_u = 10, d_v = 4. A polynomial is 256 residues
+// modulo q, a vector k polynomials, and the matrix A-hat a k x k array of
+// polynomials A[i][j], as the standard indexes them.
+//
+// It reproduces NIST's ACVP vectors for ML-KEM-512 (keyGen and
+// encapDecap, internalProjection.json, vsId 42): key generation from
+// (d, z), encapsulation from (ek, m), and decapsulation of a valid and of a
+// modified ciphertext, and Wycheproof's mlkem_512_test.json tcId 1, a key
+// pair from its 64-byte seed that rejects a ciphertext implicitly.
+edition 2026;
+module ml_kem {
+  use keccak;
+
+  type Zq = Mod[3329];
+  type Poly = Zq^256;
+  type Vector = Poly^2;
+  type Matrix = Vector^2;
+
+  // ---- Section 4.1: the hash functions, over FIPS 202 ----
+
+  // PRF_eta(s, b) = SHAKE256(s || b, 8 * 64 * eta): the first 64 eta bytes
+  // of as many 136-byte SHAKE256 blocks as they need.
+  spec prf[eta in 2..4](s: Word[8]^32, b: Word[8]) -> Word[8]^(64 * eta) {
+    keccak::squeeze[17, (64 * eta + 135) / 136](keccak::shake256(s ++ [b]))[..(64 * eta)]
+  }
+
+  // H(s) = SHA3-256(s), here of an encapsulation key.
+  spec hash_h(s: Word[8]^800) -> Word[8]^32 { keccak::sha3_256(s) }
+
+  // J(s) = SHAKE256(s, 8 * 32), here of z || c.
+  spec hash_j(s: Word[8]^800) -> Word[8]^32 { keccak::squeeze[17, 1](keccak::shake256(s))[..32] }
+
+  // G(c) = SHA3-512(c), split into its first and last 32 bytes; c is d || k
+  // in K-PKE.KeyGen and m || h in encapsulation and decapsulation.
+  spec hash_g[M in {Word[8]^33, Word[8]^64}](c: M) -> (Word[8]^32, Word[8]^32) {
+    let out: Word[8]^64 = keccak::sha3_512(c);
+    (out[..32], out[32..])
+  }
+
+  // ---- Section 4.2.1: conversion and compression ----
+
+  // Algorithms 3 and 5: ByteEncode_d(F) writes the d bits of each F[i]
+  // least significant first (bit i d + j is bit j of F[i]) and packs the
+  // bits into bytes least significant first, so eight integers of d bits
+  // fill d bytes, the little-endian form of F[8g] + F[8g + 1] 2^d + ... +
+  // F[8g + 7] 2^(7d). The integers are elements of Z_m with m = 2^d for
+  // d < 12, and of Z_q for d = 12 (`byte_encode_12`).
+  spec byte_encode[d in 1..12](f: Mod[(1 << d)]^256) -> Word[8]^(32 * d) {
+    let one: Word[16] = 1;
+    let m: Int = (one << d) as Int;
+    for g in 0..32 with b: Word[8]^(32 * d) = [0; (32 * d)] {
+      let v: Int = for i in 0..8 with v: Int = 0 { v * m + (f[8 * g + 7 - i] as Int) };
+      b with [d * g..d * g + d] = v as little Word[8]^d
+    }
+  }
+
+  spec byte_encode_12(f: Poly) -> Word[8]^384 {
+    for g in 0..32 with b: Word[8]^384 = [0; 384] {
+      let v: Int = for i in 0..8 with v: Int = 0 { v * 4096 + (f[8 * g + 7 - i] as Int) };
+      b with [12 * g..12 * g + 12] = v as little Word[8]^12
+    }
+  }
+
+  // Algorithm 6: ByteDecode_d(B) reads the same groups back, F[8g + i] =
+  // (the group's integer div 2^(d i)) mod 2^d, and reduces modulo m: for
+  // d = 12 (`byte_decode_12`) a 12-bit value of q or more becomes its residue.
+  spec byte_decode[d in 1..12](b: Word[8]^(32 * d)) -> Mod[(1 << d)]^256 {
+    let one: Word[16] = 1;
+    let m: Int = (one << d) as Int;
+    for g in 0..32 with f: Mod[(1 << d)]^256 = [0; 256] {
+      let v: Int = b[d * g..d * g + d] as little Int;
+      let r: (Mod[(1 << d)]^256, Int) =
+        for i in 0..8 with (h: Mod[(1 << d)]^256, rest: Int) = (f, v) {
+          let bits: Int = rest % m;
+          (h with [8 * g + i] = bits as Mod[(1 << d)], rest / m)
+        };
+      r.0
+    }
+  }
+
+  spec byte_decode_12(b: Word[8]^384) -> Poly {
+    for g in 0..32 with f: Poly = [0; 256] {
+      let v: Int = b[12 * g..12 * g + 12] as little Int;
+      let r: (Poly, Int) = for i in 0..8 with (h: Poly, rest: Int) = (f, v) {
+        let bits: Int = rest % 4096;
+        (h with [8 * g + i] = bits as Zq, rest / 4096)
+      };
+      r.0
+    }
+  }
+
+  // Equation 4.7: Compress_d(x) = round((2^d / q) x) mod 2^d, rounding
+  // halves up, which is floor((2^(d + 1) x + q) / 2q); applied to each
+  // coefficient.
+  spec compress[d in 1..12](f: Poly) -> Mod[(1 << d)]^256 {
+    let one: Word[16] = 1;
+    let m: Int = (one << (d + 1)) as Int;
+    for i in 0..256 with c: Mod[(1 << d)]^256 = [0; 256] {
+      let y: Int = (((f[i] as Int) * m) + 3329) / 6658;
+      c with [i] = y as Mod[(1 << d)]
+    }
+  }
+
+  // Equation 4.8: Decompress_d(y) = round((q / 2^d) y), which is
+  // floor((q y + 2^(d - 1)) / 2^d).
+  spec decompress[d in 1..12](c: Mod[(1 << d)]^256) -> Poly {
+    let one: Word[16] = 1;
+    let m: Int = (one << d) as Int;
+    for i in 0..256 with f: Poly = [0; 256] {
+      let x: Int = (((c[i] as Int) * 3329) + (m / 2)) / m;
+      f with [i] = x as Zq
+    }
+  }
+
+  // ---- Section 4.2.2: sampling ----
+
+  // Algorithm 7, SampleNTT: each three bytes C0, C1, C2 of the SHAKE128
+  // stream of rho || j || i give two candidates d1 = C0 + 256 (C1 mod 16)
+  // and d2 = floor(C1 / 16) + 16 C2, kept while below q until 256
+  // coefficients are written. Departure: the standard squeezes three bytes
+  // at a time with no bound on the number of steps; here the stream is four
+  // blocks of 168 bytes, 224 triples, squeezed at once. A triple keeps
+  // about 1.6 candidates on average, so 256 coefficients take about 158
+  // triples. Every ML-KEM-512 case of the two ACVP files completes within
+  // 172 triples; keyGen tcId 20 below needs all 172, so its test reads the
+  // fourth block. A matrix that did not complete within 224 would keep
+  // zeros and fail its test.
+  spec sample_ntt(b: Word[8]^34) -> Poly {
+    let c: Word[8]^672 = keccak::squeeze[21, 4](keccak::shake128(b));
+    let r: (Poly, Word[16]) = for t in 0..224 with (a: Poly, j: Word[16]) = ([0; 256], 0) {
+      let c0: Word[16] = c[3 * t] as Word[16];
+      let c1: Word[16] = c[3 * t + 1] as Word[16];
+      let c2: Word[16] = c[3 * t + 2] as Word[16];
+      let d1: Word[16] = c0 + 256 * (c1 % 16);
+      let d2: Word[16] = (c1 / 16) + 16 * c2;
+      let (a1: Poly, j1: Word[16]) =
+        if (d1 < 3329) && (j < 256) { (a with [j as Word[8]] = d1 as Zq, j + 1) } else { (a, j) };
+      if (d2 < 3329) && (j1 < 256) {
+        (a1 with [j1 as Word[8]] = d2 as Zq, j1 + 1)
+      } else {
+        (a1, j1)
+      }
+    };
+    r.0
+  }
+
+  // Algorithm 4 (section 4.2.1), BytesToBits: bit 8i + j of the result is
+  // bit j of byte i, least significant first, one bit to an element; here
+  // for the strings of 64 eta bytes that SamplePolyCBD reads.
+  spec bytes_to_bits[eta in 2..4](b: Word[8]^(64 * eta)) -> Word[8]^(512 * eta) {
+    for i in 0..(64 * eta) with bits: Word[8]^(512 * eta) = [0; (512 * eta)] {
+      let c: Word[8] = b[i];
+      bits with [8 * i..8 * i + 8] = [
+        c & 1, (c >> 1) & 1, (c >> 2) & 1, (c >> 3) & 1,
+        (c >> 4) & 1, (c >> 5) & 1, (c >> 6) & 1, c >> 7,
+      ]
+    }
+  }
+
+  // Algorithm 8, SamplePolyCBD_eta: coefficient i is x - y, where x sums
+  // bits 2 i eta through 2 i eta + eta - 1 of B and y the next eta bits.
+  spec sample_poly_cbd[eta in 2..4](b: Word[8]^(64 * eta)) -> Poly {
+    let bits: Word[8]^(512 * eta) = bytes_to_bits[eta](b);
+    for i in 0..256 with f: Poly = [0; 256] {
+      let pair: Word[8]^(2 * eta) = bits[2 * eta * i..2 * eta * i + 2 * eta];
+      let x: Word[8] = for j in 0..(eta) with x: Word[8] = 0 { x + pair[j] };
+      let y: Word[8] = for j in 0..(eta) with y: Word[8] = 0 { y + pair[eta + j] };
+      f with [i] = (x as Zq) - (y as Zq)
+    }
+  }
+
+  // ---- Section 4.3: the number-theoretic transform ----
+
+  // Appendix A: zeta^BitRev7(i) mod q for i = 0 through 127, with zeta = 17
+  // and BitRev7(i) the 7-bit reversal of i; printed by a script from that
+  // definition.
+  spec zetas() -> Zq^128 {
+    [
+      1, 1729, 2580, 3289, 2642, 630, 1897, 848,
+      1062, 1919, 193, 797, 2786, 3260, 569, 1746,
+      296, 2447, 1339, 1476, 3046, 56, 2240, 1333,
+      1426, 2094, 535, 2882, 2393, 2879, 1974, 821,
+      289, 331, 3253, 1756, 1197, 2304, 2277, 2055,
+      650, 1977, 2513, 632, 2865, 33, 1320, 1915,
+      2319, 1435, 807, 452, 1438, 2868, 1534, 2402,
+      2647, 2617, 1481, 648, 2474, 3110, 1227, 910,
+      17, 2761, 583, 2649, 1637, 723, 2288, 1100,
+      1409, 2662, 3281, 233, 756, 2156, 3015, 3050,
+      1703, 1651, 2789, 1789, 1847, 952, 1461, 2687,
+      939, 2308, 2437, 2388, 733, 2337, 268, 641,
+      1584, 2298, 2037, 3220, 375, 2549, 2090, 1645,
+      1063, 319, 2773, 757, 2099, 561, 2466, 2594,
+      2804, 1092, 403, 1026, 1143, 2150, 2775, 886,
+      1722, 1212, 1874, 1029, 2110, 2935, 885, 2154,
+    ]
+  }
+
+  // Algorithm 9, NTT. The standard's layer len = 128, 64, ..., 2 walks the
+  // blocks start = 0, 2 len, 4 len, ... with i counting up from 1; here
+  // layer l has len = 128 / 2^l and its 128 butterflies m in one loop:
+  // butterfly m is in block m div len, whose zeta is zetas[2^l + block],
+  // and joins coefficients j = m + block len and j + len.
+  spec ntt(f: Poly) -> Poly {
+    let z: Zq^128 = zetas();
+    let top: Word[8] = 128;
+    for l in 0..7 with a: Poly = f {
+      let len: Word[8] = top >> l;
+      let first: Word[8] = top >> (7 - l);
+      for m in 0..128 with b: Poly = a {
+        let w: Word[8] = m as Word[8];
+        let block: Word[8] = w / len;
+        let j: Word[8] = w + block * len;
+        let t: Zq = z[(first + block) & 0x7f] * b[j + len];
+        (b with [j + len] = b[j] - t) with [j] = b[j] + t
+      }
+    }
+  }
+
+  // Algorithm 10, NTT^-1: the layers in reverse, len = 2 through 128, with
+  // i counting down from 127, so block m div len of layer l takes
+  // zetas[128 / 2^l - 1 - block]; then every coefficient times
+  // 3303 = 128^-1 mod q.
+  spec inverse_ntt(f: Poly) -> Poly {
+    let z: Zq^128 = zetas();
+    let top: Word[8] = 128;
+    let two: Word[8] = 2;
+    let unscaled: Poly = for l in 0..7 with a: Poly = f {
+      let len: Word[8] = two << l;
+      let last: Word[8] = (top >> l) - 1;
+      for m in 0..128 with b: Poly = a {
+        let w: Word[8] = m as Word[8];
+        let block: Word[8] = w / len;
+        let j: Word[8] = w + block * len;
+        let t: Zq = b[j];
+        (b with [j] = t + b[j + len])
+          with [j + len] = z[(last - block) & 0x7f] * (b[j + len] - t)
+      }
+    };
+    for k in 0..256 with g: Poly = unscaled { g with [k] = unscaled[k] * 3303 }
+  }
+
+  // Algorithms 11 and 12: MultiplyNTTs multiplies in each of the 128
+  // quadratic factors, (a0 + a1 X)(b0 + b1 X) modulo X^2 - gamma, with
+  // gamma = zeta^(2 BitRev7(i) + 1) = 17 (zeta^BitRev7(i))^2.
+  spec base_case_multiply(a0: Zq, a1: Zq, b0: Zq, b1: Zq, gamma: Zq) -> (Zq, Zq) {
+    (a0 * b0 + a1 * b1 * gamma, a0 * b1 + a1 * b0)
+  }
+
+  spec multiply_ntts(f: Poly, g: Poly) -> Poly {
+    let z: Zq^128 = zetas();
+    for i in 0..128 with h: Poly = [0; 256] {
+      let (c0: Zq, c1: Zq) =
+        base_case_multiply(f[2 * i], f[2 * i + 1], g[2 * i], g[2 * i + 1], 17 * z[i] * z[i]);
+      (h with [2 * i] = c0) with [2 * i + 1] = c1
+    }
+  }
+
+  spec add(f: Poly, g: Poly) -> Poly {
+    for i in 0..256 with h: Poly = f { h with [i] = f[i] + g[i] }
+  }
+
+  spec subtract(f: Poly, g: Poly) -> Poly {
+    for i in 0..256 with h: Poly = f { h with [i] = f[i] - g[i] }
+  }
+
+  // Section 2.4: the product u^T o v of two vectors in the NTT domain is
+  // the sum of the products u[j] o v[j] (MultiplyNTTs).
+  spec dot(u: Vector, v: Vector) -> Poly {
+    for j in 0..2 with s: Poly = [0; 256] { add(s, multiply_ntts(u[j], v[j])) }
+  }
+
+  // ---- Section 5: K-PKE ----
+
+  // Algorithm 13, lines 3 to 7 (and Algorithm 14, lines 4 to 8): A-hat[i][j]
+  // is SampleNTT(rho || j || i).
+  spec sample_matrix(rho: Word[8]^32) -> Matrix {
+    for i in 0..2 with a: Matrix = [[[0; 256]; 2]; 2] {
+      for j in 0..2 with b: Matrix = a {
+        b with [i][j] = sample_ntt(rho ++ [j as Word[8], i as Word[8]])
+      }
+    }
+  }
+
+  // Algorithm 13, K-PKE.KeyGen(d): (rho, sigma) = G(d || k) with k = 2 as
+  // one byte; s and e from PRF_eta1(sigma, N) for N = 0 through 3; t-hat =
+  // A-hat o s-hat + e-hat; returns (ek_PKE, dk_PKE).
+  spec k_pke_keygen(d: Word[8]^32) -> (Word[8]^800, Word[8]^768) {
+    let (rho: Word[8]^32, sigma: Word[8]^32) = hash_g(d ++ hex"02");
+    let a: Matrix = sample_matrix(rho);
+    let s: Vector = for i in 0..2 with s: Vector = [[0; 256]; 2] {
+      s with [i] = sample_poly_cbd[3](prf[3](sigma, i as Word[8]))
+    };
+    let e: Vector = for i in 0..2 with e: Vector = [[0; 256]; 2] {
+      e with [i] = sample_poly_cbd[3](prf[3](sigma, (i as Word[8]) + 2))
+    };
+    let s_hat: Vector = [ntt(s[0]), ntt(s[1])];
+    let e_hat: Vector = [ntt(e[0]), ntt(e[1])];
+    let t_hat: Vector = for i in 0..2 with t: Vector = e_hat {
+      t with [i] = add(dot(a[i], s_hat), e_hat[i])
+    };
+    (
+      byte_encode_12(t_hat[0]) ++ byte_encode_12(t_hat[1]) ++ rho,
+      byte_encode_12(s_hat[0]) ++ byte_encode_12(s_hat[1]),
+    )
+  }
+
+  // Algorithm 14, K-PKE.Encrypt(ek_PKE, m, r): u = NTT^-1(A-hat^T o y-hat)
+  // + e1 and v = NTT^-1(t-hat^T o y-hat) + e2 + mu, compressed to d_u = 10
+  // and d_v = 4 bits.
+  spec k_pke_encrypt(ek: Word[8]^800, m: Word[8]^32, r: Word[8]^32) -> Word[8]^768 {
+    let t_hat: Vector = [byte_decode_12(ek[..384]), byte_decode_12(ek[384..768])];
+    let a: Matrix = sample_matrix(ek[768..]);
+    let y: Vector = for i in 0..2 with y: Vector = [[0; 256]; 2] {
+      y with [i] = sample_poly_cbd[3](prf[3](r, i as Word[8]))
+    };
+    let e1: Vector = for i in 0..2 with e: Vector = [[0; 256]; 2] {
+      e with [i] = sample_poly_cbd[2](prf[2](r, (i as Word[8]) + 2))
+    };
+    let e2: Poly = sample_poly_cbd[2](prf[2](r, 4));
+    let y_hat: Vector = [ntt(y[0]), ntt(y[1])];
+    let u: Vector = for i in 0..2 with u: Vector = e1 {
+      let column: Vector = [a[0][i], a[1][i]];
+      u with [i] = add(inverse_ntt(dot(column, y_hat)), e1[i])
+    };
+    let mu: Poly = decompress[1](byte_decode[1](m));
+    let v: Poly = add(add(inverse_ntt(dot(t_hat, y_hat)), e2), mu);
+    byte_encode[10](compress[10](u[0])) ++ byte_encode[10](compress[10](u[1]))
+      ++ byte_encode[4](compress[4](v))
+  }
+
+  // Algorithm 15, K-PKE.Decrypt(dk_PKE, c): w = v' - NTT^-1(s-hat^T o
+  // NTT(u')), and m = ByteEncode_1(Compress_1(w)).
+  spec k_pke_decrypt(dk: Word[8]^768, c: Word[8]^768) -> Word[8]^32 {
+    let u: Vector = [
+      decompress[10](byte_decode[10](c[..320])),
+      decompress[10](byte_decode[10](c[320..640])),
+    ];
+    let v: Poly = decompress[4](byte_decode[4](c[640..]));
+    let s_hat: Vector = [byte_decode_12(dk[..384]), byte_decode_12(dk[384..])];
+    let w: Poly = subtract(v, inverse_ntt(dot(s_hat, [ntt(u[0]), ntt(u[1])])));
+    byte_encode[1](compress[1](w))
+  }
+
+  // ---- Section 6: ML-KEM, the internal algorithms ----
+
+  // Algorithm 16, ML-KEM.KeyGen_internal(d, z): returns (ek, dk) with
+  // dk = dk_PKE || ek || H(ek) || z.
+  spec keygen_internal(d: Word[8]^32, z: Word[8]^32) -> (Word[8]^800, Word[8]^1632) {
+    let (ek: Word[8]^800, dk_pke: Word[8]^768) = k_pke_keygen(d);
+    (ek, dk_pke ++ ek ++ hash_h(ek) ++ z)
+  }
+
+  // Algorithm 17, ML-KEM.Encaps_internal(ek, m): (K, r) = G(m || H(ek)),
+  // and returns (K, c).
+  spec encaps_internal(ek: Word[8]^800, m: Word[8]^32) -> (Word[8]^32, Word[8]^768) {
+    let (k: Word[8]^32, r: Word[8]^32) = hash_g(m ++ hash_h(ek));
+    (k, k_pke_encrypt(ek, m, r))
+  }
+
+  // Algorithm 18, ML-KEM.Decaps_internal(dk, c): decrypts, re-encrypts
+  // under the recovered coins, and returns K' when the ciphertexts agree and
+  // the implicit-rejection key K-bar = J(z || c) when they do not.
+  spec decaps_internal(dk: Word[8]^1632, c: Word[8]^768) -> Word[8]^32 {
+    let dk_pke: Word[8]^768 = dk[..768];
+    let ek_pke: Word[8]^800 = dk[768..1568];
+    let h: Word[8]^32 = dk[1568..1600];
+    let z: Word[8]^32 = dk[1600..];
+    let m: Word[8]^32 = k_pke_decrypt(dk_pke, c);
+    let (k: Word[8]^32, r: Word[8]^32) = hash_g(m ++ h);
+    let k_bar: Word[8]^32 = hash_j(z ++ c);
+    let c_prime: Word[8]^768 = k_pke_encrypt(ek_pke, m, r);
+    if c == c_prime { k } else { k_bar }
+  }
+
+  // ---- Vectors ----
+
+  // NIST ACVP, ML-KEM keyGen, revision FIPS203, vsId 42,
+  // internalProjection.json, tgId 1 (ML-KEM-512, AFT): ML-KEM.KeyGen_internal
+  // of the seeds d and z gives the encapsulation key ek and the
+  // decapsulation key dk.
+  test "ACVP keyGen tcId 1: KeyGen_internal(d, z)" {
+    let d: Word[8]^32 =
+      hex"47b89347 4672ba92 e4b12ee4 4fb32953 af8e8503 b5fb471d 1614fb8a 021a660a";
+    let z: Word[8]^32 =
+      hex"1f8cb39e 9e30bc45 8a0dc540 8884b118 7fb21701 8df760fa 57317703 b844a0a9";
+    let ek: Word[8]^800 =
+      hex"28266a08 8b348243 9bca01af b7ca5c61 36a979b5 159985a9 484b36b6 79a5f7b9"
+      ++ hex"819eb635 77891f7b b9cb9841 3ccc434a dc79a16d 6ab30765 69ce6291 c59b5d64"
+      ++ hex"612a7fb0 c1501320 0bc8bebb 03a57017 4b5e4363 aed86eb0 2a220d28 1fb5457f"
+      ++ hex"0a549fc5 051d49a6 b2015259 a2c3084f 405e1769 95226067 5586a584 90405927"
+      ++ hex"5a265234 ef3abf88 c171a808 98fc7833 58bbc980 3c878902 7d917c9e bacbc568"
+      ++ hex"cc18de84 c85454b9 4249586c 0c6e2b8a 16fa789c 51212dd1 728ee9b8 c6c40528"
+      ++ hex"bf93826f a8236841 9623032a f27b5694 30581681 1d3ca858 05100e9c 1a9621e5"
+      ++ hex"089e54cb 47f5a8fe a0b49ef8 1c6b5187 f48924c7 947d6b61 697a4a8a 18452ef8"
+      ++ hex"03336ad4 be503275 bcacc03c 181405f7 b1dc9b47 fb169eb3 7bbe27e2 9c763a4e"
+      ++ hex"52b9a425 20388cf0 9b8edbcd f41ccf65 37190e61 56c37cc1 aac63c0f 90ce78d0"
+      ++ hex"b9b190c5 48d71b6f 26cc8f58 5ea14004 b5b30aaa 100b2adc 12638288 33b24e46"
+      ++ hex"163b4144 6f98c882 092a3994 1867b806 32e20976 74a79393 5227db0b 8577e03a"
+      ++ hex"69c50a51 4c7473c8 92e3fba7 c4316bda bc952a70 64417668 7d419132 3bad93d8"
+      ++ hex"5a3ca250 868c0747 e6c44f61 26c874af bec0bdd4 503cb2c5 9a69816e 7d410994"
+      ++ hex"1467579a 1ffe6a4f 50fa3790 51729dab 6e2f6143 2f15be67 d667c7cc 1054742b"
+      ++ hex"2b953078 a5cf88d9 13308730 9d88c61d a240d99c 59137329 907b4786 5321ecd5"
+      ++ hex"564e9873 33b4cb60 7b0afca8 6769dc95 b2f92135 7213fcb8 0c3b1529 18e9bab2"
+      ++ hex"228c0a1b 77897ac6 8ce55088 165f87f3 97da9790 873b62c5 383c0ccc 370f0267"
+      ++ hex"cbe19565 1ccf3361 82c22ac3 924b76c9 e779b7a2 71d166b6 d24b8424 2b7e73cc"
+      ++ hex"723f7640 39f6c851 744034c3 304db0c0 91a5764f dc9d5935 56ff734b 82a87ccb"
+      ++ hex"c38ca995 64d988bb d2d1bf07 1bb16072 2d365104 fb276106 51a8ed81 7f2742a6"
+      ++ hex"b5a1273a 61acaf44 60b0ab14 56a99223 51400a1c 7d95d856 d6e33706 22c9c416"
+      ++ hex"4bc6b401 435624a9 8b95caeb 274f34ce 92038d78 5068cdd8 cf44c38d 84acb2c4"
+      ++ hex"66a2756c 870ee78c 26e738cc 45100230 4eb8c90a b24b6463 eb124d77 9f937a2e"
+      ++ hex"3692611d 2e34d57b 36cc4b2c d3b31ff4 85c6684d 408b972e 0d5ca7d2 224aae4e";
+    let dk: Word[8]^1632 =
+      hex"89c31d05 611aaab2 58f78bc2 de0a80d5 914bf80c 376a990d 33cb97f4 f2077ce1"
+      ++ hex"2d2dac55 9de3400b 0622754a 2e814730 bb7c2b40 1a076cec 9524654d dac661b2"
+      ++ hex"f2123ea6 4d3bd727 ca42c8d2 725475bc 0ad4b698 e61001d0 31105897 ca746249"
+      ++ hex"d24538cd 63849e87 4eb9449f bae979ca 2a3f357b 7d87f112 fb16ab8b a20bdd31"
+      ++ hex"5688231b 21a40832 77663113 bc70a806 e772917f a95743a0 1f138bc7 bd5cb3b2"
+      ++ hex"1cbf8ee3 01eb0bce 71a4baac 3907b469 cbede767 a55aa194 930b4a2b 227e633c"
+      ++ hex"f33a3fc7 15454a32 873b717f e6a21c01 989133e4 2113d985 f46807a2 6b0de105"
+      ++ hex"cd9a8973 34d98160 75c3149a 1919cc2d bed56a23 f3192cdb 68f6e305 852b8b86"
+      ++ hex"4bacb534 9cfd9841 9ffc9486 c6b07f78 8cbc79b7 680441b0 db1dbd92 aedff49d"
+      ++ hex"b6f2ae52 b95fa9b9 66c6cc08 714a1317 70903859 b823d2cf 9731a36d 8795b605"
+      ++ hex"85f8f1bf 1a2c4e54 4407d5c1 359810bf 99a73745 11a663ec 1b192b83 e27c4f4b"
+      ++ hex"6c338769 2e4d756a 235c14d1 51056e82 9fb79936 a0c8a52e e128f0f3 69f8eb73"
+      ++ hex"90783788 037ce32b 021e57c4 5eb968cd 5b9a04b0 2f891497 78653f20 8c14c2e7"
+      ++ hex"86d45447 49572bf0 d9a31b13 bbad60b6 756b9379 fc2e1660 c58ed373 c957309e"
+      ++ hex"a213213a 5988cc59 b1c37153 811f7271 bc1e729a b1629714 d1955f70 67965562"
+      ++ hex"13b08e3f 766867d1 cc02648b e0574bb8 818d0978 578c562f fb6795dc 06503712"
+      ++ hex"9c5e4738 b5960fe7 e2a22570 c36571a4 a7a0a518 7609f8d2 7714ca29 9309509c"
+      ++ hex"7c8ac277 6e6814a2 62359b97 1b1a153c ab81858d 96350f9f 2ccc9884 c8f5509e"
+      ++ hex"237655b4 b2b22e75 c6919a82 eb56b095 e3c52b55 583f6855 e186cb75 da3a2064"
+      ++ hex"07629220 62721d5c 1ac51b87 b10633bf 43860814 c89ce16b bf66667c 2101bd27"
+      ++ hex"ba80969c 78dc4876 78989ef5 ab22d9b4 2679590e 1855c94a 9a90b4e0 21333a45"
+      ++ hex"32c7ae23 83586460 94b598aa 431486d0 b7bbd82c 5c4ebb61 95680c3e 5aa806b1"
+      ++ hex"55af7004 318867fe 55b19963 53495034 df459624 f4b04b51 167a5148 499846a3"
+      ++ hex"6c605ad8 5b997674 df241d8e c59e56e2 2ccdb342 f535292a a444b69c 3e7a2521"
+      ++ hex"28266a08 8b348243 9bca01af b7ca5c61 36a979b5 159985a9 484b36b6 79a5f7b9"
+      ++ hex"819eb635 77891f7b b9cb9841 3ccc434a dc79a16d 6ab30765 69ce6291 c59b5d64"
+      ++ hex"612a7fb0 c1501320 0bc8bebb 03a57017 4b5e4363 aed86eb0 2a220d28 1fb5457f"
+      ++ hex"0a549fc5 051d49a6 b2015259 a2c3084f 405e1769 95226067 5586a584 90405927"
+      ++ hex"5a265234 ef3abf88 c171a808 98fc7833 58bbc980 3c878902 7d917c9e bacbc568"
+      ++ hex"cc18de84 c85454b9 4249586c 0c6e2b8a 16fa789c 51212dd1 728ee9b8 c6c40528"
+      ++ hex"bf93826f a8236841 9623032a f27b5694 30581681 1d3ca858 05100e9c 1a9621e5"
+      ++ hex"089e54cb 47f5a8fe a0b49ef8 1c6b5187 f48924c7 947d6b61 697a4a8a 18452ef8"
+      ++ hex"03336ad4 be503275 bcacc03c 181405f7 b1dc9b47 fb169eb3 7bbe27e2 9c763a4e"
+      ++ hex"52b9a425 20388cf0 9b8edbcd f41ccf65 37190e61 56c37cc1 aac63c0f 90ce78d0"
+      ++ hex"b9b190c5 48d71b6f 26cc8f58 5ea14004 b5b30aaa 100b2adc 12638288 33b24e46"
+      ++ hex"163b4144 6f98c882 092a3994 1867b806 32e20976 74a79393 5227db0b 8577e03a"
+      ++ hex"69c50a51 4c7473c8 92e3fba7 c4316bda bc952a70 64417668 7d419132 3bad93d8"
+      ++ hex"5a3ca250 868c0747 e6c44f61 26c874af bec0bdd4 503cb2c5 9a69816e 7d410994"
+      ++ hex"1467579a 1ffe6a4f 50fa3790 51729dab 6e2f6143 2f15be67 d667c7cc 1054742b"
+      ++ hex"2b953078 a5cf88d9 13308730 9d88c61d a240d99c 59137329 907b4786 5321ecd5"
+      ++ hex"564e9873 33b4cb60 7b0afca8 6769dc95 b2f92135 7213fcb8 0c3b1529 18e9bab2"
+      ++ hex"228c0a1b 77897ac6 8ce55088 165f87f3 97da9790 873b62c5 383c0ccc 370f0267"
+      ++ hex"cbe19565 1ccf3361 82c22ac3 924b76c9 e779b7a2 71d166b6 d24b8424 2b7e73cc"
+      ++ hex"723f7640 39f6c851 744034c3 304db0c0 91a5764f dc9d5935 56ff734b 82a87ccb"
+      ++ hex"c38ca995 64d988bb d2d1bf07 1bb16072 2d365104 fb276106 51a8ed81 7f2742a6"
+      ++ hex"b5a1273a 61acaf44 60b0ab14 56a99223 51400a1c 7d95d856 d6e33706 22c9c416"
+      ++ hex"4bc6b401 435624a9 8b95caeb 274f34ce 92038d78 5068cdd8 cf44c38d 84acb2c4"
+      ++ hex"66a2756c 870ee78c 26e738cc 45100230 4eb8c90a b24b6463 eb124d77 9f937a2e"
+      ++ hex"3692611d 2e34d57b 36cc4b2c d3b31ff4 85c6684d 408b972e 0d5ca7d2 224aae4e"
+      ++ hex"3a389831 056ed8fd 81476869 24578268 9c84b3ce 90fe6a9e 78d0a380 fd6a1573"
+      ++ hex"1f8cb39e 9e30bc45 8a0dc540 8884b118 7fb21701 8df760fa 57317703 b844a0a9";
+    keygen_internal(d, z) == (ek, dk)
+  }
+
+  test "ACVP keyGen tcId 2: KeyGen_internal(d, z)" {
+    let d: Word[8]^32 =
+      hex"3def73c5 58e1f5f2 bfb4f6ea a36ee200 cdf54580 958cc217 6282628f f508a016";
+    let z: Word[8]^32 =
+      hex"b9958575 128f9702 25252660 64f9422e 83f75fbd cd0f2bc2 648655f0 e31a17e5";
+    let ek: Word[8]^800 =
+      hex"cab840fd 02818b28 0c161b2c 81585358 0a92dabb 3a7a0700 26128a75 d86cdfa3"
+      ++ hex"bc012263 e571365b 4489907a 7ed56ab2 89138111 1131d040 587e66b8 f870a17a"
+      ++ hex"36b73ad8 b35c02ac e0e7ac27 4644a6dc 23a7401e f0e547cf b18e9c96 9164b78c"
+      ++ hex"36d06cae a48670e6 3b187925 ea208757 b98bc227 2c5db525 6a72bcf2 130b9b93"
+      ++ hex"b2e79322 2bbb97ae 464b0429 89811b37 bdd38610 895b6571 2c619c9a a1e78d87"
+      ++ hex"2680b873 0d1b7ba7 9121cc79 8b3e952c 3181f071 f19707d7 ba1fe99c 56a5bbac"
+      ++ hex"f4a170e2 4422c347 8c84cb95 d0167196 a47cb78a 17a0e414 a1c37f08 16594fb0"
+      ++ hex"888000c3 242b2820 ba4d65a1 5f1e7633 117736fe e790f10a 5b4567cc cb191466"
+      ++ hex"e40cb5e5 661d4330 00e562a0 029108d4 ce912186 25083602 caa7c134 11dfa713"
+      ++ hex"7dc631d7 7a82dd4a 05aef81a 47b77e3d 6998147a 7bccc929 f75548e8 66a6d1d9"
+      ++ hex"c7beb70e 63d70662 2b05a863 a9c9d700 a13b6426 d34374d8 bb0e007d 8ad7cc18"
+      ++ hex"06b152c3 8daeeb75 dc0c5791 c03485b8 b45e7aba 834026f2 c1ba5554 277f636f"
+      ++ hex"59005f99 d16f3d64 30c37c2d 24c7115e e04648c8 8de90925 d5b529ad 0b7c3213"
+      ++ hex"ac9a6516 d395239b 91cbeb46 547053c9 8b1c211e 64cec295 178a1b2d 194a3511"
+      ++ hex"b82b21c6 51e77c7b d1a51315 99c5ab4c 656cf4bd 3763cbd0 1912c271 3f438a46"
+      ++ hex"3be24b46 2b473cfa 7d7cd58e da3c0525 6a2db4c5 7cf8fcc0 d2fa6249 cb9a36d4"
+      ++ hex"4f9b8c9d e9e84cf3 f49f7d8c 08de9230 766c1776 929e2f00 453d2847 0a350aee"
+      ++ hex"005a4602 812af319 26085dc9 fbbffc3a 1bab2a22 97c4c983 46b7d48a 5d3edbbb"
+      ++ hex"b666aea8 a39e3e96 885f0ab6 7ca81bca c292a15c 6c4789a5 de863676 b123df7b"
+      ++ hex"3fbe3554 48d9ab89 c5014d0c a282ecb2 504b3685 a239de66 03fcaa75 5b5175a4"
+      ++ hex"1ca87670 7cc56a31 e3db98d9 ba612a30 09121576 449bb4e5 eccdc573 30813c7c"
+      ++ hex"f692b110 37122d02 6be30094 2a8a2178 91672cc4 1fba185a 62b3b9d6 7419ac15"
+      ++ hex"b472d6c3 55f830d8 eb56d5c8 92dc58be 0aca8c6b 304cc86a 56f3cacc 392b1503"
+      ++ hex"ea73e228 63e6f9c3 171a9e18 f0331c4c 5bc9553c db465592 6a6c4e19 89a330b5"
+      ++ hex"323f422b 9fb1329d b7bbe340 ac26f11c 6299252e ab254260 453ff7b7 f4add0f4";
+    let dk: Word[8]^1632 =
+      hex"3594a400 134ae295 52db981b ebda33ef f05bc5ac 7fa0b539 f92216ce 790957ea"
+      ++ hex"34592011 af42ab6b e5131120 8c5a7a78 7ac84a33 0a28dcf6 a69df879 cf876401"
+      ++ hex"fcb0af84 569c4b1f f556556b ab21f372 8c8f172c ebdc3c68 4786db02 55746c58"
+      ++ hex"2c3729bb e97b1405 378f7597 9a9b07fd bb36a1b2 8e3c8c96 431cbce3 01510b7b"
+      ++ hex"a596f34e 24f99499 b0336f23 c0dc5380 c044b839 5201491c bb85ac11 da6bb78e"
+      ++ hex"3a66545b 40284c0a 64eb8bdc 63ba351b 95f5ea29 e6051c76 fb0f7726 bf3ef16d"
+      ++ hex"531c7cd7 cc49abd5 84cf237d ab0014db 49c8aa97 0ee6f397 70e48cf4 4b0e64b8"
+      ++ hex"6a9d4824 042556b3 331bcf24 5c42eac9 e2bb8626 15230d19 b854b55b e721c2e2"
+      ++ hex"3947fd7c 74f33041 55626731 b4ad3806 4bc0fcb7 26e48f31 6ab24a4a 8731da0b"
+      ++ hex"28c0bbed 56af0090 9c1d0b5f 86cb2105 e37df138 5a4d8a03 8980c833 b52ff6a1"
+      ++ hex"08658917 3bb96601 713ae94c 0ef48bcd 567b8836 985a2165 0ab72021 e675225b"
+      ++ hex"eb09ddec 05ff324b c90840fe b8af2046 543f8933 492558d6 f4255255 3e477c29"
+      ++ hex"ad601ee2 571dde98 399d7791 4b098e07 f291167b 041ed60a d8d5794f a65ac7e7"
+      ++ hex"663fc962 aae22f43 75793e7a 88627875 1ada4e79 1743cb12 cc5f24bb a5d57f3c"
+      ++ hex"3b61cf48 315c6226 da27c8b7 931c3d30 4f3156b4 7a07b0ef 4cb68937 473c9822"
+      ++ hex"08d5aafe 3ca29488 22ebc02b f5a01f62 e09cf1b4 ab950203 06559677 faae0a67"
+      ++ hex"7574711c f0a92fa1 a5240bd6 323da812 aa437a44 90585897 45790037 eda03f19"
+      ++ hex"d88afc5a 3d6b18ab a4a2605c e42568ab b7c1f303 e508534f b7a10b77 c273419c"
+      ++ hex"93f41880 1a81c4f3 ae003baf dd309381 dc4dbe80 65f978b3 eb3b19e0 3597bc97"
+      ++ hex"9c0ca0b3 6e830868 e289e2ca 54c2196c 99922b90 47cd4fe7 b259a444 7f41ae12"
+      ++ hex"0185f914 1ef1b186 f68a869e a4373ea6 54fd6386 ef2ca63e 7cb68f84 54506891"
+      ++ hex"c0baaf3a 66953fb2 6da03c04 f3a27b1f 1956e492 2e336314 ad360d11 4c395c89"
+      ++ hex"810197be 73b8ceaa a1b00ab0 79a2d33c 215450e4 fc33f383 83e2834f 0e143173"
+      ++ hex"c1c1ece2 ae19ba48 e0fccab0 cc5712c9 bcd8229c 2ab00729 f37b3bf9 74d2f718"
+      ++ hex"cab840fd 02818b28 0c161b2c 81585358 0a92dabb 3a7a0700 26128a75 d86cdfa3"
+      ++ hex"bc012263 e571365b 4489907a 7ed56ab2 89138111 1131d040 587e66b8 f870a17a"
+      ++ hex"36b73ad8 b35c02ac e0e7ac27 4644a6dc 23a7401e f0e547cf b18e9c96 9164b78c"
+      ++ hex"36d06cae a48670e6 3b187925 ea208757 b98bc227 2c5db525 6a72bcf2 130b9b93"
+      ++ hex"b2e79322 2bbb97ae 464b0429 89811b37 bdd38610 895b6571 2c619c9a a1e78d87"
+      ++ hex"2680b873 0d1b7ba7 9121cc79 8b3e952c 3181f071 f19707d7 ba1fe99c 56a5bbac"
+      ++ hex"f4a170e2 4422c347 8c84cb95 d0167196 a47cb78a 17a0e414 a1c37f08 16594fb0"
+      ++ hex"888000c3 242b2820 ba4d65a1 5f1e7633 117736fe e790f10a 5b4567cc cb191466"
+      ++ hex"e40cb5e5 661d4330 00e562a0 029108d4 ce912186 25083602 caa7c134 11dfa713"
+      ++ hex"7dc631d7 7a82dd4a 05aef81a 47b77e3d 6998147a 7bccc929 f75548e8 66a6d1d9"
+      ++ hex"c7beb70e 63d70662 2b05a863 a9c9d700 a13b6426 d34374d8 bb0e007d 8ad7cc18"
+      ++ hex"06b152c3 8daeeb75 dc0c5791 c03485b8 b45e7aba 834026f2 c1ba5554 277f636f"
+      ++ hex"59005f99 d16f3d64 30c37c2d 24c7115e e04648c8 8de90925 d5b529ad 0b7c3213"
+      ++ hex"ac9a6516 d395239b 91cbeb46 547053c9 8b1c211e 64cec295 178a1b2d 194a3511"
+      ++ hex"b82b21c6 51e77c7b d1a51315 99c5ab4c 656cf4bd 3763cbd0 1912c271 3f438a46"
+      ++ hex"3be24b46 2b473cfa 7d7cd58e da3c0525 6a2db4c5 7cf8fcc0 d2fa6249 cb9a36d4"
+      ++ hex"4f9b8c9d e9e84cf3 f49f7d8c 08de9230 766c1776 929e2f00 453d2847 0a350aee"
+      ++ hex"005a4602 812af319 26085dc9 fbbffc3a 1bab2a22 97c4c983 46b7d48a 5d3edbbb"
+      ++ hex"b666aea8 a39e3e96 885f0ab6 7ca81bca c292a15c 6c4789a5 de863676 b123df7b"
+      ++ hex"3fbe3554 48d9ab89 c5014d0c a282ecb2 504b3685 a239de66 03fcaa75 5b5175a4"
+      ++ hex"1ca87670 7cc56a31 e3db98d9 ba612a30 09121576 449bb4e5 eccdc573 30813c7c"
+      ++ hex"f692b110 37122d02 6be30094 2a8a2178 91672cc4 1fba185a 62b3b9d6 7419ac15"
+      ++ hex"b472d6c3 55f830d8 eb56d5c8 92dc58be 0aca8c6b 304cc86a 56f3cacc 392b1503"
+      ++ hex"ea73e228 63e6f9c3 171a9e18 f0331c4c 5bc9553c db465592 6a6c4e19 89a330b5"
+      ++ hex"323f422b 9fb1329d b7bbe340 ac26f11c 6299252e ab254260 453ff7b7 f4add0f4"
+      ++ hex"52be25fb e4d87aa0 1253da88 91d2592a 416e2f79 1479e50a bb19e8f2 15dd6216"
+      ++ hex"b9958575 128f9702 25252660 64f9422e 83f75fbd cd0f2bc2 648655f0 e31a17e5";
+    keygen_internal(d, z) == (ek, dk)
+  }
+
+  test "ACVP keyGen tcId 3: KeyGen_internal(d, z)" {
+    let d: Word[8]^32 =
+      hex"309398d9 2b95b68a 725ed55d 3e72aa96 717fa08a 9b919dcd abe7d893 a73ad7cc";
+    let z: Word[8]^32 =
+      hex"c2fe9cb7 f49bf729 6785a182 4cd798c3 77bff4e1 836473cd 4a8c7423 bf1d0f13";
+    let ek: Word[8]^800 =
+      hex"5dfa5e5f e41c3f40 64ef1100 4e943e79 13458659 ca5a0455 d9ba8808 15b06287"
+      ++ hex"9bd90313 6d3a73d0 21a812a9 669df0a6 8a04cfb1 17423079 19103c8f e3710a95"
+      ++ hex"49120497 0583d497 26a324a6 bc240272 a5cf26b5 6c1656f9 96b37fb4 30e27cc7"
+      ++ hex"a3074251 3439535b 3c5e29c3 02abc002 65a2d751 2027969f 8a50cc2b 22901d16"
+      ++ hex"aa719906 d5094c8a 91a3906c bfeb852c c3a581fa 33b47685 957a831a f48ac244"
+      ++ hex"f766de32 a4a0190e d48b336e 4155a979 5930dc42 09da637d f59cee30 33250083"
+      ++ hex"e8aab97c 30c9ee75 196148ce 6cc556e8 b54aeae7 43ff9a0c c49b00d7 b0aaf353"
+      ++ hex"87a22403 a4956056 fca42324 4877995f c272a9a6 23c176c9 11aa9b02 27ac57fb"
+      ++ hex"20460054 6e6e10c8 43fcaaef 8a418e67 39ee4669 dfc577bc a851fcba cea3a699"
+      ++ hex"a25bca3d e397ecbc c9d31c3d bd0cb461 a07dcb97 6f900bbf 44ca3127 121d4812"
+      ++ hex"7d5fc332 5a0643f0 233c6c45 583c217c c9a17a48 82260544 b43cc097 2b730a29"
+      ++ hex"48639c29 b5a0f383 023112fb 106cd970 0d011b09 1a83cb09 9c21f2b2 c08b3994"
+      ++ hex"fdd5369d 4c5af618 96bb0092 2b113f80 699423b1 bc4a5885 e95a33dc ba6e8165"
+      ++ hex"c4ba0a7b 2bb16d00 fd32b208 37d717cd 55c91189 734d889c 09416c89 cde21df4"
+      ++ hex"bc778778 0a1b4b50 a3aa66ed 38539b71 596e4739 65165bcf a701a015 3a46c9ae"
+      ++ hex"0b6b588a 136bcb81 4fe0a8ca e7d63d2b f3ae61ea 2fcb1403 6a76756b 0387df71"
+      ++ hex"23a73620 de7acb82 ab239915 08d03078 d83b221c 047f864c 15d7ba75 c7229883"
+      ++ hex"05798203 849fa0be 732b23f4 1084032c 75f097bd a90b2fed 6c51adc5 6153951f"
+      ++ hex"0f96bc99 51ca34bc 1b4c972f 4515234e d664738c ce433068 1c36bf77 3c478321"
+      ++ hex"6f1e964a 0de4b1a1 923183e2 32c45b69 92ebb8e0 d5154261 274ddb1a a6d2aa37"
+      ++ hex"d836d51b cb77da19 34b510a2 2a830727 07412aba 89ac81f7 d9a5b38b 84ccd03b"
+      ++ hex"56b71333 73991419 cc09110f a1db151d 453beec2 0cb46163 de304723 d9478582"
+      ++ hex"99615b9e 9cb15553 207f0977 2116c843 a315c389 f160508a 001baa76 f92759db"
+      ++ hex"79b46133 79ad66b7 986303bd 17c872dc 9d276482 372861f0 6b805b03 c55f251a"
+      ++ hex"812137cd ba5af5c6 5c2d795e bf84ee48 f10338af 317cc5c9 61ae4ae8 243c5f0e";
+    let dk: Word[8]^1632 =
+      hex"310ab0e7 d75fd82c a23d0bae 25c49354 65ba8596 c6d08a44 bbd6a9aa a51f7416"
+      ++ hex"07a71238 a9a24e3a 878c388a 8099d66a 61a44748 76197bd6 71d25a93 9d66b7d8"
+      ++ hex"11541381 c7c2694c 53c8399f 40780f5c 3960366d 70e76353 676e0aa0 24ed8b9e"
+      ++ hex"fb81893f c1a7a06c bad4ba2d 6a16828e d5002b80 8ed52124 bb8b21ca a53038ea"
+      ++ hex"a15509c1 fab3478c b39a4ea4 a9644174 a0f1a46e 707240ea 6c1b32cb 90b06083"
+      ++ hex"70c238f9 6dfc404e 00251f8e 809da6b7 28295784 95e9236e 1019b651 b49df920"
+      ++ hex"ca2697b8 051c7d97 3538998d 13a867d5 1ab49184 1baf91a9 c9f14540 57937150"
+      ++ hex"361d7caa fd9a9a2c f51158f6 59d3296b b4e30a32 ac5e4ad2 3b3552af d5c7cae9"
+      ++ hex"f338a019 1efd4624 eba24daf 48c7453c a87ada37 7c69c1da 2acee818 cab70243"
+      ++ hex"4e571669 5b2513f8 30ce797e a9ea0f5a 04afb847 77acdb73 99d24779 7a5fd6c6"
+      ++ hex"2368d862 2b773b1c 22382b5c 1eabb3b0 9312bfe6 0c7a9972 bdae9ac7 37697b6c"
+      ++ hex"fc0582f9 38658a60 e8d015f6 70b373d2 a00021a8 90b65605 1b98e718 2e08454e"
+      ++ hex"7f31355a da6c56c7 cf9d528a c1409a4a 015b4714 72316610 240c4570 d6a2f7f2"
+      ++ hex"97ed76a2 eda8b703 427a22c0 56d4a549 bf859612 a56a5aec 46914711 8dea0061"
+      ++ hex"e7620ce3 0355eab4 0ba1b6ab 4b39eb77 061adb9c 0ea148b0 5bc0c7b6 bf08fc91"
+      ++ hex"b20971ad 8641051b 230ba9c1 a8d5c8c5 00231c88 51236193 7c36ca9e f4889137"
+      ++ hex"47c9e773 46505007 b55147f3 54093898 3c4ccac0 733101c4 6b1a138a f1db42f9"
+      ++ hex"26c18cfc 86a65b40 abbb25d3 c4a51bda 8fc5d63c e510207b 1932de31 ca065132"
+      ++ hex"3ec6c5f8 826720c0 9413b614 5e54cc18 f9ae41b7 1f369b7f 07207563 70765179"
+      ++ hex"7ee88a92 544a46be 59063d95 c1e88b7d 4846c894 338bded3 3e1b088d 81f48332"
+      ++ hex"c2079504 147d4937 55d15084 463d2317 5cfbe7a2 93424b66 a61a7115 5c8c176f"
+      ++ hex"c7528c8a 576418d5 77e9858e 3fcbc6cc 51c65040 847ed640 4b7a44b9 e82f321c"
+      ++ hex"28d6176c f31c7f72 2b9af7b9 598348a2 7808a50a 0374d581 343edaa7 4bc37187"
+      ++ hex"709879d1 7c8b853f d6596452 89b92960 3bf245ae b5eb92d6 55a7b3c4 2285c823"
+      ++ hex"5dfa5e5f e41c3f40 64ef1100 4e943e79 13458659 ca5a0455 d9ba8808 15b06287"
+      ++ hex"9bd90313 6d3a73d0 21a812a9 669df0a6 8a04cfb1 17423079 19103c8f e3710a95"
+      ++ hex"49120497 0583d497 26a324a6 bc240272 a5cf26b5 6c1656f9 96b37fb4 30e27cc7"
+      ++ hex"a3074251 3439535b 3c5e29c3 02abc002 65a2d751 2027969f 8a50cc2b 22901d16"
+      ++ hex"aa719906 d5094c8a 91a3906c bfeb852c c3a581fa 33b47685 957a831a f48ac244"
+      ++ hex"f766de32 a4a0190e d48b336e 4155a979 5930dc42 09da637d f59cee30 33250083"
+      ++ hex"e8aab97c 30c9ee75 196148ce 6cc556e8 b54aeae7 43ff9a0c c49b00d7 b0aaf353"
+      ++ hex"87a22403 a4956056 fca42324 4877995f c272a9a6 23c176c9 11aa9b02 27ac57fb"
+      ++ hex"20460054 6e6e10c8 43fcaaef 8a418e67 39ee4669 dfc577bc a851fcba cea3a699"
+      ++ hex"a25bca3d e397ecbc c9d31c3d bd0cb461 a07dcb97 6f900bbf 44ca3127 121d4812"
+      ++ hex"7d5fc332 5a0643f0 233c6c45 583c217c c9a17a48 82260544 b43cc097 2b730a29"
+      ++ hex"48639c29 b5a0f383 023112fb 106cd970 0d011b09 1a83cb09 9c21f2b2 c08b3994"
+      ++ hex"fdd5369d 4c5af618 96bb0092 2b113f80 699423b1 bc4a5885 e95a33dc ba6e8165"
+      ++ hex"c4ba0a7b 2bb16d00 fd32b208 37d717cd 55c91189 734d889c 09416c89 cde21df4"
+      ++ hex"bc778778 0a1b4b50 a3aa66ed 38539b71 596e4739 65165bcf a701a015 3a46c9ae"
+      ++ hex"0b6b588a 136bcb81 4fe0a8ca e7d63d2b f3ae61ea 2fcb1403 6a76756b 0387df71"
+      ++ hex"23a73620 de7acb82 ab239915 08d03078 d83b221c 047f864c 15d7ba75 c7229883"
+      ++ hex"05798203 849fa0be 732b23f4 1084032c 75f097bd a90b2fed 6c51adc5 6153951f"
+      ++ hex"0f96bc99 51ca34bc 1b4c972f 4515234e d664738c ce433068 1c36bf77 3c478321"
+      ++ hex"6f1e964a 0de4b1a1 923183e2 32c45b69 92ebb8e0 d5154261 274ddb1a a6d2aa37"
+      ++ hex"d836d51b cb77da19 34b510a2 2a830727 07412aba 89ac81f7 d9a5b38b 84ccd03b"
+      ++ hex"56b71333 73991419 cc09110f a1db151d 453beec2 0cb46163 de304723 d9478582"
+      ++ hex"99615b9e 9cb15553 207f0977 2116c843 a315c389 f160508a 001baa76 f92759db"
+      ++ hex"79b46133 79ad66b7 986303bd 17c872dc 9d276482 372861f0 6b805b03 c55f251a"
+      ++ hex"812137cd ba5af5c6 5c2d795e bf84ee48 f10338af 317cc5c9 61ae4ae8 243c5f0e"
+      ++ hex"7ff658bc 933fc07e 44f8b4b3 c3125ff4 93176d18 380c6f78 16b229d6 d2f56ee3"
+      ++ hex"c2fe9cb7 f49bf729 6785a182 4cd798c3 77bff4e1 836473cd 4a8c7423 bf1d0f13";
+    keygen_internal(d, z) == (ek, dk)
+  }
+
+  test "ACVP keyGen tcId 20: KeyGen_internal(d, z)" {
+    let d: Word[8]^32 =
+      hex"dd1d098f da7e6173 e9dfc843 79a98eef 3a7be50e dd734439 aeccb656 e17dc382";
+    let z: Word[8]^32 =
+      hex"3cc95a92 d21ebd75 b3bef7a0 be3a0050 15491060 8db39238 b0dcad98 f31531e0";
+    let ek: Word[8]^800 =
+      hex"2e75cdc0 b802d395 76a89aba bb1c0970 c92937c8 9ec79b2e 35c304ca 2204de26"
+      ++ hex"a39cc985 a16a2e9f 20657d74 c4d11824 71f557b4 bc990cb7 4ea8831d 60b41987"
+      ++ hex"1b2ffb53 c2f55a1e bbe52837 629f37a4 84dce795 33c679f3 c712bbc6 2759c4c3"
+      ++ hex"40561402 24c97dcb 98bbe443 b8b27fec 886d1a56 651d98ce 0eac3e35 0a412f28"
+      ++ hex"aa505b74 d3e89a83 c6c6277b 266e4b2d 3ffaceca f348d763 a554c230 8815138c"
+      ++ hex"ac2b7481 749357c9 16559ec2 a98cccbb a426d095 5362bb89 eca73dd5 8bcc004d"
+      ++ hex"845223f1 6437c413 69bf7117 b2098346 ea2d20b4 c96f47c3 1f038c06 846d32aa"
+      ++ hex"0c7d1acb 29d602d3 fc4b28c1 a006096d 7fa3bc00 6a591fdb 4009f44f 045a73a0"
+      ++ hex"16305e0b 156b9ca1 115756a4 8a4fef8b 0d24ea80 4ee7bd9f 05b2c382 5882a33a"
+      ++ hex"a102c996 b603e4e1 8d7d1071 1778719a 379ab7b1 2054b7c9 afca7948 cc06db48"
+      ++ hex"54bb56ad 4d146bcd 25779af7 8d48f06a ec4753bc da8caada 3053f1b4 03d0552f"
+      ++ hex"771a6a67 0ed28891 42f94bfc c44daab3 5a6b1724 79fc4472 308b75a5 9200c82e"
+      ++ hex"d95539e5 5c766a5b 30165942 0fb40aeb c06d4b49 cef1ec51 ab839394 8a16522a"
+      ++ hex"7a025a5e 2cd83be8 53ccc3dc 84b63754 ea0315e9 29bbb547 08d6ec35 e73278d2"
+      ++ hex"1b39ccdb 0c5cc001 8764b380 acb12d1c ae17ab9d 30a922a7 251f59c3 b83b2752"
+      ++ hex"9a11bb3e 7b525c78 4357853a 28cb0b3f b4702172 78fad759 7b64c7d0 37b59710"
+      ++ hex"0a65e824 095b6e7c 9456ba04 ccc52a0e 9b049005 2c9b22cc 779ec126 654a6f23"
+      ++ hex"b8251300 2e9b0092 694512da b95df681 b461c040 c14baefa 5136f710 bdf52401"
+      ++ hex"07895093 e39d2b2a 357c1b8c d5a639f0 333e0055 c240a01e eefa4aa4 a2adb014"
+      ++ hex"777b051b bb2646f3 3bc1ac84 8b4fa26f 7bb55318 8b62e4fb 7c71b756 07b05955"
+      ++ hex"f61eb4aa 88e4399b cc70a026 b4217969 9b3e1012 16613335 e9689262 6e650c41"
+      ++ hex"cc4a13b2 721e1064 81ad0830 fcfbc317 196b4ba8 4221980b aa185b58 5571eb20"
+      ++ hex"211c1c56 3f19b242 bbc8bad5 6f2c3126 b35a4586 677b586a 0aa8fbc5 064c7ec6"
+      ++ hex"628dc00b 30ad993e 094519a5 a0c0f1b7 33f0fb03 32ac8d48 c84dd255 57753440"
+      ++ hex"f1c41a66 bb96db34 59b88c48 6722bd9f 29414b5e 76801f73 1478be28 c05cdb81";
+    let dk: Word[8]^1632 =
+      hex"d6c63c3d 8c63c7c4 c2dd5309 cdf3248b 2aaf6abb 4c5e2220 a84903e2 578a93e1"
+      ++ hex"9b511800 82c47f2b e24090ba 01f67936 3bd4001a 78564459 8b3b46a6 c6e7166b"
+      ++ hex"604ed332 aab51373 a356bc6b 894d3519 14ddca00 629c042c b2463872 82bd32a2"
+      ++ hex"9d836d6a 24434bec 6066fca8 5d69554c 1061cbfc 792c2765 c6e6c515 66c4586a"
+      ++ hex"ae9971b5 33728dd4 b210fb92 427a91ab 54f15df9 b966ff83 9970e32d 0424b579"
+      ++ hex"39cf2594 064d11a7 94a09b29 c2a934a7 6c2fd5c7 df05c317 57028a82 9688f93e"
+      ++ hex"71b79bbc d9131300 4b3ae152 fc6b3fcb 31160579 b889176b 265276bd c10703f6"
+      ++ hex"8b00419d 88b139ff 00b9cbc8 81200517 75521d32 b3050667 71a7a567 a1b930cb"
+      ++ hex"eca9673a 27987148 71a90483 1c3c0ff8 7d27c4aa feb6cc6e 704b2c18 548e12ce"
+      ++ hex"01995f01 90982c7b 3adc4636 06c591d9 0429a193 9fcd774f 2eaa52ad 2227c2f9"
+      ++ hex"6657a265 3b39122e 37147ecc 11ebba9d 2054275c 760fdea0 04a11783 a3ca4f6f"
+      ++ hex"8b1f9778 1096b181 e2f410b3 2469d520 5331aab6 7c3235df 8a4b42b7 22dc092d"
+      ++ hex"4be535d0 b8104663 035ed69a c7a01e6a 79b319fb 9fe05a88 bc6ca979 838f8d6c"
+      ++ hex"53a2ec17 f9e3baa7 71704ba9 90cdd00e 7f535e3e ccaaab70 b068d71e 09b81a1a"
+      ++ hex"8591bea9 093c9648 f8a11dfa 7985108b 0683db43 bfc54a34 303ed940 6a9a1333"
+      ++ hex"308638bd e06cc9c9 1639cabd 873244e9 e0448b47 8023dc36 6c3a379f 2ac9bb1b"
+      ++ hex"afc2dc98 97888590 99bfbd24 aea371c1 25a61152 7105f29a 1dc5a876 2c8c7027"
+      ++ hex"119f0884 a56fcca4 a5d50363 711e56f7 c235609f e7646b65 c488b19a 5c9e8c9a"
+      ++ hex"bae4898f 7b549ed1 bd728a13 32e4151f 1734de75 99be8744 6d173834 3306fec1"
+      ++ hex"39518c01 282c3c07 e54887c3 2fe9e6bf 1ed943fa 05b8a03c 7bb87726 a854cbc7"
+      ++ hex"24cf65ec 8050b26b fe4466af 8a1a4a15 3bd125af 58598cff 88361fb4 3dc50834"
+      ++ hex"3998635a 63a878b2 ccf05ccc 9f4c982f e0cca682 9d0cfa0c 8f28750b 3a75ddfa"
+      ++ hex"9e75d528 b9d24ce0 18cec428 62ec9659 bbc96ba9 48b7de03 a5daa97e c0f15f58"
+      ++ hex"0b8a4205 728d0b4d be7a0de3 11be8783 a69b5189 3e717813 763416a4 ca5b3647"
+      ++ hex"2e75cdc0 b802d395 76a89aba bb1c0970 c92937c8 9ec79b2e 35c304ca 2204de26"
+      ++ hex"a39cc985 a16a2e9f 20657d74 c4d11824 71f557b4 bc990cb7 4ea8831d 60b41987"
+      ++ hex"1b2ffb53 c2f55a1e bbe52837 629f37a4 84dce795 33c679f3 c712bbc6 2759c4c3"
+      ++ hex"40561402 24c97dcb 98bbe443 b8b27fec 886d1a56 651d98ce 0eac3e35 0a412f28"
+      ++ hex"aa505b74 d3e89a83 c6c6277b 266e4b2d 3ffaceca f348d763 a554c230 8815138c"
+      ++ hex"ac2b7481 749357c9 16559ec2 a98cccbb a426d095 5362bb89 eca73dd5 8bcc004d"
+      ++ hex"845223f1 6437c413 69bf7117 b2098346 ea2d20b4 c96f47c3 1f038c06 846d32aa"
+      ++ hex"0c7d1acb 29d602d3 fc4b28c1 a006096d 7fa3bc00 6a591fdb 4009f44f 045a73a0"
+      ++ hex"16305e0b 156b9ca1 115756a4 8a4fef8b 0d24ea80 4ee7bd9f 05b2c382 5882a33a"
+      ++ hex"a102c996 b603e4e1 8d7d1071 1778719a 379ab7b1 2054b7c9 afca7948 cc06db48"
+      ++ hex"54bb56ad 4d146bcd 25779af7 8d48f06a ec4753bc da8caada 3053f1b4 03d0552f"
+      ++ hex"771a6a67 0ed28891 42f94bfc c44daab3 5a6b1724 79fc4472 308b75a5 9200c82e"
+      ++ hex"d95539e5 5c766a5b 30165942 0fb40aeb c06d4b49 cef1ec51 ab839394 8a16522a"
+      ++ hex"7a025a5e 2cd83be8 53ccc3dc 84b63754 ea0315e9 29bbb547 08d6ec35 e73278d2"
+      ++ hex"1b39ccdb 0c5cc001 8764b380 acb12d1c ae17ab9d 30a922a7 251f59c3 b83b2752"
+      ++ hex"9a11bb3e 7b525c78 4357853a 28cb0b3f b4702172 78fad759 7b64c7d0 37b59710"
+      ++ hex"0a65e824 095b6e7c 9456ba04 ccc52a0e 9b049005 2c9b22cc 779ec126 654a6f23"
+      ++ hex"b8251300 2e9b0092 694512da b95df681 b461c040 c14baefa 5136f710 bdf52401"
+      ++ hex"07895093 e39d2b2a 357c1b8c d5a639f0 333e0055 c240a01e eefa4aa4 a2adb014"
+      ++ hex"777b051b bb2646f3 3bc1ac84 8b4fa26f 7bb55318 8b62e4fb 7c71b756 07b05955"
+      ++ hex"f61eb4aa 88e4399b cc70a026 b4217969 9b3e1012 16613335 e9689262 6e650c41"
+      ++ hex"cc4a13b2 721e1064 81ad0830 fcfbc317 196b4ba8 4221980b aa185b58 5571eb20"
+      ++ hex"211c1c56 3f19b242 bbc8bad5 6f2c3126 b35a4586 677b586a 0aa8fbc5 064c7ec6"
+      ++ hex"628dc00b 30ad993e 094519a5 a0c0f1b7 33f0fb03 32ac8d48 c84dd255 57753440"
+      ++ hex"f1c41a66 bb96db34 59b88c48 6722bd9f 29414b5e 76801f73 1478be28 c05cdb81"
+      ++ hex"8a6ababe 84ebb505 0ed25df6 df23514f 8bdd4521 45b6e63e 3b872a8e 312265ab"
+      ++ hex"3cc95a92 d21ebd75 b3bef7a0 be3a0050 15491060 8db39238 b0dcad98 f31531e0";
+    keygen_internal(d, z) == (ek, dk)
+  }
+
+  // NIST ACVP, ML-KEM encapDecap, revision FIPS203, vsId 42,
+  // internalProjection.json, tgId 1 (ML-KEM-512, encapsulation, AFT):
+  // ML-KEM.Encaps_internal of ek and the message m gives the shared key K
+  // and the ciphertext c.
+  test "ACVP encapDecap tcId 1: Encaps_internal(ek, m)" {
+    let ek: Word[8]^800 =
+      hex"17e5129b 2029f328 1987d662 4725b64c 51cf8dca 3562372b acb7ae15 fa9f2ff6"
+      ++ hex"ab47659b 7d305b61 f55f5713 15ff69aa 49e13881 00319a65 0e86c59b a3024c3d"
+      ++ hex"ec83d4aa ab661c45 2f6cb6a8 d2638c13 3c599045 329ccc8f 677d2468 3df1146e"
+      ++ hex"e1c7318c 3763a47a cff81a03 927b9bac 5a49dc28 5c4ee204 c4d72dbb 1c97fe53"
+      ++ hex"c622e621 338669fc fac1e30a 36f0a976 9bbb2ba4 08787ee6 29cec383 f29aaaab"
+      ++ hex"d46e2213 3f339c08 e29b82c4 faaf0f67 6e1c2b04 377975dc 3a3b2464 88edd163"
+      ++ hex"6c58abcd 65b8198b 6fa8a847 5ef541da f34b5adb 9db0589d 8958b62a 88930eeb"
+      ++ hex"1c0c352b 1e57bc78 82c89efa 31845781 3f2b55b9 6881e7f7 5c3dc973 57681e54"
+      ++ hex"553ae099 095ac38b 34c00199 952602c4 81c0f1cf 74b550ce 7c4f6c58 76aff076"
+      ++ hex"dd921942 db377e17 49f0306f 77443a2f 058d7858 54c7e32b 67f49bcb 99a5e18a"
+      ++ hex"ab607c64 9b892b4d a7cc7af3 1557149f 02b19460 fb49e505 1a7251ad e0083cdc"
+      ++ hex"1b0b0ca9 633220c2 b3c532fa 2cbc0dc6 cffcd445 5e0005d0 6cafc727 c778375c"
+      ++ hex"b67ac461 b3627a65 3c843bae aef866c7 f6774626 2ff6d765 36255c89 045a172c"
+      ++ hex"bfaa123d 6eca3e56 fc922f43 7a14f78d 1adb54b3 e54e8dd5 30450b85 00e15a54"
+      ++ hex"c97471cb 26ab4373 94480282 ba6b7a78 6c28857b af387725 bb4342b4 c3abe4cb"
+      ++ hex"f90612b0 4c8bdc15 99c2d4c6 6b80b1a1 94144004 0a42aabe 03e1ccb0 b4190780"
+      ++ hex"b6603bb6 9ec199b0 63826bea a5447c88 427c6bd7 a06e4164 a490b955 152979b8"
+      ++ hex"f5bc9417 598af01b cc371577 189e1775 165b9610 b9f75aee a277018b 1c2c0439"
+      ++ hex"1115b6f3 53afeecb aa18aa40 01db94fc dc5f46ea 520e9836 bc5a4576 b58c59fc"
+      ++ hex"3f756349 46d8cc1b 1081ce93 aba85663 04169332 fa316d4b a675a086 ad879379"
+      ++ hex"63511e4a 1845ea38 689b564e 11295672 098cf01d 5d4bab03 38121128 a682b048"
+      ++ hex"e6aa31b8 3c65ff86 1e123010 433a3c76 07ae5e90 c438067f 637b44ad f8798cd0"
+      ++ hex"980ec83b daeb4d42 7a8f8d88 c519e525 42f07734 a645a2a5 bd4d6521 a4b64a96"
+      ++ hex"a10f3500 2780169b 35e35f01 ca74fe62 07b8b475 ebc07964 7cc10aec 3c29683e"
+      ++ hex"071d87b8 2abbdd6d 369e326e 475325ed 5ae7ed23 2b37f493 88c06a74 0d421204";
+    let m: Word[8]^32 =
+      hex"dcacfe4d e1c115da 106acd1e efeafdc7 f0f4e570 7453ee2d 6b0d69d3 4cc0ef4a";
+    let k: Word[8]^32 =
+      hex"2d74374b 55d29aa5 85e144a2 9ba4f0a9 6537a73b 4f176c55 27075f66 e38e8858";
+    let c: Word[8]^768 =
+      hex"1c3204a5 a2c03107 7459e24a 179fc80f 8833e19f 36e7ac0d 3071bfbd 2d48fcf1"
+      ++ hex"352b96ef d0fa3195 b44a27ec 575b2794 909e4089 421e5640 9ad00cf4 72680f43"
+      ++ hex"8e0a6d39 e88fe6b9 38ef722c 7b7f75f7 14264c8f 22c528a6 3985c75d 2412278b"
+      ++ hex"137acd29 003cad17 11a2637c 63016450 7b7d3c0a cd1dd3ba 6e689411 df6d3eee"
+      ++ hex"410ec8c9 3ef27bc8 2019c394 3b85e645 519bec11 05d47383 88c7a545 2a67880d"
+      ++ hex"e88d65c1 626a55a4 565b5c26 b20bbfc3 3f2dcecf 938149d8 b58b19df b5f451c3"
+      ++ hex"a9fb5ab3 dc486c43 5f5397b6 e32416a9 306d9869 b91231ad fcc9a4ad 3d956ec4"
+      ++ hex"9832c3ef 2a6ed506 38f6633d 5a8fa7bb 7b04ef45 ff9b57d6 ea7b771d 57c3e5b9"
+      ++ hex"bf96e03a bd601bb4 6e5ce3e1 04233e7b e642b082 a610fceb ea684c51 6aa39a05"
+      ++ hex"1ddb8702 5ca84981 6e177c17 c1011593 9b98b5d9 f9532332 8cb5250c 4e38b7e9"
+      ++ hex"32481d20 bcbc66b0 becb3dc1 aa196f5f e207b28f 36344a3c 00f2fbe1 79878d6c"
+      ++ hex"7981467f c2df70d0 79088f09 b4d2cb56 d5dede59 3a77b319 30e8f613 8dfc7f9a"
+      ++ hex"7295fb37 2c1a3371 3610b2be 51f311e7 ce6050ec 276e5c3a 50790ee4 cb815110"
+      ++ hex"52ab659d d54f4baf 211eacdc 2a4e987c 7e2eb8b3 84f06813 c2542bf7 65c3e6b1"
+      ++ hex"42968bf3 c66414d0 1a205964 e7437770 40a6a987 9c84681b 6f6b3f2f 2b0b0455"
+      ++ hex"952a99a2 1cd609c1 fd7be71b a6a1c958 9445dc69 cf1d4937 763ac640 df853fd3"
+      ++ hex"e6dc9143 467e473f f4b89975 f24cca51 506830c2 79ad8bf8 06611e83 6f405e8c"
+      ++ hex"1fc36208 e99acb76 4316bd7c 42d2e248 b1dc3d5c 551ab77f c1682968 53129c31"
+      ++ hex"f5722707 791fd5f9 aaabc4fd 4c82a999 70a93f27 4fd0d625 2edcaedc 076bf598"
+      ++ hex"4e6e2805 6bb831ff 289cb0f6 ee87bc48 16712da0 f322a517 65f5f230 d0de72cb"
+      ++ hex"b4714c9c fe56c1bd 727dd7d3 f7c1b5b8 3029c81a 22b8fd43 0b137003 b63f29b7"
+      ++ hex"10a1a2c5 49f9ab0b 5ac8a123 935a1a3b f6276902 52aef65f 20681e2e 9a664321"
+      ++ hex"cdf5fde1 943c196b a2f04e42 e35f62ce 77198f01 a747a14d 57d7ed46 259189a6"
+      ++ hex"aa3363fc 178a8cc5 499f033f 9b8d90d3 27aafab7 de16831e 8325d337 ab3dcdf1";
+    encaps_internal(ek, m) == (k, c)
+  }
+
+  test "ACVP encapDecap tcId 2: Encaps_internal(ek, m)" {
+    let ek: Word[8]^800 =
+      hex"33566205 8659bf8b 93042a28 1e530a44 cb3b1159 c9f44a96 3b70209d 1235ca98"
+      ++ hex"288f0291 0ae54d03 6a83e620 1eb9b182 6830cecb 80194d84 5d7d7000 ac2b3d4b"
+      ++ hex"d0371a92 b463c8b7 8608312a b0574292 9ed7a354 5c2086f8 b03c4ac9 7035834a"
+      ++ hex"71131c92 c6240017 84524235 91a07ef1 d94c23c2 c42d3115 b8f95930 c8591cc4"
+      ++ hex"b65fe68e a804aa70 405bfb66 3fb3f90e 85e937b8 2ac958f4 636461c0 affc3ccc"
+      ++ hex"b0c24ff2 2a682b1c 8fc92e68 583664dc 600b1611 d08a4ff8 433ffe21 ad95429f"
+      ++ hex"87bc0325 a25c62c5 2d4cf1bf 2dc0a251 89a7e291 2e1461b4 a28a65c2 09217894"
+      ++ hex"5f6df8a8 a1933803 94b21bf1 bbf67b1d 26520843 53251c9b 581dcb10 1aeb6d3c"
+      ++ hex"2bb91ec8 708f40c9 8f848830 ba77eb79 5bc762c3 3171448a 46c16d86 b1426337"
+      ++ hex"68d75c25 ab4ff738 b1334267 25c067c6 4c5c20d6 b35b0739 1238ad73 e945e498"
+      ++ hex"8695eb28 cf65a26e f29e2cd0 b312146f d74c0239 2b18d743 53d64b68 4f0b7a68"
+      ++ hex"8b4489d1 ca27f945 bb582740 9b18d406 bda258c0 a2d48c65 1874d846 cf463926"
+      ++ hex"3182b4c6 66791de3 91ab9b20 daa568f0 286db0ec 0f60f695 8d9011b7 e637e1db"
+      ++ hex"c4d70234 5ad4b7a4 93c36fe8 2f94ea02 42b2c30d 8293b24a 97923109 ee11b228"
+      ++ hex"4aa91029 72324263 0a6658c5 022dc9fc 028c42ab 85162ef9 c240ca26 828e0712"
+      ++ hex"208a0ccc 757f67ca 335a322d f77b5a1b 014aa133 86af700b b89c29a1 65781a24"
+      ++ hex"21dd152a d452a546 5713c832 3b9c5776 52241ab6 c77f8106 13cb5a50 bb2abdf3"
+      ++ hex"876a6ec4 5a23d51a 67964054 c9a45f85 239b528d 335a8d7e 2333c832 99c3b095"
+      ++ hex"9ad66a71 5b539ec4 6424bb53 fa6c48f8 a5288d54 ce8925b3 1df87f24 078e07a1"
+      ++ hex"68b203c8 ad0ac229 bcb49872 a1ea3cc1 7212472f 5251c9e5 560ab624 c1a66ff0"
+      ++ hex"54665a20 3b62f3cb b3b969ef d62f5ddc b8ea648a 6205bb48 08ce1bdb a561086f"
+      ++ hex"70350b69 084bac72 3450b9c0 9f5c73f8 aa87c615 28366895 75e453f8 f62d325b"
+      ++ hex"721bd6c1 8e31503e 82136ce7 4867fb36 e38ba1a4 f15a63a4 a0779a37 3a864f64"
+      ++ hex"860b8427 4e234c26 2bcab245 b96a48a4 68ba5280 eb078a76 a8ab8a29 9773ec1c"
+      ++ hex"0e5d91cc 345018cb 2f24ceba 96928ff7 59cd046c 4b7d2d3a 1dffa4a8 61b4cf1b";
+    let m: Word[8]^32 =
+      hex"ae20c9ec 4338ea98 1044ef1a 50be6691 0559525a 020e8702 6bdaa78d 3b1aea5d";
+    let k: Word[8]^32 =
+      hex"00ba55e7 69f26ce2 9ffa7e08 a92845b1 859eca3b b4a14254 17c42a45 2f334ed4";
+    let c: Word[8]^768 =
+      hex"963eb08d 02fca314 db3390b1 c3e303b5 c0eb980c 26d42ac4 c4d07669 5bff503b"
+      ++ hex"e7163d20 048c764c cbd120b5 7484e091 9076bea5 646009a7 1ed300b8 0cd3cdfa"
+      ++ hex"f869a6df 71f2c1f0 f3f0a214 9cdf246f a0b69986 06c330aa 1067f83e 07689aba"
+      ++ hex"fbd5784b b596346d 048b41f8 c7bfc49e cc51146e 18ab2fb0 984a12e4 f40ad2ec"
+      ++ hex"4cce8d0b 689fc7ff 2bcaf209 f22f343c 122d4dc0 eecf19af 22e1f3cf fc90fb7f"
+      ++ hex"3b7c0bbd 4e74f1b5 b8974d47 6e7e4d37 7c03802b 3f59a119 ae6f168d bb89700e"
+      ++ hex"5b8a8670 d7dfe06b ff9ce2b7 8b0d9828 02654e3f 64b9ebb2 ee55cbf8 e0bc8a2d"
+      ++ hex"5e6dbf95 26a827d7 ef975019 363b94d2 7ddad85e 8023e3cf fbb0780d 3bac6867"
+      ++ hex"d41f5846 07690f83 38c4d534 87ff636f 3eb3ddbe 22795213 69da4448 d12895ed"
+      ++ hex"4198cbc6 59cf6aa9 d90f943f 546e4d49 703736f2 662db2b4 556d2512 af9ab6a4"
+      ++ hex"cf029218 5394d493 225b9870 79d530f5 d7b6c9ef df92db6b df5dbf84 2546e709"
+      ++ hex"133b3654 73931085 460bfd28 9649e9a3 0678081e 108c37a1 d0b82eff 652a06b1"
+      ++ hex"df09825a 99aa63db 6051e87a f79f9496 eb682812 111f3d5f 9d2a1342 2774fa98"
+      ++ hex"91402a8f 28a9822d 2c1ceca3 9ea554b7 5947b989 26b90fd7 6573493a fa59b15a"
+      ++ hex"36f8cce1 59cdad85 7d5b7af4 5f096b2a 0b8aefba f756b671 fceaca7b 3e318f03"
+      ++ hex"266a5ed7 ec8b216f 9b8ef57e a19b3603 b71f9e63 491ae984 50fc26ef a5fd9b3c"
+      ++ hex"d7ca5252 2c4aeaec 9209d217 c61b52c3 793b4a10 2f91715d ac3948b2 ffb70524"
+      ++ hex"7e95bd7d 4a924e8e 11507f95 26527551 1c06789d 4db0efb7 914abf9f 2371696f"
+      ++ hex"101408be 91cc8845 e95d8b20 f9181fc6 b2a0da84 a8e0a514 f8b3a6ce 25fa439b"
+      ++ hex"8e1131c4 e9dfdb9c 7b15d091 1003e664 d4e24d58 aa290b40 4892c2bb a1234526"
+      ++ hex"7fd072da cee5bd6e 35c74473 0921f47b 125aaece bfd516c2 fe978834 ded22710"
+      ++ hex"ee52b97a bc971250 33b2d0c9 15097e57 696e116a 460caab3 e8ce2618 27a07941"
+      ++ hex"a5525c7b dd4c7b5f 9a35a00a 968863a6 ed4d1576 96cc9f0d c1f2e1b9 fe5f5528"
+      ++ hex"763de59c 70f53625 18276b41 616a073a e7c48d97 08c657a5 4b7ca769 b51c87f2";
+    encaps_internal(ek, m) == (k, c)
+  }
+
+  test "ACVP encapDecap tcId 3: Encaps_internal(ek, m)" {
+    let ek: Word[8]^800 =
+      hex"2eb070d7 56356cd1 53a4d411 dba54a18 971d9b52 29ee965d 687a1d8f 8c48fb5b"
+      ++ hex"a4b29691 7e039ed8 13cad7b4 8c58d809 e2ca50c5 5a6cdbb6 84f8c33e f6a6c3ab"
+      ++ hex"dc179e05 b8530136 fb823f5f a81be629 89c9a18a b576091a 576eea47 9056944e"
+      ++ hex"e29743bf 31114592 5ad4d3af 8f5aa182 823d77c3 10c6facd e691cf4b e3080572"
+      ++ hex"9ce5088f 34e43f41 c5ccfada 7c744667 30ca6ef5 52459561 c5f9c335 a6d04a17"
+      ++ hex"b7ad8ca1 8efeda58 0a059dee 5c772959 a3bb401a ed345fe9 875c50f4 cca14a44"
+      ++ hex"c1916088 f41ddd66 9cec85cb c669a78c 44ba6bc5 3e64f04c d0c8231e 1096d49b"
+      ++ hex"3c160016 be681146 424fd2a5 974a849f f9c454e8 23903090 39682b86 f6e1bc0a"
+      ++ hex"8c1100a9 5d3861b1 77c33163 3a5b6268 a131e91f 4044a403 6094fceb 4fa20225"
+      ++ hex"fc8013bc f420d6a6 0c4ab427 333a5a3b 9cac97e6 bf220899 babaa3bb 7c200787"
+      ++ hex"797a8a3e 85c239f9 104212b0 a9307336 16d36d82 d6013571 59bf7268 5af9b899"
+      ++ hex"3c6a2bf7 4ef4fa71 359c0e06 06749c78 2b1f8691 38ba7237 29412803 6dc0f835"
+      ++ hex"81d1af61 a83120d5 cf6fd85f 05651492 85a3791a 4a660220 daea50a8 e50af579"
+      ++ hex"ba8ad986 1b8a92d7 35c690a0 33c5d14a b810a619 4a57eff8 404b48c8 312669be"
+      ++ hex"347021f9 1f135c26 ae4689cf 4152a159 08ced3ca ae6498b1 f65eee45 8065305a"
+      ++ hex"c3637228 99818b93 174c4600 ae1acb90 91694869 8b71f8ad 315a4846 b9aa0fd0"
+      ++ hex"024f0c6b 2b935fcd 09d07fcc 3e464532 efa3cd1a a764af84 8b81fbbb c47244b0"
+      ++ hex"9261d3e7 63c5c72c a7d16e9f 0c9a6437 cdfd0283 cf9110b1 19bdb6ab 09199c44"
+      ++ hex"40447b27 c951ee51 2bd7aabf 252c5b04 0758d4bb 367da7ba 0cd2a783 fb17a719"
+      ++ hex"27514990 f8096313 6b06aa72 920ad32f c1308c94 e88be6b0 ae43b487 a5e8576f"
+      ++ hex"b8b98afc b88b3b08 3fe8132b c8c43a75 86cc4405 fad1253a b7c805e6 618d6c60"
+      ++ hex"9e2421a3 a5893856 6a23c731 84f16a71 60b9a474 80c44765 989a058b 30035f50"
+      ++ hex"6855d54e 8369aa54 eb810342 71b63246 ea590467 db4beb92 a5bb1376 9272cf43"
+      ++ hex"674cd8b4 51dea59c c92bce92 7565e8bb 0351d59c 76b9a6b7 39a4664c 9208486a"
+      ++ hex"d4d00d81 e8e59853 8b9b95dd 9060e9bf f858f175 a335588a f73fb717 a1dda90f";
+    let m: Word[8]^32 =
+      hex"d3443860 4207e723 0a819173 c4cb6f41 1ebce6e6 5388caf2 f6f9a8f7 7389159a";
+    let k: Word[8]^32 =
+      hex"541b2714 c643fd30 7ab0777d 2c00d5ac 67aaf764 f43a7903 983abd9f f6f70934";
+    let c: Word[8]^768 =
+      hex"7587d679 b0650f28 63ce0665 b2f384c0 7ed153fe 2ea1e07a 3ab9d6f6 6de46414"
+      ++ hex"92d4800e 552578c1 bfe12f23 b0333bac ca569749 5c198125 43665a15 91a4f5b3"
+      ++ hex"35a953db 1efa749e 78da267c ec141211 cbfca798 e7c4a38d dfc5b6c2 d3f61705"
+      ++ hex"0c1eb187 1be22a73 911ee7e4 9cbfc95d 7dab057f b1890adc 4d9dcbaa 6774aaed"
+      ++ hex"43e94f8b 2ad61162 99317a4c 6f9f5385 4d69a4f1 56a48d5b c19802ab fd142b2f"
+      ++ hex"69964c36 797607f7 02f0e9cb bd3ff81e 3224c72d 26c712f9 0ae16652 8025a3cc"
+      ++ hex"1de9a5b6 fdc5cbaf 0743e2db a69c0015 47b42092 14b0c007 bca57868 7d9dc1b9"
+      ++ hex"c05d21ed 76073c5d d07b73d8 4360f205 fbe9b1a4 8852f95b 4f5a359f 95baa899"
+      ++ hex"fcfdee7f a09ec3b0 ee65c2a3 602f4088 ad2955ed f7e35394 593a9559 697c8dd9"
+      ++ hex"bd1e86bf da02c583 9ce4ceee e390fd5b 2d660474 44662e95 731c4e11 dd9ea215"
+      ++ hex"494392c9 610e92e6 22528479 fe488c5c 8adfbe0d 85a6fe21 5612b583 48f2c418"
+      ++ hex"84769a9e c7fd0a52 c54cbe9c 7b9b32a3 857d5f4e 01645e69 35d34f4e c2c064db"
+      ++ hex"76107649 f1cadcd9 c880ef19 23fc3e13 281c60c8 03b5b21e bfe8acec ba0aa5e8"
+      ++ hex"1b7b0813 7fb1de50 d2f1fe43 bf7cc504 136ce44a 57f61b94 cdd160cb c09d082b"
+      ++ hex"aeec6718 01375b88 3fc114a7 f704afc8 1c20d14c b07d7a5b c94aea67 71b5f1c9"
+      ++ hex"188e43d7 82a3ea12 e4bcb61a 801491d3 3e4f5270 76d0c6a1 f8035fcd dbe0530b"
+      ++ hex"43f2db42 39444f4a f745cc53 3b3a8e25 f6257b9b fb5ed356 64a820ae d0c437cf"
+      ++ hex"2ff2a426 30dffd42 494d9966 d79b4b74 44967d14 b2afa88c 7d1768bf 5d0736a0"
+      ++ hex"ac65db79 f563da31 f141dfdc f794ac5d 9817b18d 2a8c58f9 a715120d e95e5b95"
+      ++ hex"a7526f48 123ba84d f00c2e2b 04f7a9e8 4f4c44ca da92b498 5ff1ec0d 5cc4bf72"
+      ++ hex"f5ba5a25 ecf3c31f e311219d 468b3ea4 23c871a6 cdb1e933 e369fd7b 44eabe64"
+      ++ hex"248d94c5 cb4c82df a15101e5 d20f7ce8 3d25eddd 9ba5aa94 f297eb79 10cca546"
+      ++ hex"bf0be0f3 4ef8324d 472ada75 0c356232 13b1990a 79a36b24 6038ff26 37a30ec3"
+      ++ hex"599de07e 30ae0c67 e9d6baac 157ee1bd 859018e4 5f38e52d f56ece7e 4118e2ba";
+    encaps_internal(ek, m) == (k, c)
+  }
+
+  // The same file, tgId 4 (ML-KEM-512, decapsulation, VAL):
+  // ML-KEM.Decaps_internal of dk and c gives K. In tcIds 76 and 77 (reason
+  // "modified ciphertext") re-encryption does not reproduce c, and K is the
+  // implicit-rejection key J(z || c); in tcIds 79 and 80 (reason "valid
+  // decapsulation") it is the K of the encapsulation.
+  test "ACVP encapDecap tcId 76: implicit rejection of a modified ciphertext" {
+    let dk: Word[8]^1632 =
+      hex"b5589fad 1b1ed2ea 0f586962 8f877756 7062e7c4 a06c6196 35b90c44 bc3b0b19"
+      ++ hex"aba7d01a 90594cfb 8aafd823 329d502a 08a5cb10 a7827d6b 9687634b b1e3805a"
+      ++ hex"b2237068 3871e78a 2d5ac9ca 582c7b01 c1306309 beb9c2f9 76155226 5d6eb67d"
+      ++ hex"c635b902 5acf510c 6ce8d180 1cb81e47 434ade02 c00318c4 bbe349f7 51c75a80"
+      ++ hex"225f807c 7fb976f5 bb5478f8 05677379 5db90f8a 762edbcb 1cd2fa53 f69a5c44"
+      ++ hex"b726e5b5 926f9236 6351adcb facf4cd9 492b2166 38f4959e 3635a391 8bcd9aa5"
+      ++ hex"9242667d d886ba9b 53061421 ac3206a6 8349357a 0db7b1b4 0c2b6bb4 1676faa7"
+      ++ hex"7e05b3b8 c57c549c aa2ba36b 6540aa06 0129b7f5 a7c59db1 7e5a9708 d6c88ac4"
+      ++ hex"b3c8b6db 1234a753 19931ad3 b6608031 ba1a4577 2dba8c39 c13c24cb a719382c"
+      ++ hex"f6231ae0 64c127b7 82c5781a eb16cb7c 7767ee60 8d37986c ef629ff5 796f9eca"
+      ++ hex"b3a0ccc8 f4e0687f 32be1426 a198b00c bbd2a996 16268b5a 3b700a19 90a75158"
+      ++ hex"b668ee96 37f3f703 2da19b7f 7185b5b7 0da16379 2a79238f 8ab3755a b4a387cd"
+      ++ hex"b6a7905c 17cbc259 aef9b534 d03860cd fcb8c434 9465b884 7c741b0d 522af5d9"
+      ++ hex"76e2d70c b7350a15 0a121748 1c73cc5c dd6393aa c9bb6c68 77081900 1af7455e"
+      ++ hex"a2687c63 7ac43ab3 812981a5 11bacbf2 3dccd325 2d1860a1 43b49395 23c92c94"
+      ++ hex"a213bced 384d7955 5fece801 76f739c9 55c82836 68cc1208 b8b08fca 3027bb74"
+      ++ hex"94bffa6b 2df317bd 36408fa0 580d010d d4376ee6 d91a0bfb 70ad3c08 6d24a999"
+      ++ hex"1a53c5fc abf04647 a7d777ee 428f749c 309782c2 b83049b0 96188901 2478981f"
+      ++ hex"16f83b60 48c0e2b1 c67f739b 4d48256a c2334198 4ec19b72 86cc301a 7c205af1"
+      ++ hex"9b4dd5c3 ff59a00c 75048992 bba53936 9295bbb4 fc5245f2 598b25b9 35a445eb"
+      ++ hex"6cb93054 08fec37b bf8c3e74 baa1bed4 52a4d776 07ba45de c85f93a3 0a4e3396"
+      ++ hex"0893ae61 65955141 284c335d 90c4799e 279e1a99 7a8c93b3 696377f0 941382b4"
+      ++ hex"1104b84a 0c95882b 00643527 2609023e 705415b6 97b2ad9a c5c16ab5 cc343eb2"
+      ++ hex"93334a29 8cdce4bf 4e680d92 e3cbf9e3 8684522c d496a237 ca72f453 af6ca07e"
+      ++ hex"c754a67b 21437be7 14f23612 91b7b76f cc0b740a cb3c1c71 ea20149f e5c27948"
+      ++ hex"a09852c2 a3ea773f a41fa708 04ae74a3 44e7474b cc909a28 93a97a89 a9d755e7"
+      ++ hex"495a9df0 b292259b 5b904ffd 8249aa55 90027b91 dea4209a 156994a4 af3f6143"
+      ++ hex"fa599869 c2c293c9 446a431c 439a92a9 4cc1c597 7232a47e daf11020 2ccb5c88"
+      ++ hex"1ab81c29 d30cba38 1c316ea8 016cd912 fe7c8a35 15cc6c62 23bd9887 68d562fe"
+      ++ hex"72578c26 896d5b03 e1d920b5 74295e88 bc3df657 ee000d53 b58a2877 3264730e"
+      ++ hex"c50a70eb cc425069 39f185b5 66700cb8 d01253f5 2287ccc0 2036008f 43cae36b"
+      ++ hex"b71aca89 2690a548 f832314c ba13b118 e6608ce5 84932b58 284ef389 70589508"
+      ++ hex"da060796 79697b8b d8b2345b 332ca011 5edfab5a 7f9a0356 a3c3f102 092f705f"
+      ++ hex"bd69016f f9a13b0c a21854a0 abc53d00 189fc57b 2494e797 7beb352b 24bb8f33"
+      ++ hex"8fd30a4e 70c43798 51a295a1 6d8ad010 0db46ed7 72a99799 198d9739 e1f543f1"
+      ++ hex"40324243 767d7107 0ba30317 7498b029 608f8941 60787f3d e62ce65b 74278b5f"
+      ++ hex"fa24a65b 89a59097 a1ff437e ca2c431c c70ca041 8141c365 74d730cb 64a234db"
+      ++ hex"88f82611 2f694ffc abad91a9 3dcf9bbc bd6071ee 0c6a500b b6c78a1d 5d362a45"
+      ++ hex"046700c0 9cde0360 c9a9754c 4b5c26fa bb0f420a ba265460 f7729b62 5c5b6b7a"
+      ++ hex"cf97766b 9032f4a4 29cc76c8 b03c7168 f7037e81 01830c8b 838b5350 d2a9cc57"
+      ++ hex"5aa88c3a 673a81fe e3ca7943 6d2499c2 80c1a52e 0c5086b5 c3c20941 0214ad43"
+      ++ hex"15704545 b74b98c1 3ac31312 34212ff3 44c3514c 876a9600 6d5dfa01 bed741bd"
+      ++ hex"d76260c0 26c29e78 13885131 9bc71f12 a66b2d36 2066a1c4 b2028303 b91445aa"
+      ++ hex"b80426ae 9465aa25 859b28f1 402179ca 3d1c073c e876aef5 b25f9641 49506c15"
+      ++ hex"cab4698c 91ac94ab fbe69dac f06323e9 a6e151ca 6c019f49 078e60c4 1837b176"
+      ++ hex"3bd87ebc e040a2d7 a3d49648 39e4ab07 d121ed3a 2e23f75a b6086161 603c20b7"
+      ++ hex"bfc063cb d00a7392 e26d7f69 7c17ba0c 62231a3e 34a72c0b c958093c 62471b7d"
+      ++ hex"1a8b2f75 20a0581e 809048b4 798c0f1a 0a208330 6d6c4223 3202f210 1c1db61a"
+      ++ hex"58086b24 558b17d5 befc7542 572b81e9 880d3f16 4d708bc3 c357546d ddc39c71"
+      ++ hex"c3ceeeab 482ed67e 61cfdefa aedd3027 b700de0c 72dd84d4 3f2b81f3 09ec9d9e"
+      ++ hex"0069dfb3 705c76b0 1e9a8db4 b6643748 7dcae2e3 31916598 3c937cd3 e95c39a9";
+    let c: Word[8]^768 =
+      hex"5eb39c88 db720b7c 6b1dbe08 047717f8 70671db1 6328ef96 f8ee9827 ad694cc9"
+      ++ hex"bc662e69 7d2d3010 38512393 32ce9b2a 3653bd98 c3faab41 dc5445fa 844e05e4"
+      ++ hex"d189d4b8 e6e3feca 09a81975 aa0585e1 b1798086 78f22944 108af19f cfbf1c58"
+      ++ hex"ba76fda5 08449ea6 b3312f81 84d1e568 c1a4b1c1 88b04e65 4978ee9e 7a10299c"
+      ++ hex"45eeebad 0a24884e 12bbb05f 0b9575ed 5c8bacde c1ab16a5 9ebbe2b7 a6775591"
+      ++ hex"40c9cb00 e18b4b5a 0c51a4a9 2a61537d aa236052 5d699de4 f30db0b4 d841b708"
+      ++ hex"b92e38e1 e07f3a2e c124e6c8 2df062b1 10f48262 ba95a509 56b7430e ed0041b2"
+      ++ hex"95fb84c3 8bb2b96c f1c85e88 d3bd4dd5 af8e1aba 963fcb9d 9004f5cc b7fa15f2"
+      ++ hex"d8781be9 cc19b77e a6f39737 2f9b6c9b 37534253 0f4fd4e3 b934e52b 60c20fab"
+      ++ hex"1dafed0e 6c72fad8 783b6285 2000a24b b81273bb f1c25edd 879058c5 eef67e3a"
+      ++ hex"0da14e93 7564a508 e9475ff3 b25b5687 04668476 0dec7513 2d14fa47 1d54f4be"
+      ++ hex"9ace2ae9 088678f4 41042305 82ed466f bd8ba531 50ebdaf1 26f41718 3689a245"
+      ++ hex"39358b00 c4eabfcc ec170c87 975b3dfb 9ff6267e 81b44c93 cc9451a3 f9f7b913"
+      ++ hex"afde0437 48c5f7f3 6fab63c8 01b0bc50 42c3d44d 836770e9 058e04f3 571b04c0"
+      ++ hex"c87d38b1 7dd1f7ec eda701b0 532cf35a 096f8237 083834ae d2b2aba4 df1cfdca"
+      ++ hex"eaabe69d bcfb9b48 38c8ea1a 9a3ca8ff c75ad9b9 c0366517 d782f412 946539cd"
+      ++ hex"f0d02304 ad60beab ff9d9be1 f75ed39b bf2f10ff e061f282 8dbce798 de6685a3"
+      ++ hex"f3f52477 b361b1a4 2db1c092 2e8d2d54 5a6ad54f 0cac86f6 afaf7b38 1dbca543"
+      ++ hex"30f13bc1 9f7b6986 03f84417 0b90658a 9a82ac7d 582ae798 db6eda90 87e1e7ef"
+      ++ hex"f6cb9035 58a289f9 88d5cb5d 2c52db0e ca5898e3 ac15b136 640a38ac c68f1a7b"
+      ++ hex"e53c54f0 e1ee6655 6663e204 ba839963 3348ef38 c7b1ff50 0ac53958 d103b984"
+      ++ hex"e5407324 59e860ba 5f065b46 6faed85d a80716ff f2f57371 d9f9d09e bfe3a088"
+      ++ hex"b4c2c44e 1f03c73a 97830269 a41419d2 bfa48fcc 16523745 e67c38e4 be7344c4"
+      ++ hex"aaefe9bd 667cf474 1e5f1660 7680378d f0d2eb60 db6db6aa 66a53b63 a03e52ca";
+    let k: Word[8]^32 =
+      hex"1eb644eb fd75877d 0ca481e1 a3b95e7c 461b81e0 e3df5a42 699775c7 bda3b004";
+    decaps_internal(dk, c) == k
+  }
+
+  test "ACVP encapDecap tcId 77: implicit rejection of a modified ciphertext" {
+    let dk: Word[8]^1632 =
+      hex"2398c987 03068ee5 1887c7a8 78496d82 5540e237 a83de50a 0a0cd041 b74a11e6"
+      ++ hex"7801b114 2793001c 659fb3ca 1bc881ba a48b7972 3c57ba22 73c4a74d f4a92adb"
+      ++ hex"948b43e0 51a8b086 c7ea2c6a f6c4de34 4f586616 b161927e 8810ed19 cb0aac32"
+      ++ hex"df19cc43 dc7ceae5 007f95b9 fea467d3 e0ced8a3 00d7e3b6 a3c3b118 d35e0ed1"
+      ++ hex"5a9079bb 9cd23f27 a571d1f0 09f81c67 17230bc6 c65f1216 79d9037c 72b2b5f1"
+      ++ hex"cb730fdc bac56185 b4e974e9 e9b91c67 b585b62b 6249cc19 440fac66 01dcf78a"
+      ++ hex"42d7c5ef eb7fe004 4209266a 9fc66d90 1721ebf4 814578c7 44a919ed c22c9ae1"
+      ++ hex"3991253a 1b27319e e56254c5 cfa9ca15 949c7e4b 82965582 1a2cb237 0b693b87"
+      ++ hex"c9066096 8de4a75d c042c996 00595f15 b751e68f 97375fdf ebab66d5 b83ea5c7"
+      ++ hex"e9040be1 6007c2b7 4dc1ec24 d6925e68 9022ab57 54c10466 b0d3cbb2 ab8a8435"
+      ++ hex"316fa69e d03caca3 612dc958 81061033 cde8a202 1049bf70 9400c4b3 71c9a10e"
+      ++ hex"c2726937 0c892832 f8bb6ed7 86b82408 55eb406a 76b9bbe2 90314c78 58cf3389"
+      ++ hex"b221a205 b97115d3 6d5cb8b3 7ce01abe 0b98c907 2f786547 9d64345b b057f1d0"
+      ++ hex"901f518d 30e5c977 920bd040 b795f408 5eb5a582 64014975 6e936ab7 07c40eef"
+      ++ hex"69cc435c 9d64690d cfb81787 959d5edb 2e9307b1 7deb4ceb 958c6d89 cccb9802"
+      ++ hex"2c652472 173127bc 9f8d3b5d 1a328bc8 7262a614 afe80b10 26a26079 e000af4c"
+      ++ hex"a474d704 e4446bf5 670b72d0 95493c75 4a965c61 f41a5ed5 7213d749 9ef7c9d0"
+      ++ hex"60a87527 3df19788 aa2423bb a88481ba 9a4bf04a 98d8b3c4 5323f106 cb417c0e"
+      ++ hex"9046bfe7 e92a5a75 5c23375b a30b7c21 5a041bcb 9ac4aa18 f716765a 4761ff07"
+      ++ hex"58924c14 ad2c6bf4 10949aaa bd6d07af bc5a19b5 5c17b063 a776278f 36870cdd"
+      ++ hex"f9588979 8ba809c1 4e66bbf1 6315a83c 09a04a95 4bb4069d c49b9dd7 11d6ac0e"
+      ++ hex"7b742ea1 0ac380d9 6c542b10 d4c41a92 f775ed74 cea74c48 16867950 d8a644a1"
+      ++ hex"783b93a4 46e57506 86bc0994 67c994c7 27e24772 4498aa81 37c408bc e3b727e7"
+      ++ hex"4645e1ba 02b7e7b3 4e959a79 1ca83599 7c15937b 21b47c50 d69818a3 9eb88635"
+      ++ hex"072b7770 d62fb233 32435681 a3800a96 ac368d0a c0c0b964 ecd342f9 c15e4403"
+      ++ hex"8caca254 19b0673e d9608231 15190251 c5829633 e20a9e8b 9a8f9253 dcba6a89"
+      ++ hex"28aede27 09264c1e 1b128eab 4096e36c 7cb73657 30582c66 3c106d78 81606a25"
+      ++ hex"7419090b 1a11d36b 7090bc18 8c57bf12 61c17dcc 79d76334 6d416a37 ea6dc479"
+      ++ hex"47aecb10 29661ed1 1cb6cee0 c8ea4807 4e05c0db 89c6b0c6 73962586 55320cac"
+      ++ hex"3852de26 8570da39 c0e40939 1547b5f1 1296853d 4279a541 fba9ca8a 72ab2193"
+      ++ hex"85f1041f 96220bf3 8c563224 dbf9812e 9bc66011 b2277c1f 11c09838 2619f195"
+      ++ hex"8238957c 8813396f 62ad7961 8b20962c d2e3122e 6499188a 236600b2 634547f5"
+      ++ hex"e7a82ec5 8e296b73 2e05ce5e f5191897 b68e88ad 02eb9799 7a10304b aaa7ca62"
+      ++ hex"02f27e6b c683e9ba 0975ea7c b4f41a28 3220d051 17bd858b a392593d 822d18a3"
+      ++ hex"1f08bb94 39cc050f fc0a937c c0760302 1939c76f b6569c1c 35f99804 d18b1af1"
+      ++ hex"5a8bce8a 4ec0b697 f054bfe7 e7acda77 60e1f3b6 71280f7d 59cad2a1 23cdd369"
+      ++ hex"455594b3 b186a158 55fccbbf 88722f2d db1dcfb2 1cc55cbe 27825cd3 6393d872"
+      ++ hex"082e4128 f1ac974b 9b676ccb 56fa324a 63ecb1b2 86859e68 4f55f559 3ca5ce5c"
+      ++ hex"827e964b 24cbb834 75b47282 2435f4b3 18ac330a 4bb57884 a765fa7a 5e041293"
+      ++ hex"6647ae36 6907acc8 33e60781 f77b507f 199431b2 3d1cf620 89a5544e 99bbf3ba"
+      ++ hex"c21c665e bed16612 278419e8 a550d433 7bd06d87 054c56f7 9ec5cbcb 9c50bb8a"
+      ++ hex"cb6c9d14 cf6ceb65 4aac8d3d 2b02959b a3948a7d b8742f48 d698f143 947f9ac3"
+      ++ hex"56938e87 8bbf674c 0ffc2bcd baab3436 1c4e5331 c24365c4 a8b26ba0 8433d481"
+      ++ hex"c8e45708 11c0810c 9bb3dcd9 63edeba4 8fe95680 75006f2a cb3c024c fa29cdb0"
+      ++ hex"dc3daebc 35de9a7d af68cc14 b84dece3 5cba67b3 4e54b372 9111b51b 67325292"
+      ++ hex"1e148e65 052d5550 42ee340a fcd1471d 6a654c30 afabb011 7572a2a4 d13f341c"
+      ++ hex"776b8616 24e61ef2 d5a548d0 cc141b19 4dd7ad38 02c65e49 28e42586 91fc3e39"
+      ++ hex"68a15990 5a8c5b2d e3a048b0 09163e83 6564b4c5 3a431ebd 536ccca6 8ec0f3c0"
+      ++ hex"33d7d764 d0f0b097 c5abc301 14df389d 012edd68 91c6204f dfc91504 ee4e1f5a"
+      ++ hex"deb127fc 92a7f258 cbeb6d88 81193542 229556e3 4b72bc96 130bff36 bb55eab5"
+      ++ hex"20b1981a 616c0c63 e0d92959 42e67a9f c122f0ff 6f0f194b 1343ea75 1287b162";
+    let c: Word[8]^768 =
+      hex"fa9b546b 2485915c bf483484 a0072929 78a9021e b11721bb 576805c7 5b3c561e"
+      ++ hex"24f85a4c d62d93ba 699ef82e 44008e3b fc554035 8237a63b 6312142d 86e0fba4"
+      ++ hex"a0d759dd cd70f7c8 819dc658 f00ba0f8 02eb97eb 870df05d c75431bc 777f0e66"
+      ++ hex"f274b150 bc14b635 bd3d208c 6b9b08f5 856c68d1 a7c316b4 f41ab4ad 2e9427ad"
+      ++ hex"338a98e5 ed8f806c 234c6354 1d5ca041 61e98cd4 405288c7 10a26f0a 83e83f78"
+      ++ hex"b7e88227 ca7cb5f0 e04fc074 9e53545d f8dd088d 715fa625 0be77dc4 6bb31bf6"
+      ++ hex"b9c734cc 9826bf87 ac551e55 893c2219 4d8cf8c6 681e4571 150ff49a 2f393d64"
+      ++ hex"837e9750 7cfe0f22 f9c3a660 e5ed100d 31477d33 904f805a cc635610 90f1b69c"
+      ++ hex"b88da2d8 db07240c 802a067a 353832be 7a5c7380 c6686cdf 81f40f04 61119d33"
+      ++ hex"2a4568f6 5862c5d4 a60de694 d7ebf89d 412759cf e1edf7eb b3afa81c e267c9cc"
+      ++ hex"f4e62c29 757ba50d 1c71f238 41fc1721 65c663a4 dd9762e3 ab5d8d13 a0e10829"
+      ++ hex"4a197c04 9ea3e19f a4eab8ee c79da37f 9ba3f7f5 e357f8ba 3f9eb410 70a72c53"
+      ++ hex"75f6c61d 60df72af ef119367 526c332f aa9e9aa2 d64cd2c0 708815e8 d404c8ea"
+      ++ hex"883da594 3a999653 d5dc48eb 7e9a508c 126f5149 3cac8260 11e47de5 148c445b"
+      ++ hex"c5cfc3cc f8f4bbc0 8f91cab4 2373b179 9d16470e 18b08f24 cc9d9b16 cdb66edc"
+      ++ hex"2f72dcc9 8d30fe43 adc10c07 e5f8ba44 a376fef8 15035af2 5fa176ff 367f0c0e"
+      ++ hex"239a24c1 87a7542a e288faed 6a71b14b 62ae10b6 03d2de4c aa1dadab e30036aa"
+      ++ hex"e8057d42 1391c05e da798253 bf8d2b6d 6f2fc3c8 dbce5755 cc0827cc c508e4bf"
+      ++ hex"33829a7b 52d4638d 16f94c93 6a452f42 247676e4 a5cfcf8d 25aa510e d9f087a5"
+      ++ hex"440c68d6 8660a13e 7397d7c4 2c1b57f9 11234802 8869cb76 7f4cc8d9 9a014e1b"
+      ++ hex"eb04d398 b9fdf5eb 06fd2888 1f31f2a3 6fab612e 430e08b8 31096c20 2b220296"
+      ++ hex"55aee346 dba584c3 7924e41f fbfbff4f f52fad19 794a7473 69f8b22e 0d3576d4"
+      ++ hex"7417b84c 1e4c0b12 3e4e0663 93f34383 462d23f0 69efda33 f5adda01 ab4388a6"
+      ++ hex"f018bcc6 9ae7a53d c649889a 84f7648b 1d541cc8 6114aba4 bac6d085 7bc636cd";
+    let k: Word[8]^32 =
+      hex"44ba0978 bd22a393 efb1c4c8 274daaf3 1709d2a4 dabb0256 c0b533ed 50ebc3e5";
+    decaps_internal(dk, c) == k
+  }
+
+  test "ACVP encapDecap tcId 79: Decaps_internal of a valid ciphertext" {
+    let dk: Word[8]^1632 =
+      hex"63c6380f 9c31867c 543fd82a 4bf22cc0 1a654bca 1656b836 60402e8c 1608196c"
+      ++ hex"49847626 79487cae 85611e21 84a31693 33f2a05b 23a1037b 4ec5da1c 0a90212b"
+      ++ hex"8a9a3c1a b0fd1a7e ffe2a75b 857c9fc2 a50b2864 8c07cf24 66786bd3 718a7c49"
+      ++ hex"d4d8c6d8 9a7aac04 156a380b fc773a71 ac03af13 27d7360f 776a6c16 f28e3649"
+      ++ hex"04912931 c146000e e49a2293 876d07a4 d2c8bf84 cc540bbc 9bdd64b3 d75880ca"
+      ++ hex"5317f5b5 4828026c feaa0957 d520cdf8 77d937bf ffb81787 ea8d77c8 43cb6ca1"
+      ++ hex"67b571c3 a7bb3494 8ee92a8e 5586644e c68032d3 0eff894f 3dd6a230 1aaafaac"
+      ++ hex"b7f3230e 69fa028f 1958c6f4 9fbbcc81 907b47e8 96237654 2af14203 b59547f2"
+      ++ hex"b4276034 b17643c7 de3715d1 5a59b420 22e37282 4e92b4ab e3a61364 a9941c21"
+      ++ hex"d72b9cf1 2c971f41 808f8016 7d50a9de 92c0c611 966177a8 6b0b528d c674217c"
+      ++ hex"bb152334 11bb1b82 f87e9c46 78b56456 591a0c16 2b15e24a 90c39668 e549337d"
+      ++ hex"d17a2b41 c523f564 3c32410e 9527a784 50664655 81f97541 06253442 1a130c18"
+      ++ hex"57027101 19acb551 25dd6777 c0584096 9438d671 9c88671e bc755cf6 719154c8"
+      ++ hex"705a2723 84237e5d e312f7b8 ccce1799 290a831e 9832eef3 982bcc84 f71a7a65"
+      ++ hex"669c0196 56e8706d 44f88815 3705c727 c71bb361 76e0b028 da9016e9 114a686a"
+      ++ hex"2268cea6 64bb109b 89806a55 caa13b8b 8084be60 2f7e8227 b3820087 f2b45918"
+      ++ hex"b2184532 0ea12c1c d30ce832 4fd79420 374cc56b 22ce9e88 27e5f893 562193df"
+      ++ hex"d475496b 7bc8d164 4107870d 34bb8049 1436aabf 3eb327fe 89adbdd8 5b37ec39"
+      ++ hex"ee3c2e60 28c41acb 6cae18c3 87e9b981 f71205d0 77eb389f 8b5686a1 e2225b10"
+      ++ hex"62ce487d 1e7008f2 43a94d9b 90c0b8ca c209516b 375b8c91 1718f98e fe4465e6"
+      ++ hex"db93bf55 7d58f9c6 c290ccc7 d161e643 6f2805af 5a119a00 c4cde373 3bfde901"
+      ++ hex"4284566a 2b180dd7 ceaed873 f051108b 74b16585 96f82442 d06563d4 a7996de5"
+      ++ hex"304ffbb5 ebd64342 a0c0d743 1401c106 2d7a0e9f db5086b3 ad2b629f 47a78aaa"
+      ++ hex"31546f7a 5e8fc831 cdf2b2bd 854c60f6 5d813969 6740ac24 a72d6b19 6f1073a9"
+      ++ hex"eb63a556 f134494a 5066c99a 96e5a70b b1b67753 9459e0bc 28598738 d65bbe6c"
+      ++ hex"5de340b3 7f5a5033 d24a33b3 c7017c8e 52654a36 19cd742a 2775829b 453cc554"
+      ++ hex"0235fcc9 bf7f0b71 e4f89fcc 87137622 8efcf840 30b92c04 24c164c3 b2c90436"
+      ++ hex"06235062 70c1f642 74974566 57e74778 e84ddda2 2a00460a e2686264 7a201f37"
+      ++ hex"6c4d218d 636c2bfe 9c40cc0c 62ba25a4 06cbc7c7 52032a41 be9ba67e fc7c58b6"
+      ++ hex"d56c19cc c67624a7 bf7a778a d11d74a3 8ca54b05 aca60810 6c3ad92c 627caa9d"
+      ++ hex"a4ca625d 8b8a3ee6 c7c84261 72c9b4f7 9c9aabe9 24d8244a 265573d8 1bc5454c"
+      ++ hex"2a3f127a 30547b9d 3c3f7020 51db6c9b 219b73ba 7923f5ca 6cc57628 950bced9"
+      ++ hex"32b6dfaa 36c72677 eb52114a 4b87d9ec 78e484b2 7cc87a7f 15303a7c 97d2223c"
+      ++ hex"54809de9 f22c9eb6 a43d5596 61816697 10435669 4e969a72 9bc377f0 dac45faa"
+      ++ hex"818d9526 55500c15 5284ee79 a66cc063 a10ab72e c9b724c1 3cb44b57 1a2aaf2c"
+      ++ hex"e2bae8bb 0392e171 eb5a1b98 351c8f74 1bfa8401 f0e95a6f 536ee714 7d6b9a89"
+      ++ hex"df662a65 ec554c10 c8f36a2b 4291a0a1 a68e5d42 3ad02509 8b60cabd fa34e40c"
+      ++ hex"4337e09b 2a698d81 3a7609c5 5e8da651 e3ab122f bbce4440 0caf009b 20878466"
+      ++ hex"769939a4 6fb0646f 87662459 9322a8d6 b01c3744 37dbbb21 44510933 0fb8e660"
+      ++ hex"e252148b 29292ab0 72636575 08118531 9a3c2f45 712c7011 76576151 00461fa3"
+      ++ hex"24ada763 bed7bbc7 6a8fdddb 411ab67f 0fc73876 69773b92 3d552a97 81a7355b"
+      ++ hex"45bcb5fb 479a750d 427665be b08cff8b a7204607 dfc258bf 73ad1f45 68c5e049"
+      ++ hex"ed39a68d 7b3918b1 983c007a eef0303a 504ebbe5 2854dc68 bf4a8f0d c28d6f2b"
+      ++ hex"29afdcb7 4dc1bae9 79671e21 a127c919 2ba180aa 014d6512 a74fd4a9 519c8afa"
+      ++ hex"6b3cd723 bc4df6cb f0eb8eec 5272fcaa 3bb3e880 f28ab496 b380b7a1 6af68853"
+      ++ hex"0030c75b 6a26a50a 9eef344f c61ca9b4 e57e17dc 93fb28c0 acec1c84 d6aa63d4"
+      ++ hex"560a3240 be1837fa 63bc47e9 179a510a 73e6a5f8 a22e4bd5 40b065a0 61f182af"
+      ++ hex"c0854ff0 388140c4 0af31352 8712e7b0 5724a6b0 3a97b3bc ea52ddd0 158de2cf"
+      ++ hex"2a0e15d7 20913833 83a767ad 7f2e0f45 90cfa2ac a12d9398 9f9a7f79 67d56ab1"
+      ++ hex"ce10ba02 467573d1 cb3b7a14 0a42dc9e 993b80a9 40a94554 050997fd 64999f8b"
+      ++ hex"5dbbc3be e3e00ae9 4f0441b4 4e8951d7 e7078816 d92a1438 482f5de3 2f4f8145";
+    let c: Word[8]^768 =
+      hex"7d1c241d d7cd4617 3a7fba75 342b1c7b b95f781e 24151cf8 5652b40a 5a841f6e"
+      ++ hex"7dc8f6c3 9cdbc371 a4bb9fea 687d8b05 627c8169 2740a32e 6642c490 cbdb7065"
+      ++ hex"6e8238db 0c4b81e1 2e42daf2 5317d535 19a9830a 7fe6b70a 28821dcf b345dc6f"
+      ++ hex"9483c48f 6f4a91c2 b4d0f1b5 95f2aa07 172678a2 8dade034 f0474ba9 e955e276"
+      ++ hex"04701e42 7780d012 5508d8e3 de37f615 cf9d4791 777a6da9 a2a85f6d e6e08640"
+      ++ hex"c2072668 a73ecefc 0803d884 cbdc622d ec2f8473 18306a96 f6a34239 388228ce"
+      ++ hex"bce0613c 3ad78ef0 cbd983ed ad4e040c 0a41fc69 a8a10807 aa491b4a d99bd390"
+      ++ hex"2fb1653b 12e5f03c acfd1e46 e7954b50 f61f583f 4ec786be f876a10c d8a22915"
+      ++ hex"e9feea43 ea42bf86 f6358c16 4946da3e 09472dd6 729b3611 40bf8148 5971b8e3"
+      ++ hex"9ba32237 46b8da94 fabb4517 df5aff18 971c7d2c ee103513 bb1ab066 ca6b54bd"
+      ++ hex"a758ce0a 01c5ed04 524f8aa4 a1575f03 b8161907 cf25a0b5 fa53fcff 31972cae"
+      ++ hex"6f5ec3a5 76dd56a4 be0c91ad 6defedad 29fb8cdb 8999edb8 742741a0 67baad1a"
+      ++ hex"a08f45db f68156b0 bbdacb7d 2d4bd131 4441c160 5a1bdf2e fec19be9 5a874308"
+      ++ hex"6851fe8d 714b9a1f 7aba878d ac90a997 1042f53e 8850e7ac bdfa3bd7 2081ce68"
+      ++ hex"57be32cc 5fb8fce7 e7f5c353 9acb96d5 8e3e7b97 e8889e46 af6efcac 20f8b1bc"
+      ++ hex"21090790 3ad3eb26 b014f379 4253f412 5c9137c7 767d4b14 d249c6e9 b43e3501"
+      ++ hex"01e72692 882d2fd1 5ad83373 846072f6 ee63aa8d 571e4bd6 21c588d2 6d21f95d"
+      ++ hex"892fb81d 2202d5b2 eaee9cd4 4f35a0b2 c812ef00 ae14a86c 4616a109 30b4e05f"
+      ++ hex"17764521 d70a2293 611aed29 2ded26f9 cda39645 bf684a5e 6c6dea57 2a0a4557"
+      ++ hex"81922ba1 32cf2dd6 1a1fbefc 3e847487 f4ce54d5 c7395f56 3444097b a69a79ee"
+      ++ hex"a6b457f9 5dbb6a54 d343c94f b43dec26 9387654a bff982c5 dcaa4d2c 637f4952"
+      ++ hex"4c6b442d 0f2d5eab 478e5020 43e56129 4528f8fb 23eb33e9 fa0150bb 36f649a5"
+      ++ hex"e827ac84 1524542f 03d4c29d be4d4ef8 f60cbc81 4f5fa4a4 380e99d0 32c06c44"
+      ++ hex"657a1f8f 465b5317 e2cd7122 f402608a d8314694 1c4222d9 32e4607c 05eca844";
+    let k: Word[8]^32 =
+      hex"ea8067e6 93b368f1 e0800deb 84dcf2e7 304db4ea 439e05dd ac64aa23 58376873";
+    decaps_internal(dk, c) == k
+  }
+
+  test "ACVP encapDecap tcId 80: Decaps_internal of a valid ciphertext" {
+    let dk: Word[8]^1632 =
+      hex"54d571eb 1314a5e3 2231c086 fda6106c 331d630c 97fb26b4 a6501201 527d9eb8"
+      ++ hex"9584f70b f6dab830 f98c7309 63e55166 b8cb4685 e8972002 05edb606 af4bb663"
+      ++ hex"ec984964 bf013729 d9b10999 b3616c58 b114a8b5 f7684c2a 8106aa11 12898bcc"
+      ++ hex"26b3939b c409ee49 6c9b0551 1694cf2d 034a6735 a3c18939 42266a8f a90032b2"
+      ++ hex"6fe24443 38175979 04a2abb1 b351773f 64c0064a 54698aba a49bf916 bf48bdb2"
+      ++ hex"36b853d9 bc52573d 64c83be1 6a08752a 1dafa50a 9b016c57 456168a9 257f8c34"
+      ++ hex"09bb8a4e cbb98eaa 880ba1a5 61033c65 a998a7cb ca081a48 226c0c5e 399e3d49"
+      ++ hex"7e8efabf c82b236d c746b8e0 5ed851b1 3324433f fb97274b 1ac3f8cc 3100a0b6"
+      ++ hex"a31af5a8 09ceb24c a39cc247 3b9e3f06 c81ad438 ca02688b 751d22b8 6b95b918"
+      ++ hex"381c294f 24ac1d20 b11b5a90 10fb9f39 fb677293 a1fd6b7a 0ffa7ffb 8258a2b1"
+      ++ hex"b4a3f597 4a951382 78aba6d2 92e094b5 5e4abe8a 2330b94b 3effeb85 f0306244"
+      ++ hex"0c585ee3 92950c37 af92643e 6a19bbcb 5d3c4454 bf057c42 363d20b2 95147062"
+      ++ hex"3341537d b49530d9 8dd7b035 0681ae1e 9b33d567 3abdd6b2 e5042b0d da04bf66"
+      ++ hex"36f8880b 98842906 ec3fd794 4db4367e ea37c6bf b756bef7 b3008a5b 44c1b31a"
+      ++ hex"30686222 48708a3e ded3b344 60a09b61 3c649797 927c16b3 523eb34a c9508099"
+      ++ hex"817b1432 67c6acfc 406c9308 9f01886c 726a8dc5 1a672712 135c5842 7050ddba"
+      ++ hex"79610039 afd76718 c92a69ca 8aad7a3c 1e609b2e e1c4de83 8a9081bc 9641a824"
+      ++ hex"8230e207 a956d104 89d97c8d d58490f9 4aa07462 10d95d7a da8a36d3 6251d769"
+      ++ hex"fb799c01 d47218c3 224a7c8e 8aea498f 49bcdc17 0e614b86 3a454039 f0388591"
+      ++ hex"8b3a575d d299a274 b89d2510 2db3622c 55433cd9 ac8b1f93 06870b27 127b5c35"
+      ++ hex"8c532c06 2278249e b23706e2 b03dbe68 606a2110 37748278 80a809b4 051fd95d"
+      ++ hex"2b766581 eac06972 94b15634 bd53ac7a 99cd9950 4d7debb9 33ba1d85 c47aa84b"
+      ++ hex"0b84b708 399067f2 8c12a08c 6e41b7b1 5264597d 9c5be850 9b04d117 50d13672"
+      ++ hex"a46841c5 91eb0818 2ee76ae9 a78021cc 4e916993 9266cd01 a5131124 b0d34b62"
+      ++ hex"64ca62fd 2b325a81 5c0a848b d0b97dee c583443a 60ccb6b2 8ee552aa b4892a61"
+      ++ hex"487f61c4 570940a0 d81d27c9 9aee9a3b 989aa1ba 2786b2a4 a09d3290 9cba8b5d"
+      ++ hex"54531562 7b38d6c4 dc17a751 338f2b34 c807b57f 2a580419 a7aca2a6 7117f8b4"
+      ++ hex"96d84ec4 2158d473 115b71b7 be010dba f1083ca1 725d294f 2e6b0acd 1c2842e6"
+      ++ hex"75fd235a 057b53a9 323fceb3 b6c9a06b b60029bd 435809c4 97a76543 47f5a3bf"
+      ++ hex"d24ba8f5 1bee66b4 dd9655c0 8a199d66 18e7f369 d6b1a9a4 c17683a4 3311d38c"
+      ++ hex"ebe41e55 5b5a9823 49d05554 5e48b499 bbce3afa 076e939a 08b86e29 5155caa9"
+      ++ hex"77e32c1a e152618d ec7ddff7 4a850503 a3679130 614053c4 95904830 547c5c9c"
+      ++ hex"9cc8f338 c9dd286e b80967c7 451f5aca 00ebd360 91459ad0 db50a7c8 595d59ad"
+      ++ hex"8be796a0 b443ace0 276de6ca 1243b0f6 a5581737 4ff16001 a4eb9874 e29b80cb"
+      ++ hex"53f5f17b 44a73488 87ccc834 5d2c65b2 90a93b0b 5aa8ba36 071b9145 3d09b589"
+      ++ hex"60bfa332 95fb8b8a c361619b 808987a6 0dd6e97e eb919b3e 131d08d5 09b63775"
+      ++ hex"98d7b991 025ab13c 28f3b47f 1107b305 b35008a9 02e48bb5 4502a8fd 3076bc88"
+      ++ hex"06c97470 04d51a57 5a9f8055 a9c2437f 5a3a8b79 316125cc 66baca04 d5680d8e"
+      ++ hex"895bc983 3ed3d406 4ea047dc 59717c85 161585cd 4806073a 87cca9d1 9180ac70"
+      ++ hex"8c5a07c1 25603a47 8d7e4c09 092382bb 4cbf27b5 a286575f a9e011d6 327c13d9"
+      ++ hex"05ad7457 a3368ebe f86dc961 184be931 94a09139 93ac73d5 6d853b2f 72ac58ac"
+      ++ hex"f84b7a8b 663060cc 24435f6a a48c144b 3d7777b8 60ebcb12 f039b937 40e8370d"
+      ++ hex"3428b73b 882e04d4 844f6000 3ea3303b fa56f766 00e665c6 a3c2576c c7097e36"
+      ++ hex"34eb2474 98fc17c1 d52a82f2 b04ba967 bdc08c14 3941f7b3 3c99c58b 36408e14"
+      ++ hex"3553aa04 af38c2cb 6c38619f e3a70426 007f4814 43e00a20 4587a824 7b96d933"
+      ++ hex"6a10838b 19753773 41f69bbc 03681f98 d30d55ca 26c2634f f95c4f99 225ed095"
+      ++ hex"aaf12bab 740a9a41 88bef2da 50264837 b0c8c122 d8304a8c 15b62abc 2ddc17fa"
+      ++ hex"e22aeb51 04d5224e 2173586b 899ae6a2 2ae2c9ae dbdb9091 d657427a 51af1707"
+      ++ hex"6e88c480 99cf5ce1 3f851002 c433a535 79530d57 718192d5 601e1a9d 56b76905"
+      ++ hex"dca50037 3ea5995a 0b787f84 935e4ea9 e6b57833 1a4624f0 81bc201c 1c8945f5"
+      ++ hex"d52b6b64 0418cd04 8cc38035 84b18ead e4ef23c6 231186eb 8bf9e5c6 58431a35";
+    let c: Word[8]^768 =
+      hex"95524a30 d5ce5ffa bd1f28da 3907537b 592920b0 29de0183 076191da 22510451"
+      ++ hex"8fe1faba 5bad4b02 a7048e9f dca45a9b 0d350c5f 3bb6410b f4098ff3 346fbdb8"
+      ++ hex"89d2f52d fa35f6a5 fe0ebee4 315cf52e be9358c9 815832e8 5bbf4de8 e92371f3"
+      ++ hex"9f793b49 a9293798 df1b73eb f7442879 8dcdda7b 3c2afccb 1dfaeecf 9bba832d"
+      ++ hex"b4bae831 fa5685ad 48d00e18 72484c78 d94089b1 6c853159 3ee60844 1cd8901f"
+      ++ hex"7add20ad c7931515 00d2f0f1 a7c9c91d 61aa9281 7d634407 e24f7736 e7bfdeaa"
+      ++ hex"ff14f49b a6c4599e 7701e9c2 de3c8fcd 599fb40f 8df5511c a2aa2baa a19ab064"
+      ++ hex"bb9f4fe2 11fc727c 2a85de64 420f249f cfbdbd60 b76bf288 bf8d695e ddeda667"
+      ++ hex"3236f9fa cb7eac20 9c311607 aed466db d693b46a 481c36d9 8ff23a85 d53bf25f"
+      ++ hex"d9fa665b 330d17b9 ff17b9d8 287aa178 209edc9a 0b78eff4 f0271fa9 66e763fc"
+      ++ hex"2302f69b 143e90dc 91d586b5 2ecfc35d 99e85738 73a8bbeb 952c5695 1337cc45"
+      ++ hex"6da3d077 6c4192d9 24db2332 10ecc7d4 17d2ae9b b017cfcf 1bc906fe 35f765b4"
+      ++ hex"f7db5848 0b9ebfda d3793831 af0cec38 faad7f85 f955ba31 bc0940c1 8879fe04"
+      ++ hex"a2bc9f42 32c4b76e 820f339a dfbba0d3 16baa06d 99dce3d1 31fae26c 1ffd652c"
+      ++ hex"5c117112 24c0dbc1 6fdbe1a2 b292b04c 414e3aef ff26fb40 2e68f755 c9aa8f2f"
+      ++ hex"7451796b 53bdb5c0 1cae1f0d e528f5ac 48c166fa 5e9d98dc 2ae0f7da a1e0e39b"
+      ++ hex"c1eb1106 c4f3aac6 d186a2f0 5c017ffa 54f293e6 90512375 3131a794 f3f85090"
+      ++ hex"0e484be9 065afe38 12502f9e 49d8b06a f48ec4e0 60d818df 6da4a397 e9d3d6c8"
+      ++ hex"fb90e43e a82467a4 aa995b8b 3be459aa 1bff855f 8fc16ecf ab0dd407 a81ea45b"
+      ++ hex"0c7148e2 233997c8 daa579b8 9a357d59 7805e6d4 025ad475 d1828400 a4337f1b"
+      ++ hex"d7a26766 321ed7a1 94ace67c 0644d491 0f904890 92cc7d47 091034f4 15267757"
+      ++ hex"07b7d851 6f890f96 d02a300a 60ce4478 58edff5c 7c3db25a 1284c701 1fc04749"
+      ++ hex"bd986f5c 5a082b9f 4f4f0ecf 8db39130 2d778178 9bccf1c9 735028e5 377c74d3"
+      ++ hex"8dc6f88a 9445cccf b7a80e9f fc89d3ff 270383c8 fdd52eb6 42147a31 b029e343";
+    let k: Word[8]^32 =
+      hex"be38de64 bd93e9f2 7087a161 45dcd808 9ab93b9f e5091d69 6afdd812 681ae2c2";
+    decaps_internal(dk, c) == k
+  }
+
+  // Wycheproof, mlkem_512_test.json, tcId 1 (source CCTV/strcmp, flag
+  // Strcmp, result valid): the key pair comes from the 64-byte seed d || z,
+  // its ek is the one the case prints, and decapsulating c must take the
+  // implicit-rejection path. c and its re-encryption c' both begin with a
+  // zero byte and differ after it, so a comparison that stopped at a zero
+  // byte, as strcmp does, would find them equal.
+  test "Wycheproof tcId 1: key pair from the seed, implicit rejection" {
+    let seed: Word[8]^64 =
+      hex"a3896e30 892230a6 c1dff667 f8caee75 9ff84a08 e3462ae4 84fcbca9 971d7959"
+      ++ hex"cdc6c5ec 65f10a5a 24b5145a ac863232 ee3b2229 ca3a6c4b 9c8a2daf c315d9d4";
+    let ek: Word[8]^800 =
+      hex"871b108f d9801087 68612345 f2fc7317 216f5557 6f914c3e de67878e a89046d6"
+      ++ hex"36572ca7 8fd67a4e fc9b68e4 62853b2a e8dab001 b6059c39 0916fccf 45bba50b"
+      ++ hex"85b7e125 04ef931c 52030a4e fb31ce97 8866ea0b ece660b1 6700d9ca 4fb8eca3"
+      ++ hex"35cb2395 478e6bf8 45eba616 1765c479 e0a3c0b6 4773b0a8 f9191789 e0b939cb"
+      ++ hex"bce7f803 17e569a9 6c7c3ba2 596aabca 4298c238 3ab539a0 5232f990 af03b936"
+      ++ hex"d18cb637 8363523c cdb75ef2 37ccf977 4776ba0e 219c9772 6c6f82b3 168e4908"
+      ++ hex"1d7b358f 6c2dda28 7796a997 75e60de7 16ae2838 5b827045 1b3a2b8d bb267a8a"
+      ++ hex"37266c70 718ac303 03cad7e5 908d0b09 897bbfb1 8c25975b c9f46909 df4b3451"
+      ++ hex"dbca7a34 98eb253b b4246721 685b7620 86b903b6 f6a86b2d b894cd59 567ac9b1"
+      ++ hex"8a82c5fa 67306ef3 cd7aa5c8 2d46aa73 111f837c 2eadca7b 1bf6ba81 f769e053"
+      ++ hex"0d44b21f 5ab161a1 59014c14 ad7292b6 38b86e54 8a5c0de9 300df141 6e619afb"
+      ++ hex"b01a7758 8cd3e1a1 7546be6a f108f8d3 ad87429f 6dba298d 8119a459 4310f874"
+      ++ hex"def0a9f3 f5a20748 cde73218 e91b428a 629e6cb2 4e611300 d9155f6d 16c6398b"
+      ++ hex"7d2615a0 bf486b9a c1c32be6 9b2212ba ff1c5ccb b0c24707 5536f2bc 28caa954"
+      ++ hex"064bf5f3 963060ad a289ab5a 58628959 347356a7 ba4c8405 1a65547a 3b56a738"
+      ++ hex"eb9acc0d 62213cf1 291006a5 02ec7296 b42e9899 05a08393 27848029 0887958c"
+      ++ hex"4155a975 d37194d2 5b146344 b012318a 3aa98060 c6494619 1a871408 f6a0917c"
+      ++ hex"ab9227b9 56e4dc80 81c96b50 92794438 16312373 02a0c960 a33678a2 68f2139c"
+      ++ hex"a0b5b442 03863cba 6d2ab37c 78b369a4 ba5256e1 73a27456 7b536cb0 d5b6d47b"
+      ++ hex"3d8ad738 fc022792 112a4ca0 9389b9c1 317b2342 a5c4a444 c73f3646 85298068"
+      ++ hex"42b52974 82fb001c eb28b1be 8299e612 985957bf 7ac16cf7 e609fe53 2a33f256"
+      ++ hex"90186616 762c680b 1cb1e986 c5f55c37 a49bc322 19faa8ad a839937a c56f7587"
+      ++ hex"ac51a12a bfc8be41 3a9b915b 4c455ab1 e2dba776 dc863308 3646f7cd 95437b12"
+      ++ hex"9095e755 10dff58f a4cc6c3f 4531211a 3a161418 b7da4e6e c8388b01 97993898"
+      ++ hex"783d963d 109590d4 ac009218 9baabef6 3fcc3df1 5b0ab309 9078c958 0b198e11";
+    let c: Word[8]^768 =
+      hex"00ec7fcd b617629f ead7f43c f59a7d3a 0b946b5c 5f472407 812c15c4 4249e529"
+      ++ hex"74483eb3 1fb6ce5e 15728708 ef24f78b b61bb5c8 b6ebb4e8 a96e5b89 8e069c49"
+      ++ hex"9c44a57e fb090723 4597e810 f4de40d8 5d6eacd7 75b83400 937ac863 cfe5d406"
+      ++ hex"469b8d3c a4f6dbe0 aced60fb ecb32588 f1ddaaa0 8ba5c5b1 77ab51b5 48d8ae22"
+      ++ hex"18eb2d9b 02b31cb4 bb6e7754 b6a74856 316ad3e0 394025f7 50412023 a74ab851"
+      ++ hex"fc03171c ada993c6 469fa254 b5d384ed ab1efe8f 2efb6eba 37c7ba74 34bb2433"
+      ++ hex"31938849 114ad398 cf91038f b96c30a7 12f47e1c 71839568 38d48701 6f023bd9"
+      ++ hex"900a94c6 06edaa42 bf0e67f2 aedd03f5 a581e55a f29e24af 061ba73d a64c3869"
+      ++ hex"d7598a0c 95c3c833 0ecb4481 cab2c85c caaa366f 99f3bafc 980362f4 d701a233"
+      ++ hex"d0967ded 78e4f187 4b42cda7 74b888d3 1f1671d6 567d1636 d5b2bcc1 17e2a256"
+      ++ hex"f343541c 3e173e90 0b6d6c71 bcd55479 d23dee6b 54e2fe32 303c7955 fa5f5678"
+      ++ hex"94605ed7 5e65e548 58222c0d 065ba923 1fcd82ab 86af63c2 42d10d1d 30b4176e"
+      ++ hex"2bb8169f bd7f03cf a0440988 53382083 284ef8ce cf05f9d0 bd3d9af8 4f6df551"
+      ++ hex"e3d11e92 81794d36 a619f61e 47901ea0 dd695782 241250f0 b5c2a20d 76d3afef"
+      ++ hex"cb11d015 179d6a9a 74121c44 8e315f50 7cb29add 40da4eb0 5cae2732 0c4b18a2"
+      ++ hex"5d7af24a c7b0bdf7 382143d4 d02db3e7 d016f9ff 5638e0df 7968f785 ac8000c7"
+      ++ hex"545a1a70 d6fd43cc 3ba28d82 e9eb6ccb 391e094b a85a49ad 6e9f8fd8 faa99540"
+      ++ hex"62a5df13 c69847be e485bc66 24b40b81 28fe9112 31b4ef9b 4a22ced4 f8140df6"
+      ++ hex"5a5b8180 66512827 3fde0295 5a65921f 0d1be139 fbe1edf0 ac01db1d 2a5ffd95"
+      ++ hex"d63d33b0 a7627cab 4bcd3764 7238c801 97d4fa88 a7e34d4c aa066dba 2ae6feff"
+      ++ hex"f6a1e804 a72d49ed 443c29b2 db313fdf 25d98d0d ee992bef c4572f8b 1eee0db7"
+      ++ hex"227b6e20 2ef69ea8 340ae369 0fc064d3 edfd8d06 7934db30 61767e48 57e805e8"
+      ++ hex"88294efa 7248743f caa1e01a cdaf491d e408c588 69bc9624 c951103c 079793be"
+      ++ hex"1edfa944 2df4dece 40eabb99 e9b01410 fc0108b2 6a13cd42 4cd9a9de 5bafa1fc";
+    let k: Word[8]^32 =
+      hex"cf3bcfeb 2679cb43 658fcdcd 01aa1505 bcea1e72 a165ccac 7bfb66d9 dc0c0e90";
+    let pair: (Word[8]^800, Word[8]^1632) = keygen_internal(seed[..32], seed[32..]);
+    let got: (Word[8]^800, Word[8]^32) = (pair.0, decaps_internal(pair.1, c));
+    got == (ek, k)
+  }
+}

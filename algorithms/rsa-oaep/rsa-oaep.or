@@ -1,0 +1,618 @@
+// RSAES-OAEP of RFC 8017, PKCS #1: RSA Cryptography Specifications Version
+// 2.2 (K. Moriarty, B. Kaliski, J. Jonsson, A. Rusch, November 2016),
+// https://www.rfc-editor.org/rfc/rfc8017: the data conversion primitives
+// I2OSP and OS2IP of section 4, the primitives RSAEP and RSADP of section
+// 5.1, the mask generation function MGF1 of appendix B.2.1, and the scheme
+// RSAES-OAEP of section 7.1, encryption with the EME-OAEP encoding of
+// section 7.1.1 and decryption with the decoding checks of section 7.1.2.
+// The integers modulo n are exact `Int` values and the octet strings are
+// byte arrays. The hashes SHA-1 and SHA-256 of FIPS 180-4 are the modules
+// `sha1` and `sha256` beside this file. The label L is the empty string
+// throughout.
+//
+// The scheme is written twice, once with SHA-1 and MGF1-SHA-1 for keys of
+// k = 128 octets (1024-bit moduli) and once with SHA-256 and MGF1-SHA-256
+// for keys of k = 256 octets (2048-bit moduli); everything that does not
+// depend on the hash is written once.
+//
+// The file reproduces the encryptions of OAEP Examples 1.1 through 1.6 of
+// RSA Laboratories' oaep-vect.txt (a 1024-bit key, SHA-1 and MGF1-SHA-1,
+// the seeds given) and the decryption of Example 1.1, and, from Wycheproof's
+// rsa_oaep_2048_sha256_mgf1sha256_test.json (a 2048-bit key, SHA-256 and
+// MGF1-SHA-256), the decryption of tcId 7, its encryption with the seed it
+// was made with, the encryption of tcId 11, the longest message, with its
+// seed, and the decryption error of tcId 12, whose lHash' differs from
+// lHash. Decryption uses the second form of the private key, the
+// quintuple of section 3.2 with the Chinese remainder theorem.
+edition 2026;
+module rsa_oaep {
+  use sha1;
+  use sha256;
+
+  // Section 3.1: the public key (n, e).
+  type PublicKey = (Int, Int);
+
+  // Section 3.2: the private key in its first form, the pair (n, d).
+  type PrivatePair = (Int, Int);
+
+  // Section 3.2: the private key in its second form for u = 2 primes, the
+  // quintuple (p, q, dP, dQ, qInv).
+  type PrivateQuintuple = (Int, Int, Int, Int, Int);
+
+  // ---- Data conversion primitives, section 4 ----
+
+  // Section 4.1, I2OSP(x, xLen): the base-256 digits of x, most significant
+  // first. Step 1, "integer too large" when x >= 256^xLen, is not checked:
+  // every caller passes a value below n, and n has k octets.
+  spec i2osp[x_len in 1..257](x: Int) -> Word[8]^x_len { x as big Word[8]^x_len }
+
+  // Section 4.2, OS2IP(X): the integer whose base-256 digits are the octets
+  // of X, X_1 the most significant.
+  spec os2ip[x_len in 1..257](x: Word[8]^x_len) -> Int { x as big Int }
+
+  // ---- Cryptographic primitives, section 5.1 ----
+
+  // x^y mod n for 0 <= y < 2^2048, by square-and-multiply from the low bit
+  // of y up: r collects the product, b runs through x^(2^i), and f is
+  // y / 2^i. RFC 8017 names no method. Once f reaches 0 the remaining
+  // steps change nothing.
+  spec power(x: Int, y: Int, n: Int) -> Int {
+    let s: (Int, Int, Int) = for i in 0..2048 with (r: Int, b: Int, f: Int) = (1, x % n, y) {
+      if f == 0 { (r, b, f) }
+      else if (f % 2) == 1 { ((r * b) % n, (b * b) % n, f / 2) }
+      else { (r, (b * b) % n, f / 2) }
+    };
+    s.0
+  }
+
+  // Section 5.1.1, RSAEP((n, e), m): c = m^e mod n. Step 1, "message
+  // representative out of range" unless 0 <= m < n, cannot happen in
+  // RSAES-OAEP: m is OS2IP of an encoded message whose first octet is 0x00,
+  // so m < 256^(k-1) <= n.
+  spec rsaep(key: PublicKey, m: Int) -> Int {
+    let n: Int = key.0;
+    let e: Int = key.1;
+    power(m, e, n)
+  }
+
+  // Section 5.1.2, RSADP(K, c). An evaluation cannot stop with an error,
+  // so the result pairs the message representative with a Bool that is
+  // false where step 1 outputs "ciphertext representative out of range";
+  // c comes from OS2IP and is never negative.
+  //
+  // Step 2.a, the first form K = (n, d): m = c^d mod n. The tests do not
+  // run it: on Example 1.1's ciphertext with Example 1's 1024-bit d it
+  // costs about 4.9 million steps, and the second form about 1.3 million.
+  spec rsadp_pair(key: PrivatePair, c: Int) -> (Bool, Int) {
+    (c < key.0, power(c, key.1, key.0))
+  }
+
+  // Step 2.b, the second form K = (p, q, dP, dQ, qInv) with u = 2:
+  // m_1 = c^dP mod p and m_2 = c^dQ mod q (2.b.i), h = (m_1 - m_2) qInv
+  // mod p (2.b.iii), and m = m_2 + q h (2.b.iv). Step 1 compares c with
+  // n = p q.
+  spec rsadp_quintuple(key: PrivateQuintuple, c: Int) -> (Bool, Int) {
+    let p: Int = key.0;
+    let q: Int = key.1;
+    let d_p: Int = key.2;
+    let d_q: Int = key.3;
+    let q_inv: Int = key.4;
+    let m_1: Int = power(c, d_p, p);
+    let m_2: Int = power(c, d_q, q);
+    let h: Int = ((m_1 - m_2) * q_inv) % p;
+    (c < (p * q), m_2 + (q * h))
+  }
+
+  // ---- Octet strings, section 7.1 ----
+
+  // The exclusive-or of two octet strings of one length, as steps 2.f, 2.h,
+  // 3.d and 3.f apply a mask.
+  spec xor[len in 1..257](a: Word[8]^len, b: Word[8]^len) -> Word[8]^len {
+    for i in 0..(len) with x: Word[8]^len = a { x with [i] = a[i] ^ b[i] }
+  }
+
+  // Section 7.1.2, step 3.g: the part of DB after lHash' should be PS, a
+  // run of 0x00 octets, then 0x01, then M. The result says whether the
+  // first octet that is not 0x00 is 0x01, and gives its index, r when every
+  // octet is 0x00.
+  spec separator[r in 1..257](rest: Word[8]^r) -> (Bool, Int) {
+    for i in 0..(r) with (one: Bool, at: Int) = (false, r) {
+      if (at == r) && (rest[i] != 0) { (rest[i] == 1, i) } else { (one, at) }
+    }
+  }
+
+  // ---- The mask generation function MGF1, appendix B.2.1 ----
+
+  // MGF1(mgfSeed, maskLen) with Hash = SHA-1, hLen = 20. Step 3: T is the
+  // concatenation of Hash(mgfSeed || C) for counter = 0 through count - 1,
+  // where C = I2OSP(counter, 4); step 4, the leading maskLen octets of T,
+  // is a slice at the caller, with count = ceiling(maskLen / hLen). Step 1,
+  // "mask too long", cannot happen at these lengths. A function has at most
+  // 256 instances, too few for every pair of seed and mask lengths, so the
+  // seed is one of the two strings that OAEP passes with k = 128: the
+  // 20-octet seed and the 107-octet maskedDB.
+  spec mgf1_sha1[S in {Word[8]^20, Word[8]^107}, count in 1..7](mgf_seed: S)
+    -> Word[8]^(20 * count) {
+    for counter in 0..(count) with t: Word[8]^(20 * count) = [0; (20 * count)] {
+      t with [20 * counter..20 * counter + 20] = sha1::digest(mgf_seed ++ i2osp[4](counter))
+    }
+  }
+
+  // MGF1 with Hash = SHA-256, hLen = 32, and the seeds that OAEP passes
+  // with k = 256: the 32-octet seed and the 223-octet maskedDB.
+  spec mgf1_sha256[S in {Word[8]^32, Word[8]^223}, count in 1..8](mgf_seed: S)
+    -> Word[8]^(32 * count) {
+    for counter in 0..(count) with t: Word[8]^(32 * count) = [0; (32 * count)] {
+      t with [32 * counter..32 * counter + 32] = sha256::digest(mgf_seed ++ i2osp[4](counter))
+    }
+  }
+
+  // ---- RSAES-OAEP with SHA-1, k = 128, section 7.1 ----
+
+  // Section 7.1.1, step 2, EME-OAEP encoding: lHash = Hash(L) (2.a); PS,
+  // k - mLen - 2 hLen - 2 zero octets (2.b), and DB = lHash || PS || 0x01
+  // || M of k - hLen - 1 = 107 octets (2.c), where PS || 0x01 is written as
+  // 87 - mLen zero octets with the last set to 0x01, so that PS may be
+  // empty; the seed is the caller's (2.d draws it at random; the vectors
+  // record it); dbMask = MGF(seed, 107) (2.e); maskedDB (2.f); seedMask =
+  // MGF(maskedDB, 20) (2.g); maskedSeed (2.h); and EM = 0x00 || maskedSeed
+  // || maskedDB (2.i).
+  spec eme_oaep_encode_sha1[m_len in 1..87](message: Word[8]^m_len, seed: Word[8]^20)
+    -> Word[8]^128 {
+    let l_hash: Word[8]^20 = sha1::digest_empty();
+    let ps_one: Word[8]^(87 - m_len) = [0; (87 - m_len)] with [(86 - m_len)] = 0x01;
+    let db: Word[8]^107 = l_hash ++ ps_one ++ message;
+    let db_mask: Word[8]^107 = mgf1_sha1[Word[8]^20, 6](seed)[..107];
+    let masked_db: Word[8]^107 = xor(db, db_mask);
+    let seed_mask: Word[8]^20 = mgf1_sha1[Word[8]^107, 1](masked_db);
+    let masked_seed: Word[8]^20 = xor(seed, seed_mask);
+    hex"00" ++ masked_seed ++ masked_db
+  }
+
+  // Section 7.1.1, RSAES-OAEP-ENCRYPT((n, e), M, L): step 1.a (the label's
+  // length) holds for the empty L and step 1.b (mLen <= k - 2 hLen - 2 =
+  // 86) by the range of m_len; step 2 is the encoding, step 3 is m =
+  // OS2IP(EM) (3.a), c = RSAEP((n, e), m) (3.b) and C = I2OSP(c, k) (3.c).
+  spec rsaes_oaep_encrypt_sha1[m_len in 1..87](
+    key: PublicKey, message: Word[8]^m_len, seed: Word[8]^20,
+  ) -> Word[8]^128 {
+    let em: Word[8]^128 = eme_oaep_encode_sha1(message, seed);
+    i2osp[128](rsaep(key, os2ip(em)))
+  }
+
+  // Section 7.1.2, step 3, EME-OAEP decoding: lHash (3.a); EM = Y ||
+  // maskedSeed || maskedDB (3.b); seedMask (3.c); seed (3.d); dbMask
+  // (3.e); DB (3.f); and the checks of step 3.g: Y is 0x00, lHash' equals
+  // lHash, and an octet 0x01 separates PS from M. The result pairs DB with
+  // a Bool that is false where step 3.g outputs "decryption error". The
+  // three checks are one Bool and `&&` evaluates all of its operands, as
+  // the note to step 3.g asks that the conditions not be told apart
+  // (Manger, CRYPTO 2001).
+  spec eme_oaep_decode_sha1(em: Word[8]^128) -> (Bool, Word[8]^107) {
+    let l_hash: Word[8]^20 = sha1::digest_empty();
+    let y: Word[8] = em[0];
+    let masked_seed: Word[8]^20 = em[1..21];
+    let masked_db: Word[8]^107 = em[21..];
+    let seed_mask: Word[8]^20 = mgf1_sha1[Word[8]^107, 1](masked_db);
+    let seed: Word[8]^20 = xor(masked_seed, seed_mask);
+    let db_mask: Word[8]^107 = mgf1_sha1[Word[8]^20, 6](seed)[..107];
+    let db: Word[8]^107 = xor(masked_db, db_mask);
+    let l_hash_prime: Word[8]^20 = db[..20];
+    let s: (Bool, Int) = separator(db[20..]);
+    ((y == 0) && (l_hash_prime == l_hash) && s.0, db)
+  }
+
+  // Section 7.1.2, RSAES-OAEP-DECRYPT(K, C, L) through step 3, with K the
+  // quintuple: step 1 holds by the types (C has k octets, k >= 2 hLen + 2)
+  // and the empty L; step 2 is c = OS2IP(C) (2.a), m = RSADP(K, c) (2.b)
+  // and EM = I2OSP(m, k) (2.c); step 3 is the decoding. The Bool is false
+  // where the scheme outputs "decryption error", from step 2.b or 3.g.
+  spec rsaes_oaep_decrypt_sha1(key: PrivateQuintuple, ciphertext: Word[8]^128)
+    -> (Bool, Word[8]^107) {
+    let m: (Bool, Int) = rsadp_quintuple(key, os2ip(ciphertext));
+    let em: Word[8]^128 = i2osp[128](m.1);
+    let decoded: (Bool, Word[8]^107) = eme_oaep_decode_sha1(em);
+    (m.0 && decoded.0, decoded.1)
+  }
+
+  // Section 7.1.2, step 4: M, the octets of DB after the separator. An
+  // array's length is part of its type, so the caller names mLen; the Bool
+  // is true when decryption succeeded and M has that length.
+  spec message_sha1[m_len in 1..87](decrypted: (Bool, Word[8]^107)) -> (Bool, Word[8]^m_len) {
+    let db: Word[8]^107 = decrypted.1;
+    let s: (Bool, Int) = separator(db[20..]);
+    (decrypted.0 && (s.1 == (86 - m_len)), db[(107 - m_len)..])
+  }
+
+  // ---- RSAES-OAEP with SHA-256, k = 256, section 7.1 ----
+
+  // Section 7.1.1, step 2, as for SHA-1, with hLen = 32: DB has k - hLen -
+  // 1 = 223 octets, PS || 0x01 has 191 - mLen, and mLen is at most k -
+  // 2 hLen - 2 = 190.
+  spec eme_oaep_encode_sha256[m_len in 1..191](message: Word[8]^m_len, seed: Word[8]^32)
+    -> Word[8]^256 {
+    let l_hash: Word[8]^32 = sha256::digest_empty();
+    let ps_one: Word[8]^(191 - m_len) = [0; (191 - m_len)] with [(190 - m_len)] = 0x01;
+    let db: Word[8]^223 = l_hash ++ ps_one ++ message;
+    let db_mask: Word[8]^223 = mgf1_sha256[Word[8]^32, 7](seed)[..223];
+    let masked_db: Word[8]^223 = xor(db, db_mask);
+    let seed_mask: Word[8]^32 = mgf1_sha256[Word[8]^223, 1](masked_db);
+    let masked_seed: Word[8]^32 = xor(seed, seed_mask);
+    hex"00" ++ masked_seed ++ masked_db
+  }
+
+  // Section 7.1.1, RSAES-OAEP-ENCRYPT((n, e), M, L), as for SHA-1.
+  spec rsaes_oaep_encrypt_sha256[m_len in 1..191](
+    key: PublicKey, message: Word[8]^m_len, seed: Word[8]^32,
+  ) -> Word[8]^256 {
+    let em: Word[8]^256 = eme_oaep_encode_sha256(message, seed);
+    i2osp[256](rsaep(key, os2ip(em)))
+  }
+
+  // Section 7.1.2, step 3, as for SHA-1.
+  spec eme_oaep_decode_sha256(em: Word[8]^256) -> (Bool, Word[8]^223) {
+    let l_hash: Word[8]^32 = sha256::digest_empty();
+    let y: Word[8] = em[0];
+    let masked_seed: Word[8]^32 = em[1..33];
+    let masked_db: Word[8]^223 = em[33..];
+    let seed_mask: Word[8]^32 = mgf1_sha256[Word[8]^223, 1](masked_db);
+    let seed: Word[8]^32 = xor(masked_seed, seed_mask);
+    let db_mask: Word[8]^223 = mgf1_sha256[Word[8]^32, 7](seed)[..223];
+    let db: Word[8]^223 = xor(masked_db, db_mask);
+    let l_hash_prime: Word[8]^32 = db[..32];
+    let s: (Bool, Int) = separator(db[32..]);
+    ((y == 0) && (l_hash_prime == l_hash) && s.0, db)
+  }
+
+  // Section 7.1.2, RSAES-OAEP-DECRYPT(K, C, L) through step 3, as for SHA-1.
+  spec rsaes_oaep_decrypt_sha256(key: PrivateQuintuple, ciphertext: Word[8]^256)
+    -> (Bool, Word[8]^223) {
+    let m: (Bool, Int) = rsadp_quintuple(key, os2ip(ciphertext));
+    let em: Word[8]^256 = i2osp[256](m.1);
+    let decoded: (Bool, Word[8]^223) = eme_oaep_decode_sha256(em);
+    (m.0 && decoded.0, decoded.1)
+  }
+
+  // Section 7.1.2, step 4, as for SHA-1.
+  spec message_sha256[m_len in 1..191](decrypted: (Bool, Word[8]^223))
+    -> (Bool, Word[8]^m_len) {
+    let db: Word[8]^223 = decrypted.1;
+    let s: (Bool, Int) = separator(db[32..]);
+    (decrypted.0 && (s.1 == (190 - m_len)), db[(223 - m_len)..])
+  }
+
+  // ---- Vectors ----
+
+  // RSA Laboratories, oaep-vect.txt, "Example 1: A 1024-bit RSA key pair",
+  // the public key: the modulus and the exponent as the file prints them.
+  spec example_1_public_key() -> PublicKey {
+    let n: Int = os2ip(
+      hex"a8 b3 b2 84 af 8e b5 0b 38 70 34 a8 60 f1 46 c4" ++
+      hex"91 9f 31 87 63 cd 6c 55 98 c8 ae 48 11 a1 e0 ab" ++
+      hex"c4 c7 e0 b0 82 d6 93 a5 e7 fc ed 67 5c f4 66 85" ++
+      hex"12 77 2c 0c bc 64 a7 42 c6 c6 30 f5 33 c8 cc 72" ++
+      hex"f6 2a e8 33 c4 0b f2 58 42 e9 84 bb 78 bd bf 97" ++
+      hex"c0 10 7d 55 bd b6 62 f5 c4 e0 fa b9 84 5c b5 14" ++
+      hex"8e f7 39 2d d3 aa ff 93 ae 1e 6b 66 7b b3 d4 24" ++
+      hex"76 16 d4 f5 ba 10 d4 cf d2 26 de 88 d3 9f 16 fb"
+    );
+    (n, os2ip(hex"01 00 01"))
+  }
+
+  // Example 1's private key in its second form: the file's "Prime 1" p,
+  // "Prime 2" q, "Prime exponent 1" dP, "Prime exponent 2" dQ and
+  // "Coefficient" qInv.
+  spec example_1_private_key() -> PrivateQuintuple {
+    let p: Int = os2ip(
+      hex"d3 27 37 e7 26 7f fe 13 41 b2 d5 c0 d1 50 a8 1b" ++
+      hex"58 6f b3 13 2b ed 2f 8d 52 62 86 4a 9c b9 f3 0a" ++
+      hex"f3 8b e4 48 59 8d 41 3a 17 2e fb 80 2c 21 ac f1" ++
+      hex"c1 1c 52 0c 2f 26 a4 71 dc ad 21 2e ac 7c a3 9d"
+    );
+    let q: Int = os2ip(
+      hex"cc 88 53 d1 d5 4d a6 30 fa c0 04 f4 71 f2 81 c7" ++
+      hex"b8 98 2d 82 24 a4 90 ed be b3 3d 3e 3d 5c c9 3c" ++
+      hex"47 65 70 3d 1d d7 91 64 2f 1f 11 6a 0d d8 52 be" ++
+      hex"24 19 b2 af 72 bf e9 a0 30 e8 60 b0 28 8b 5d 77"
+    );
+    let d_p: Int = os2ip(
+      hex"0e 12 bf 17 18 e9 ce f5 59 9b a1 c3 88 2f e8 04" ++
+      hex"6a 90 87 4e ef ce 8f 2c cc 20 e4 f2 74 1f b0 a3" ++
+      hex"3a 38 48 ae c9 c9 30 5f be cb d2 d7 68 19 96 7d" ++
+      hex"46 71 ac c6 43 1e 40 37 96 8d b3 78 78 e6 95 c1"
+    );
+    let d_q: Int = os2ip(
+      hex"95 29 7b 0f 95 a2 fa 67 d0 07 07 d6 09 df d4 fc" ++
+      hex"05 c8 9d af c2 ef 6d 6e a5 5b ec 77 1e a3 33 73" ++
+      hex"4d 92 51 e7 90 82 ec da 86 6e fe f1 3c 45 9e 1a" ++
+      hex"63 13 86 b7 e3 54 c8 99 f5 f1 12 ca 85 d7 15 83"
+    );
+    let q_inv: Int = os2ip(
+      hex"4f 45 6c 50 24 93 bd c0 ed 2a b7 56 a3 a6 ed 4d" ++
+      hex"67 35 2a 69 7d 42 16 e9 32 12 b1 27 a6 3d 54 11" ++
+      hex"ce 6f a9 8d 5d be fd 73 26 3e 37 28 14 27 43 81" ++
+      hex"81 66 ed 7d d6 36 87 dd 2a 8c a1 d2 f4 fb d8 e1"
+    );
+    (p, q, d_p, d_q, q_inv)
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.1": the message (mLen = 28), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.1: encryption" {
+    let message: Word[8]^28 =
+      hex"66 28 19 4e 12 07 3d b0 3b a9 4c da 9e f9 53 23" ++
+      hex"97 d5 0d ba 79 b9 87 00 4a fe fe 34";
+    let seed: Word[8]^20 =
+      hex"18 b7 76 ea 21 06 9d 69 77 6a 33 e9 6b ad 48 e1" ++
+      hex"dd a0 a5 ef";
+    let encryption: Word[8]^128 =
+      hex"35 4f e6 7b 4a 12 6d 5d 35 fe 36 c7 77 79 1a 3f" ++
+      hex"7b a1 3d ef 48 4e 2d 39 08 af f7 22 fa d4 68 fb" ++
+      hex"21 69 6d e9 5d 0b e9 11 c2 d3 17 4f 8a fc c2 01" ++
+      hex"03 5f 7b 6d 8e 69 40 2d e5 45 16 18 c2 1a 53 5f" ++
+      hex"a9 d7 bf c5 b8 dd 9f c2 43 f8 cf 92 7d b3 13 22" ++
+      hex"d6 e8 81 ea a9 1a 99 61 70 e6 57 a0 5a 26 64 26" ++
+      hex"d9 8c 88 00 3f 84 77 c1 22 70 94 a0 d9 fa 1e 8c" ++
+      hex"40 24 30 9c e1 ec cc b5 21 00 35 d4 7a c7 2e 8a";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.2": the message (mLen = 28), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.2: encryption" {
+    let message: Word[8]^28 =
+      hex"75 0c 40 47 f5 47 e8 e4 14 11 85 65 23 29 8a c9" ++
+      hex"ba e2 45 ef af 13 97 fb e5 6f 9d d5";
+    let seed: Word[8]^20 =
+      hex"0c c7 42 ce 4a 9b 7f 32 f9 51 bc b2 51 ef d9 25" ++
+      hex"fe 4f e3 5f";
+    let encryption: Word[8]^128 =
+      hex"64 0d b1 ac c5 8e 05 68 fe 54 07 e5 f9 b7 01 df" ++
+      hex"f8 c3 c9 1e 71 6c 53 6f c7 fc ec 6c b5 b7 1c 11" ++
+      hex"65 98 8d 4a 27 9e 15 77 d7 30 fc 7a 29 93 2e 3f" ++
+      hex"00 c8 15 15 23 6d 8d 8e 31 01 7a 7a 09 df 43 52" ++
+      hex"d9 04 cd eb 79 aa 58 3a dc c3 1e a6 98 a4 c0 52" ++
+      hex"83 da ba 90 89 be 54 91 f6 7c 1a 4e e4 8d c7 4b" ++
+      hex"bb e6 64 3a ef 84 66 79 b4 cb 39 5a 35 2d 5e d1" ++
+      hex"15 91 2d f6 96 ff e0 70 29 32 94 6d 71 49 2b 44";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.3": the message (mLen = 55), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.3: encryption" {
+    let message: Word[8]^55 =
+      hex"d9 4a e0 83 2e 64 45 ce 42 33 1c b0 6d 53 1a 82" ++
+      hex"b1 db 4b aa d3 0f 74 6d c9 16 df 24 d4 e3 c2 45" ++
+      hex"1f ff 59 a6 42 3e b0 e1 d0 2d 4f e6 46 cf 69 9d" ++
+      hex"fd 81 8c 6e 97 b0 51";
+    let seed: Word[8]^20 =
+      hex"25 14 df 46 95 75 5a 67 b2 88 ea f4 90 5c 36 ee" ++
+      hex"c6 6f d2 fd";
+    let encryption: Word[8]^128 =
+      hex"42 37 36 ed 03 5f 60 26 af 27 6c 35 c0 b3 74 1b" ++
+      hex"36 5e 5f 76 ca 09 1b 4e 8c 29 e2 f0 be fe e6 03" ++
+      hex"59 5a a8 32 2d 60 2d 2e 62 5e 95 eb 81 b2 f1 c9" ++
+      hex"72 4e 82 2e ca 76 db 86 18 cf 09 c5 34 35 03 a4" ++
+      hex"36 08 35 b5 90 3b c6 37 e3 87 9f b0 5e 0e f3 26" ++
+      hex"85 d5 ae c5 06 7c d7 cc 96 fe 4b 26 70 b6 ea c3" ++
+      hex"06 6b 1f cf 56 86 b6 85 89 aa fb 7d 62 9b 02 d8" ++
+      hex"f8 62 5c a3 83 36 24 d4 80 0f b0 81 b1 cf 94 eb";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.4": the message (mLen = 26), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.4: encryption" {
+    let message: Word[8]^26 =
+      hex"52 e6 50 d9 8e 7f 2a 04 8b 4f 86 85 21 53 b9 7e" ++
+      hex"01 dd 31 6f 34 6a 19 f6 7a 85";
+    let seed: Word[8]^20 =
+      hex"c4 43 5a 3e 1a 18 a6 8b 68 20 43 62 90 a3 7c ef" ++
+      hex"b8 5d b3 fb";
+    let encryption: Word[8]^128 =
+      hex"45 ea d4 ca 55 1e 66 2c 98 00 f1 ac a8 28 3b 05" ++
+      hex"25 e6 ab ae 30 be 4b 4a ba 76 2f a4 0f d3 d3 8e" ++
+      hex"22 ab ef c6 97 94 f6 eb bb c0 5d db b1 12 16 24" ++
+      hex"7d 2f 41 2f d0 fb a8 7c 6e 3a cd 88 88 13 64 6f" ++
+      hex"d0 e4 8e 78 52 04 f9 c3 f7 3d 6d 82 39 56 27 22" ++
+      hex"dd dd 87 71 fe c4 8b 83 a3 1e e6 f5 92 c4 cf d4" ++
+      hex"bc 88 17 4f 3b 13 a1 12 aa e3 b9 f7 b8 0e 0f c6" ++
+      hex"f7 25 5b a8 80 dc 7d 80 21 e2 2a d6 a8 5f 07 55";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.5": the message (mLen = 20), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.5: encryption" {
+    let message: Word[8]^20 =
+      hex"8d a8 9f d9 e5 f9 74 a2 9f ef fb 46 2b 49 18 0f" ++
+      hex"6c f9 e8 02";
+    let seed: Word[8]^20 =
+      hex"b3 18 c4 2d f3 be 0f 83 fe a8 23 f5 a7 b4 7e d5" ++
+      hex"e4 25 a3 b5";
+    let encryption: Word[8]^128 =
+      hex"36 f6 e3 4d 94 a8 d3 4d aa cb a3 3a 21 39 d0 0a" ++
+      hex"d8 5a 93 45 a8 60 51 e7 30 71 62 00 56 b9 20 e2" ++
+      hex"19 00 58 55 a2 13 a0 f2 38 97 cd cd 73 1b 45 25" ++
+      hex"7c 77 7f e9 08 20 2b ef dd 0b 58 38 6b 12 44 ea" ++
+      hex"0c f5 39 a0 5d 5d 10 32 9d a4 4e 13 03 0f d7 60" ++
+      hex"dc d6 44 cf ef 20 94 d1 91 0d 3f 43 3e 1c 7c 6d" ++
+      hex"d1 8b c1 f2 df 7f 64 3d 66 2f b9 dd 37 ea d9 05" ++
+      hex"91 90 f4 fa 66 ca 39 e8 69 c4 eb 44 9c bd c4 39";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.6": the message (mLen = 7), the seed, and the
+  // encryption.
+  test "oaep-vect.txt Example 1.6: encryption" {
+    let message: Word[8]^7 =
+      hex"26 52 10 50 84 42 71";
+    let seed: Word[8]^20 =
+      hex"e4 ec 09 82 c2 33 6f 3a 67 7f 6a 35 61 74 eb 0c" ++
+      hex"e8 87 ab c2";
+    let encryption: Word[8]^128 =
+      hex"42 ce e2 61 7b 1e ce a4 db 3f 48 29 38 6f bd 61" ++
+      hex"da fb f0 38 e1 80 d8 37 c9 63 66 df 24 c0 97 b4" ++
+      hex"ab 0f ac 6b df 59 0d 82 1c 9f 10 64 2e 68 1a d0" ++
+      hex"5b 8d 78 b3 78 c0 f4 6c e2 fa d6 3f 74 e0 ad 3d" ++
+      hex"f0 6b 07 5d 7e b5 f5 63 6f 8d 40 3b 90 59 ca 76" ++
+      hex"1b 5c 62 bb 52 aa 45 00 2e a7 0b aa ce 08 de d2" ++
+      hex"43 b9 d8 cb d6 2a 68 ad e2 65 83 2b 56 56 4e 43" ++
+      hex"a6 fa 42 ed 19 9a 09 97 69 74 2d f1 53 9e 82 55";
+    rsaes_oaep_encrypt_sha1(example_1_public_key(), message, seed) == encryption
+  }
+
+  // oaep-vect.txt, "OAEP Example 1.1" read the other way: decrypting the
+  // encryption with the private key gives the message.
+  test "oaep-vect.txt Example 1.1: decryption" {
+    let encryption: Word[8]^128 =
+      hex"35 4f e6 7b 4a 12 6d 5d 35 fe 36 c7 77 79 1a 3f" ++
+      hex"7b a1 3d ef 48 4e 2d 39 08 af f7 22 fa d4 68 fb" ++
+      hex"21 69 6d e9 5d 0b e9 11 c2 d3 17 4f 8a fc c2 01" ++
+      hex"03 5f 7b 6d 8e 69 40 2d e5 45 16 18 c2 1a 53 5f" ++
+      hex"a9 d7 bf c5 b8 dd 9f c2 43 f8 cf 92 7d b3 13 22" ++
+      hex"d6 e8 81 ea a9 1a 99 61 70 e6 57 a0 5a 26 64 26" ++
+      hex"d9 8c 88 00 3f 84 77 c1 22 70 94 a0 d9 fa 1e 8c" ++
+      hex"40 24 30 9c e1 ec cc b5 21 00 35 d4 7a c7 2e 8a";
+    let message: Word[8]^28 =
+      hex"66 28 19 4e 12 07 3d b0 3b a9 4c da 9e f9 53 23" ++
+      hex"97 d5 0d ba 79 b9 87 00 4a fe fe 34";
+    message_sha1[28](rsaes_oaep_decrypt_sha1(example_1_private_key(), encryption))
+      == (true, message)
+  }
+
+  // Wycheproof, rsa_oaep_2048_sha256_mgf1sha256_test.json (source version
+  // 0.9), the one test group's key: "modulus" and "publicExponent". The
+  // file prints the modulus with a leading 00 octet, as ASN.1 writes a
+  // positive integer; the 256 octets here are the ones after it.
+  spec wycheproof_public_key() -> PublicKey {
+    let n: Int = os2ip(
+      hex"a2b451a07d0aa5f96e455671513550514a8a5b462ebef717094fa1fee82224e6" ++
+      hex"37f9746d3f7cafd31878d80325b6ef5a1700f65903b469429e89d6eac8845097" ++
+      hex"b5ab393189db92512ed8a7711a1253facd20f79c15e8247f3d3e42e46e48c98e" ++
+      hex"254a2fe9765313a03eff8f17e1a029397a1fa26a8dce26f490ed81299615d981" ++
+      hex"4c22da610428e09c7d9658594266f5c021d0fceca08d945a12be82de4d1ece6b" ++
+      hex"4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f1126422f590975a19" ++
+      hex"69816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc22c4e5ac0f7c1a4" ++
+      hex"5d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf7820283f742b9d5"
+    );
+    (n, os2ip(hex"010001"))
+  }
+
+  // The group's private key in its second form: "prime1" p, "prime2" q,
+  // "exponent1" dP, "exponent2" dQ and "coefficient" qInv, each without
+  // the leading 00 octet the file prints where the top bit is set.
+  spec wycheproof_private_key() -> PrivateQuintuple {
+    let p: Int = os2ip(
+      hex"dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5" ++
+      hex"bb028bda42eeb5d234d5681e5809d415e6a289ad4cfbf78f978f6c35814f50ee" ++
+      hex"bff1c5b80a69f788e81e6bab5ddaa78369d659d143ec6f17e79813a575cfad9c" ++
+      hex"569156b90113e2e9110ad9e7b48a1c9348a6e653321191290ea36cfb3a5b18f1"
+    );
+    let q: Int = os2ip(
+      hex"bd1a81e7977f9898122273ae3222b598ea5fb19eb4eabc38308a5e32196603b2" ++
+      hex"e500ffb79f5b886816611debc472fac45544070beb057c941378a6868af3b7a0" ++
+      hex"3d3f9880ec47d5e089b94fbde542aba9ae8d72c57088d7abf5b131f39098f7bc" ++
+      hex"160f90536abc9492fd4e06f3ed7299d4b97bb03677207d95669f140cfbc20f25"
+    );
+    let d_p: Int = os2ip(
+      hex"a94b528b28f291599121d91952ffd1c7f21d7c1479d99d478885fb161870ee12" ++
+      hex"18bf08472612dbe5497e8d9c650688e09c786961ae3e2c354dc48ae34514759c" ++
+      hex"4c23c4588488961dc06b414e61c0e1e7fbbd2923d31532fe289f96da220711e5" ++
+      hex"8c14019808e00414276933bb07e4efb9b4a9b37656917205209f33f09515d7c1"
+    );
+    let d_q: Int = os2ip(
+      hex"3af0e72a933aef09ff2503df78bafed531c02ff1a2bc437c540cdcbd4ad35435" ++
+      hex"cf511763596543480629b114ca7f780ff7efa32ea0cb6e000d6d9ea1f2ef71fd" ++
+      hex"9cf9948422a165557e37e755edfe70d90b920502eb478bc98a63f788ce3a0f85" ++
+      hex"6d6ede7251a383bfa8fa480a81a925af7b3cc538c4bab8c9f7597ffb68011d8d"
+    );
+    let q_inv: Int = os2ip(
+      hex"2640fbfbcfefb163ee7a87b6483a66ee41f956d90fa8a7939bfc042ee0924b1b" ++
+      hex"7993d0445f758d51933e85179c0320b0c968b48a91c38b5be923e1097c0c562f" ++
+      hex"88d42294b6a2759bafa5428a74f1270874e45f6fcc60f21602de5eccd143cf31" ++
+      hex"241f5921b5ad3983fb54ef17be3b285367e50c999c67247b552fe4bfce945f7b"
+    );
+    (p, q, d_p, d_q, q_inv)
+  }
+
+  // Wycheproof tcId 7, "valid", flags Normal: a 32-octet message, the empty
+  // label, and its ciphertext.
+  test "Wycheproof tcId 7: decryption" {
+    let ct: Word[8]^256 =
+      hex"096958786ee7972050d67a9e4b69d6c6af7db7cc674386df725770dd29129b82" ++
+      hex"6e39552330104c8d71e6cc3a3014dd2f61b54153af51b0438d447ee939f9e3c1" ++
+      hex"3bb8b00a37dea6a068f6c9d27e848b1be7a1eeeb3ee50b78036fba95ae46948c" ++
+      hex"a5b13f356ea24db10f60dc09e4b8bad8f766b668ef72524432080a0ce00ed676" ++
+      hex"d6d5e354984b1078520412525848156d06f0652469f95791baa3d9a798ae5370" ++
+      hex"94f76f976faecd5c9ce0c930a75910c63dacf63485cb4b5e7bdbcf4d80e74037" ++
+      hex"eaa1a8fe4b52930bec6be99cf6ac88cf5878dbf6859d456a95dbc34654eec425" ++
+      hex"de84ca2a535d517403a9aada827e7d0093ecfc97ed056a7652825e9a45cb2dcb";
+    let msg: Word[8]^32 = hex"e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
+    message_sha256[32](rsaes_oaep_decrypt_sha256(wycheproof_private_key(), ct)) == (true, msg)
+  }
+
+  // tcId 7 the other way: the file does not print the seed, but the
+  // ciphertext fixes it (steps 3.b through 3.d of section 7.1.2), and
+  // encrypting the message with that seed gives the ciphertext of the file.
+  // The seed was recovered in Python with hashlib and checked by
+  // pycryptodome's PKCS1_OAEP, which encrypts the message with it to the
+  // same ciphertext.
+  test "Wycheproof tcId 7: encryption with its seed" {
+    let msg: Word[8]^32 = hex"e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
+    let seed: Word[8]^32 = hex"008b60932098817998f3d6f3e7c7806706138deb50ef1e44faeb629114a4daf7";
+    let ct: Word[8]^256 =
+      hex"096958786ee7972050d67a9e4b69d6c6af7db7cc674386df725770dd29129b82" ++
+      hex"6e39552330104c8d71e6cc3a3014dd2f61b54153af51b0438d447ee939f9e3c1" ++
+      hex"3bb8b00a37dea6a068f6c9d27e848b1be7a1eeeb3ee50b78036fba95ae46948c" ++
+      hex"a5b13f356ea24db10f60dc09e4b8bad8f766b668ef72524432080a0ce00ed676" ++
+      hex"d6d5e354984b1078520412525848156d06f0652469f95791baa3d9a798ae5370" ++
+      hex"94f76f976faecd5c9ce0c930a75910c63dacf63485cb4b5e7bdbcf4d80e74037" ++
+      hex"eaa1a8fe4b52930bec6be99cf6ac88cf5878dbf6859d456a95dbc34654eec425" ++
+      hex"de84ca2a535d517403a9aada827e7d0093ecfc97ed056a7652825e9a45cb2dcb";
+    rsaes_oaep_encrypt_sha256(wycheproof_public_key(), msg, seed) == ct
+  }
+
+  // Wycheproof tcId 11, "valid", flags Normal, "Longest valid message
+  // size": a message of k - 2 hLen - 2 = 190 octets, so PS is empty and DB
+  // is lHash || 0x01 || M. The seed was recovered from the ciphertext and
+  // checked as for tcId 7.
+  test "Wycheproof tcId 11: encryption with its seed" {
+    let msg: Word[8]^190 =
+      hex"7878787878787878787878787878787878787878787878787878787878787878" ++
+      hex"7878787878787878787878787878787878787878787878787878787878787878" ++
+      hex"7878787878787878787878787878787878787878787878787878787878787878" ++
+      hex"7878787878787878787878787878787878787878787878787878787878787878" ++
+      hex"7878787878787878787878787878787878787878787878787878787878787878" ++
+      hex"787878787878787878787878787878787878787878787878787878787878";
+    let seed: Word[8]^32 = hex"a4493a49258678f19fb264d668ebcff4ee8fed804010867cf528c3d00a47e56b";
+    let ct: Word[8]^256 =
+      hex"7efb69f1137d6a6e813b7ab75bf0400b3d07a442b88ab048675dc06b0215fc1a" ++
+      hex"2e033263ec31a6c1d2eac56cb0470d69022a48131d1f000bbed70586b80cf635" ++
+      hex"6465c8834daced7ea2a5ff8ef9c44d5ab828ffbf0556a6394752a4a28a70cae2" ++
+      hex"0084e1236f042f6c29de5cb34ef73acba5abcc7ccb3a26342701df3b9daa945d" ++
+      hex"9fa5bf0b9b10306655e56370183f50fb8321f8f0cd1c72114791fca5df216629" ++
+      hex"6b509b01a0b291c46110787cebe69d41b3b1e89590bc2f5e5d49ea24ae0f1207" ++
+      hex"eef1aee54b9760553e80c5506a8a8a75732e92875025f0bfd5ead71e4340c8a9" ++
+      hex"fa16dcd5a7dc96d8c4a7dc4e91f47a69366445c4695c8bad578ffe52bb672f65";
+    rsaes_oaep_encrypt_sha256(wycheproof_public_key(), msg, seed) == ct
+  }
+
+  // Wycheproof tcId 12, "invalid", flags InvalidOaepPadding, "first byte of
+  // l_hash modified": RSADP succeeds, Y is 0x00 and 0x01 separates PS from
+  // a 6-octet M, but lHash' differs from lHash in its first octet, so
+  // decryption outputs "decryption error".
+  test "Wycheproof tcId 12: decryption error" {
+    let ct: Word[8]^256 =
+      hex"287d7108a1c6e7a18acb0045b20c57cdf2ac03456b44942764a7a9e9fdf3db48" ++
+      hex"1d7e202e4c8d733b56b9c1e93d71e791af8325c9363df789b252a5ed0eddc79e" ++
+      hex"76fa41c2cb0a35618398217a390a5e6d99eed905d5554d19c1cf4e30bdf1c2fc" ++
+      hex"c5148b641d71b3f1977b63d232648ddd935ec9499a53ac2fbcac55f462e91065" ++
+      hex"adaa018a39c453ba759bd68b454074153421e2ce75cf149f748b5b84758df8a4" ++
+      hex"23d1c50c880af863f2a6df3cd465ca36aa2152b5771f3d507f4a4dd9f8006d80" ++
+      hex"eca23537092287976f218a90df1e16d889fe31e79f7309f3224f613e9b52479f" ++
+      hex"e73b7aad915319a3b62a5936649f7d015d7b09f7fa9f454f78a7c3dd4bf791e0";
+    !rsaes_oaep_decrypt_sha256(wycheproof_private_key(), ct).0
+  }
+}
