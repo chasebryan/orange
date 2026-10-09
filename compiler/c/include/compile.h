@@ -66,6 +66,9 @@ static void reject_matrix_use(Compiler *c, TypeSite *site) {
     site->reported = 1;
 }
 
+/* Evaluate a modulus constant: integer literals, parentheses, `+`, `-`,
+   `*`, and `<<`. Anything else is not a constant. A value past the bit
+   budget is ORC0205. */
 static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok) {
     const Expr *expr = &c->exprs[index];
     *ok = 0;
@@ -139,6 +142,8 @@ static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok) {
     return 1;
 }
 
+/* Store one modulus constant. Equal moduli share one table entry.
+   Index 0 is unused, so an unresolved modulus does not name a real ring. */
 static int intern_modulus(Compiler *c, const Big *value, uint16_t *out) {
     uint16_t index;
     if (c->moduli == NULL) {
@@ -630,6 +635,10 @@ static void seal_patterns(Compiler *c, Local *locals, uint32_t count) {
     }
 }
 
+/* Resolve type names and moduli, install `type` aliases in source order,
+   then publish each site onto the parameter, binding, result, loop, and
+   conversion that uses it. A `type` name that stands for a tuple is still
+   rejected inside another tuple or as an array element. */
 static void prepare_types(Compiler *c) {
     uint32_t index;
     uint16_t param;
@@ -1217,6 +1226,8 @@ static void instance_label(const Compiler *c, uint32_t inst, char *buf, size_t c
     buf[used] = '\0';
 }
 
+/* Attach the instance name to the diagnostics just recorded for this
+   pass, as in `last[1]` or `none[0]`. Resource diagnostics are left alone. */
 static void name_sized_diags(Compiler *c, const Func *func, uint32_t inst, uint32_t from) {
     char label[96];
     char name[64];
@@ -1245,6 +1256,9 @@ static void name_sized_diags(Compiler *c, const Func *func, uint32_t inst, uint3
     }
 }
 
+/* ORC0217. The message names the instances in the cycle, as in
+   `swap[1] -> swap[2] -> swap[1]`. An instance that calls itself is
+   reported as that instance calling itself. */
 static void report_call_cycle(Compiler *c, const uint32_t *stack, uint32_t top, uint32_t callee, uint32_t start,
                               uint32_t end) {
     char names[8][96];
@@ -1327,6 +1341,14 @@ static void seal_conversion_ranks(Compiler *c, uint32_t func_index) {
     }
 }
 
+/* Duplicates, rejected types, one pass per instance, then call cycles.
+   A sized function is checked from its first value. The first diagnostic
+   ends that walk, and the instance is named, as in `last[1]` or `none[0]`.
+   A cycle is ORC0217 and prints the chain, as in
+   `swap[1] -> swap[2] -> swap[1]`. prepare_types has already published
+   each site. Cycle colors are 0 unseen, 1 on the stack, and 2 finished.
+   A binding whose type was already rejected does not also typecheck its
+   initializer. */
 static void analyze(Compiler *c) {
     uint32_t index;
     prepare_types(c);
@@ -1422,9 +1444,9 @@ static void analyze(Compiler *c) {
             }
         }
         if (!func->result_ok) {
-            /* A rejected result is already diagnosed at its type. Do not also
-               check the bindings or the body (Float and Mod[1] must not add
-               ORC0207 or ORC0211). */
+            /* A rejected result (`Float`, a later `type` name, or `Mod[1]`)
+               is already diagnosed at its type. Do not also check the
+               bindings or the body, which would add ORC0207 or ORC0211. */
             if (!func->result_reported) {
                 reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
                                 func->result_length_start, func->result_length_end);
@@ -1632,6 +1654,27 @@ static void analyze(Compiler *c) {
     }
 }
 
+/* --- Reference evaluator --------------------------------------------------- */
+
+/* Words are masked residues in `Value.word`. Int values are `Value.big`.
+   Bool is 0 or 1 in `Value.word`. An array owns its element block in
+   `Value.elems`. value_clear releases that block and the blocks nested in
+   it. A failed allocation reports ORC0301. A loop's index and accumulator
+   live in loop_k and loop_acc for the duration of its step. Bindings of
+   a step run afresh each step. A conditional evaluates only the chosen
+   branch, and that branch's bindings run only then. A residue that
+   crosses a call is retagged with the receiving module's modulus index.
+   A tuple is built from left to right and prints as `(e0, e1, ...)`.
+   A byte string is an array of Word[8]. ++ copies the left elements and
+   then the right. A slice copies a run whose bounds were proved; a slice
+   update replaces that run. A parameterless sized spec is evaluated once
+   per instance and printed as `name[n]`. Size `/` and `%` are Euclidean.
+   One source shares MAX_STEPS steps and MAX_CALL_DEPTH frames. A failed
+   evaluation sets c->failed and produces no value lines. Shift amounts
+   are the literals already checked. An index has already been proved in
+   range. Integer `/` and `%` are Euclidean. Word multiplication splits
+   each factor into 32-bit halves so a 64-bit product does not depend on
+   a widening multiply. */
 static void value_clear(Value *value) {
     Value *elems;
     uint32_t length;
@@ -1719,6 +1762,7 @@ static int alloc_array(Compiler *c, Value **items, uint32_t length, uint32_t sta
     return 1;
 }
 
+/* Add `cost` steps, or reject the source with ORC0301. */
 static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
     if (c->failed) {
         return 0;
@@ -1735,6 +1779,8 @@ static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out);
 
+/* Evaluate one tuple pattern. The tuple is built once, then each name
+   receives its element. */
 static int eval_pattern(Compiler *c, const Local *head, Value *slot0, Value *params, Value *locals, int depth) {
     Value tuple;
     uint16_t index;
@@ -1758,6 +1804,8 @@ static int eval_pattern(Compiler *c, const Local *head, Value *slot0, Value *par
     return 1;
 }
 
+/* Evaluate a step or a branch. Bindings run in order and are visible only
+   inside this block. The slots are released before the block returns. */
 static int eval_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, Value *params, Value *locals,
                       int depth, Value *out) {
     BlockFrame *frame;
@@ -1810,6 +1858,7 @@ static int eval_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t val
     return ok;
 }
 
+/* Loop index and accumulator storage for this module, allocated once. */
 static int ensure_loops(Compiler *c) {
     if (c->nloops == 0 || c->loop_k != NULL) {
         return 1;
@@ -1823,6 +1872,9 @@ static int ensure_loops(Compiler *c) {
     return 1;
 }
 
+/* Evaluate bindings in source order, then the result expression.
+   `depth` is 1 for a root spec. Arguments is NULL when nparams is 0.
+   A qualified call enters the callee's module and shares the step budget. */
 static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int depth, Value *out) {
     Func *func = &c->funcs[func_index];
     Value *params;
@@ -1878,10 +1930,12 @@ static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int
     return ok;
 }
 
+/* Low `width` bits. width 64 is the full uint64_t. */
 static uint64_t word_mask_of(int width) {
     return width >= 64 ? UINT64_MAX : (UINT64_C(1) << width) - 1;
 }
 
+/* Map a comparison onto an ordering of -1, 0, or 1. */
 static int relation_holds(TokenKind op, int ordering) {
     switch (op) {
     case TK_EQEQ: return ordering == 0;
@@ -1894,6 +1948,7 @@ static int relation_holds(TokenKind op, int ordering) {
     }
 }
 
+/* Unsigned word ordering: -1, 0, or 1. */
 static int word_ordering(uint64_t left, uint64_t right) {
     if (left < right) {
         return -1;
@@ -1904,6 +1959,9 @@ static int word_ordering(uint64_t left, uint64_t right) {
     return 0;
 }
 
+/* Word-ring +, -, *, &, |, and ^. The product is assembled from 32-bit
+   halves and then masked to the word width. Comparisons, division, and
+   Boolean operators are handled outside this helper. */
 static int binary_words(TokenKind op, uint64_t left, uint64_t right, int width, uint64_t *out) {
     uint64_t mask = word_mask_of(width);
     uint64_t a0;
@@ -3075,6 +3133,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return 1;
     }
     case EX_TUPLE: {
+        /* Elements run left to right, then the construction costs one step each. */
         Value *items = NULL;
         uint16_t index;
         if (!alloc_array(c, &items, expr->argc, expr->start, expr->end)) {
@@ -3303,6 +3362,8 @@ typedef struct TextBuf {
     size_t cap;
 } TextBuf;
 
+/* Growing spelling buffer. text_append doubles the block until the text fits.
+   A failed growth returns 0; the caller reports ORC0301 and prints nothing. */
 static int text_append(TextBuf *buf, const char *bytes, size_t count) {
     size_t need;
     size_t next;
@@ -3339,6 +3400,11 @@ static int text_append(TextBuf *buf, const char *bytes, size_t count) {
 /* Decimal spelling of an admitted Int. 2^16384-1 is 4933 digits, plus a sign. */
 #define MAX_INT_DECIMAL 8192u
 
+/* Int and a residue are decimal. A residue is the least residue, from 0
+   through m - 1. Bool is `true` or `false`. A word is 0x and width/4
+   lowercase hex digits. An array is `[e0, e1, ...]`. A tuple is
+   `(e0, e1, ...)`. The result is appended to a buffer that grows with the
+   spelling, so an array of full-width integers is not cut off at a fixed size. */
 static int format_value(const Value *value, TextBuf *buf) {
     uint32_t index;
     if (value->is_tuple) {
@@ -3391,6 +3457,9 @@ static int format_value(const Value *value, TextBuf *buf) {
     }
 }
 
+/* --- Diagnostic text and commands ------------------------------------------ */
+
+/* Span, then code, message, label, and notes. This is the order check prints. */
 static int compare_diag(const void *left_ptr, const void *right_ptr) {
     const Diag *left = left_ptr;
     const Diag *right = right_ptr;
@@ -3667,6 +3736,8 @@ static void fputs_sanitized(FILE *out, const char *text) {
     }
 }
 
+/* error[CODE]: message, then the file span, a source excerpt, the label,
+   an optional secondary span, and up to two notes. */
 static void render_diags(Compiler *c, FILE *out) {
     uint32_t index;
     if (c->ndiags > 1) {
@@ -3719,6 +3790,7 @@ static void write_escaped(FILE *out, const char *text, uint32_t start, uint32_t 
     }
 }
 
+/* One line per token: start..end, Rust token name, escaped lexeme. */
 static int run_lex_command(Compiler *c, FILE *out) {
     size_t index;
     for (index = 0; index < c->ntokens; index++) {
@@ -3730,6 +3802,7 @@ static int run_lex_command(Compiler *c, FILE *out) {
     return c->ndiags == 0 ? 0 : 1;
 }
 
+/* Release accumulator values, which own their element blocks. */
 static void release_loop_values(Compiler *c) {
     uint32_t index;
     if (c->loop_acc == NULL) {
@@ -3740,6 +3813,8 @@ static void release_loop_values(Compiler *c) {
     }
 }
 
+/* Distance from modulus to 2^bit, used when a large modulus prints as
+   `(1 << k) - c`, `(1 << k) + c`, or `1 << k`. */
 static int offset_from_power(Compiler *c, const Big *modulus, uint32_t bit, int *below, uint64_t *offset) {
     Big one = big_zero();
     Big power = big_zero();
@@ -3930,6 +4005,12 @@ static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uin
     return 1;
 }
 
+/* One line per parameterless typed spec of the root, in source order:
+   `module::name: Type = value`, and one line per instance of a sized spec,
+   `module::name[n]: Type = value`. A residue prints as its least residue.
+   A used module runs only when called. The spelling grows with the value.
+   It is written only if every selected spec evaluates and formats. A
+   failure reports ORC0301 and prints no value lines. */
 static int evaluate_source(Compiler *c, FILE *out) {
     TextBuf program = {0};
     uint32_t index;
@@ -4096,6 +4177,8 @@ static int evaluate_source(Compiler *c, FILE *out) {
 
 static char *read_path(const char *path, size_t *length, char *error, size_t error_cap);
 
+/* One module's compiler. own_text and own_filename say which buffers
+   program_free releases. */
 static Compiler *compiler_new(char *text, size_t length, const char *filename, int own_text, int own_filename) {
     Compiler *compiler = calloc(1, sizeof *compiler);
     if (compiler == NULL) {
@@ -4280,6 +4363,8 @@ static void append_route(char *route, size_t cap, size_t *used, const char *text
     route[*used] = '\0';
 }
 
+/* ORC0230 for a `use` that returns to a module already on the path.
+   The route is truncated, and the message buffer holds that route. */
 static void report_cycle(Program *program, const uint16_t *path_mod, int path_len, uint16_t node, uint16_t use_index,
                          uint16_t target) {
     Compiler *mod = program->mods[node];
@@ -4320,6 +4405,8 @@ static void report_cycle(Program *program, const uint16_t *path_mod, int path_le
     program->graph_error = 1;
 }
 
+/* Walk uses from the root. A module is ordered after the modules it
+   uses. A back edge is a cycle. More than 64 modules is ORC0209. */
 static int link_program(Program *program) {
     uint8_t state[MAX_PROGRAM_SLOTS];
     uint16_t path_mod[MAX_MODULES];
@@ -4393,6 +4480,8 @@ static void print_use_note(FILE *err, const char *name, const char *user) {
     fprintf(err, "  = note: `use %s;` in module `%s` reads the module `%s` from this file\n", name, user, name);
 }
 
+/* `name.or` in the directory of the root. A root with no directory
+   uses the current directory. */
 static char *module_path(const char *root_path, const char *name) {
     const char *slash;
     size_t dir_len;
@@ -4444,6 +4533,8 @@ static int name_requested(const Program *program, const char *name) {
     return 0;
 }
 
+/* Lex and parse one sibling module. A missing or ill-formed file is
+   reported against the `use` that named it. */
 static int load_one(Program *program, const char *path, const char *name, const char *user, FILE *err) {
     char error[1024];
     char *text;
@@ -4504,6 +4595,8 @@ static int load_one(Program *program, const char *path, const char *name, const 
     return 1;
 }
 
+/* Load the modules reachable from the root, including modules named
+   by a module that was itself loaded. A module is not loaded twice. */
 static int load_used_modules(Program *program, const char *root_path, FILE *err) {
     Compiler *root = program->mods[0];
     int next = 0;
@@ -4575,6 +4668,12 @@ static void render_program_diags(Program *program, FILE *err, int dependency_ord
     }
 }
 
+/* command is 0 for check, 1 for eval, and 2 for lex.
+   Lex prints tokens of the root only, even when the lexer recorded diagnostics.
+   check and eval load each `use` from `name.or` beside the root, reject a
+   cyclic module graph before checking any module, then check modules after
+   the modules they use. eval prints the root. Each module frees its tables
+   and the element blocks its values own. */
 static int compile_text(char *text, size_t length, const char *filename, int command, FILE *out, FILE *err) {
     Program *program = calloc(1, sizeof *program);
     Compiler *root;
@@ -4646,6 +4745,9 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     return status;
 }
 
+/* Read one source. "-" is standard input. A source past
+   MAX_SOURCE_BYTES is rejected before lexing. The returned buffer is
+   NUL-terminated for a file; the length does not include that byte. */
 static char *read_path(const char *path, size_t *length, char *error, size_t error_cap) {
     FILE *file;
     long size;
@@ -4759,6 +4861,9 @@ static void print_usage(FILE *out) {
         out);
 }
 
+/* Commands: check (0), eval (1), lex (2), plus --self-test, --help,
+   --version, and --edition 2026. --version prints the slice name S3m,
+   which means this frontend includes S3a through S3m. */
 int orange_main(int argc, char **argv) {
     int command = -1;
     const char *path = NULL;

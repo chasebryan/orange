@@ -57,7 +57,9 @@
    that repeats the loop index is ORC0219; a pattern name used outside
    the loop is ORC0211. `p.01`, `p.0.1`, and `x[0].1` are each one
    ORC0101. A tuple inside a tuple, and an array of tuples, are rejected
-   even through a `type` alias. Whole-tuple `==` and `!=` stay rejected.
+   even through a `type` alias. Order on an array or a tuple is ORC0215.
+   `==` and `!=` of a written-out array or tuple with no type of its own
+   is ORC0227.
    A byte string "..." or hex"..." is the array Word[8]^n of its bytes,
    with n from 1 through 256. Characters are printable ASCII, from a
    space through `~`, or an escape; a non-printable or non-ASCII byte is
@@ -80,9 +82,9 @@
    first size changes slowest. An empty range, a bound past 65536, and
    a product past the cap (`many` has 361) are ORC0238, and the body is
    not checked. Instances of one function are checked from the first
-   value upward. The first diagnostic ends that walk, and the text kept
-   is the diagnostic that check recorded. A sized length outside 1
-   through 256 is ORC0221, and its note states that cap. A size is an
+   value upward. The first diagnostic ends that walk, and it names that
+   instance, as in `last[1]` or `none[0]`. A sized length outside 1
+   through 256 is ORC0221, and its note says 1 through 65536. A size is an
    Int constant in that instance, built from integer literals and the
    function's size parameters with +, -, *, /, %, and parentheses. / and
    % are Euclidean, the same rules as for Int, so `blocks[1]` is 3.
@@ -94,7 +96,8 @@
    out-of-range size is ORC0238. The wrong number of sizes, including a
    size on a function that has none, is ORC0239. No matching instance is
    ORC0238, and more than one match is ORC0239. Instances may call one
-   another. A cycle among them is ORC0217, with the message `call cycle`.
+   another. A cycle among them is ORC0217 and prints the chain, as in
+   `swap[1] -> swap[2] -> swap[1]`.
    `for`, `in`, `with`, `if`, and `else` are names outside those
    positions. `true` and `false` are Bool values where no parameter or
    binding of that spelling is in scope. Empty spec and impl
@@ -111,8 +114,8 @@
    identifiers there, and they stay identifiers here.
 
    Fail closed. Byte order, type parameters, tests, lengths above 256,
-   computed shift amounts, and whole-tuple equality are rejected rather
-   than given a new meaning. The lexer still produces the Rust token
+   and computed shift amounts are rejected rather than given a new
+   meaning. The lexer still produces the Rust token
    names for those forms. The parser or the checker rejects them. This
    file does not implement S3n or any later slice.
 
@@ -5054,8 +5057,9 @@ static int parse_source(Compiler *c) {
    operands. A rejected result type does not typecheck the body.
    A tuple is 2 through 16 scalars or arrays. `.k` selects one element.
    A pattern name that repeats the loop index is ORC0219, and a pattern
-   name used outside the loop is ORC0211. Whole-tuple `==` and `!=`
-   stay ORC0215. A byte string is Word[8]^n. ++ joins arrays. A slice's
+   name used outside the loop is ORC0211. Order on an array or a tuple
+   is ORC0215. `==` and `!=` of a written-out array or tuple with no type
+   of its own is ORC0227. A byte string is Word[8]^n. ++ joins arrays. A slice's
    bounds are an affine form of integer literals and loop indices, with
    one fixed positive length, proved inside the array before evaluation.
    A runtime or non-linear bound is ORC0226, a varying length is ORC0236,
@@ -5063,11 +5067,13 @@ static int parse_source(Compiler *c) {
    is ORC0235, an empty string is ORC0221, and a join past 256 bytes is
    ORC0222. A sized function is instantiated for each value in range, at
    most 256 instances. Instances are checked from the first value, and
-   the first diagnostic ends that walk. A sized length outside 1 through
-   256 is ORC0221, and its note states that cap. Size `/` and `%` are
+   the first diagnostic ends that walk and names that instance, as in
+   `last[1]` or `none[0]`. A sized length outside 1 through 256 is
+   ORC0221, and its note says 1 through 65536. Size `/` and `%` are
    Euclidean. A call resolves one instance: an out-of-range or unmatched
    size is ORC0238, and a wrong count or an ambiguous fit is ORC0239. A
-   cycle among instances is ORC0217, message `call cycle`. */
+   cycle among instances is ORC0217 and prints the chain, as in
+   `swap[1] -> swap[2] -> swap[1]`. */
 
 static const char *type_spelling(TypeKind type) {
     switch (type) {

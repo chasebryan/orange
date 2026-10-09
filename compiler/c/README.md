@@ -38,7 +38,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - A typed `spec` may have parameters, `let` bindings, and one result expression. A binding whose type was already rejected does not also check its initializer. A rejected result type (`Float`, a later `type` name, or `Mod[1]`) does not also check the body.
 - A fixed-length array `T^n` holds n values of one of those scalars, with n a decimal integer from 1 through 256.
 - A tuple type `(T, U)` holds 2 through 16 scalars or arrays. `(a, b)` builds one from left to right, `.k` selects an element, and a `let` or `with` pattern names each element. `let(x)` is a call, not a pattern.
-- A pattern name that repeats the loop index is a duplicate name. A pattern name used outside the loop is not in scope. A tuple inside a tuple, and an array of tuples, are rejected even when the nested type is a `type` alias. Whole-tuple `==` and `!=` stay rejected.
+- A pattern name that repeats the loop index is a duplicate name. A pattern name used outside the loop is not in scope. A tuple inside a tuple, and an array of tuples, are rejected even when the nested type is a `type` alias. Order on an array or a tuple is rejected. `==` and `!=` of a written-out array or tuple with no type of its own is rejected.
 - `p.01`, `p.0.1`, and `x[0].1` are each one syntax error at the offending token.
 - Expressions are literals, names, calls, parentheses, array literals, indices, tuple construction, exact integer arithmetic, Euclidean `/` and `%`, word ring arithmetic, bitwise operators, shifts, rotations, comparisons, `!`, `&&`, `||`, and `as` conversions. A rejected `!`, `&&`, or `||` is reported on its own; the operands are not also checked.
 - A loop `for i in a..b with s: T = start { step }` folds `step` from the literal bound `a` up to `b`. The accumulator may be one name or a tuple pattern.
@@ -54,11 +54,11 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - A slice `x[a..b]` holds the `b - a` elements from index `a`. `x with [a..b] = v` replaces that run. At least one bound is written. The bounds are integer literals and loop indices with `+`, `-`, and `*` by a constant, and they are proved in range before the program runs. The length is one positive number at every step.
 - A runtime bound, such as the parameter in `data`, or a non-linear bound, such as `i * i` in `squared`, is rejected. A length that changes from step to step is rejected. A slice whose last step leaves the array is rejected.
 - A function may take at most 4 size parameters, written `spec f[n in a..b](...)`, as in `mac[len in 1..256]`. `n` takes each value from `a` up to, but not including, `b`, with `a < b` and both bounds at most 65536. The function is checked once for each combination, and it has at most 256 instances. The first size changes slowest. An empty range, a bound past 65536, and a product past the cap (`many` has 361) are rejected, and then the body is not checked.
-- Instances of one function are checked from the first value upward. The first diagnostic ends that walk, and the text kept is the diagnostic that check recorded. A sized length outside 1 through 256 is rejected, and that note states the cap.
+- Instances of one function are checked from the first value upward. The first diagnostic ends that walk, and it names that instance, as in `last[1]` or `none[0]`. A sized length outside 1 through 256 is rejected as ORC0221, and that note says 1 through 65536.
 - A size is an `Int` constant inside its instance. It is built from integer literals and that function's size parameters with `+`, `-`, `*`, `/`, `%`, and parentheses. `/` and `%` are Euclidean, the same rules as for `Int`, so `blocks[1]` is 3. Lengths, fills, loop bounds, indices, and slice bounds may use those sizes.
 - A length or bound computed from sizes is parenthesized. `Word[8]^(n + 1)`, `[0; 2 * n]`, and `0..n - 1` are syntax errors. The admitted forms are `Word[8]^(2 * n)`, `[0; (2 * n)]`, and `0..(n - 1)`.
 - A call writes one size in brackets for each size parameter, `f[2](x)` or `sha256::sha256[n](...)`, or writes none and selects the one instance whose array lengths match the arguments. An out-of-range size, an extra size, a size on a function that has none, no matching instance, and more than one match are rejected.
-- Instances may call one another. A cycle among them is rejected as ORC0217, with the message `call cycle`.
+- Instances may call one another. A cycle among them is rejected as ORC0217 and prints the chain, as in `swap[1] -> swap[2] -> swap[1]`.
 - `if c { a } else { b }` chooses one value; an `else if` chain is one conditional, and only the chosen branch is evaluated.
 - A loop's step and each branch of a conditional may begin with `let` bindings. A step's bindings run afresh at every step, a branch's only when that branch is chosen, and each name is in scope only inside its step or branch. Those bindings do not give the enclosing `if` a type of its own.
 - `for`, `in`, `with`, `if`, and `else` are names outside those positions.
@@ -91,8 +91,8 @@ literal or a size, with `0 <= a < b <= 65536`. Arrays of arrays, empty
 arrays, and a loop bound that is neither a literal nor a size are rejected.
 
 Later slices are outside this frontend. Byte order, type parameters, tests,
-lengths above 256, computed shift amounts, and whole-tuple equality are
-rejected rather than given a new meaning. The Rust `orangec` remains the
+lengths above 256, and computed shift amounts are rejected rather than
+given a new meaning. The Rust `orangec` remains the
 frontend for those slices. This frontend does not implement S3n or any later
 slice.
 
