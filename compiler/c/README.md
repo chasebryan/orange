@@ -31,7 +31,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - `orangec check` and `orangec eval` read module `m` of `use m;` from `m.or` beside the root. `lex` reads only the file it is given.
 - A module names each used module once, before its functions, and calls that module's functions as `m::f(...)`.
 - The module graph is acyclic and is checked before any module. Each module is then checked on its own, after the modules it uses.
-- A module may name a type with `type` after its `use` declarations and before its functions.
+- A module may name a type with `type` after its `use` declarations and before its functions. A bad target is reported once, at that declaration: a Word width other than 8, 16, 32, or 64 is ORC0204, and a bad array length is ORC0221. A use of the alias does not report it again.
 - The scalar types are `Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, `Word[64]`, and `Mod[m]`.
 - `Mod[m]` is the residue ring of a constant modulus from 2 through 2^521 - 1. The constant is built from integer literals with `+`, `-`, `*`, `<<`, and parentheses, evaluated once, and published into the modulus table. `+`, `-`, `*`, and prefix `-` reduce to the least residue. `/` multiplies by an inverse and is 0 when there is none.
 - A cross-module `Mod` call compares those modulus values, not each file's private table index, and retags the value at the module boundary.

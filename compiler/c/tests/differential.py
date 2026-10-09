@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the standalone C compiler with the Rust frontend on the S3a–S3m fixtures.
-
-Valid sources must match eval stdout. Invalid sources must match the full
-diagnostic text. One S3b source must also match the lex stream.
-"""
+"""Compare the standalone C compiler with the Rust frontend on the S3a–S3m fixtures."""
 
 import re
 import subprocess

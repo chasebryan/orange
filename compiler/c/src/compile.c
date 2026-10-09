@@ -13,7 +13,10 @@
    uses. A typed spec may have parameters, let bindings, and one result
    expression. The scalar types are Int, Bool, Word[8], Word[16],
    Word[32], Word[64], and Mod[m]. A module may name a type with `type`
-   after its use declarations and before its functions. Mod[m] is the
+   after its use declarations and before its functions. A bad alias
+   target is reported once, at that declaration: ORC0204 for a Word
+   width other than 8, 16, 32, or 64, and ORC0221 for a bad array length.
+   A use of the alias does not report that target again. Mod[m] is the
    residue ring of a constant modulus from 2 through 2^521 - 1. The
    constant is built from integer literals with +, -, *, <<, and
    parentheses, evaluated once, and stored in the modulus table. +, -, *,
@@ -1846,8 +1849,10 @@ static int parse_call_sizes(Compiler *c, uint32_t *size0, uint8_t *nsize, int *c
 /* Int, Word[8|16|32|64], Mod[m], a name, and, when allow_array is set, one T^n.
    A length after ^ is a decimal integer or a parenthesized size.
    `^n + 1` is ORC0101. A name that is not an admitted type still
-   consumes the type syntax and returns with ok == 0 so a later pass can
-   report the type. A broken type returns 0. A second caret is rejected
+   consumes the type syntax and returns with ok == 0. A bad alias target
+   is reported once, at the declaration. A bad type written on a
+   signature is reported when that signature is checked. A broken type
+   returns 0. A second caret is rejected
    here. as_element rejects a tuple written inside another tuple. */
 static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int as_element) {
     Token name = peek_token(c);
@@ -2196,7 +2201,8 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
 
 /* Report a scalar type the parser stored with ok == 0. A Word form is
    ORC0204. Anything else is ORC0203. `type` is unused because the span
-   decides the code. */
+   decides the code. reject_declared uses ORC0221 when the length itself
+   is bad. An alias's bad target is reported once, at the declaration. */
 static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
     if (ok) {
         return;
@@ -5055,6 +5061,9 @@ static int parse_source(Compiler *c) {
    that block. A cross-module residue compares the modulus values.
    A rejected `!`, `&&`, or `||` is ORC0215 and does not typecheck its
    operands. A rejected result type does not typecheck the body.
+   A bad alias target is reported once, at the declaration: ORC0204 for
+   a Word width and ORC0221 for an array length. A use does not report
+   that target again.
    A tuple is 2 through 16 scalars or arrays. `.k` selects one element.
    A pattern name that repeats the loop index is ORC0219, and a pattern
    name used outside the loop is ORC0211. Order on an array or a tuple

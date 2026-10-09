@@ -637,8 +637,10 @@ static void seal_patterns(Compiler *c, Local *locals, uint32_t count) {
 
 /* Resolve type names and moduli, install `type` aliases in source order,
    then publish each site onto the parameter, binding, result, loop, and
-   conversion that uses it. A `type` name that stands for a tuple is still
-   rejected inside another tuple or as an array element. */
+   conversion that uses it. A bad alias target is reported once, at the
+   declaration: ORC0204 for a Word width, ORC0221 for an array length.
+   A use does not report that target again. A `type` name that stands for
+   a tuple is still rejected inside another tuple or as an array element. */
 static void prepare_types(Compiler *c) {
     uint32_t index;
     uint16_t param;
