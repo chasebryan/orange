@@ -19,6 +19,8 @@
 #define MAX_ARGS 256
 #define MAX_BINDINGS 256
 #define MAX_STEPS 1048576u
+/* The most steps `eval --steps` admits: 1,024 times the default budget. */
+#define MAX_STEP_LIMIT 1073741824ull
 #define MAX_CALL_DEPTH 256
 #define MAX_ARRAY_LENGTH 256u
 #define MAX_ARRAY_ELEMENTS 256u
@@ -460,6 +462,7 @@ typedef struct Diag {
     char label[192];
     char note[320];
     char note2[320];
+    char note3[320];
     char sec_label[192];
     uint32_t start;
     uint32_t end;
@@ -467,6 +470,7 @@ typedef struct Diag {
     uint32_t sec_end;
     uint8_t has_sec;
     uint8_t has_note2;
+    uint8_t has_note3;
 } Diag;
 
 typedef struct Value {
@@ -601,6 +605,9 @@ typedef struct Compiler {
     uint32_t ncond_arms;
     size_t cond_arm_cap;
     uint64_t steps;
+    uint64_t step_limit;
+    int step_hit;
+    int show_stats;
     int failed;
     Program *program;
     uint16_t self_index;

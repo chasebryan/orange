@@ -313,6 +313,7 @@ compiler/c/src/compile.c
 compiler/c/src/main.c
 compiler/c/src/typeparams.c
 compiler/c/tests/differential.py
+compiler/c/tests/step_budget.py
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/diagnostic.rs
@@ -563,6 +564,8 @@ compiler/fixtures/s3t/valid-calls.or
 compiler/fixtures/s3t/valid-large.or
 compiler/fixtures/s3t/valid-program.or
 compiler/fixtures/s3t/valid-rings.or
+compiler/fixtures/steps/limit-before.or
+compiler/fixtures/steps/limit-while.or
 compiler/fixtures/typed-answer.or
 compiler/schemes/README.md
 compiler/schemes/ascon_aead128.or

@@ -1,0 +1,4 @@
+edition 2026;
+module m {
+  spec a() -> Word[8]^3 { [1, 2, 3] }
+}
