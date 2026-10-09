@@ -400,6 +400,8 @@ typedef struct CondArm {
 
 typedef struct Func {
     int is_impl;
+    /* A known-answer test. Its name span is the quoted title. */
+    int is_test;
     int typed;
     int duplicate;
     int signature_ok;
@@ -699,6 +701,13 @@ typedef struct Compiler {
     size_t stamp_cap;
     /* While set, listed types resolve. The ordinary pass leaves them for admit. */
     int admit_listed;
+    /* Set while a test whose body is `left == right` is evaluated, so the
+       two operands can be printed if the claim fails. */
+    int capture_eq;
+    int captured;
+    uint32_t capture_expr;
+    Value capture_left;
+    Value capture_right;
 } Compiler;
 
 struct Program {

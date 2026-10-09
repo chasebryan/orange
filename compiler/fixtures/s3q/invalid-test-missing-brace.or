@@ -1,0 +1,5 @@
+// S3q rejection: a test title is followed by `{`, not by the module's `}`.
+edition 2026;
+module invalid_test_missing_brace {
+  test "x"
+}
