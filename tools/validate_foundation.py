@@ -549,6 +549,8 @@ compiler/fixtures/s3p/valid-share.or
 compiler/fixtures/s3q/failing-tests.or
 compiler/fixtures/s3q/invalid-test-missing-body.or
 compiler/fixtures/s3q/invalid-test-missing-brace.or
+compiler/fixtures/s3q/invalid-test-expr-brace.or
+compiler/fixtures/s3q/invalid-test-unclosed-body.or
 compiler/fixtures/s3q/invalid-test-syntax.or
 compiler/fixtures/s3q/invalid-tests.or
 compiler/fixtures/s3q/valid-equality.or

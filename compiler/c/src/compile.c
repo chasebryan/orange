@@ -858,6 +858,29 @@ static void skip_function_body(Compiler *c, int inside_body) {
     }
 }
 
+/* A test whose `{` never appeared. Stop at `spec` or `impl`, and take one
+   depth-zero `}` as this test's recovery brace so the module's `}` remains. */
+static void skip_unopened_test(Compiler *c) {
+    int depth = 0;
+    while (peek_kind(c) != TK_EOF) {
+        TokenKind kind = peek_kind(c);
+        if (depth == 0 && (kind == TK_SPEC || kind == TK_IMPL || kind == TK_RBRACE)) {
+            if (kind == TK_RBRACE) {
+                advance_token(c);
+            }
+            return;
+        }
+        advance_token(c);
+        if (kind == TK_LPAREN || kind == TK_LBRACE || kind == TK_LBRACKET) {
+            depth++;
+        } else if (kind == TK_RPAREN || kind == TK_RBRACE || kind == TK_RBRACKET) {
+            if (depth > 0) {
+                depth--;
+            }
+        }
+    }
+}
+
 static int parse_prefixed(Compiler *c, uint32_t *out);
 static int parse_expr(Compiler *c, uint32_t *out);
 
@@ -3816,6 +3839,11 @@ static const char TEST_SHAPE_NOTE[] =
     "a test is written `test \"TITLE\" { EXPRESSION }`, its expression a `Bool`";
 static const char TEST_BODY_NOTE[] =
     "a test's body holds `let` bindings, if any, and then one `Bool` expression";
+static const char TEST_RESULT_NOTE[] =
+    "a test's body ends with the `Bool` expression that decides it";
+static const char EXPR_NOTE[] =
+    "an expression is an integer literal, a name, a call, an array, a loop, a conditional, a "
+    "prefix operator, or a parenthesized expression";
 static const char TITLE_NOTE[] =
     "a test's title is 1 through 128 printable ASCII characters, with no backslash, and no two tests of a module "
     "share one";
@@ -3896,7 +3924,7 @@ static int parse_test_body(Compiler *c, Func *func) {
         found_token_label(peek_kind(c), label, sizeof label);
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` after the test's title", label,
                  TEST_BODY_NOTE, 1);
-        skip_function_body(c, 0);
+        skip_unopened_test(c);
         return 1;
     }
     advance_token(c);
@@ -3910,9 +3938,13 @@ static int parse_test_body(Compiler *c, Func *func) {
     if (peek_kind(c) == TK_RBRACE) {
         char label[64];
         found_token_label(peek_kind(c), label, sizeof label);
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
-                 "expected a result expression after the last binding", label,
-                 "a typed `spec` body ends with the expression that gives its value", 1);
+        if (c->nlocals == func->local0) {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected an expression", label, EXPR_NOTE,
+                     1);
+        } else {
+            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                     "expected a result expression after the last binding", label, TEST_RESULT_NOTE, 1);
+        }
         advance_token(c);
         return 1;
     }
@@ -3921,8 +3953,10 @@ static int parse_test_body(Compiler *c, Func *func) {
         return 1;
     }
     if (peek_kind(c) != TK_RBRACE) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}`",
-                 "extra tokens after the result expression", NULL, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` after the body expression", label,
+                 TEST_BODY_NOTE, 1);
         skip_function_body(c, 1);
         return 1;
     }

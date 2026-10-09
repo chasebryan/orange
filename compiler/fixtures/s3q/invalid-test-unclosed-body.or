@@ -1,0 +1,4 @@
+// S3q rejection: a test body that reaches end of file still needs `}`.
+edition 2026;
+module invalid_test_unclosed_body {
+  test "x" { true

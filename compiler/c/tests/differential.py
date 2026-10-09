@@ -185,6 +185,8 @@ INVALID = [
     "s3p/invalid-rank2.or",
     "s3q/invalid-test-missing-body.or",
     "s3q/invalid-test-missing-brace.or",
+    "s3q/invalid-test-expr-brace.or",
+    "s3q/invalid-test-unclosed-body.or",
     "s3q/invalid-test-syntax.or",
     "s3q/invalid-tests.or",
 ]
