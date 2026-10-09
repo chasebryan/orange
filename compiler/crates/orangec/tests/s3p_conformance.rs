@@ -986,24 +986,24 @@ fn s3p_stats_follow_the_values_and_apply_only_to_eval() {
     for (arguments, message) in [
         (
             &["check", "--steps", "5"][..],
-            "`--steps` applies only to eval, test, and replay",
+            "`--steps` applies only to eval, test, replay, and analyze",
         ),
         (
             &["check", "--steps", "1048576"][..],
-            "`--steps` applies only to eval, test, and replay",
+            "`--steps` applies only to eval, test, replay, and analyze",
         ),
         (&["--spec", "a", "lex"][..], "`--spec` applies only to eval"),
         (
             &["check", "--stats"][..],
-            "`--stats` applies only to eval, test, and replay",
+            "`--stats` applies only to eval, test, replay, and analyze",
         ),
         (
             &["lex", "--stats", "--spec", "a", "--steps", "9"][..],
-            "`--steps` applies only to eval, test, and replay",
+            "`--steps` applies only to eval, test, replay, and analyze",
         ),
         (
             &["enc", "--stats"][..],
-            "`--stats` applies only to eval, test, and replay",
+            "`--stats` applies only to eval, test, replay, and analyze",
         ),
         (
             &["test", "--spec", "a"][..],

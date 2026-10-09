@@ -36,24 +36,30 @@ KL, KR, KA or KB rotated left, as a 128-bit value, by 0, 15, 30, 45, 60, 77,
 94 or 111 bits. Decryption is the encryption procedure with the subkeys taken
 in the reverse order.
 
-The Orange file follows the RFC section by section. A 128-bit value is a
-`Word[64]^2` with the high word first; a block is `Word[8]^16`; the subkeys
-of one key are one array, laid out as kw1, kw2, k1 through k18 (or k24), ke1
-through ke4 (or ke6), kw3, kw4.
+The Orange file follows the RFC section by section. A 128-bit value is the
+type `U128`, a `Word[64]^2` holding `v >> 64` and `v & MASK64`, so the data
+randomizing part carries [D1, D2] and a block is read and written with
+`as big`. The subkeys of one key are a tuple of three arrays, kw1 through kw4,
+k1 through k18 (or k24) and ke1 through ke4 (or ke6), of the type
+`Subkeys18` or `Subkeys24`. The S-box section prints SBOX1 and defines the
+other three from it, and the file does the same: `sbox1` is the RFC's table,
+and `sbox2`, `sbox3` and `sbox4` are its three definitions. The F-function
+holds the RFC's S and P steps inline, as the RFC writes it, so there is no
+separate S or P spec.
 
 | Standard section | Orange spec |
 | --- | --- |
+| 2.1, 128-bit values and their rotation `<<<` | `U128`, `rotl128` |
 | 2.2, KL and KR from the key | `key_schedule_128`, `key_schedule_192`, `key_schedule_256` |
-| 2.2, KA and KB with Sigma1 to Sigma6 | `sigma`, `derive_ka`, `derive_kb` |
-| 2.2, the subkey table and its 128-bit rotations | `subkeys_128`, `subkeys_192_256`, `rotl128_15` to `rotl128_111` |
-| 2.3, 128-bit key: 18 rounds, FL/FLINV after rounds 6 and 12 | `data_randomizing_128`, `feistel_round` |
-| 2.3, 192- and 256-bit keys: 24 rounds, FL/FLINV after rounds 6, 12 and 18 | `data_randomizing_192_256` |
-| 2.3, decryption with the subkeys reversed | `reverse_subkeys_128`, `reverse_subkeys_192_256`, `decrypt_128`, `decrypt_192`, `decrypt_256` |
-| 2.4.1, F-function | `f_function` |
-| 2.4.2, FL-function | `fl_function` |
-| 2.4.3, FLINV-function | `flinv_function` |
-| 2.4.4, S-function, SBOX1 and the derived s2, s3, s4 | `s_function`, `sbox1`, `lookup`, `byte_at`, `s1`, `s2`, `s3`, `s4` |
-| 2.4.5, P-function | `p_function` |
+| 2.2, KA and KB with Sigma1 to Sigma6 | `sigma`, `derive_ka`, `derive_kb`, `two_rounds`, `xor128` |
+| 2.2, the two subkey tables, `(KL <<< n) >> 64` and `(KL <<< n) & MASK64` | `key_schedule_128`, `subkeys_192_256`, `high`, `low`, `Subkeys18`, `Subkeys24` |
+| 2.3.1, 128-bit keys: 18 rounds, FL/FLINV after rounds 6 and 12 | `data_randomizing_128`, `six_rounds`, `two_rounds` |
+| 2.3.2, 192- and 256-bit keys: 24 rounds, FL/FLINV after rounds 6, 12 and 18 | `data_randomizing_192_256` |
+| 2.3.3, decryption with the subkeys reversed | `decryption_subkeys`, `reversed`, `decrypt_128`, `decrypt_192`, `decrypt_256` |
+| 2.4.1, F-function | `f` |
+| 2.4.1, S-boxes printed after the F-function: SBOX1 and the derived SBOX2, SBOX3, SBOX4 | `sbox1`, `sbox2`, `sbox3`, `sbox4` |
+| 2.4.2, FL- and FLINV-functions | `halves`, `fl`, `flinv` |
+| 2.2 and 2.3, one block, each key size and direction | `encrypt_128`, `decrypt_128`, `encrypt_192`, `decrypt_192`, `encrypt_256`, `decrypt_256` |
 
 ### Security status
 
@@ -96,70 +102,99 @@ depends on the mode and on nonce or IV discipline, not on the cipher.
 
 ### What the Orange rendering shows
 
-The only data-dependent operation in Camellia is the s1 lookup. A byte may
-index a table of 256 entries; this rendering's `lookup` still scans the 32
-packed words with a static index, keeps the one whose position matches the
-top five bits of the byte, and selects one of its eight bytes with a
-conditional: about 290 steps per lookup, where a table-driven implementation
-spends one memory access. The
-other three S-boxes cost nothing beyond s1, since the RFC defines them as
-rotations of it. Everything else in the cipher is 64-bit xor, and, or, shift
-and rotate on `Word[64]` and `Word[32]`, one to one with the RFC's text; the
-FL and FLINV layers, in particular, read exactly as section 2.4.2 and 2.4.3
-write them.
+The only data-dependent operation in Camellia is the S-box lookup. In the
+Orange file it is written as the RFC writes it: `sbox1()[x[0]]` for SBOX1[t1],
+and `sbox2(x)`, `sbox3(x)` and `sbox4(x)` defined as `sbox1()[x] <<< 1`,
+`sbox1()[x] <<< 7` and `sbox1()[x <<< 1]`, a byte indexing the 256-entry
+table, which the checker proves in range. The table is `sbox1`, laid out in
+the RFC's sixteen rows of sixteen with the RFC's row labels, each row a
+`hex"..."` string of 16 bytes and the rows joined with `++`. The RFC prints
+the entries in decimal; the rows are in hexadecimal because a byte string
+costs one step to build, where a literal of 256 decimal entries costs 513.
+Everything else in the cipher is xor, and, or and rotation on `Word[64]` and
+`Word[32]`, one to one with the RFC's text, and no step branches on data: the
+one conditional, in `rotl128`, tests the rotation amount, a constant of the
+subkey tables.
 
-The key schedule's rotations of a 128-bit value are seven specs,
-`rotl128_15` through `rotl128_111`. A shift amount may be computed; this
-rendering keeps one spec per amount. For the amounts above 64 the two words
-change places and the rotation by the remainder is written out. Decryption
-reuses the encryption path on a reversed subkey array rather than repeating
-the rounds with the indices reversed, which is what RFC 3713 says
-decryption is.
+Byte orders are `as big`. The F-function splits `F_IN ^ KE` into its eight
+bytes, t1 the most significant, with `as big Word[8]^8` and joins y1 through
+y8 back with `as big Word[64]`; FL and FLINV split their input and subkey
+into the 32-bit halves `x1`, `x2`, `k1`, `k2` with `as big` and a tuple, and
+assign under the RFC's names, with `_out` on the values the RFC assigns a
+second time. A key, a plaintext and a ciphertext are 128-bit values read
+and written big-endian with `as big U128`; a 192-bit key is three 64-bit
+words, KL the first two and KR the third followed by its complement, and a
+256-bit key is two slices of 16 bytes.
 
-Measured under `orangec eval`, one 128-bit-key block costs between 55,000 and
-58,000 steps to encrypt (176 lookups: 18 rounds of 8 and 4 F applications of
-8 in the key schedule) and between 58,000 and 62,000 to decrypt; a 192- or
-256-bit-key block costs between 75,000 and 81,000 to encrypt (240 lookups)
-and between 81,000 and 87,000 to decrypt, the difference being the subkey
-reversal. The eight vectors of `camellia.or` come to about 590,000 of the
-1,048,576 steps that one file may use, leaving room for eight more 128-bit
-blocks; nothing was split or dropped. Not expressed: constant-time behaviour
-(the selection idiom is a specification of a lookup, not a claim about
-leakage), any mode of operation, and any key size other than the three of
-the RFC.
+The rounds are written as the RFC writes each pair, `D2 = D2 ^ F(D1, k1)`
+and then `D1 = D1 ^ F(D2, k2)`, in `two_rounds`; the halves never change
+places, six rounds are a loop of three pairs, and the key schedule's
+derivation of KA and KB uses the same pair keyed with the Sigma constants.
+The 128-bit rotation `<<<` is one spec, `rotl128(v, n)`, with the amount
+as the subkey tables give it; from 64 bits on the halves change places and
+the rotation by `n - 64` remains, and a shift by 64 gives 0, so the
+rotations by 0 and 64 need no case of their own. The subkey tables then
+read as the RFC prints them, one subkey per entry: `high(kl, 15)` is
+`(KL <<< 15) >> 64` and `low(kl, 15)` is `(KL <<< 15) & MASK64`.
+Decryption reuses the encryption path on reversed subkeys, which is what
+section 2.3.3 says decryption is: `decryption_subkeys`, one spec with a type
+parameter over both subkey layouts, exchanges kw1 and kw2 with kw3 and kw4
+and reverses k and ke with `reversed`, one spec with a size parameter for
+the arrays of 4, 6, 18 and 24 subkeys.
+
+Measured under `orangec test --stats`: building the SBOX1 table costs 58
+steps (sixteen row literals and fifteen joins), and every lookup builds it
+again, so an F-function costs about 600 steps, of which the eight table
+builds are about 470; FL and FLINV cost 43 each and a 128-bit rotation 47.
+A round costs about 610 steps. The key schedule costs about 3,690 steps for
+a 128-bit key (four F calls and 26 rotations) and about 5,310 for a 192- or
+256-bit key (six F calls and 34 rotations). The data randomizing part costs
+about 11,340 steps for 18 rounds and 15,140 for 24, and reversing the
+subkeys 312 or 416. One 128-bit-key block costs 15,034 to 15,037 steps to
+encrypt and 15,346 to decrypt; a 192- or 256-bit-key block 20,453 to 20,459
+to encrypt and 20,869 to 20,874 to decrypt. The eight tests together use
+148,530 steps.
+
+Not expressed: constant-time behaviour (a table indexed by a secret byte is
+the classic cache-timing pattern, and the lookup is a specification of a
+lookup, not a claim about leakage), any mode of operation, and any key size
+other than the three of the RFC.
 
 ## Dissemination
 
 ### Files
 
 - `camellia.or`: the key schedule, the data randomizing part for 18 and 24
-  rounds, the F, FL, FLINV, S and P functions, encryption and decryption for
-  128-, 192- and 256-bit keys, and eight vector pairs.
+  rounds, the F-, FL- and FLINV-functions and the S-boxes, encryption and
+  decryption for 128-, 192- and 256-bit keys, and the eight tests below.
 
 ### Running
 
 ```console
-orangec eval algorithms/camellia/camellia.or
+orangec test algorithms/camellia/camellia.or
 python3 algorithms/verify.py algorithms/camellia
 ```
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block in `camellia.or`, comparing an encryption or a
+decryption with the published value.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `rfc3713_a_128` | RFC 3713, Appendix A | 128-bit key 0123456789abcdeffedcba9876543210, plaintext 0123456789abcdeffedcba9876543210, ciphertext 67673138549669730857065648eabe43 |
-| `rfc3713_a_128_decrypt` | RFC 3713, Appendix A | the same ciphertext decrypted under the 128-bit key gives the plaintext |
-| `rfc3713_a_192` | RFC 3713, Appendix A | 192-bit key 0123...3210 0011223344556677, same plaintext, ciphertext b4993401b3e996f84ee5cee7d79b09b9 |
-| `rfc3713_a_192_decrypt` | RFC 3713, Appendix A | the same ciphertext decrypted under the 192-bit key gives the plaintext |
-| `rfc3713_a_256` | RFC 3713, Appendix A | 256-bit key 0123...3210 00112233445566778899aabbccddeeff, same plaintext, ciphertext 9acc237dff16d76c20ef7c919e3a7509 |
-| `rfc3713_a_256_decrypt` | RFC 3713, Appendix A | the same ciphertext decrypted under the 256-bit key gives the plaintext |
-| `botan_camellia_128_case_2` | Botan `src/tests/data/block/camellia.vec`, section `[Camellia-128]`, second case | key 80000000000000000000000000000000, zero plaintext, ciphertext 6c227f749319a3aa7da235a9bba05a2c |
-| `botan_camellia_256_case_3` | Botan `camellia.vec`, section `[Camellia-256]`, third case | key 0000000000000200 followed by 24 zero bytes, zero plaintext, ciphertext e18b0cb1980124504b46a46a6f4273f3 |
+| `RFC 3713 Appendix A: 128-bit key encrypts` | RFC 3713, Appendix A | 128-bit key 0123456789abcdeffedcba9876543210, plaintext 0123456789abcdeffedcba9876543210, ciphertext 67673138549669730857065648eabe43 |
+| `RFC 3713 Appendix A: 128-bit key decrypts` | RFC 3713, Appendix A | the same ciphertext decrypted under the 128-bit key gives the plaintext |
+| `RFC 3713 Appendix A: 192-bit key encrypts` | RFC 3713, Appendix A | 192-bit key 0123...3210 0011223344556677, same plaintext, ciphertext b4993401b3e996f84ee5cee7d79b09b9 |
+| `RFC 3713 Appendix A: 192-bit key decrypts` | RFC 3713, Appendix A | the same ciphertext decrypted under the 192-bit key gives the plaintext |
+| `RFC 3713 Appendix A: 256-bit key encrypts` | RFC 3713, Appendix A | 256-bit key 0123...3210 00112233445566778899aabbccddeeff, same plaintext, ciphertext 9acc237dff16d76c20ef7c919e3a7509 |
+| `RFC 3713 Appendix A: 256-bit key decrypts` | RFC 3713, Appendix A | the same ciphertext decrypted under the 256-bit key gives the plaintext |
+| `Botan camellia.vec [Camellia-128] case 2` | Botan `src/tests/data/block/camellia.vec`, section `[Camellia-128]`, second case | key 80000000000000000000000000000000, zero plaintext, ciphertext 6c227f749319a3aa7da235a9bba05a2c |
+| `Botan camellia.vec [Camellia-256] case 3` | Botan `camellia.vec`, section `[Camellia-256]`, third case | key 0000000000000200 followed by 24 zero bytes, zero plaintext, ciphertext e18b0cb1980124504b46a46a6f4273f3 |
 
 The RFC 3713 Appendix A values are stated in the RFC itself; they also open
 each section of Botan's `camellia.vec`, from which they were copied here, and
 the `cryptography` package (Camellia in ECB mode, over OpenSSL) confirms all
-eight ciphertexts. The three decryption pairs state the RFC's plaintext as
+eight ciphertexts. The three decryption tests state the RFC's plaintext as
 their expected value.
 
 ### Provenance and claims
@@ -173,8 +208,9 @@ from memory:
   equal to the table OpenSSL's `camellia.c` holds as `Camellia_SBOX[0]` (each
   entry replicated in three bytes of a 32-bit word). Botan's `SBOX2`, `SBOX3`
   and `SBOX4` were checked equal to the rotations of s1 that RFC 3713 states,
-  which is why the Orange file carries only s1. The packed `Word[64]^32`
-  literal was generated by script and unpacked again to confirm it.
+  which is why the Orange file carries only s1. The first form held it as a
+  packed `Word[64]^32` literal, generated by script and unpacked again to
+  confirm it.
 - Sigma1 through Sigma6 came from OpenSSL's `SIGMA[]` and agree with the
   constants in Botan's key schedule.
 - The P-function's matrix was derived from the eight mask constants of
@@ -190,15 +226,37 @@ from memory:
 The extraction, generation and measurement scripts were kept with the work
 record and are not part of the repository.
 
-This entry is a reference evaluation of RFC 3713 under `orangec eval`. It
+The entry was then rewritten in the current language. Every expected value is
+carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of bytes, and every key and plaintext is the first
+form's; a script compared each `hex"..."` literal of the new tests with the
+value the first form's spec evaluates to, and no vector was added or dropped.
+The SBOX1 rows were printed by script from the first form's packed words and
+checked equal to them, entry by entry, by evaluating both forms; the Sigma
+constants are unchanged. The first form cited FLINV, the S-function and the
+P-function as sections 2.4.3, 2.4.4 and 2.4.5; RFC 3713 has no sections with
+those numbers. The rewrite follows the section layout of RFC 3713: 2.3.1 and
+2.3.2 for encryption with 128-bit and with 192- or 256-bit keys, 2.3.3 for
+decryption, 2.4.1 for the F-function with its S and P steps inside and the
+S-box tables printed after it, and 2.4.2 for the FL- and FLINV-functions. The
+first citation of each section in `camellia.or` names its title beside its
+number. The RFC could not be read from the build machine, but these numbers,
+and the decimal layout of its SBOX1 table (sixteen rows of sixteen, labelled
+00 through f0), were afterwards checked against the published text of RFC 3713
+at the RFC Editor.
+
+This entry is a reference evaluation of RFC 3713 under `orangec test`. It
 makes no constant-time, side-channel, performance or certification claim,
 and it is not a corpus entry in the sense of The Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. This rendering keeps seven rotation specs and a
-32-word selection for each s1 lookup (about 290 steps, so a block costs about
-55,000 to 87,000 steps and one file holds roughly twelve blocks). A shift
-amount may be computed, and a byte may index a table of 256 entries; neither
-shape is a limit of the current language. A spec returns one value, so the
-26 or 34 subkeys travel in one flat array whose layout the comments state.
+- There are no module-level constants: a parameterless spec such as the
+  SBOX1 table is evaluated again at every call, so each of the eight
+  lookups in an F call builds the table again, about two thirds of the
+  cost of a block. Reading the table once per F call and passing it to
+  `sbox2`, `sbox3` and `sbox4` measures 66,882 steps for the eight tests
+  instead of 148,530, at the price of a table parameter that the RFC's
+  SBOX2[x] = SBOX1[x] <<< 1 does not have; the file keeps the RFC's form.
+- There is no 128-bit word, so a 128-bit value is two 64-bit halves and its
+  rotation `<<<` is the spec `rotl128`.

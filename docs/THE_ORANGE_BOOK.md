@@ -2700,7 +2700,8 @@ time depends on the value, and nothing here says how a field operation on a
 secret is to be compiled; that belongs, like the conditional swap, to
 [Chapter 6](#chapter-6-secrets-are-a-semantic-concern) and code generation.
 The slice also stops short of generic fields: `ladder` is written for one `F`,
-because a function cannot yet take its modulus as a parameter.
+because, until S3t, a function could not take its modulus from a finite size
+parameter, and even now it cannot take one at run time.
 
 ### Rounds in the words of their standard
 
@@ -3446,11 +3447,13 @@ every length and bound as an integer.
 
 That leaves seams. Nothing is proved for every value of a size at once, only
 for each value in its range, one instance at a time, so a family is finite,
-and, until S3p, an array still held at most 256 elements. No modulus is written with a
-parameter, so one `spec` cannot yet serve every field, and no position is a
-parameter, so one quarter round cannot act on four positions of a whole
-state. And a size is fixed in each instance, as a slice's position is, so a
-format that reads a length and then that many bytes still cannot be written.
+and, until S3p, an array still held at most 256 elements. Until S3t, no
+modulus was written with a parameter. S3t lets a finite size parameter stand
+in `Mod[m]`, and even now a function cannot take one at run time. No
+position is a parameter, so one quarter round cannot act on four positions
+of a whole state. And a size is fixed in each instance, as a slice's
+position is, so a format that reads a length and then that many bytes still
+cannot be written.
 The roadmap lists those next. The next section closes one more seam: through
 S3m, bytes and words were converted by functions a program writes, one for
 each width and each order.
