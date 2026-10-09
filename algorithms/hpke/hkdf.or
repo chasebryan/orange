@@ -1,0 +1,52 @@
+// HMAC-SHA256 and HKDF-SHA256, the KDF of RFC 9180 section 7.2 (kdf_id
+// 0x0001, Nh = 32): HMAC as RFC 2104, "HMAC: Keyed-Hashing for Message
+// Authentication" (Krawczyk, Bellare, Canetti, February 1997),
+// https://www.rfc-editor.org/rfc/rfc2104, section 2, defines it, over the
+// SHA-256 of `sha256`; and HKDF's Extract and Expand as RFC 5869,
+// "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)" (Krawczyk,
+// Eronen, May 2010), https://www.rfc-editor.org/rfc/rfc5869, sections 2.2
+// and 2.3, define them. RFC 9180 section 4 builds LabeledExtract and
+// LabeledExpand on these two. Only what HPKE asks of this suite is written:
+// keys of HashLen = 32 bytes (or the empty salt, see `extract`) and outputs
+// of at most HashLen bytes. The module has no tests of its own: the vectors
+// of RFC 9180 Appendix A.2 in `hpke` run through it.
+edition 2026;
+module hkdf {
+  use sha256;
+
+  // RFC 2104 section 2, steps (2) and (5): the key padded to the block
+  // length B = 64 bytes, exclusive-ored with ipad (the byte 0x36 repeated B
+  // times) or opad (0x5c).
+  spec xor_pad(k: Word[8]^64, pad: Word[8]) -> Word[8]^64 {
+    for i in 0..64 with x: Word[8]^64 = k { x with [i] = k[i] ^ pad }
+  }
+
+  // RFC 2104 section 2: H(K XOR opad, H(K XOR ipad, text)) for a key K of
+  // 32 bytes, appended with zeros to B bytes (step 1), and a text of 1
+  // through 192 bytes, so that the inner message of 64 + n bytes stays
+  // within the lengths `sha256` is written for.
+  spec hmac[n in 1..193](key: Word[8]^32, text: Word[8]^n) -> Word[8]^32 {
+    let k: Word[8]^64 = key ++ [0; 32];
+    let inner: Word[8]^32 = sha256::digest(xor_pad(k, 0x36) ++ text);
+    sha256::digest(xor_pad(k, 0x5c) ++ inner)
+  }
+
+  // RFC 5869 section 2.2: PRK = HMAC-Hash(salt, IKM). A salt that is not
+  // provided is HashLen zeros, and RFC 9180's empty salt "" is that value:
+  // as an HMAC key, "" and 32 zero bytes are appended with zeros to the same
+  // block, so both give the same PRK.
+  spec extract[n in 1..193](salt: Word[8]^32, ikm: Word[8]^n) -> Word[8]^32 { hmac(salt, ikm) }
+
+  // RFC 5869 section 2.2: the empty salt as HashLen zeros.
+  spec empty_salt() -> Word[8]^32 { [0; 32] }
+
+  // RFC 5869 section 2.3: OKM is the first L octets of T = T(1) || T(2) ||
+  // ..., with T(0) empty and T(i) = HMAC-Hash(PRK, T(i - 1) || info || i).
+  // Every L that RFC 9180 asks of this suite (Nsecret = Nsk = Nk = Nh = 32,
+  // Nn = 12, and the exports of Appendix A.2, L = 32) is at most
+  // HashLen = 32, so N = 1, T(1) = HMAC-Hash(PRK, info || 0x01) holds the
+  // whole output, and the caller keeps its first L bytes.
+  spec expand[n in 1..192](prk: Word[8]^32, info: Word[8]^n) -> Word[8]^32 {
+    hmac(prk, info ++ hex"01")
+  }
+}

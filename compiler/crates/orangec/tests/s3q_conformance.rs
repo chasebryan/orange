@@ -1164,12 +1164,12 @@ fn s3q_test_takes_one_source_and_the_step_options_but_not_spec() {
         (
             &["check", "--stats"][..],
             &[path.as_path()][..],
-            "option `--stats` applies only to eval, test, and replay",
+            "option `--stats` applies only to eval, test, replay, and analyze",
         ),
         (
             &["lex", "--steps", "5"][..],
             &[path.as_path()][..],
-            "option `--steps` applies only to eval, test, and replay",
+            "option `--steps` applies only to eval, test, replay, and analyze",
         ),
     ] {
         let first = run(arguments, paths);
