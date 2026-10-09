@@ -20,8 +20,7 @@ jobs:
     name: Book Deploy Hook / nosuchmachine
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: read
+    permissions: {}
     steps:
       - name: Trigger nosuchmachine.net rebuild
         shell: /bin/bash -p -e -o pipefail {0}
@@ -32,4 +31,4 @@ jobs:
             echo '::error::NOSUCHMACHINE_DEPLOY_HOOK is not set' >&2
             exit 1
           fi
-          curl --fail --silent --show-error --max-time 30 -X POST "$HOOK"
+          curl --fail --silent --show-error --max-time 30 --retry 3 --retry-all-errors -X POST "$HOOK"

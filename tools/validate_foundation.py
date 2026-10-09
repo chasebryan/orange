@@ -4786,7 +4786,12 @@ class FoundationValidator:
                     block_text,
                 ):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
-                q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
+                if n == _BD:
+                    q = "    permissions: {}"
+                else:
+                    q = "    permissions:\n      contents: read" + (
+                        "\n      security-events: write" if n == _SC else ""
+                    )
                 if f"{q}\n    steps:" not in block_text:
                     self.add("workflow.job_permissions", path, f"job {job_name} permission drift")
             jobs = workflow_jobs(lines)
@@ -5082,7 +5087,7 @@ class FoundationValidator:
             echo '::error::NOSUCHMACHINE_DEPLOY_HOOK is not set' >&2
             exit 1
           fi
-          curl --fail --silent --show-error --max-time 30 -X POST "$HOOK\""""
+          curl --fail --silent --show-error --max-time 30 --retry 3 --retry-all-errors -X POST "$HOOK\""""
             if block != expected:
                 self.add(
                     "workflow.book_deploy_contract",
