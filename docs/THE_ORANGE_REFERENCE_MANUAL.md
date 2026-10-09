@@ -7209,6 +7209,8 @@ to $\mathbf{not\_satisfied}$.
 
 #### 2. Proposed Claim Record Schema
 
+`schemas/gate0/claim-record-v0.1.schema.json` is the provisional Gate 0 record, and its fields differ from the Proposed schema described here.
+
 ```json
 {
   "$schema": "https://schemas.orange-lang.org/2026/claim-record.json",
@@ -7565,13 +7567,15 @@ in `compiler/crates/orangec/src/main.rs`.
 | `ORC1008` | Oversized input: the invocation's source bytes exceed 64 MiB |
 | `ORC1009` | Key file |
 | `ORC1010` | Scheme |
-| `ORC1011` | The file being sealed or opened could not be read |
-| `ORC1012` | The sealed or opened output could not be written, or its path already exists |
+| `ORC1011` | The file being sealed or opened could not be read, or an input is too large to seal |
+| `ORC1012` | The sealed or opened output could not be written, or its path already exists, or `dec` input without `.orange` and no `-o` |
 | `ORC1013` | Sealed-file format |
 | `ORC1014` | A chunk that is not authentic |
 | `ORC1015` | Randomness |
-| `ORC1016` | A `--spec` or `--function` name that selects nothing, or an analysis whose selector or shape the command cannot take |
-| `ORC1017` | An analysis whose bits, table, or layer the search cannot accept |
+| `ORC1016` | A `--spec` or `--function` name that selects nothing or is ambiguous, a replay function whose result is not `Bool`, or an analysis whose selector or shape the command cannot take |
+| `ORC1017` | An analysis whose function, bits, table, or layer the search cannot accept |
+
+Usage errors have no `ORC` code: a bad `--steps`, `--steps` on `check`, an unknown option, and `analyze --rounds 0` print `orangec: …` and exit 2.
 
 ### §93. Diagnostic Philosophy, Severity Structure, and Error Budgets
 
