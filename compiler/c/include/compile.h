@@ -3211,8 +3211,10 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         }
         if (expr->op == TK_EQEQ || expr->op == TK_BANGEQ) {
             int equal = 0;
-            /* A test whose body is this comparison keeps both operands. The
-               comparison itself still visits every element. */
+            /* A test whose body is this comparison keeps both operands.
+               `==` and `!=` compare every element: orange_values_equal does
+               not break or memcmp. orange_eq_audit (-DORANGEC_TEST) counts
+               those visits. */
             if (c->capture_eq && depth == 1 && index == c->capture_expr && expr->op == TK_EQEQ) {
                 if (!value_clone(c, &c->capture_left, &left, expr->start, expr->end) ||
                     !value_clone(c, &c->capture_right, &right, expr->start, expr->end)) {
@@ -6067,6 +6069,13 @@ int orange_main(int argc, char **argv) {
                 return 1;
             }
             fputs("bigint self-test passed\n", stdout);
+#ifdef ORANGEC_TEST
+            if (!orange_eq_audit()) {
+                fputs("equality element audit failed\n", stderr);
+                return 1;
+            }
+            fputs("equality element audit passed\n", stdout);
+#endif
             return 0;
         }
         if (strcmp(argv[index], "--edition") == 0) {

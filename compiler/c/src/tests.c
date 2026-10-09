@@ -4,6 +4,7 @@
 #include "pack.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum { MAX_TEST_TITLE_BYTES = 128 };
@@ -215,6 +216,13 @@ int orange_title_fault(const char *text, size_t length, size_t *offset, uint32_t
     return TITLE_OK;
 }
 
+#ifdef ORANGEC_TEST
+static uint64_t orange_eq_elements;
+#define note_eq_element() (orange_eq_elements++)
+#else
+#define note_eq_element() ((void)0)
+#endif
+
 int orange_values_equal(Compiler *c, const Value *left, const Value *right, int *equal) {
     uint32_t index;
     if (c->failed) {
@@ -227,12 +235,15 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
             c->failed = 1;
             return 0;
         }
+        /* Every field, including fields after a difference. No break or memcmp.
+           orange_eq_audit (-DORANGEC_TEST) counts these visits. */
         for (index = 0; index < left->length; index++) {
             int part = 0;
+            note_eq_element();
             if (!orange_values_equal(c, &left->elems[index], &right->elems[index], &part)) {
                 return 0;
             }
-            all = all && part;
+            all &= part;
         }
         *equal = all;
         return 1;
@@ -248,14 +259,17 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
             if (!charge_steps(c, cost)) {
                 return 0;
             }
+            /* Every word or `Bool`, including those after a difference. No break
+               or memcmp. orange_eq_audit (-DORANGEC_TEST) counts these visits. */
             for (index = 0; index < left->length; index++) {
                 uint64_t left_word = 0;
                 uint64_t right_word = 0;
+                note_eq_element();
                 if (!element_word(left, index, &left_word) || !element_word(right, index, &right_word)) {
                     c->failed = 1;
                     return 0;
                 }
-                all = all && (left_word == right_word);
+                all &= (left_word == right_word);
             }
             *equal = all;
             return 1;
@@ -269,9 +283,12 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
                 return 0;
             }
             cost = 1u + modulus_digit_count(modulus);
+            /* Every residue, including those after a difference. No break or
+               memcmp. orange_eq_audit (-DORANGEC_TEST) counts these visits. */
             for (index = 0; index < left->length; index++) {
                 uint64_t left_word = 0;
                 uint64_t right_word = 0;
+                note_eq_element();
                 if (!charge_steps(c, cost) || !element_word(left, index, &left_word) ||
                     !element_word(right, index, &right_word)) {
                     if (!c->failed) {
@@ -279,7 +296,7 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
                     }
                     return 0;
                 }
-                all = all && (left_word == right_word);
+                all &= (left_word == right_word);
             }
             *equal = all;
             return 1;
@@ -288,12 +305,15 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
             c->failed = 1;
             return 0;
         }
+        /* Every element, including those after a difference. No break or memcmp.
+           orange_eq_audit (-DORANGEC_TEST) counts these visits. */
         for (index = 0; index < left->length; index++) {
             int part = 0;
+            note_eq_element();
             if (!orange_values_equal(c, &left->elems[index], &right->elems[index], &part)) {
                 return 0;
             }
-            all = all && part;
+            all &= part;
         }
         *equal = all;
         return 1;
@@ -378,3 +398,191 @@ int orange_first_difference(const Value *left, const Value *right, char *place, 
     }
     return 0;
 }
+
+#ifdef ORANGEC_TEST
+enum { EQ_AUDIT_N = 8 };
+
+static void release_elems(Value *value) {
+    free(value->elems);
+    value->elems = NULL;
+    if (value->pack != NULL) {
+        pack_release(value->pack);
+        value->pack = NULL;
+    }
+}
+
+static int expect_visits(Compiler *c, const Value *left, const Value *right, const char *label) {
+    uint64_t before = orange_eq_elements;
+    int equal = 1;
+    c->failed = 0;
+    c->step_hit = 0;
+    if (!orange_values_equal(c, left, right, &equal) || equal != 0 || orange_eq_elements != before + EQ_AUDIT_N) {
+        fprintf(stderr, "equality audit: %s visited %llu elements, expected %d (equal=%d)\n", label,
+                (unsigned long long)(orange_eq_elements - before), EQ_AUDIT_N, equal);
+        return 0;
+    }
+    return 1;
+}
+
+static int make_word_array(Value *out, uint32_t differ_at, int differ) {
+    memset(out, 0, sizeof *out);
+    out->type = TY_W8;
+    out->length = EQ_AUDIT_N;
+    out->pack = pack_new(TY_W8, EQ_AUDIT_N, 1, 0);
+    if (out->pack == NULL) {
+        return 0;
+    }
+    pack_fill(out->pack, 0);
+    if (differ) {
+        pack_set(out->pack, differ_at, 1);
+    }
+    return 1;
+}
+
+static int make_residue_array(Value *out, uint32_t differ_at, int differ) {
+    uint32_t stride = pack_stride_of(TY_MOD, 3);
+    memset(out, 0, sizeof *out);
+    out->type = TY_MOD;
+    out->length = EQ_AUDIT_N;
+    out->mod_index = 1;
+    out->pack = pack_new(TY_MOD, EQ_AUDIT_N, stride, 1);
+    if (out->pack == NULL) {
+        return 0;
+    }
+    pack_fill(out->pack, 3);
+    if (differ) {
+        pack_set(out->pack, differ_at, 4);
+    }
+    return 1;
+}
+
+static int make_int_array(Compiler *c, Value *out, uint32_t differ_at, int differ) {
+    uint32_t index;
+    uint32_t low[3] = {1u, 0u, 1u};
+    uint32_t high[3] = {1u, 0u, 2u};
+    memset(out, 0, sizeof *out);
+    out->type = TY_INT;
+    out->length = EQ_AUDIT_N;
+    out->elems = calloc(EQ_AUDIT_N, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < EQ_AUDIT_N; index++) {
+        const uint32_t *limbs = (differ && index == differ_at) ? high : low;
+        out->elems[index].type = TY_INT;
+        if (!big_from_limbs(&c->arena, limbs, 3, 0, &out->elems[index].big)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int make_word_tuple(Value *out, uint32_t differ_at, int differ) {
+    uint32_t index;
+    memset(out, 0, sizeof *out);
+    out->type = TY_TUPLE;
+    out->is_tuple = 1;
+    out->length = EQ_AUDIT_N;
+    out->elems = calloc(EQ_AUDIT_N, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < EQ_AUDIT_N; index++) {
+        out->elems[index].type = TY_W8;
+        out->elems[index].word = (differ && index == differ_at) ? 1u : 0u;
+    }
+    return 1;
+}
+
+static int make_residue_tuple(Compiler *c, Value *out, uint32_t differ_at, int differ) {
+    uint32_t index;
+    memset(out, 0, sizeof *out);
+    out->type = TY_TUPLE;
+    out->is_tuple = 1;
+    out->length = EQ_AUDIT_N;
+    out->elems = calloc(EQ_AUDIT_N, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < EQ_AUDIT_N; index++) {
+        out->elems[index].type = TY_MOD;
+        out->elems[index].mod_index = 1;
+        if (!big_from_u64(&c->arena, (differ && index == differ_at) ? 4u : 3u, &out->elems[index].big)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int make_int_tuple(Compiler *c, Value *out, uint32_t differ_at, int differ) {
+    uint32_t index;
+    uint32_t low[3] = {1u, 0u, 1u};
+    uint32_t high[3] = {1u, 0u, 2u};
+    memset(out, 0, sizeof *out);
+    out->type = TY_TUPLE;
+    out->is_tuple = 1;
+    out->length = EQ_AUDIT_N;
+    out->elems = calloc(EQ_AUDIT_N, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < EQ_AUDIT_N; index++) {
+        const uint32_t *limbs = (differ && index == differ_at) ? high : low;
+        out->elems[index].type = TY_INT;
+        if (!big_from_limbs(&c->arena, limbs, 3, 0, &out->elems[index].big)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int orange_eq_audit(void) {
+    Compiler *c;
+    Value left;
+    Value right;
+    int ok = 1;
+    c = calloc(1, sizeof *c);
+    if (c == NULL || !arena_init(&c->arena, 1u << 20)) {
+        free(c);
+        fputs("equality audit: could not reserve the compiler\n", stderr);
+        return 0;
+    }
+    c->moduli = calloc(2, sizeof(Big));
+    if (c->moduli == NULL || !big_from_u64(&c->arena, 7, &c->moduli[1])) {
+        fputs("equality audit: could not reserve the modulus\n", stderr);
+        ok = 0;
+    }
+    c->nmoduli = 2;
+#define AUDIT_CASE(build_left, build_right, label)                                                                     \
+    do {                                                                                                               \
+        if (ok) {                                                                                                      \
+            memset(&left, 0, sizeof left);                                                                             \
+            memset(&right, 0, sizeof right);                                                                           \
+            if (!(build_left) || !(build_right) || !expect_visits(c, &left, &right, (label))) {                        \
+                ok = 0;                                                                                                \
+            }                                                                                                          \
+            release_elems(&left);                                                                                      \
+            release_elems(&right);                                                                                     \
+        }                                                                                                              \
+    } while (0)
+    AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, 0, 1), "word array compared_first");
+    AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, EQ_AUDIT_N - 1, 1), "word array compared_last");
+    AUDIT_CASE(make_word_tuple(&left, 0, 0), make_word_tuple(&right, 0, 1), "word tuple compared_first");
+    AUDIT_CASE(make_word_tuple(&left, 0, 0), make_word_tuple(&right, EQ_AUDIT_N - 1, 1), "word tuple compared_last");
+    AUDIT_CASE(make_residue_array(&left, 0, 0), make_residue_array(&right, 0, 1), "residue array compared_first");
+    AUDIT_CASE(make_residue_array(&left, 0, 0), make_residue_array(&right, EQ_AUDIT_N - 1, 1),
+               "residue array compared_last");
+    AUDIT_CASE(make_residue_tuple(c, &left, 0, 0), make_residue_tuple(c, &right, 0, 1), "residue tuple compared_first");
+    AUDIT_CASE(make_residue_tuple(c, &left, 0, 0), make_residue_tuple(c, &right, EQ_AUDIT_N - 1, 1),
+               "residue tuple compared_last");
+    AUDIT_CASE(make_int_array(c, &left, 0, 0), make_int_array(c, &right, 0, 1), "bigint array compared_first");
+    AUDIT_CASE(make_int_array(c, &left, 0, 0), make_int_array(c, &right, EQ_AUDIT_N - 1, 1), "bigint array compared_last");
+    AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, 0, 1), "bigint tuple compared_first");
+    AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, EQ_AUDIT_N - 1, 1), "bigint tuple compared_last");
+#undef AUDIT_CASE
+    free(c->moduli);
+    arena_dispose(&c->arena);
+    free(c);
+    return ok;
+}
+#endif
