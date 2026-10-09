@@ -22,8 +22,8 @@
 /* The most steps `eval --steps` admits: 1,024 times the default budget. */
 #define MAX_STEP_LIMIT 1073741824ull
 #define MAX_CALL_DEPTH 256
-#define MAX_ARRAY_LENGTH 256u
-#define MAX_ARRAY_ELEMENTS 256u
+#define MAX_ARRAY_LENGTH 65536u
+#define MAX_ARRAY_ELEMENTS 65536u
 #define MAX_LOOP_BOUND 65536u
 #define MAX_OPEN_LOOPS 64
 #define ARENA_BYTES (16u * 1024u * 1024u)
@@ -228,7 +228,7 @@ typedef struct Expr {
     uint32_t name_start;
     uint32_t name_end;
     uint32_t callee;
-    uint16_t argc;
+    uint32_t argc;
     uint32_t arg0;
     TokenKind op;
     uint32_t left;

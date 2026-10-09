@@ -753,7 +753,7 @@ static void ty_from_param(const Compiler *owner, const InstParam *param, TpTy *o
 static void arg_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals, TpTy *out);
 
 static void arg_array(Compiler *c, const Expr *expr, uint32_t func_index, uint32_t locals, TpTy *out) {
-    uint16_t index;
+    uint32_t index;
     int all = 1;
     int got = 0;
     TpTy first;

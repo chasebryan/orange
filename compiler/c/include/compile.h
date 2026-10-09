@@ -168,7 +168,7 @@ void bind_modulus(Compiler *c, TypeSite *site) {
 
 static void walk_moduli(Compiler *c, uint32_t index) {
     const Expr *expr;
-    uint16_t arg;
+    uint32_t arg;
     if (index == UINT32_MAX || c->resource) {
         return;
     }
@@ -3432,15 +3432,21 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return eval_block(c, else_bind0, else_nbinds, otherwise, params, locals, depth, out);
     }
     case EX_BYTES: {
-        uint8_t bytes[MAX_ARRAY_LENGTH];
+        uint8_t *bytes = NULL;
         uint32_t count = 0;
         uint32_t err_start = 0;
         uint32_t err_end = 0;
         uint32_t point = 0;
         Value *items = NULL;
         uint32_t slot;
-        if (decode_bytes(c, expr, bytes, &count, &err_start, &err_end, &point) != BYTES_OK ||
+        if (decode_bytes(c, expr, NULL, &count, &err_start, &err_end, &point) != BYTES_OK || count == 0) {
+            c->failed = 1;
+            return 0;
+        }
+        bytes = malloc(count);
+        if (bytes == NULL || decode_bytes(c, expr, bytes, &count, &err_start, &err_end, &point) != BYTES_OK ||
             !charge(c, expr->start, expr->end, 1) || !alloc_array(c, &items, count, expr->start, expr->end)) {
+            free(bytes);
             c->failed = 1;
             return 0;
         }
@@ -3453,6 +3459,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         out->type = TY_W8;
         out->length = count;
         out->elems = items;
+        free(bytes);
         return 1;
     }
     case EX_SLICE:
@@ -5166,7 +5173,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3o\n", stdout);
+            fputs("orangec (standalone C) slice S3p\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {

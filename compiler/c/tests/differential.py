@@ -69,6 +69,12 @@ VALID = [
     "s3o/valid-sha2.or",
     "s3o/valid-nested.or",
     "s3o/valid-tuple.or",
+    "s3p/valid-rfc8439.or",
+]
+# Pepin's test does not finish in the default 1048576 steps. Rust's
+# conformance run uses this budget and prints --stats.
+STEPPED = [
+    ("s3p/valid-lengths.or", ["--steps", "2097152", "--stats"]),
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
 # large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
@@ -170,6 +176,7 @@ INVALID = [
     "s3o/invalid-types-syntax.or",
     "s3o/invalid-nested.or",
     "s3o/invalid-project.or",
+    "s3p/invalid-lengths.or",
 ]
 
 
@@ -689,6 +696,26 @@ def main() -> int:
                 print("  c:   ", c_result.stdout)
             if c_result.stderr:
                 print("  c stderr:", c_result.stderr)
+        else:
+            print(f"ok   eval {relative}")
+
+    for relative, extra in STEPPED:
+        path = str(FIXTURES / relative)
+        args = ["eval", *extra, path]
+        rust = run(rust_compiler, args)
+        c_result = run(c_compiler, args)
+        if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout or rust.stderr != c_result.stderr:
+            failures += 1
+            print(f"FAIL eval {relative}")
+            print(f"  rust exit {rust.returncode} c exit {c_result.returncode}")
+            if rust.stdout != c_result.stdout:
+                print("  stdout mismatch")
+                print("  rust:", rust.stdout)
+                print("  c:   ", c_result.stdout)
+            if rust.stderr != c_result.stderr:
+                print("  stderr mismatch")
+                print("  rust:", rust.stderr)
+                print("  c:   ", c_result.stderr)
         else:
             print(f"ok   eval {relative}")
 

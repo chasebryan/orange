@@ -1749,7 +1749,8 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
 }
 
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
-    uint32_t local_elems[MAX_ARRAY_ELEMENTS];
+    uint32_t *local_elems = NULL;
+    size_t local_cap = 0;
     uint32_t count = 0;
     Token close;
     int height = 1;
@@ -1764,7 +1765,15 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         leave_nest(c);
         return 0;
     }
+    local_elems = malloc(sizeof(uint32_t));
+    if (local_elems == NULL) {
+        resource_diag(c, "ORC0106", open.start, open.end, "parser could not retain array elements");
+        leave_nest(c);
+        return 0;
+    }
+    local_cap = 1;
     if (!parse_expr(c, &local_elems[0])) {
+        free(local_elems);
         leave_nest(c);
         return 0;
     }
@@ -1773,6 +1782,8 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         Token length;
         uint32_t element = local_elems[0];
         uint32_t size = UINT32_MAX;
+        free(local_elems);
+        local_elems = NULL;
         int sized = 0;
         advance_token(c);
         length = peek_token(c);
@@ -1830,12 +1841,40 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
             break;
         }
         if (count >= MAX_ARRAY_ELEMENTS) {
-            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
-                          "array literal exceeds the 256-element limit");
+            uint32_t extra = 0;
+            if (!parse_expr(c, &extra)) {
+                free(local_elems);
+                leave_nest(c);
+                return 0;
+            }
+            c->resource = 1;
+            add_diag(c, "ORC0106", c->exprs[extra].start, c->exprs[extra].end,
+                     "array literal has more than 65536 elements",
+                     "deterministic parser resource limit reached",
+                     "simplify or split the source before parsing it again", 1);
+            free(local_elems);
             leave_nest(c);
             return 0;
         }
+        if (count == local_cap) {
+            size_t next = local_cap * 2u;
+            uint32_t *grown;
+            if (next > MAX_ARRAY_ELEMENTS) {
+                next = MAX_ARRAY_ELEMENTS;
+            }
+            grown = realloc(local_elems, next * sizeof(uint32_t));
+            if (grown == NULL) {
+                resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
+                              "parser could not retain array elements");
+                free(local_elems);
+                leave_nest(c);
+                return 0;
+            }
+            local_elems = grown;
+            local_cap = next;
+        }
         if (!parse_expr(c, &local_elems[count])) {
+            free(local_elems);
             leave_nest(c);
             return 0;
         }
@@ -1845,21 +1884,24 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
     close = peek_token(c);
     if (close.kind != TK_RBRACKET) {
         add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed array literal", NULL, 1);
+        free(local_elems);
         return 0;
     }
     advance_token(c);
     if (!ensure_cap((void **)&c->args, &c->arg_cap, c->nargs + count, sizeof(uint32_t), MAX_EXPRS)) {
         resource_diag(c, "ORC0106", open.start, close.end, "parser could not retain array elements");
+        free(local_elems);
         return 0;
     }
     if (!new_expr(c, out)) {
+        free(local_elems);
         return 0;
     }
     c->exprs[*out].kind = EX_ARRAY;
     c->exprs[*out].start = open.start;
     c->exprs[*out].end = close.end;
     c->exprs[*out].arg0 = c->nargs;
-    c->exprs[*out].argc = (uint16_t)count;
+    c->exprs[*out].argc = count;
     memcpy(c->args + c->nargs, local_elems, (size_t)count * sizeof(uint32_t));
     c->nargs += count;
     for (uint32_t index = 0; index < count; index++) {
@@ -1869,6 +1911,7 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         }
     }
     c->exprs[*out].height = height;
+    free(local_elems);
     return note_height(c, *out);
 }
 

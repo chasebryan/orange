@@ -28,7 +28,7 @@ after its `use` declarations and before its functions. `Mod[m]` is the
 residue ring of a constant modulus from 2 through 2^521 - 1. `+`, `-`, `*`,
 and prefix `-` reduce to the least residue; `/` multiplies by an inverse and
 is 0 when there is none. A fixed-length array `T^n` holds n values of one
-of those scalars, with n a decimal integer from 1 through 256. Expressions are
+of those scalars, with n a decimal integer from 1 through 65536. Expressions are
 literals, names, calls, parentheses, array literals, indices, exact integer
 arithmetic, Euclidean `/` and `%`, word ring arithmetic, bitwise operators,
 shifts, rotations, comparisons, `!`, `&&`, `||`, and `as` conversions. A loop
@@ -83,7 +83,7 @@ apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
 Typed `spec` functions may take type parameters, written `K in {T1, T2}` and
-checked once for each listed type. Tests, lengths above 256, and computed
+checked once for each listed type. Tests, lengths above 65536, and computed
 shift amounts are rejected rather than given a new meaning.
 The Rust `orangec` remains the frontend for those slices.
 
@@ -116,13 +116,13 @@ test oracle. Running the C compiler does not require it.
 The frontend fails closed. A source is at most 16 MiB. Lexing keeps at most
 262,144 tokens. Expressions nest at most 64 levels and stay within height 256.
 A function has at most 64 parameters, 256 bindings, and a call has at most 256
-arguments. An array literal or fill has at most 256 elements. A loop takes at
+arguments. An array literal or fill has at most 65536 elements. A loop takes at
 most 65,536 steps. An `Int` magnitude has at most 16,384 significant bits.
 A program reaches at most 64 modules, and each module has at most 64 `use`
 declarations and 64 `type` declarations. A modulus has at most 521 bits. Reference evaluation of the whole program shares 1,048,576 steps
 and 256 call frames. An update or
 fill of n elements costs one step per 64 elements. Arrays are released once no
 live value holds them. Printing uses as much text as the value's spelling
-needs, including an array of 256 full-width integers. Exhausting a limit, or
+needs, including an array of 65536 full-width integers. Exhausting a limit, or
 failing to retain an array or its spelling, produces one resource diagnostic
 and no value lines.
