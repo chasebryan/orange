@@ -54,9 +54,9 @@ approval-records: []
 
 S3s admits rectangular arrays of scalar rows through existing aliases:
 `type Row = Word[32]^4; type Matrix = Row^4;`. Each axis is nonempty,
-rank is at most two, and the scalar total is at most 65,536. Existing
-literals, fills, indices, updates, slices, concatenation, tuples, finite
-specialization, and equality apply structurally to rows. Byte-order
+and rank in this slice is at most two. The scalar total is at most 65,536.
+Existing literals, fills, indices, updates, slices, concatenation, tuples,
+finite specialization, and equality apply structurally to rows. Byte-order
 conversions retain their rank-one boundary.
 
 [`docs/NESTED_ARRAYS_2026.md`](../../NESTED_ARRAYS_2026.md) is the complete
@@ -139,8 +139,12 @@ is wanted.
 
 Existing S3r source retains its types, values, output bytes, and steps.
 Previously rejected scalar-array aliases followed by a length become valid
-when they satisfy the new rank and scalar limits. Tuples as elements and
-third axes remain invalid, with diagnostics describing the actual boundary.
+when they satisfy the new rank and scalar limits. Tuples as elements remain
+invalid, with diagnostics describing that boundary. S3u, implemented and in
+owner review under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md), admits a third and a
+fourth axis and update paths such as `x with [i][j] = v`. A fifth axis is
+still `ORC0203`.
 Successive index suffixes are parsed and then checked against each selected
 type, where S3r rejected a repeated suffix as syntax. The CLI gains no
 interface. The Rust `ArrayType` remains `Copy`; `element()`
@@ -166,9 +170,11 @@ independent review, or production readiness.
 The analyzer, Core constructors, and evaluator remain engineering trust
 dependencies. Array rank and product checks, row-type propagation, recursive
 equality, and conversion rejection are new or extended trusted paths.
-The Core type representation fixes rank at two and does not admit an
-unbounded recursive collection. No axiom, theorem, proof rule, certificate,
-checker, or solver is added.
+This slice's Core type representation recorded rank two. S3u widens that
+same `Copy` representation to four dimensions under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md), and it still admits
+no unbounded recursive collection. No axiom, theorem, proof rule,
+certificate, checker, or solver is added.
 
 ## Threat, abuse, and leakage effects
 
@@ -244,8 +250,9 @@ D-023 is not independent review.
 
 ## Unresolved questions
 
-- Higher rank and arrays of structured elements require separate rank,
-  storage, recursion, and operation-boundary evidence.
+- Arrays of structured elements still need their own storage, recursion,
+  and operation-boundary evidence. Rank three and four, and update paths,
+  are the S3u surface in OEP-0025 and are not accepted by this proposal.
 - General shape parameters, rectangular windows, transposition, and named
   polynomial representations need separate semantics and conformance records.
 - Backend layout, leakage profiles, refinement contracts, and proof-bearing
