@@ -135,12 +135,27 @@ def main() -> int:
             "  }\n"
             "}\n",
         )
+        # A loop `for i in a..b` is rejected unless b <= 65536, so one
+        # `0..524287` loop never evaluates. `for i in 0..N with s: Word[8] = 0 { s }`
+        # costs 2 + 2N, and a `let` adds no step. Seven loops of 65536 and one of
+        # 65528 are 1048576 steps; `~` is the next step and is dropped at the
+        # default budget. The bulk program stops two steps earlier, then a
+        # 256-element fill whose bulk charge of 4 does not fit.
+        def loop_expr(bound: int) -> str:
+            return f"for i in 0..{bound} with s: Word[8] = 0 {{ s }}"
+
+        full_loops = "\n".join(
+            f"    let a{index}: Word[8] = {loop_expr(65536)};" for index in range(1, 8)
+        )
         tilde = write_source(
             directory,
             "tilde.or",
             "edition 2026;\n"
             "module m {\n"
-            "  spec a() -> Word[8] { ~(for i in 0..524287 with s: Word[8] = 0 { s }) }\n"
+            "  spec a() -> Word[8] {\n"
+            f"{full_loops}\n"
+            f"    ~({loop_expr(65528)})\n"
+            "  }\n"
             "}\n",
         )
         bulk = write_source(
@@ -149,7 +164,8 @@ def main() -> int:
             "edition 2026;\n"
             "module m {\n"
             "  spec a() -> Word[8]^256 {\n"
-            "    let unused: Word[8] = for i in 0..524286 with s: Word[8] = 0 { s };\n"
+            f"{full_loops}\n"
+            f"    let unused: Word[8] = {loop_expr(65527)};\n"
             "    [0xa8; 256]\n"
             "  }\n"
             "}\n",
@@ -184,13 +200,13 @@ def main() -> int:
         check(eval_case(rust_bin, c_bin, "limit 1 before second", before, 1))
         check(eval_case(rust_bin, c_bin, "limit 3 while evaluating", while_eval, 3))
 
-        # The loop costs 1048576 steps and `~` is one more. The default budget
+        # The loops cost 1048576 steps and `~` is one more. The default budget
         # stops on that extra step and does not record it.
         check(eval_case(rust_bin, c_bin, "tilde at default 1048576", tilde, None))
         check(eval_case(rust_bin, c_bin, "tilde at 1048577", tilde, 1048577, stats=True))
 
-        # 1048574 loop steps, then a literal, then a bulk charge of 4 that
-        # does not fit in the one remaining step of the default budget.
+        # 1048574 steps, then a literal, then a bulk charge of 4 that does not
+        # fit in the one remaining step of the default budget.
         check(eval_case(rust_bin, c_bin, "bulk at default 1048576", bulk, None))
         check(eval_case(rust_bin, c_bin, "bulk at 1048578", bulk, 1048578))
         check(eval_case(rust_bin, c_bin, "bulk at 1048579", bulk, 1048579, stats=True))
