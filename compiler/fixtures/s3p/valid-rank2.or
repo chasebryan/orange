@@ -1,0 +1,7 @@
+// Naming a matrix does not build one. The same matrix type matches.
+edition 2026;
+module m {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec id(a: Mat) -> Mat { a }
+}

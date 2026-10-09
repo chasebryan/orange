@@ -720,7 +720,19 @@ typedef struct Applied {
     int reported;
     uint32_t tup0;
     uint16_t tup_n;
+    int rank;
+    uint32_t inner;
 } Applied;
+
+static void note_applied_rank(const TypeSite *site, Applied *out) {
+    if (!out->ok || out->kind == TY_TUPLE || site->rank <= 0) {
+        return;
+    }
+    out->rank = site->rank;
+    if (site->rank >= 2) {
+        out->inner = site->inner_len;
+    }
+}
 
 static int site_uses_size(const Compiler *c, uint32_t site_index) {
     const TypeSite *site;
@@ -773,6 +785,7 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
         if (out->kind == TY_TUPLE) {
             out->length = 0;
         }
+        note_applied_rank(site, out);
         return 1;
     }
     if (site->kind == TY_TUPLE || site->is_tuple) {
@@ -818,10 +831,15 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
             return 1;
         }
         site->length = length;
-        site->rank = 1;
+        /* Resolution already counted the alias's axes. A computed length
+           replaces the outer axis; forcing rank 1 would flatten a matrix. */
+        if (site->rank <= 0) {
+            site->rank = 1;
+        }
         out->length = length;
         out->ok = 1;
     }
+    note_applied_rank(site, out);
     return 1;
 }
 
@@ -987,6 +1005,8 @@ static int capture_instance(Compiler *c, uint32_t func_index, Instance *inst) {
     inst->result_ok = result.ok;
     inst->tup0 = result.tup0;
     inst->tup_n = result.tup_n;
+    inst->result_rank = result.rank;
+    inst->result_inner = result.inner;
     inst->param0 = c->niparams;
     inst->signature_ok = result.ok;
     for (param = 0; param < func->nparams; param++) {
@@ -1002,6 +1022,8 @@ static int capture_instance(Compiler *c, uint32_t func_index, Instance *inst) {
         shape.type_ok = applied.ok;
         shape.tup0 = applied.tup0;
         shape.tup_n = applied.tup_n;
+        shape.rank = applied.rank;
+        shape.inner = applied.inner;
         if (!applied.ok) {
             inst->signature_ok = 0;
         }
@@ -1029,6 +1051,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         func->result_reported = applied.reported;
         func->tup0 = applied.tup0;
         func->tup_n = applied.tup_n;
+        func->result_rank = applied.rank;
+        func->result_inner = applied.inner;
     }
     for (param = 0; param < func->nparams; param++) {
         Param *item = &c->params[func->param0 + param];
@@ -1045,6 +1069,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     for (local = 0; local < func->nlocals; local++) {
         Local *item = &c->locals[func->local0 + local];
@@ -1061,6 +1087,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     if (func->nlocals > 0) {
         seal_patterns(c, &c->locals[func->local0], func->nlocals);
@@ -1080,6 +1108,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     for (index = 0; index < c->nloops; index++) {
         LoopDesc *loop = &c->loops[index];
@@ -1096,6 +1126,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         loop->acc_reported = applied.reported;
         loop->tup0 = applied.tup0;
         loop->tup_n = applied.tup_n;
+        loop->acc_rank = applied.rank;
+        loop->acc_inner = applied.inner;
     }
     tp_refresh_convs(c, func_index);
     return 1;
@@ -1487,14 +1519,16 @@ static void analyze(Compiler *c) {
             if (local->type == TY_TUPLE) {
                 check_as_tuple(c, local->value, local->tup0, local->tup_n, index, local_index);
             } else {
-                check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
+                check_ranked(c, local->value, local->type, local->length, local->mod_index, local->rank, local->inner,
+                             index, local_index);
             }
         }
         if (func->body != UINT32_MAX) {
             if (func->result == TY_TUPLE) {
                 check_as_tuple(c, func->body, func->tup0, func->tup_n, index, func->nlocals);
             } else {
-                check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
+                check_ranked(c, func->body, func->result, func->result_len, func->result_mod, func->result_rank,
+                             func->result_inner, index, func->nlocals);
             }
         }
         if (c->ndiags > diags_before) {
@@ -4914,6 +4948,13 @@ static int evaluate_source(Compiler *c, FILE *out) {
                 break;
             }
             continue;
+        }
+        if (func->result_rank >= 2) {
+            c->failed = 1;
+            report_matrix(c, func->body != UINT32_MAX ? c->exprs[func->body].start : func->name_start,
+                          func->body != UINT32_MAX ? c->exprs[func->body].end : func->name_end, func->result,
+                          func->result_len, func->result_inner);
+            break;
         }
         memset(&result, 0, sizeof result);
         c->cur_func = index;

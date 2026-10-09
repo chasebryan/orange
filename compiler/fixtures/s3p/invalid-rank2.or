@@ -1,0 +1,19 @@
+// A matrix is an array of rows. A flat literal is a row of scalars, so each
+// element is diagnosed as the row type. A bare integer is the matrix type.
+edition 2026;
+module m {
+  type Row = Word[8]^2;
+  type Wide = Word[8]^3;
+  type Mat = Row^2;
+  type Mat3 = Wide^2;
+
+  spec flat() -> Mat { [1, 2] }
+  spec filled() -> Mat { [1; 2] }
+  spec wide() -> Mat { [1, 2, 3] }
+  spec shortfill() -> Mat { [1; 3] }
+  spec one() -> Mat { 1 }
+  spec named() -> Mat { let x: Mat = [1, 2]; x }
+  spec alias() -> Int { let x: Mat = [1, 2]; 0 }
+  spec pass(a: Word[8]^2) -> Mat { a }
+  spec cross(a: Mat) -> Mat3 { a }
+}

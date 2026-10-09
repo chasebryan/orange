@@ -288,6 +288,9 @@ typedef struct Param {
     int type_reported;
     uint32_t tup0;
     uint16_t tup_n;
+    /* 2 when this parameter is a matrix. `inner` is the row length. */
+    int rank;
+    uint32_t inner;
 } Param;
 
 typedef struct Local {
@@ -316,6 +319,9 @@ typedef struct Local {
     uint16_t pat_len;
     uint32_t tup0;
     uint16_t tup_n;
+    /* 2 when this binding is a matrix. `inner` is the row length. */
+    int rank;
+    uint32_t inner;
 } Local;
 
 typedef struct Edge {
@@ -365,6 +371,8 @@ typedef struct LoopDesc {
     uint32_t an_site[MAX_TUPLE];
     uint32_t tup0;
     uint16_t tup_n;
+    int acc_rank;
+    uint32_t acc_inner;
     /* 1 after the step is scanned. A component with one use is moved out of
        the accumulator, so a later update of that array is the only owner. */
     uint8_t sole_ready;
@@ -414,6 +422,8 @@ typedef struct Func {
     int result_reported;
     uint32_t tup0;
     uint16_t tup_n;
+    int result_rank;
+    uint32_t result_inner;
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
@@ -448,6 +458,8 @@ typedef struct Instance {
     int result_ok;
     uint32_t tup0;
     uint16_t tup_n;
+    int result_rank;
+    uint32_t result_inner;
     uint32_t param0;
     int signature_ok;
 } Instance;
@@ -459,6 +471,8 @@ typedef struct InstParam {
     int type_ok;
     uint32_t tup0;
     uint16_t tup_n;
+    int rank;
+    uint32_t inner;
 } InstParam;
 
 typedef struct Diag {
@@ -645,6 +659,9 @@ typedef struct Compiler {
     /* Tuple shape required where a tuple is being checked. Indices into `telems`. */
     uint32_t expect_tup0;
     uint16_t expect_tup_n;
+    /* Rank of the type required here. 2 is a matrix; `expect_inner` is its row length. */
+    int expect_rank;
+    uint32_t expect_inner;
     /* Shape of the typed leaf most recently found. Owned by `leaf_owner`. */
     uint32_t leaf_tup0;
     uint16_t leaf_tup_n;

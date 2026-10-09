@@ -533,6 +533,10 @@ compiler/fixtures/s3o/valid-sha2.or
 compiler/fixtures/s3o/valid-tuple.or
 compiler/fixtures/s3o/valid-types.or
 compiler/fixtures/s3p/invalid-lengths.or
+compiler/fixtures/s3p/invalid-rank2.or
+compiler/fixtures/s3p/rank2-nested.or
+compiler/fixtures/s3p/rank2-update.or
+compiler/fixtures/s3p/valid-rank2.or
 compiler/fixtures/s3p/valid-lengths.or
 compiler/fixtures/s3p/valid-rfc8439.or
 compiler/fixtures/s3p/valid-share.or
