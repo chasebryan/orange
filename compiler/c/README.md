@@ -82,9 +82,9 @@ An index follows a name, a call, or an accumulator. Operators and conversions
 apply to elements. Loop bounds are integer literals with `0 <= a < b <= 65536`.
 Arrays of arrays, empty arrays, and computed loop bounds are rejected.
 
-Later slices are outside this frontend. Type
-parameters, tests, lengths above 256, and computed shift amounts are rejected
-rather than given a new meaning.
+Typed `spec` functions may take type parameters, written `K in {T1, T2}` and
+checked once for each listed type. Tests, lengths above 256, and computed
+shift amounts are rejected rather than given a new meaning.
 The Rust `orangec` remains the frontend for those slices.
 
 ## What it does not claim

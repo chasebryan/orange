@@ -9,86 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SOURCE_BYTES (16u * 1024u * 1024u)
-#define MAX_TOKENS 262144u
-#define MAX_EXPRS 262144u
-#define MAX_ORDINARY_DIAGS 100u
-#define MAX_NESTING 64
-#define MAX_HEIGHT 256
-#define MAX_PARAMS 64
-#define MAX_ARGS 256
-#define MAX_BINDINGS 256
-#define MAX_STEPS 1048576u
-#define MAX_CALL_DEPTH 256
-#define MAX_ARRAY_LENGTH 256u
-#define MAX_ARRAY_ELEMENTS 256u
-#define MAX_LOOP_BOUND 65536u
-#define MAX_OPEN_LOOPS 64
-#define ARENA_BYTES (16u * 1024u * 1024u)
-#define MAX_MODULES 64
-#define MAX_PROGRAM_SLOTS 65
-#define MAX_USES 64
-#define MAX_TYPE_DECLS 64
-#define MAX_TYPE_SITES 4096
-#define MAX_MODULI 256
-#define MAX_MODULUS_BITS 521
-#define MAX_TUPLE 16
-#define MAX_SIZES 4
-#define MAX_INSTANCES 256
-
-typedef enum TokenKind {
-    TK_EOF,
-    TK_IDENT,
-    TK_INT,
-    TK_STRING,
-    TK_HEX,
-    TK_EDITION,
-    TK_MODULE,
-    TK_SPEC,
-    TK_IMPL,
-    TK_GAME,
-    TK_PROOF,
-    TK_CLAIM,
-    TK_LPAREN,
-    TK_RPAREN,
-    TK_LBRACE,
-    TK_RBRACE,
-    TK_LBRACKET,
-    TK_RBRACKET,
-    TK_COMMA,
-    TK_COLON,
-    TK_SEMI,
-    TK_DOT,
-    TK_DOTDOT,
-    TK_COLONCOLON,
-    TK_PLUS,
-    TK_PLUSPLUS,
-    TK_MINUS,
-    TK_STAR,
-    TK_SLASH,
-    TK_PERCENT,
-    TK_AMP,
-    TK_AMPAMP,
-    TK_PIPE,
-    TK_PIPEPIPE,
-    TK_CARET,
-    TK_TILDE,
-    TK_BANG,
-    TK_EQUAL,
-    TK_LESS,
-    TK_GREATER,
-    TK_EQEQ,
-    TK_BANGEQ,
-    TK_LESSEQ,
-    TK_GREATEREQ,
-    TK_LSHIFT,
-    TK_RSHIFT,
-    TK_ROL,
-    TK_ROR,
-    TK_ARROW,
-    TK_FATARROW,
-    TK_QUESTION
-} TokenKind;
+#include "orange.h"
+#include "typeparams.h"
 
 static const char *TOKEN_NAMES[] = {
     "EOF",
@@ -144,546 +66,21 @@ static const char *TOKEN_NAMES[] = {
     "QUESTION",
 };
 
-typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64, TY_MOD, TY_TUPLE } TypeKind;
-
-typedef enum ExprKind {
-    EX_NONE = 0,
-    EX_LIT,
-    EX_NAME,
-    EX_CALL,
-    EX_UNARY,
-    EX_BINARY,
-    EX_SHIFT,
-    EX_CONV,
-    EX_GROUP,
-    EX_ARRAY,
-    EX_INDEX,
-    EX_SELECT,
-    EX_UPDATE,
-    EX_FILL,
-    EX_LOOP,
-    EX_LOOP_INDEX,
-    EX_ACCUM,
-    EX_COND,
-    EX_TUPLE,
-    EX_PROJECT,
-    EX_BYTES,
-    EX_SLICE,
-    EX_SLICE_UP
-} ExprKind;
-
-typedef struct DeclaredType {
-    TypeKind kind;
-    uint32_t length;
-    int ok;
-    int length_bad;
-    uint32_t start;
-    uint32_t end;
-    uint32_t length_start;
-    uint32_t length_end;
-    /* Identifier that names this type, before a width or a modulus. */
-    uint32_t ident_start;
-    uint32_t ident_end;
-    uint32_t mod_expr;
-    int has_mod;
-    int bare_mod;
-    int named;
-    /* A tuple type. `elem0`/`elem_n` index the element type sites. */
-    int is_tuple;
-    int tuple_elem;
-    uint32_t elem0;
-    uint16_t elem_n;
-    /* A length written with sizes: an integer token stays a decoded length. */
-    int has_size_expr;
-    uint32_t length_expr;
-} DeclaredType;
-
-/* One written type. Moduli are filled before names are resolved. */
-typedef struct TypeSite {
-    TypeKind kind;
-    uint32_t length;
-    int ok;
-    int length_bad;
-    uint32_t start;
-    uint32_t end;
-    uint32_t length_start;
-    uint32_t length_end;
-    uint32_t ident_start;
-    uint32_t ident_end;
-    uint32_t mod_expr;
-    int has_mod;
-    int bare_mod;
-    int named;
-    int modulus_done;
-    uint16_t mod_index;
-    int reported;
-    int resolved;
-    /* The spelling itself carries `^n`. Resolution turns that into rank. */
-    int wrote_axis;
-    /* 0 scalar, 1 one array axis, 2 a matrix. Rank 2 is a name, not a value. */
-    int rank;
-    uint32_t inner_len;
-    const char *role;
-    int is_tuple;
-    int tuple_elem;
-    /* Element type sites, filled while parsing. */
-    uint32_t elem0;
-    uint16_t elem_n;
-    /* Resolved element types in `Compiler.telems`. */
-    uint32_t tup0;
-    uint16_t tup_n;
-    int has_size_expr;
-    uint32_t length_expr;
-    /* Function that owns this site, or UINT32_MAX for a `type` declaration. */
-    uint32_t owner_func;
-} TypeSite;
-
-typedef struct TypeDecl {
-    uint32_t name_start;
-    uint32_t name_end;
-    uint32_t site;
-    int installed;
-} TypeDecl;
-
-typedef enum NameRes {
-    NAME_NONE = 0,
-    NAME_PARAM,
-    NAME_LOCAL,
-    NAME_MISSING,
-    NAME_EARLY,
-    NAME_BAD,
-    NAME_BOOL,
-    NAME_BLOCK,
-    NAME_BLOCK_EARLY,
-    NAME_SIZE
-} NameRes;
-
-typedef struct Token {
-    TokenKind kind;
-    uint32_t start;
-    uint32_t end;
-} Token;
-
-typedef struct Expr {
-    ExprKind kind;
-    uint32_t start;
-    uint32_t end;
-    int height;
-    int negative;
-    uint32_t lit_start;
-    uint32_t lit_end;
-    uint32_t name_start;
-    uint32_t name_end;
-    uint32_t callee;
-    uint16_t argc;
-    uint32_t arg0;
-    TokenKind op;
-    uint32_t left;
-    uint32_t right;
-    uint32_t op_start;
-    uint32_t op_end;
-    TypeKind ty;
-    uint32_t ty_len;
-    uint16_t ty_mod;
-    TypeKind conv_ty;
-    int conv_ok;
-    uint32_t conv_site;
-    uint32_t conv_len;
-    uint16_t conv_mod;
-    /* 0: plain `as`. 1: `as big`. 2: `as little`. The order word's span is `lit_start`/`lit_end`. */
-    uint8_t conv_order;
-    NameRes name_res;
-    uint16_t name_index;
-    TypeKind name_ty;
-    uint32_t name_len;
-    /* Absolute local index when the name is a block binding. */
-    uint32_t name_abs;
-    /* Bindings of a conditional's final else branch. */
-    uint32_t else_bind0;
-    uint16_t else_nbinds;
-    /* `.k` position, or the element of a projected accumulator. */
-    uint32_t proj_pos;
-    uint8_t is_proj;
-    /* Call sizes, stored in `Compiler.args` at `size0`. */
-    uint8_t nsize;
-    uint32_t size0;
-    /* Fill or other length written as a size expression. UINT32_MAX if none. */
-    uint32_t size_expr;
-    /* Instance this call names. UINT32_MAX until checking resolves it. */
-    uint32_t inst_id;
-} Expr;
-
-typedef struct Param {
-    uint32_t name_start;
-    uint32_t name_end;
-    uint32_t type_start;
-    uint32_t type_end;
-    TypeKind type;
-    uint32_t length;
-    int type_ok;
-    int length_bad;
-    uint32_t length_start;
-    uint32_t length_end;
-    int duplicate;
-    uint32_t site;
-    uint16_t mod_index;
-    int type_reported;
-    uint32_t tup0;
-    uint16_t tup_n;
-} Param;
-
-typedef struct Local {
-    uint32_t name_start;
-    uint32_t name_end;
-    uint32_t name_at;
-    uint32_t name_end_at;
-    uint32_t type_start;
-    uint32_t type_end;
-    TypeKind type;
-    uint32_t length;
-    int type_ok;
-    int length_bad;
-    uint32_t length_start;
-    uint32_t length_end;
-    int duplicate;
-    uint32_t value;
-    uint32_t site;
-    uint16_t mod_index;
-    int type_reported;
-    /* 1 when the binding belongs to a loop step or a conditional branch. */
-    int block;
-    /* A tuple pattern. `pat_len` is set on the first name; later names have `pat_i` > 0.
-       Every name's `type` is its element type. The shared value lives on the first name. */
-    uint16_t pat_i;
-    uint16_t pat_len;
-    uint32_t tup0;
-    uint16_t tup_n;
-} Local;
-
-typedef struct Edge {
-    uint32_t callee;
-    uint32_t start;
-    uint32_t end;
-    /* Instance indices. UINT32_MAX when the edge is only a function edge. */
-    uint32_t caller_inst;
-    uint32_t callee_inst;
-} Edge;
-
-typedef struct LoopDesc {
-    uint32_t index_start;
-    uint32_t index_end;
-    uint32_t acc_start;
-    uint32_t acc_end;
-    uint32_t a_start;
-    uint32_t a_end;
-    uint32_t b_start;
-    uint32_t b_end;
-    TypeKind acc_type;
-    uint32_t acc_len;
-    int acc_ok;
-    int acc_length_bad;
-    uint32_t type_start;
-    uint32_t type_end;
-    uint32_t length_start;
-    uint32_t length_end;
-    uint32_t init_expr;
-    uint32_t step_expr;
-    uint32_t site;
-    uint16_t acc_mod;
-    int acc_reported;
-    int bounds_ok;
-    uint32_t bound_a;
-    uint32_t bound_b;
-    int a_sized;
-    int b_sized;
-    uint32_t a_expr;
-    uint32_t b_expr;
-    uint32_t bind0;
-    uint16_t nbinds;
-    /* 0 is one accumulator. 2..16 is a tuple pattern. */
-    uint8_t nacc;
-    uint32_t an_start[MAX_TUPLE];
-    uint32_t an_end[MAX_TUPLE];
-    uint32_t an_site[MAX_TUPLE];
-    uint32_t tup0;
-    uint16_t tup_n;
-} LoopDesc;
-
-typedef struct OpenLoop {
-    uint32_t id;
-    uint32_t index_start;
-    uint32_t index_end;
-    uint32_t acc_start;
-    uint32_t acc_end;
-    uint8_t nacc;
-    uint32_t acc_at[MAX_TUPLE];
-    uint32_t acc_to[MAX_TUPLE];
-} OpenLoop;
-
-typedef struct CondArm {
-    uint32_t cond;
-    uint32_t value;
-    uint32_t bind0;
-    uint16_t nbinds;
-} CondArm;
-
-typedef struct Func {
-    int is_impl;
-    int typed;
-    int duplicate;
-    int signature_ok;
-    uint32_t name_start;
-    uint32_t name_end;
-    uint32_t param0;
-    uint16_t nparams;
-    uint32_t local0;
-    uint16_t nlocals;
-    TypeKind result;
-    uint32_t result_len;
-    int result_ok;
-    int result_length_bad;
-    uint32_t result_start;
-    uint32_t result_end;
-    uint32_t result_length_start;
-    uint32_t result_length_end;
-    uint32_t result_site;
-    uint16_t result_mod;
-    int result_reported;
-    uint32_t tup0;
-    uint16_t tup_n;
-    uint32_t body;
-    uint32_t edge0;
-    uint32_t nedges;
-    int has_blocks;
-    uint8_t nsizes;
-    int sizes_ok;
-    uint32_t sz_name0[MAX_SIZES];
-    uint32_t sz_name1[MAX_SIZES];
-    uint32_t sz_span0[MAX_SIZES];
-    uint32_t sz_span1[MAX_SIZES];
-    uint32_t sz_a0[MAX_SIZES];
-    uint32_t sz_a1[MAX_SIZES];
-    uint32_t sz_b0[MAX_SIZES];
-    uint32_t sz_b1[MAX_SIZES];
-    int64_t sz_lo[MAX_SIZES];
-    int64_t sz_hi[MAX_SIZES];
-    uint32_t inst0;
-    uint16_t ninst;
-} Func;
-
-/* One concrete signature of a function. A function without sizes has one. */
-typedef struct Instance {
-    uint32_t func;
-    int64_t sz[MAX_SIZES];
-    TypeKind result;
-    uint32_t result_len;
-    uint16_t result_mod;
-    int result_ok;
-    uint32_t tup0;
-    uint16_t tup_n;
-    uint32_t param0;
-    int signature_ok;
-} Instance;
-
-typedef struct InstParam {
-    TypeKind type;
-    uint32_t length;
-    uint16_t mod_index;
-    int type_ok;
-    uint32_t tup0;
-    uint16_t tup_n;
-} InstParam;
-
-typedef struct Diag {
-    const char *code;
-    char message[384];
-    char label[192];
-    char note[320];
-    char note2[320];
-    char sec_label[192];
-    uint32_t start;
-    uint32_t end;
-    uint32_t sec_start;
-    uint32_t sec_end;
-    uint8_t has_sec;
-    uint8_t has_note2;
-} Diag;
-
-typedef struct Value {
-    TypeKind type;
-    uint32_t length;
-    /* Owned element block when length > 0. A copy duplicates the block;
-       value_clear releases it. Scalar values leave this null. */
-    struct Value *elems;
-    uint64_t word;
-    Big big;
-    uint16_t mod_index;
-    uint8_t is_tuple;
-} Value;
-
-/* Bindings of the step or branch currently being checked or evaluated. */
-typedef struct BlockFrame {
-    uint32_t bind0;
-    uint16_t nbinds;
-    uint16_t visible;
-    Value *slots;
-} BlockFrame;
-
-typedef struct FinishedBlock {
-    uint32_t bind0;
-    uint16_t nbinds;
-} FinishedBlock;
-
-typedef struct Program Program;
-
-/* One resolved element of a tuple type. A shape is a contiguous slice. */
-typedef struct TupleElem {
-    TypeKind kind;
-    uint32_t length;
-    uint16_t mod_index;
-    int ok;
-} TupleElem;
-
-typedef struct UseDecl {
-    uint32_t span_start;
-    uint32_t span_end;
-    uint32_t name_start;
-    uint32_t name_end;
-} UseDecl;
-
-typedef struct Compiler {
-    char *text;
-    size_t length;
-    const char *filename;
-    Token *tokens;
-    size_t ntokens;
-    size_t token_cap;
-    size_t at;
-    Expr *exprs;
-    uint32_t nexprs;
-    size_t expr_cap;
-    uint32_t *args;
-    uint32_t nargs;
-    size_t arg_cap;
-    Func *funcs;
-    uint32_t nfuncs;
-    size_t func_cap;
-    Param *params;
-    uint32_t nparams;
-    size_t param_cap;
-    Local *locals;
-    uint32_t nlocals;
-    size_t local_cap;
-    /* Bindings of loop steps and conditional branches. Separate from body
-       locals so a binding value that itself contains a block cannot reuse
-       the body slot still being parsed. */
-    Local *block_locals;
-    uint32_t nblock_locals;
-    size_t block_local_cap;
-    Edge *edges;
-    uint32_t nedges;
-    size_t edge_cap;
-    Diag diags[MAX_ORDINARY_DIAGS + 4];
-    uint32_t ndiags;
-    uint32_t lex_diags;
-    uint32_t parse_diags;
-    uint32_t sema_diags;
-    int lex_limited;
-    int parse_limited;
-    int sema_limited;
-    int resource;
-    int nesting;
-    uint32_t module_start;
-    uint32_t module_end;
-    Arena arena;
-    LoopDesc *loops;
-    uint32_t nloops;
-    size_t loop_cap;
-    OpenLoop open_loops[MAX_OPEN_LOOPS];
-    int nopen;
-    uint32_t active_loops[MAX_OPEN_LOOPS];
-    int nactive;
-    BlockFrame frames[MAX_OPEN_LOOPS];
-    int nframes;
-    FinishedBlock *finished;
-    uint32_t nfinished;
-    size_t finished_cap;
-    Func *parsing_func;
-    uint32_t *loop_k;
-    Value *loop_acc;
-    CondArm *cond_arms;
-    uint32_t ncond_arms;
-    size_t cond_arm_cap;
-    uint64_t steps;
-    int failed;
-    Program *program;
-    uint16_t self_index;
-    UseDecl uses[MAX_USES];
-    uint16_t nuses;
-    /* Stem this file was loaded as. Null on the root. Owned by the compiler. */
-    char *requested;
-    int own_text;
-    int own_filename;
-    TypeDecl *types;
-    uint32_t ntypes;
-    size_t type_cap;
-    TypeSite *sites;
-    uint32_t nsites;
-    size_t site_cap;
-    Big *moduli;
-    uint16_t nmoduli;
-    uint16_t leaf_mod;
-    /* Modulus required by the expression currently being checked. */
-    uint16_t expect_mod;
-    TupleElem *telems;
-    uint32_t ntelems;
-    size_t telem_cap;
-    /* Tuple shape required where a tuple is being checked. Indices into `telems`. */
-    uint32_t expect_tup0;
-    uint16_t expect_tup_n;
-    /* Shape of the typed leaf most recently found. Owned by `leaf_owner`. */
-    uint32_t leaf_tup0;
-    uint16_t leaf_tup_n;
-    const struct Compiler *leaf_owner;
-    Instance *instances;
-    uint32_t ninstances;
-    size_t instance_cap;
-    InstParam *iparams;
-    uint32_t niparams;
-    size_t iparam_cap;
-    /* Sizes of the instance being checked or evaluated. */
-    int64_t cur_sz[MAX_SIZES];
-    uint8_t ncur;
-    uint32_t cur_func;
-    uint32_t cur_inst;
-} Compiler;
-
-struct Program {
-    Compiler *mods[MAX_PROGRAM_SLOTS];
-    int nmods;
-    uint16_t order[MAX_MODULES];
-    int norder;
-    /* Program index named by each use, or UINT16_MAX when unresolved.
-       Index 0 is the root, so an unresolved use must not default to 0. */
-    uint16_t use_target[MAX_PROGRAM_SLOTS][MAX_USES];
-    int graph_error;
-};
-
-static TokenKind peek_kind(const Compiler *c) {
+TokenKind peek_kind(const Compiler *c) {
     return c->tokens[c->at].kind;
 }
 
-static Token peek_token(const Compiler *c) {
+Token peek_token(const Compiler *c) {
     return c->tokens[c->at];
 }
 
-static void advance_token(Compiler *c) {
+void advance_token(Compiler *c) {
     if (c->tokens[c->at].kind != TK_EOF) {
         c->at++;
     }
 }
 
-static int same_span(const Compiler *c, uint32_t a0, uint32_t a1, uint32_t b0, uint32_t b1) {
+int same_span(const Compiler *c, uint32_t a0, uint32_t a1, uint32_t b0, uint32_t b1) {
     size_t length = (size_t)(a1 - a0);
     if ((size_t)(b1 - b0) != length) {
         return 0;
@@ -691,12 +88,12 @@ static int same_span(const Compiler *c, uint32_t a0, uint32_t a1, uint32_t b0, u
     return memcmp(c->text + a0, c->text + b0, length) == 0;
 }
 
-static int span_is(const Compiler *c, uint32_t start, uint32_t end, const char *word) {
+int span_is(const Compiler *c, uint32_t start, uint32_t end, const char *word) {
     size_t length = strlen(word);
     return (size_t)(end - start) == length && memcmp(c->text + start, word, length) == 0;
 }
 
-static void found_token_label(TokenKind kind, char *buf, size_t cap) {
+void found_token_label(TokenKind kind, char *buf, size_t cap) {
     const char *name = "EOF";
     if ((unsigned)kind < sizeof TOKEN_NAMES / sizeof TOKEN_NAMES[0]) {
         name = TOKEN_NAMES[kind];
@@ -704,7 +101,7 @@ static void found_token_label(TokenKind kind, char *buf, size_t cap) {
     snprintf(buf, cap, "found %s", name);
 }
 
-static void span_copy(char *dest, size_t cap, const char *text, uint32_t start, uint32_t end) {
+void span_copy(char *dest, size_t cap, const char *text, uint32_t start, uint32_t end) {
     size_t length = end >= start ? (size_t)(end - start) : 0;
     if (length >= cap) {
         length = cap - 1;
@@ -715,7 +112,7 @@ static void span_copy(char *dest, size_t cap, const char *text, uint32_t start, 
     dest[length] = '\0';
 }
 
-static void copy_text(char *dest, size_t cap, const char *src) {
+void copy_text(char *dest, size_t cap, const char *src) {
     size_t length = strlen(src);
     if (length >= cap) {
         length = cap - 1;
@@ -724,7 +121,7 @@ static void copy_text(char *dest, size_t cap, const char *src) {
     dest[length] = '\0';
 }
 
-static void add_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message,
+void add_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message,
                      const char *label, const char *note, int phase) {
     uint32_t *count = phase == 0 ? &c->lex_diags : phase == 1 ? &c->parse_diags : &c->sema_diags;
     int *limited = phase == 0 ? &c->lex_limited : phase == 1 ? &c->parse_limited : &c->sema_limited;
@@ -758,7 +155,7 @@ static void add_diag(Compiler *c, const char *code, uint32_t start, uint32_t end
     copy_text(diag->note, sizeof diag->note, note == NULL ? "" : note);
 }
 
-static void diag_add_secondary(Compiler *c, uint32_t start, uint32_t end, const char *label) {
+void diag_add_secondary(Compiler *c, uint32_t start, uint32_t end, const char *label) {
     Diag *diag;
     if (c->ndiags == 0) {
         return;
@@ -773,7 +170,7 @@ static void diag_add_secondary(Compiler *c, uint32_t start, uint32_t end, const 
     copy_text(diag->sec_label, sizeof diag->sec_label, label == NULL ? "" : label);
 }
 
-static void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message) {
+void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message) {
     if (c->resource) {
         return;
     }
@@ -782,7 +179,7 @@ static void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_
              "the source was not accepted", 1);
 }
 
-static int ensure_cap(void **ptr, size_t *cap, size_t need, size_t elem, size_t max) {
+int ensure_cap(void **ptr, size_t *cap, size_t need, size_t elem, size_t max) {
     size_t next;
     void *grown;
     if (need > max) {
@@ -808,7 +205,7 @@ static int ensure_cap(void **ptr, size_t *cap, size_t need, size_t elem, size_t 
     return 1;
 }
 
-static int new_expr(Compiler *c, uint32_t *out) {
+int new_expr(Compiler *c, uint32_t *out) {
     Expr *expr;
     if (c->nexprs >= MAX_EXPRS) {
         resource_diag(c, "ORC0106", 0, 0, "source exceeds the syntax-node limit");
@@ -1463,7 +860,7 @@ static void skip_function_body(Compiler *c, int inside_body) {
 static int parse_prefixed(Compiler *c, uint32_t *out);
 static int parse_expr(Compiler *c, uint32_t *out);
 
-static int canonical_array_length(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
+int canonical_array_length(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
     uint64_t acc = 0;
     uint32_t index;
     if (end <= start || text[start] == '0') {
@@ -1532,33 +929,9 @@ static int parse_size_atom(Compiler *c, const char *what, const char *note, uint
     return 0;
 }
 
-/* Brackets hold only tokens a size list can hold, and `(` follows `]`. */
+/* Brackets hold a size or type list, and `(` follows `]`. */
 static int starts_sized_call(const Compiler *c) {
-    size_t pos;
-    int depth = 0;
-    if (c->at >= c->ntokens || c->tokens[c->at].kind != TK_LBRACKET) {
-        return 0;
-    }
-    pos = c->at + 1;
-    for (;;) {
-        TokenKind kind;
-        if (pos >= c->ntokens) {
-            return 0;
-        }
-        kind = c->tokens[pos].kind;
-        if (kind == TK_INT || kind == TK_IDENT || kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR ||
-            kind == TK_SLASH || kind == TK_PERCENT || kind == TK_COMMA) {
-        } else if (kind == TK_LPAREN) {
-            depth++;
-        } else if (kind == TK_RPAREN && depth > 0) {
-            depth--;
-        } else if (kind == TK_RBRACKET && depth == 0) {
-            return pos + 1 < c->ntokens && c->tokens[pos + 1].kind == TK_LPAREN;
-        } else {
-            return 0;
-        }
-        pos++;
-    }
+    return tp_starts_call(c);
 }
 
 static int parse_call_sizes(Compiler *c, uint32_t *size0, uint8_t *nsize, int *child_height) {
@@ -1766,7 +1139,7 @@ static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int
     return 1;
 }
 
-static int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out);
+int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out);
 
 static const char TUPLE_TYPE_NOTE[] =
     "a tuple type is written `(T, U)` with two through 16 element types, each `Int`, `Bool`, a word, a residue, or an array of one";
@@ -1873,7 +1246,7 @@ static int parse_tuple_type(Compiler *c, DeclaredType *type) {
     return 1;
 }
 
-static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
+int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
     if (peek_kind(c) == TK_LPAREN) {
         if (!parse_tuple_type(c, type)) {
             return 0;
@@ -1904,7 +1277,7 @@ static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length,
     *length_end = type->length_end;
 }
 
-static int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out) {
+int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out) {
     TypeSite *site;
     if (c->nsites >= MAX_TYPE_SITES) {
         resource_diag(c, "ORC0106", type->start, type->end, "source exceeds the type-site limit");
@@ -1916,6 +1289,7 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     }
     site = &c->sites[c->nsites];
     memset(site, 0, sizeof *site);
+    site->param_slot = 0xFF;
     site->kind = type->kind;
     site->length = type->length;
     site->ok = type->ok;
@@ -1948,7 +1322,7 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     return 1;
 }
 
-static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
+void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
     if (ok) {
         return;
     }
@@ -4366,83 +3740,7 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
 }
 
 static int parse_size_params(Compiler *c, Func *func) {
-    advance_token(c);
-    if (peek_kind(c) == TK_RBRACKET) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a size parameter", "expected a name",
-                 SIZE_PARAMETER_NOTE, 1);
-        return 0;
-    }
-    for (;;) {
-        Token name;
-        Token first;
-        Token second;
-        if (peek_kind(c) != TK_IDENT) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected a size parameter",
-                     "expected a name", SIZE_PARAMETER_NOTE, 1);
-            return 0;
-        }
-        name = peek_token(c);
-        advance_token(c);
-        if (!span_is(c, peek_token(c).start, peek_token(c).end, "in")) {
-            {
-                char label[64];
-                found_token_label(peek_kind(c), label, sizeof label);
-                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `in` after the size's name",
-                         label, SIZE_PARAMETER_NOTE, 1);
-            }
-            return 0;
-        }
-        advance_token(c);
-        if (peek_kind(c) != TK_INT) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's first bound",
-                     "expected an integer bound", SIZE_PARAMETER_NOTE, 1);
-            return 0;
-        }
-        first = peek_token(c);
-        advance_token(c);
-        if (peek_kind(c) != TK_DOTDOT) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `..` between the size's bounds",
-                     "expected `..`", SIZE_PARAMETER_NOTE, 1);
-            return 0;
-        }
-        advance_token(c);
-        if (peek_kind(c) != TK_INT) {
-            {
-                char label[64];
-                found_token_label(peek_kind(c), label, sizeof label);
-                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected the size's second bound", label,
-                         SIZE_PARAMETER_NOTE, 1);
-            }
-            return 0;
-        }
-        second = peek_token(c);
-        advance_token(c);
-        if (func->nsizes >= MAX_SIZES) {
-            add_diag(c, "ORC0101", name.start, second.end, "a function has at most 4 size parameters",
-                     "one size parameter too many", SIZE_PARAMETER_NOTE, 1);
-            return 0;
-        }
-        func->sz_name0[func->nsizes] = name.start;
-        func->sz_name1[func->nsizes] = name.end;
-        func->sz_span0[func->nsizes] = name.start;
-        func->sz_span1[func->nsizes] = second.end;
-        func->sz_a0[func->nsizes] = first.start;
-        func->sz_a1[func->nsizes] = first.end;
-        func->sz_b0[func->nsizes] = second.start;
-        func->sz_b1[func->nsizes] = second.end;
-        func->nsizes++;
-        if (peek_kind(c) == TK_COMMA) {
-            advance_token(c);
-            continue;
-        }
-        if (peek_kind(c) == TK_RBRACKET) {
-            advance_token(c);
-            return 1;
-        }
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `,` or `]` after the size parameter",
-                 "expected `,` or `]`", SIZE_PARAMETER_NOTE, 1);
-        return 0;
-    }
+    return tp_parse_params(c, func);
 }
 
 static int parse_function(Compiler *c) {
@@ -4475,8 +3773,17 @@ static int parse_function(Compiler *c) {
     advance_token(c);
     if (peek_kind(c) == TK_LBRACKET) {
         if (is_impl) {
-            add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "`impl` functions have no size parameters",
-                     "expected `(`", SIZE_PARAMETER_NOTE, 1);
+            if (tp_brackets_open_type(c)) {
+                uint32_t span_start = 0;
+                uint32_t span_end = 0;
+                tp_impl_span(c, &span_start, &span_end);
+                add_diag(c, "ORC0101", span_start, span_end, "`impl` functions have no type parameters",
+                         "type parameters are allowed only on typed `spec` functions",
+                         "keep the legacy `impl name() {}` form until implementation semantics are defined", 1);
+            } else {
+                add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end,
+                         "`impl` functions have no size parameters", "expected `(`", SIZE_PARAMETER_NOTE, 1);
+            }
             skip_function_body(c, 0);
             c->nfuncs++;
             return 1;
@@ -5066,7 +4373,7 @@ static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t exp
                     uint32_t func_index, uint32_t locals_in_scope);
 static int check_as_tuple(Compiler *c, uint32_t index, uint32_t tup0, uint16_t tup_n, uint32_t func_index,
                           uint32_t locals_in_scope);
-static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent);
 
 static int decode_literal(Compiler *c, const Expr *expr, Big *out) {
@@ -5075,7 +4382,7 @@ static int decode_literal(Compiler *c, const Expr *expr, Big *out) {
 }
 
 static uint64_t word_maximum(TypeKind type);
-static void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
+void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
                        uint32_t tup0, uint16_t tup_n);
 
 static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint16_t expected_mod) {
@@ -5249,6 +4556,9 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             Expr *mutable_expr = &c->exprs[index];
             if (!lookup_call(c, mutable_expr, callee.mod, callee.func, 0, func_index, locals_in_scope, &id) ||
                 id >= callee.mod->ninstances) {
+                if (c->fit_report && tp_func_has_types(&callee.mod->funcs[callee.func])) {
+                    (void)lookup_call(c, mutable_expr, callee.mod, callee.func, 1, func_index, locals_in_scope, &id);
+                }
                 *silent = 1;
                 return -1;
             }
@@ -5374,7 +4684,7 @@ static int leaf_names_bindings(const Compiler *c, uint32_t leaf, uint32_t bind0,
     return 0;
 }
 
-static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent);
 
 enum { BYTES_OK = 0, BYTES_UNPRINTABLE = 1, BYTES_EMPTY = 2, BYTES_LONG = 3, BYTES_BAD = 4 };
@@ -5759,13 +5069,6 @@ static const char SIZE_NOTE[] =
 static const char SIZE_RANGE_NOTE[] =
     "a size parameter `n in a..b` takes each value from a up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances";
 
-typedef struct Sz {
-    int kind; /* 0 value, 1 not static, 2 too large */
-    int64_t value;
-    uint32_t start;
-    uint32_t end;
-} Sz;
-
 static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, uint32_t end, uint8_t *slot) {
     const Func *func;
     uint8_t index;
@@ -5774,6 +5077,9 @@ static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, 
     }
     func = &c->funcs[func_index];
     for (index = 0; index < func->nsizes; index++) {
+        if (func->sz_kind[index]) {
+            continue;
+        }
         if (same_span(c, func->sz_name0[index], func->sz_name1[index], start, end)) {
             if (slot != NULL) {
                 *slot = index;
@@ -5873,7 +5179,7 @@ static Sz sz_fault(int kind, uint32_t start, uint32_t end) {
     return out;
 }
 
-static Sz eval_size(Compiler *c, uint32_t index) {
+Sz eval_size(Compiler *c, uint32_t index) {
     const Expr *expr;
     if (index == UINT32_MAX || index >= c->nexprs) {
         return sz_fault(1, 0, 0);
@@ -5954,7 +5260,7 @@ static Sz eval_size(Compiler *c, uint32_t index) {
     return sz_fault(1, expr->start, expr->end);
 }
 
-static void report_size_fault(Compiler *c, Sz fault) {
+void report_size_fault(Compiler *c, Sz fault) {
     if (fault.kind == 2) {
         add_diag(c, "ORC0205", fault.start, fault.end, "integer magnitude exceeds the 16384-significant-bit limit",
                  "this part of the size is too large", "the value is rejected rather than truncated or approximated", 2);
@@ -5964,7 +5270,7 @@ static void report_size_fault(Compiler *c, Sz fault) {
              "this is neither", SIZE_NOTE, 2);
 }
 
-static int size_length(Compiler *c, uint32_t index, int report, uint32_t *length) {
+int size_length(Compiler *c, uint32_t index, int report, uint32_t *length) {
     Sz value = eval_size(c, index);
     if (value.kind != 0) {
         if (report) {
@@ -6133,10 +5439,10 @@ static int proved_slice_length(Compiler *c, uint32_t start_expr, uint32_t end_ex
     return 1;
 }
 
-static void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, int *have_len,
+void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, int *have_len,
                         uint32_t *len, int *have_elem, TypeKind *elem);
 
-static void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, int *have_len,
+void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, int *have_len,
                         uint32_t *len, int *have_elem, TypeKind *elem) {
     const Expr *expr = &c->exprs[index];
     *have_len = 0;
@@ -6256,7 +5562,7 @@ static void array_parts(Compiler *c, uint32_t index, uint32_t func_index, uint32
 static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
                       uint32_t locals, uint32_t *inst_id);
 
-static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, uint32_t *leaf, int *silent) {
     const Expr *expr = &c->exprs[index];
     int left_state;
@@ -6386,6 +5692,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             Expr *mutable_expr = &c->exprs[index];
             if (!lookup_call(c, mutable_expr, callee.mod, callee.func, 0, func_index, locals_in_scope, &id) ||
                 id >= callee.mod->ninstances) {
+                if (c->fit_report && tp_func_has_types(&callee.mod->funcs[callee.func])) {
+                    (void)lookup_call(c, mutable_expr, callee.mod, callee.func, 1, func_index, locals_in_scope, &id);
+                }
                 *silent = 1;
                 return -1;
             }
@@ -6627,15 +5936,21 @@ static void report_unknown_name(Compiler *c, const Expr *expr, uint32_t func_ind
                                ? "a bare name in a `spec` body refers to one of its parameters or bindings"
                                : "a bare name in a `spec` body refers to one of its parameters";
         char call_note[192];
+        char type_note[320];
         uint32_t cursor;
-        for (cursor = 0; cursor < c->nfuncs; cursor++) {
-            const Func *other = &c->funcs[cursor];
-            if (!other->is_impl &&
-                same_span(c, other->name_start, other->name_end, expr->name_start, expr->name_end)) {
-                snprintf(call_note, sizeof call_note, "to call the function `%s`, write `%s()` with its arguments",
-                         ident, ident);
-                note = call_note;
-                break;
+        if (tp_names_type_param(c, func_index, expr->name_start, expr->name_end)) {
+            tp_type_param_note(c, expr->name_start, expr->name_end, type_note, sizeof type_note);
+            note = type_note;
+        } else {
+            for (cursor = 0; cursor < c->nfuncs; cursor++) {
+                const Func *other = &c->funcs[cursor];
+                if (!other->is_impl &&
+                    same_span(c, other->name_start, other->name_end, expr->name_start, expr->name_end)) {
+                    snprintf(call_note, sizeof call_note, "to call the function `%s`, write `%s()` with its arguments",
+                             ident, ident);
+                    note = call_note;
+                    break;
+                }
             }
         }
         add_diag(c, "ORC0211", expr->start, expr->end, message, "unknown name", note, 2);
@@ -6818,7 +6133,7 @@ static const char LOOP_RANGE_NOTE[] =
 static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index);
 static int format_tuple_type(Compiler *c, char *buffer, size_t cap, uint32_t tup0, uint16_t tup_n);
 
-static void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
+void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod,
                        uint32_t tup0, uint16_t tup_n) {
     int ok;
     Compiler *writable = (Compiler *)owner;
@@ -7772,7 +7087,7 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
                           value == UINT32_MAX ? 0 : c->exprs[value].end);
 }
 
-static int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
+int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
                      uint32_t right0, uint16_t right_n);
 static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, uint16_t tup_n, uint32_t *out0);
 
@@ -7967,7 +7282,7 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     }
 }
 
-static int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
+int same_tuple(const Compiler *left_owner, uint32_t left0, uint16_t left_n, const Compiler *right_owner,
                      uint32_t right0, uint16_t right_n) {
     uint16_t index;
     if (left_n != right_n || left_owner == NULL || right_owner == NULL) {
@@ -8667,7 +7982,7 @@ static int check_slice_update(Compiler *c, uint32_t index, TypeKind expected, ui
     return check_expr(c, expr->callee, expected, slice_len, func_index, locals_in_scope);
 }
 
-static void copy_func_name(const Compiler *c, const Func *func, char *name, size_t cap) {
+void copy_func_name(const Compiler *c, const Func *func, char *name, size_t cap) {
     span_copy(name, cap, c->text, func->name_start, func->name_end);
 }
 
@@ -8676,6 +7991,9 @@ static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t calle
     Func *func = &target->funcs[callee];
     char name[64];
     uint8_t index;
+    if (tp_func_has_types(func)) {
+        return tp_lookup_call(c, expr, target, callee, report, caller_func, locals, inst_id);
+    }
     copy_func_name(target, func, name, sizeof name);
     /* A call that writes no sizes selects the instance whose array
        parameters match the argument lengths. A nonzero count that does
@@ -9222,6 +8540,17 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     if (expected == TY_MOD) {
         expr->ty_mod = c->expect_mod;
     }
+    if (expected != TY_NONE) {
+        c->fit_set = 1;
+        c->fit_kind = expected;
+        c->fit_len = expected_len;
+        c->fit_mod = c->expect_mod;
+        c->fit_tup0 = c->expect_tup0;
+        c->fit_tup_n = c->expect_tup_n;
+    } else {
+        c->fit_set = 0;
+    }
+    tp_note_expr(c, expr);
     switch (expr->kind) {
     case EX_GROUP:
         return check_expr(c, expr->left, expected, expected_len, func_index, locals_in_scope);
@@ -9921,7 +9250,10 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             add_expected(c, expr->name_start, expr->name_end, message, expected_text,
                          "`as` gives exactly the type written after it");
         }
+        c->fit_set = 0;
+        c->fit_report = 1;
         state = find_leaf(c, expr->left, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+        c->fit_report = 0;
         if (state == 2 || (state > 0 && (leaf_len != 0 || leaf_type == TY_TUPLE))) {
             char message[384];
             char found[96];

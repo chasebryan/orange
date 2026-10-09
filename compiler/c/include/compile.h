@@ -148,7 +148,7 @@ static int admit_modulus(Compiler *c, uint32_t start, uint32_t end, const Big *v
 
 static void walk_moduli(Compiler *c, uint32_t index);
 
-static void bind_modulus(Compiler *c, TypeSite *site) {
+void bind_modulus(Compiler *c, TypeSite *site) {
     Big value = big_zero();
     int ok = 0;
     if (site == NULL || !site->has_mod || site->modulus_done || c->resource) {
@@ -266,7 +266,7 @@ static void walk_moduli(Compiler *c, uint32_t index) {
     }
 }
 
-static int builtin_type_name(const Compiler *c, uint32_t start, uint32_t end) {
+int builtin_type_name(const Compiler *c, uint32_t start, uint32_t end) {
     return span_is(c, start, end, "Int") || span_is(c, start, end, "Bool") || span_is(c, start, end, "Word") ||
            span_is(c, start, end, "Mod");
 }
@@ -290,7 +290,7 @@ static int find_installed_type(const Compiler *c, uint32_t start, uint32_t end, 
     return 0;
 }
 
-static void copy_ident(char *dest, size_t cap, const Compiler *c, uint32_t start, uint32_t end) {
+void copy_ident(char *dest, size_t cap, const Compiler *c, uint32_t start, uint32_t end) {
     span_copy(dest, cap, c->text, start, end);
 }
 
@@ -335,11 +335,14 @@ static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, 
     return 1;
 }
 
-static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
+void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
     uint32_t found = 0;
     TypeSite *target;
     char name[64];
     if (site->resolved || c->resource) {
+        return;
+    }
+    if (site->role != NULL && strcmp(site->role, "listed type") == 0 && !c->admit_listed) {
         return;
     }
     site->resolved = 1;
@@ -428,6 +431,9 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
                      "types are resolved contextually and never inferred by spelling similarity", 2);
             site->reported = 1;
         }
+        return;
+    }
+    if (tp_bind_use(c, site)) {
         return;
     }
     if (!find_installed_type(c, site->ident_start, site->ident_end, from_decl ? earlier_limit : c->ntypes, &found)) {
@@ -722,6 +728,9 @@ static int site_uses_size(const Compiler *c, uint32_t site_index) {
         return 0;
     }
     site = &c->sites[site_index];
+    if (site->param_slot != 0xFF) {
+        return 1;
+    }
     if (site->has_size_expr) {
         return 1;
     }
@@ -751,6 +760,20 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
     out->length = site->rank <= 0 ? 0u : site->length;
     out->tup0 = site->tup0;
     out->tup_n = site->tup_n;
+    if (site->param_slot != 0xFF) {
+        tp_materialize(c, site, report);
+        out->kind = site->kind == TY_TUPLE || site->is_tuple ? TY_TUPLE : site->kind;
+        out->ok = site->ok;
+        out->mod_index = site->mod_index;
+        out->reported = site->reported;
+        out->length = site->rank <= 0 ? 0u : site->length;
+        out->tup0 = site->tup0;
+        out->tup_n = site->tup_n;
+        if (out->kind == TY_TUPLE) {
+            out->length = 0;
+        }
+        return 1;
+    }
     if (site->kind == TY_TUPLE || site->is_tuple) {
         int all_ok = site->ok;
         int rebuild = site_uses_size(c, site_index);
@@ -819,7 +842,7 @@ static int push_iparam(Compiler *c, const InstParam *param) {
     return 1;
 }
 
-static int decode_size_bound(Compiler *c, uint32_t start, uint32_t end, int64_t *out, int *too_big) {
+int decode_size_bound(Compiler *c, uint32_t start, uint32_t end, int64_t *out, int *too_big) {
     Big magnitude = big_zero();
     *too_big = 0;
     *out = 0;
@@ -856,6 +879,10 @@ static void admit_sizes(Compiler *c, Func *func) {
     uint8_t slot;
     uint64_t instances = 1;
     int valid = 1;
+    if (tp_func_has_types(func)) {
+        tp_admit(c, func);
+        return;
+    }
     if (func->nsizes == 0) {
         func->sizes_ok = 1;
         return;
@@ -1069,6 +1096,7 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         loop->tup0 = applied.tup0;
         loop->tup_n = applied.tup_n;
     }
+    tp_refresh_convs(c, func_index);
     return 1;
 }
 
@@ -1130,6 +1158,10 @@ static void instance_label(const Compiler *c, uint32_t inst, char *buf, size_t c
     }
     instance = &c->instances[inst];
     func = &c->funcs[instance->func];
+    if (tp_func_has_types(func)) {
+        tp_format_label(c, inst, buf, cap);
+        return;
+    }
     used = func->name_end - func->name_start;
     if (used >= cap) {
         used = cap - 1;
@@ -1158,6 +1190,10 @@ static void name_sized_diags(Compiler *c, const Func *func, uint32_t inst, uint3
     char name[64];
     char note[320];
     uint32_t index;
+    if (tp_func_has_types(func)) {
+        tp_name_diags(c, func, inst, from);
+        return;
+    }
     if (func->nsizes == 0) {
         return;
     }
@@ -1735,6 +1771,13 @@ static int eval_function(Compiler *c, uint32_t func_index, Value *arguments, int
     Value *locals;
     uint16_t index;
     int ok;
+    if (tp_func_has_types(func)) {
+        if (!live_apply(c, func_index)) {
+            c->failed = 1;
+            return 0;
+        }
+        tp_apply_stamps(c);
+    }
     if (!ensure_loops(c)) {
         c->failed = 1;
         return 0;
@@ -2366,13 +2409,23 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (can_lookup && callee_index < lookup_target->nfuncs &&
                 lookup_target->funcs[callee_index].ninst > 0) {
-                uint32_t fresh = UINT32_MAX;
-                if (!lookup_call(c, &c->exprs[index], lookup_target, callee_index, 0, c->cur_func,
-                                 c->funcs[c->cur_func].nlocals, &fresh)) {
-                    c->failed = 1;
-                    return 0;
+                int callee_types = tp_func_has_types(&lookup_target->funcs[callee_index]);
+                int caller_types = c->cur_func < c->nfuncs && tp_func_has_types(&c->funcs[c->cur_func]);
+                if (!(callee_types && !caller_types)) {
+                    int saved_fit = c->fit_set;
+                    uint32_t fresh = UINT32_MAX;
+                    if (callee_types) {
+                        c->fit_set = 0;
+                    }
+                    if (!lookup_call(c, &c->exprs[index], lookup_target, callee_index, 0, c->cur_func,
+                                     c->funcs[c->cur_func].nlocals, &fresh)) {
+                        c->fit_set = saved_fit;
+                        c->failed = 1;
+                        return 0;
+                    }
+                    c->fit_set = saved_fit;
+                    resolved = fresh;
                 }
-                resolved = fresh;
             }
         }
         count = expr->argc == 0 ? 1u : expr->argc;
@@ -4104,11 +4157,15 @@ static int evaluate_source(Compiler *c, FILE *out) {
                 func->result_mod = inst->result_mod;
                 func->tup0 = inst->tup0;
                 func->tup_n = inst->tup_n;
-                for (slot = 0; slot < func->nsizes; slot++) {
-                    int wrote = snprintf(sizes_text + used, sizeof sizes_text - used, slot == 0 ? "%lld" : ", %lld",
-                                         (long long)inst->sz[slot]);
-                    if (wrote > 0 && (size_t)wrote < sizeof sizes_text - used) {
-                        used += (size_t)wrote;
+                if (tp_func_has_types(func)) {
+                    tp_write_values(c, func, inst, sizes_text, sizeof sizes_text);
+                } else {
+                    for (slot = 0; slot < func->nsizes; slot++) {
+                        int wrote = snprintf(sizes_text + used, sizeof sizes_text - used, slot == 0 ? "%lld" : ", %lld",
+                                             (long long)inst->sz[slot]);
+                        if (wrote > 0 && (size_t)wrote < sizeof sizes_text - used) {
+                            used += (size_t)wrote;
+                        }
                     }
                 }
                 memset(&result, 0, sizeof result);
@@ -4178,6 +4235,10 @@ static int evaluate_source(Compiler *c, FILE *out) {
             continue;
         }
         memset(&result, 0, sizeof result);
+        c->cur_func = index;
+        c->cur_inst = UINT32_MAX;
+        c->ncur = 0;
+        memset(c->cur_sz, 0, sizeof c->cur_sz);
         if (!eval_function(c, index, NULL, 1, &result)) {
             value_clear(&result);
             break;
@@ -4908,7 +4969,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3n\n", stdout);
+            fputs("orangec (standalone C) slice S3o\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
