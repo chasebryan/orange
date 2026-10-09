@@ -363,9 +363,12 @@ strings hold up to 65,536 elements and lets `orangec eval` run under a larger
 step budget, evaluate only the functions it names, and report the steps each
 used, the S3q slice, also in review, adds known-answer tests and equality of
 whole arrays and tuples, so that a module states what its functions must give
-and `orangec test` checks it, and the S3r slice, also in review, lets the
+and `orangec test` checks it, the S3r slice, also in review, lets the
 amount of a shift or rotation be computed from data, with the value the
-arithmetic gives at every amount.
+arithmetic gives at every amount, the S3s slice, also in review, adds arrays
+of scalar rows, the S3t slice, also in review, lets each finite size instance
+compute its own exact modulus, and the S3u slice, also in review, carries
+arrays to four dimensions and lets an update name one index per dimension.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -855,27 +858,30 @@ without a conflict while two `spec rounds` declarations are an error. The words
 `game`, `proof`, and `claim` are reserved and introduce nothing. Only typed
 specifications have meaning: pure `spec` functions over `Int`, `Bool`,
 `Word[8]` through `Word[64]`, the integers modulo a constant, fixed-length
-arrays of them, and tuples of those, built from
+arrays of those scalars through four dimensions, and tuples of scalars or
+arrays, built from
 literals, parameters, calls, operators, comparisons, `let` bindings, at the
 start of a body, a loop's step, or a branch, tuple patterns, explicit
 conversions, array literals, byte strings, tuples, indices, including indices
-keyed by data, selections by position, joins, slices, bounded loops, updates,
-and conditionals. A `spec` may declare sizes, each ranging over a finite
+keyed by data and one index per axis, selections by position, joins, slices,
+bounded loops, updates, including a path of one index per dimension, and
+conditionals. A `spec` may declare sizes, each ranging over a finite
 set of integers, and then stands for one function for each of their values,
-with its array lengths and loop bounds written from them. An `impl` body must
+with its array lengths, loop bounds, and own modulus expressions written from
+them. An `impl` body must
 still be empty. A
 program may span several modules, one per file: a module names the modules it
 uses at its head and calls their functions by module name, as in
 `sha256::compress(h, block)`, and nothing is imported into its scope. A
-`type` declaration names a type, such as the field of X25519, for the rest of
-its module.
+`type` declaration names a type, such as the field of X25519 or an array of
+rank two, three, or four, for the rest of its module.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, amount, nested-array, static-modulus, and dimension slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1925,7 +1931,10 @@ expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | chain("++") | conversion | update ;
 conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
 order           = "big" | "little" ;
-update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
+update          = prefixed "with" update_target "=" expression ;
+update_target   = "[" expression "]" path_index? path_index? path_index?
+                | "[" range "]" ;
+path_index      = "[" expression "]" ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -1939,7 +1948,8 @@ literal         = "-"? INTEGER ;
 primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
                 | byte_string | tuple | array | fill | loop | conditional ;
 byte_string     = STRING | HEX_STRING ;
-suffix          = "." INTEGER (index | slice)? | index | slice ;
+suffix          = projection index* slice? | index+ slice? | slice ;
+projection      = "." INTEGER ;
 tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 slice           = "[" range "]" ;
@@ -1962,7 +1972,8 @@ item and before a name or a tuple pattern, `as` converts only directly after a c
 only before a name, `in` and `with` are words only inside a loop's header,
 `in` also between a size's or a type parameter's name and its bounds or
 list, and `with` updates only
-directly after a complete operand and before `[`. In the
+directly after a complete operand and before `[`, which begins one through
+four indices or one range. In the
 same way, `if` starts a conditional only where a condition can follow it,
 `else` is a word only after a conditional's value, `use` and `type` start
 declarations only at the head of a module, before its first function, `Mod`
@@ -6722,10 +6733,13 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [byte order specification](ORDER_2026.md), the
 [type parameters specification](TYPE_PARAMETERS_2026.md), the
 [lengths specification](LENGTHS_2026.md), the
-[tests specification](TESTS_2026.md), and the
-[computed amounts specification](AMOUNTS_2026.md) are proposed under
-OEP-0005 through OEP-0021 and in the owner's review. Where this summary and those
-documents differ, they control.
+[tests specification](TESTS_2026.md), the
+[computed amounts specification](AMOUNTS_2026.md), the
+[nested arrays specification](NESTED_ARRAYS_2026.md), the
+[static moduli specification](STATIC_MODULI_2026.md), and the
+[array dimensions specification](DIMENSIONS_2026.md) are proposed under
+OEP-0005 through OEP-0021 and OEP-0023 through OEP-0025 and in the owner's
+review. Where this summary and those documents differ, they control.
 
 ### Grammar
 
@@ -6770,7 +6784,10 @@ expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | chain("++") | conversion | update ;
 conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
 order           = "big" | "little" ;
-update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
+update          = prefixed "with" update_target "=" expression ;
+update_target   = "[" expression "]" path_index? path_index? path_index?
+                | "[" range "]" ;
+path_index      = "[" expression "]" ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -6784,7 +6801,8 @@ literal         = "-"? INTEGER ;
 primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
                 | byte_string | tuple | array | fill | loop | conditional ;
 byte_string     = STRING | HEX_STRING ;
-suffix          = "." INTEGER (index | slice)? | index | slice ;
+suffix          = projection index* slice? | index+ slice? | slice ;
+projection      = "." INTEGER ;
 tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 slice           = "[" range "]" ;
@@ -6810,7 +6828,7 @@ name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
 `with` are words only in a loop's header, `in` also between a size's or a
 type parameter's name and its bounds or list, `with` updates only after a complete
-operand and before `[`, `if` starts a conditional only where a condition can
+operand and before `[`, which begins one through four indices or one range, `if` starts a conditional only where a condition can
 follow it, `else` is a word only after a conditional's value, `use` and `type`
 start declarations only at the head of a module before its first function,
 `Mod` takes a modulus only before `[`, `hex` begins a hex string only directly
@@ -6848,13 +6866,16 @@ included.
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
 | `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
-| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `T^n` | Sequences of exactly n values of a scalar type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `A^n`, where a `type` name or a type parameter specialized to an array names an array of rank 1, 2, or 3 | n elements of that exact array, giving rank 2, 3, or 4; each axis is from 1 through 65,536 and the product of the axes is at most 65,536 scalars | The outer elements in order, each spelled as its type |
 | `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
 No other type, width, or length is accepted; a name declared by `type` stands
-for the type it names. A modulus is a constant built from integer literals
-with `+`, `-`, `*`, `<<`, and parentheses, and two moduli are one type when
-they are equal. Word and residue literals are never wrapped, truncated,
+for the type it names, including an array of rank two, three, or four.
+Repeated `^` in one type remains rejected. A modulus is built from integer
+literals, parentheses, and `+`, `-`, `*`, and `<<`. Inside one sized function
+it may also use that function's own size names; a module-level alias stays a
+constant. Two moduli are one type when their values are equal. Word and residue literals are never wrapped, truncated,
 saturated, or coerced: a literal of `Mod[m]` has a magnitude less than m, and
 `-n` stands for m − n. No value changes type implicitly. `e as T` converts
 between any two scalar types other than `Bool`: it takes the integer value
@@ -6863,14 +6884,18 @@ residue modulo 2^n or m. The operand's type comes from its first
 name, call, conversion, or index, so a conversion of literals alone is an
 error. An array literal lists exactly as many elements as its type, and `x[k]`
 selects the element at position k, which must be proved below the length
-before anything runs. An index is checked as the word type of its first name,
+before anything runs. Further indices, as `m[i][j]`, select the next axis
+the same way, and a slice ends the chain. An index is checked as the word type of its first name,
 call, conversion, or element, and ranges over that type, narrowed by its
 operators; otherwise it is an `Int` built from integer literals, loop indices,
 and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
-conditionals. An update, a fill, a join, a slice, or a slice update costs one
+conditionals. An update of one index, a fill, a join, a slice, or a slice update costs one
 evaluation step per 64 elements of the array it builds, or part of 64, and a
-byte string costs one. No operator but `++`, and no conversion without a byte
-order, applies to a whole array, and an array's elements are never arrays. A byte string `"..."`
+byte string costs one. A path of several indices costs that charge for each
+array it copies. No operator but `++`, and no conversion without a byte
+order, applies to a whole array. An array's elements are scalars or, through
+a `type` name or a type parameter specialized to an array, arrays of lower rank,
+up to four dimensions; they are never tuples. A byte string `"..."`
 of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
 `\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
 of its bytes. `a ++ b` is the elements of a followed by those of b, of one
