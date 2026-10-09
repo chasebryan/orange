@@ -169,6 +169,7 @@
     ".github/dependabot.yml",
     ".github/dependency-review-config.yml",
     ".github/pull_request_template.md",
+    ".github/workflows/book-deploy-hook.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/dependency-review.yml",
     ".github/workflows/external-links.yml",
@@ -744,6 +745,7 @@
     "scorecard.yml"
   ],
   "workflow_inventory": [
+    "book-deploy-hook.yml",
     "ci.yml",
     "dependency-review.yml",
     "external-links.yml",

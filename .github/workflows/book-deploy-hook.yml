@@ -1,0 +1,34 @@
+name: Book Deploy Hook
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/THE_ORANGE_BOOK.md
+      - 'docs/book/**'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: book-deploy-hook
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    name: Book Deploy Hook / nosuchmachine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Trigger nosuchmachine.net rebuild
+        shell: /bin/bash -p -e -o pipefail {0}
+        env:
+          HOOK: ${{ secrets.NOSUCHMACHINE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo '::error::NOSUCHMACHINE_DEPLOY_HOOK is not set' >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 30 --retry 3 --retry-all-errors -X POST "$HOOK"
