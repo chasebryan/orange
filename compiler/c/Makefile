@@ -22,6 +22,8 @@ test: $(OUT)
 	out/orangec-asan --self-test
 	python3 tests/differential.py out/orangec
 	python3 tests/differential.py out/orangec-asan
+	python3 tests/step_budget.py out/orangec
+	python3 tests/step_budget.py out/orangec-asan
 
 clean:
 	rm -rf out

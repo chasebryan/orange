@@ -1663,14 +1663,18 @@ static int alloc_array(Compiler *c, Value **items, uint32_t length, uint32_t sta
     return 1;
 }
 
+/* A charge that would pass the budget is not recorded. The diagnostic is
+   reported once, on the function being evaluated, not on this expression. */
 static int charge(Compiler *c, uint32_t start, uint32_t end, uint64_t cost) {
+    uint64_t limit = c->step_limit == 0 ? MAX_STEPS : c->step_limit;
+    (void)start;
+    (void)end;
     if (c->failed) {
         return 0;
     }
-    if (cost > MAX_STEPS || c->steps > MAX_STEPS - cost) {
+    if (cost > limit || c->steps > limit - cost) {
         c->failed = 1;
-        add_diag(c, "ORC0301", start, end, "evaluation exceeded the step budget", "step limit reached",
-                 "one source shares 1048576 reference-evaluation steps", 2);
+        c->step_hit = 1;
         return 0;
     }
     c->steps += cost;
@@ -2115,14 +2119,21 @@ static void pack_write_residue(uint32_t *limbs, uint32_t nlimbs, const Big *valu
     }
 }
 
-static void report_packed_bits(Compiler *c, uint32_t start, uint32_t end) {
+static void report_exact_limit(Compiler *c, uint32_t start, uint32_t end) {
+    Diag *diag;
     add_diag(c, "ORC0301", start, end, "exact integer result exceeds the 16384-significant-bit limit",
              "result is too large for the reference evaluator",
              "`Int` is unbounded; this is a resource limit, not a finite width", 2);
-    if (c->cur_func < c->nfuncs) {
-        diag_add_secondary(c, c->funcs[c->cur_func].name_start, c->funcs[c->cur_func].name_end,
-                           "evaluation of this function");
+    if (c->ndiags == 0) {
+        return;
     }
+    diag = &c->diags[c->ndiags - 1];
+    copy_text(diag->note2, sizeof diag->note2, "no partial value set is returned");
+    diag->has_note2 = 1;
+}
+
+static void report_packed_bits(Compiler *c, uint32_t start, uint32_t end) {
+    report_exact_limit(c, start, end);
 }
 
 static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) {
@@ -2522,9 +2533,14 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                     target->cur_inst = resolved;
                 }
                 target->steps = c->steps;
+                target->step_limit = c->step_limit;
+                target->step_hit = c->step_hit;
                 target->failed = c->failed;
                 ok = eval_function(target, expr->callee, arguments, depth + 1, out);
                 c->steps = target->steps;
+                if (target->step_hit) {
+                    c->step_hit = 1;
+                }
                 if (target->failed) {
                     c->failed = 1;
                 }
@@ -2776,8 +2792,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                     remainder = left.big;
                 } else if (!big_div_euclid(&c->arena, &left.big, &right.big, &quotient, &remainder)) {
                     c->failed = 1;
-                    add_diag(c, "ORC0301", expr->op_start, expr->op_end,
-                             "integer result exceeds 16384 significant bits", "magnitude limit reached", NULL, 2);
+                    report_exact_limit(c, expr->start, expr->end);
                     value_clear(&left);
                     value_clear(&right);
                     return 0;
@@ -2857,8 +2872,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (!ok || !residue_reduce(c, &exact, modulus, &reduced)) {
                 c->failed = 1;
-                add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
-                         "magnitude limit reached", NULL, 2);
+                report_exact_limit(c, expr->start, expr->end);
                 value_clear(&left);
                 value_clear(&right);
                 return 0;
@@ -2896,8 +2910,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (!ok) {
                 c->failed = 1;
-                add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
-                         "magnitude limit reached", NULL, 2);
+                report_exact_limit(c, expr->start, expr->end);
                 value_clear(&left);
                 value_clear(&right);
                 return 0;
@@ -3051,12 +3064,16 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return 1;
     }
     case EX_ARRAY: {
+        /* Elements are evaluated first. The array then charges one step per
+           element, and one step when it has none. A charge that does not fit
+           in the remaining budget is dropped and is not added to the count. */
         Value *items = NULL;
         uint32_t element;
-        if (!charge(c, expr->start, expr->end, expr->argc == 0 ? 1 : expr->argc)) {
-            return 0;
-        }
+        uint64_t cost = expr->argc == 0 ? 1u : (uint64_t)expr->argc;
         if (expr->argc == 0) {
+            if (!charge(c, expr->start, expr->end, cost)) {
+                return 0;
+            }
             out->type = expr->ty;
             out->length = 0;
             return 1;
@@ -3069,6 +3086,10 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 value_list_clear(items, expr->argc);
                 return 0;
             }
+        }
+        if (!charge(c, expr->start, expr->end, cost)) {
+            value_list_clear(items, expr->argc);
+            return 0;
         }
         out->type = expr->ty;
         out->length = expr->argc;
@@ -3947,6 +3968,11 @@ static void render_diags(Compiler *c, FILE *out) {
             fputs_sanitized(out, diag->note2);
             fputc('\n', out);
         }
+        if (diag->has_note3 && diag->note3[0] != '\0') {
+            fputs("  = note: ", out);
+            fputs_sanitized(out, diag->note3);
+            fputc('\n', out);
+        }
     }
 }
 
@@ -4148,8 +4174,63 @@ static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uin
     return 1;
 }
 
+static void stamp_exact_limit(Compiler *c, const Func *func) {
+    Diag *diag;
+    if (c->ndiags == 0) {
+        return;
+    }
+    diag = &c->diags[c->ndiags - 1];
+    if (diag->has_sec || diag->code == NULL || strcmp(diag->code, "ORC0301") != 0) {
+        return;
+    }
+    if (strcmp(diag->message, "exact integer result exceeds the 16384-significant-bit limit") != 0) {
+        return;
+    }
+    diag_add_secondary(c, func->name_start, func->name_end, "evaluation of this function");
+}
+
+static void report_step_limit(Compiler *c, const Func *func, uint64_t steps_before) {
+    char note[160];
+    Diag *diag;
+    uint64_t limit = c->step_limit == 0 ? MAX_STEPS : c->step_limit;
+    const char *label = steps_before == c->steps ? "evaluation stopped before this function"
+                                                 : "evaluation stopped while evaluating this function";
+    snprintf(note, sizeof note, "at most %llu evaluation steps are permitted", (unsigned long long)limit);
+    add_diag(c, "ORC0301", func->name_start, func->name_end, "reference evaluation step limit exceeded", label, note, 2);
+    if (c->ndiags == 0) {
+        return;
+    }
+    diag = &c->diags[c->ndiags - 1];
+    copy_text(diag->note2, sizeof diag->note2, "no partial value set is returned");
+    diag->has_note2 = 1;
+    if (limit < MAX_STEP_LIMIT) {
+        copy_text(diag->note3, sizeof diag->note3,
+                  "`orangec eval --steps N` sets the budget, up to 1073741824 steps");
+        diag->has_note3 = 1;
+    }
+}
+
+static void note_stat(TextBuf *stats, const Compiler *c, const Func *func, const char *instance, uint64_t used) {
+    char line[384];
+    const char *unit = used == 1 ? "step" : "steps";
+    size_t module_len = (size_t)(c->module_end - c->module_start);
+    size_t name_len = (size_t)(func->name_end - func->name_start);
+    int wrote;
+    if (instance != NULL && instance[0] != '\0') {
+        wrote = snprintf(line, sizeof line, "%.*s::%.*s[%s]: %llu %s\n", (int)module_len, c->text + c->module_start,
+                         (int)name_len, c->text + func->name_start, instance, (unsigned long long)used, unit);
+    } else {
+        wrote = snprintf(line, sizeof line, "%.*s::%.*s: %llu %s\n", (int)module_len, c->text + c->module_start,
+                         (int)name_len, c->text + func->name_start, (unsigned long long)used, unit);
+    }
+    if (wrote > 0 && (size_t)wrote < sizeof line) {
+        text_append(stats, line, (size_t)wrote);
+    }
+}
+
 static int evaluate_source(Compiler *c, FILE *out) {
     TextBuf program = {0};
+    TextBuf stats = {0};
     uint32_t index;
     if (!ensure_loops(c)) {
         release_loop_values(c);
@@ -4198,15 +4279,26 @@ static int evaluate_source(Compiler *c, FILE *out) {
                     }
                 }
                 memset(&result, 0, sizeof result);
-                if (!eval_function(c, index, NULL, 1, &result)) {
-                    value_clear(&result);
-                    func->result = saved_kind;
-                    func->result_len = saved_len;
-                    func->result_mod = saved_mod;
-                    func->tup0 = saved_tup0;
-                    func->tup_n = saved_tup_n;
-                    stop = 1;
-                    break;
+                {
+                    uint64_t steps_before = c->steps;
+                    if (!eval_function(c, index, NULL, 1, &result)) {
+                        value_clear(&result);
+                        if (c->step_hit) {
+                            report_step_limit(c, func, steps_before);
+                        } else {
+                            stamp_exact_limit(c, func);
+                        }
+                        func->result = saved_kind;
+                        func->result_len = saved_len;
+                        func->result_mod = saved_mod;
+                        func->tup0 = saved_tup0;
+                        func->tup_n = saved_tup_n;
+                        stop = 1;
+                        break;
+                    }
+                    if (c->show_stats) {
+                        note_stat(&stats, c, func, sizes_text, c->steps - steps_before);
+                    }
                 }
                 if (func->result != TY_TUPLE && func->result_len == 0 && func->result != TY_INT &&
                     func->result != TY_BOOL && func->result != TY_MOD) {
@@ -4268,9 +4360,20 @@ static int evaluate_source(Compiler *c, FILE *out) {
         c->cur_inst = UINT32_MAX;
         c->ncur = 0;
         memset(c->cur_sz, 0, sizeof c->cur_sz);
-        if (!eval_function(c, index, NULL, 1, &result)) {
-            value_clear(&result);
-            break;
+        {
+            uint64_t steps_before = c->steps;
+            if (!eval_function(c, index, NULL, 1, &result)) {
+                value_clear(&result);
+                if (c->step_hit) {
+                    report_step_limit(c, func, steps_before);
+                } else {
+                    stamp_exact_limit(c, func);
+                }
+                break;
+            }
+            if (c->show_stats) {
+                note_stat(&stats, c, func, NULL, c->steps - steps_before);
+            }
         }
         if (func->result != TY_TUPLE && func->result_len == 0 && func->result != TY_INT && func->result != TY_BOOL &&
             func->result != TY_MOD) {
@@ -4315,7 +4418,20 @@ static int evaluate_source(Compiler *c, FILE *out) {
     if (!c->failed && program.data != NULL) {
         fwrite(program.data, 1, program.length, out);
     }
+    if (!c->failed && c->show_stats) {
+        char total[96];
+        uint64_t limit = c->step_limit == 0 ? MAX_STEPS : c->step_limit;
+        int wrote = snprintf(total, sizeof total, "total: %llu of %llu steps\n", (unsigned long long)c->steps,
+                             (unsigned long long)limit);
+        if (stats.data != NULL) {
+            fwrite(stats.data, 1, stats.length, stderr);
+        }
+        if (wrote > 0) {
+            fputs(total, stderr);
+        }
+    }
     free(program.data);
+    free(stats.data);
     release_loop_values(c);
     return c->failed ? 1 : 0;
 }
@@ -4334,6 +4450,7 @@ static Compiler *compiler_new(char *text, size_t length, const char *filename, i
     compiler->own_filename = own_filename;
     compiler->cur_func = UINT32_MAX;
     compiler->cur_inst = UINT32_MAX;
+    compiler->step_limit = MAX_STEPS;
     if (!arena_init(&compiler->arena, ARENA_BYTES)) {
         free(compiler);
         return NULL;
@@ -4715,6 +4832,7 @@ static int load_one(Program *program, const char *path, const char *name, const 
         return 0;
     }
     mod->requested = stored_name;
+    mod->step_limit = program->mods[0]->step_limit;
     mod->program = program;
     mod->self_index = (uint16_t)program->nmods;
     program->mods[program->nmods++] = mod;
@@ -4803,7 +4921,8 @@ static void render_program_diags(Program *program, FILE *err, int dependency_ord
     }
 }
 
-static int compile_text(char *text, size_t length, const char *filename, int command, FILE *out, FILE *err) {
+static int compile_text(char *text, size_t length, const char *filename, int command, uint64_t step_limit, int show_stats,
+                        FILE *out, FILE *err) {
     Program *program = calloc(1, sizeof *program);
     Compiler *root;
     int status = 1;
@@ -4820,6 +4939,8 @@ static int compile_text(char *text, size_t length, const char *filename, int com
     }
     program->mods[0] = root;
     program->nmods = 1;
+    root->step_limit = step_limit == 0 ? MAX_STEPS : step_limit;
+    root->show_stats = show_stats;
     root->program = program;
     root->self_index = 0;
     lex_source(root);
@@ -5000,6 +5121,35 @@ static void print_usage(FILE *out) {
         out);
 }
 
+static int parse_step_budget(const char *text, uint64_t *out) {
+    size_t index;
+    uint64_t value = 0;
+    if (text == NULL || text[0] == '\0' || text[0] == '0') {
+        return 0;
+    }
+    for (index = 0; text[index] != '\0'; index++) {
+        unsigned digit;
+        if (text[index] < '0' || text[index] > '9') {
+            return 0;
+        }
+        digit = (unsigned)(text[index] - '0');
+        if (value > (MAX_STEP_LIMIT - digit) / 10u) {
+            return 0;
+        }
+        value = value * 10u + digit;
+    }
+    if (value < 1 || value > MAX_STEP_LIMIT) {
+        return 0;
+    }
+    *out = value;
+    return 1;
+}
+
+static void reject_steps(const char *message) {
+    fprintf(stderr, "orangec: %s\n", message);
+    print_usage(stderr);
+}
+
 int orange_main(int argc, char **argv) {
     int command = -1;
     const char *path = NULL;
@@ -5007,6 +5157,9 @@ int orange_main(int argc, char **argv) {
     size_t length = 0;
     char error[256];
     int index;
+    int steps_seen = 0;
+    int show_stats = 0;
+    uint64_t step_limit = MAX_STEPS;
     for (index = 1; index < argc; index++) {
         if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
             print_usage(stdout);
@@ -5030,6 +5183,34 @@ int orange_main(int argc, char **argv) {
                 return 2;
             }
             index++;
+            continue;
+        }
+        if (strcmp(argv[index], "--stats") == 0) {
+            show_stats = 1;
+            continue;
+        }
+        if (strcmp(argv[index], "--steps") == 0 || strncmp(argv[index], "--steps=", 8) == 0) {
+            const char *value;
+            uint64_t parsed = 0;
+            if (steps_seen) {
+                reject_steps("option `--steps` may be specified at most once");
+                return 2;
+            }
+            if (argv[index][7] == '=') {
+                value = argv[index] + 8;
+            } else if (index + 1 >= argc) {
+                reject_steps("option `--steps` requires a value");
+                return 2;
+            } else {
+                index++;
+                value = argv[index];
+            }
+            if (!parse_step_budget(value, &parsed)) {
+                reject_steps("option `--steps` takes a number of steps from 1 through 1073741824");
+                return 2;
+            }
+            steps_seen = 1;
+            step_limit = parsed;
             continue;
         }
         if (argv[index][0] == '-' && strcmp(argv[index], "-") != 0) {
@@ -5057,6 +5238,14 @@ int orange_main(int argc, char **argv) {
         }
         path = argv[index];
     }
+    if (command >= 0 && command != 1 && steps_seen) {
+        reject_steps("option `--steps` applies only to eval, test, and replay");
+        return 2;
+    }
+    if (command >= 0 && command != 1 && show_stats) {
+        reject_steps("option `--stats` applies only to eval, test, and replay");
+        return 2;
+    }
     if (command < 0 || path == NULL) {
         print_usage(stderr);
         return 2;
@@ -5072,7 +5261,7 @@ int orange_main(int argc, char **argv) {
         return 1;
     }
     {
-        int status = compile_text(text, length, path, command, stdout, stderr);
+        int status = compile_text(text, length, path, command, step_limit, show_stats, stdout, stderr);
         free(text);
         return status;
     }
