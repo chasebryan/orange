@@ -141,6 +141,7 @@ INVALID = [
     "s3k/invalid-tuple-names.or",
     "s3k/invalid-tuple-syntax.or",
     "s3k/invalid-tuple-types.or",
+    "s3m/invalid-alias-types.or",
     "s3l/invalid-bytes-lexical.or",
     "s3l/invalid-bytes-syntax.or",
     "s3l/invalid-bytes-types.or",
@@ -723,12 +724,116 @@ def main() -> int:
     failures += conversion_targets(rust_compiler, c_compiler)
     failures += logical_operators(rust_compiler, c_compiler)
     failures += residue_modules(rust_compiler, c_compiler)
+    failures += alias_targets(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
         return 1
     print("differential comparison passed")
     return 0
+
+
+def _skip_space(source: str, index: int) -> int:
+    while index < len(source) and source[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _ground_end(source: str, index: int):
+    """End index of a ground type at `index`, or None when it names a local type."""
+    index = _skip_space(source, index)
+    if index >= len(source):
+        return None
+    if source[index] == "(":
+        cursor = index + 1
+        while True:
+            end = _ground_end(source, cursor)
+            if end is None:
+                return None
+            cursor = _skip_space(source, end)
+            if cursor < len(source) and source[cursor] == ",":
+                cursor += 1
+                continue
+            if cursor < len(source) and source[cursor] == ")":
+                return cursor + 1
+            return None
+    for word in ("Word", "Int", "Bool", "Mod"):
+        if not source.startswith(word, index):
+            continue
+        after = index + len(word)
+        if after < len(source) and (source[after].isalnum() or source[after] == "_"):
+            continue
+        cursor = after
+        if word in ("Word", "Mod") and cursor < len(source) and source[cursor] == "[":
+            close = source.find("]", cursor + 1)
+            if close < 0:
+                return None
+            inner = source[cursor + 1 : close]
+            if word == "Word" and re.fullmatch(r"[0-9A-Za-z_]*", inner) is None:
+                return None
+            if word == "Mod" and re.fullmatch(r"[0-9A-Za-z_+\-*/<>() \t]*", inner) is None:
+                return None
+            cursor = close + 1
+        if cursor < len(source) and source[cursor] == "^":
+            cursor += 1
+            if cursor < len(source) and source[cursor] == "(":
+                depth = 1
+                cursor += 1
+                while cursor < len(source) and depth:
+                    if source[cursor] == "(":
+                        depth += 1
+                    elif source[cursor] == ")":
+                        depth -= 1
+                    cursor += 1
+            else:
+                start = cursor
+                while cursor < len(source) and (source[cursor].isalnum() or source[cursor] == "_"):
+                    cursor += 1
+                if cursor == start:
+                    return None
+        return cursor
+    return None
+
+
+def alias_targets(rust_compiler: Path, c_compiler: Path) -> int:
+    """Every ground type in a rejecting invalid is also checked as `type T = ...`."""
+    position = re.compile(r"(?:->|type\s+[A-Za-z_][A-Za-z0-9_]*\s*=|:)\s*")
+    found = []
+    failures = 0
+    for relative in INVALID:
+        text = (FIXTURES / relative).read_text(encoding="utf-8")
+        for match in position.finditer(text):
+            end = _ground_end(text, match.end())
+            if end is None:
+                continue
+            expr = text[match.end() : end].strip()
+            if expr and expr not in found:
+                found.append(expr)
+    for expr in found:
+        source = f"edition 2026;\nmodule aliaspath {{\n  type T = {expr};\n}}\n"
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(source)
+                path = handle.name
+            rust = run(rust_compiler, ["check", path])
+            if rust.returncode == 0:
+                continue
+            c_result = run(c_compiler, ["check", path])
+            if c_result.returncode == 0 or rust.stderr != c_result.stderr:
+                failures += 1
+                print(f"FAIL alias type T = {expr}")
+                print(f"  rust {codes(rust.stderr)} exit {rust.returncode}")
+                print(f"  c    {codes(c_result.stderr)} exit {c_result.returncode}")
+                if rust.stderr != c_result.stderr:
+                    print("  rust stderr:", rust.stderr)
+                    print("  c stderr:", c_result.stderr)
+            else:
+                print(f"ok   alias type T = {expr}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
 
 
 if __name__ == "__main__":

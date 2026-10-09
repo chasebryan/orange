@@ -9809,6 +9809,109 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     }
 }
 
+/* 1 when `text[start, end)` is exactly 8, 16, 32, or 64. */
+static int admitted_word_width(const Compiler *c, uint32_t start, uint32_t end) {
+    static const char *widths[] = {"8", "16", "32", "64"};
+    uint32_t index;
+    size_t length = (size_t)(end - start);
+    for (index = 0; index < 4; index++) {
+        if (strlen(widths[index]) == length && memcmp(c->text + start, widths[index], length) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* 1 when `site` spells `Word` with a width other than 8, 16, 32, or 64.
+   `*missing` selects the bare-`Word` diagnostic. The span stops at `]`, so
+   `Word[1]^5` and `Word[1]^0` underline the `1`. */
+static int bad_word_width(const Compiler *c, const TypeSite *site, uint32_t *width_start, uint32_t *width_end,
+                          int *missing) {
+    uint32_t start = site->start;
+    uint32_t end = site->end;
+    *missing = 0;
+    if (end < start + 4 || memcmp(c->text + start, "Word", 4) != 0) {
+        return 0;
+    }
+    if (end < start + 5 || c->text[start + 4] != '[') {
+        *missing = 1;
+        *width_start = start;
+        *width_end = start + 4;
+        return 1;
+    }
+    *width_start = start + 5;
+    *width_end = *width_start;
+    while (*width_end < end && c->text[*width_end] != ']') {
+        *width_end += 1;
+    }
+    return !admitted_word_width(c, *width_start, *width_end);
+}
+
+/* `resolve_site` leaves a bad width or length unreported, and a use of that
+   alias is then marked reported. Diagnose the declaration itself: one error
+   for the width, the length, or a size name, whether or not the alias is used.
+   A tuple reports each element. No size parameter is in scope here. */
+static void report_alias_target(Compiler *c, TypeSite *site) {
+    uint16_t index;
+    uint32_t width_start = 0;
+    uint32_t width_end = 0;
+    int missing = 0;
+    if (c->resource) {
+        return;
+    }
+    if (site->is_tuple) {
+        int failed = !site->ok;
+        for (index = 0; index < site->elem_n; index++) {
+            if (site->elem0 + index < c->nsites) {
+                TypeSite *elem = &c->sites[site->elem0 + index];
+                report_alias_target(c, elem);
+                if (!elem->ok) {
+                    failed = 1;
+                }
+            }
+        }
+        if (failed) {
+            site->ok = 0;
+            site->reported = 1;
+        }
+        return;
+    }
+    if (site->reported) {
+        return;
+    }
+    if (!site->ok) {
+        if (bad_word_width(c, site, &width_start, &width_end, &missing)) {
+            if (missing) {
+                add_diag(c, "ORC0204", width_start, width_end, "`Word` requires an exact width of 8, 16, 32, or 64",
+                         "missing word width", "write the width in decimal, as in `Word[32]`", 2);
+            } else {
+                add_diag(c, "ORC0204", width_start, width_end, "`Word` width must be exactly 8, 16, 32, or 64",
+                         "unsupported word width", "word widths do not coerce, truncate, or wrap", 2);
+            }
+            site->reported = 1;
+            return;
+        }
+        if (site->length_bad) {
+            reject_declared(c, site->kind, 1, site->start, site->end, site->length_start, site->length_end);
+            site->reported = 1;
+            return;
+        }
+        reject_type(c, site->kind, 0, site->start, site->end);
+        site->reported = 1;
+        return;
+    }
+    if (site->has_size_expr) {
+        uint32_t length = 0;
+        if (!size_length(c, site->length_expr, 1, &length)) {
+            site->ok = 0;
+            site->reported = 1;
+            return;
+        }
+        site->length = length;
+        site->rank = 1;
+    }
+}
+
 /* Gate 0 allows 524288 bytes in one text file. The rest of this
    translation unit is included below; only this file defines
    ORANGE_COMPILE_REST, so the static helpers above stay visible. */

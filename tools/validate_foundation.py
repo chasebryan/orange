@@ -495,6 +495,7 @@ compiler/fixtures/s3l/invalid-bytes-types.or
 compiler/fixtures/s3l/valid-aead.or
 compiler/fixtures/s3l/valid-bytes.or
 compiler/fixtures/s3l/valid-hmac.or
+compiler/fixtures/s3m/invalid-alias-types.or
 compiler/fixtures/s3m/invalid-sizes-syntax.or
 compiler/fixtures/s3m/invalid-sizes.or
 compiler/fixtures/s3m/sha256.or
