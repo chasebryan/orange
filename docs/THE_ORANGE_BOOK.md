@@ -4619,8 +4619,11 @@ entries or a call that several instances fit, `ORC0211` for a type
 parameter's name used as a value, and `ORC0101` for a malformed list. The
 length slice adds no language code: its limits are the old codes with 65536
 in their messages, a number too wide for the evaluator is the `ORC0301` of
-every exact integer, and `orangec` adds `ORC1016` for a `--spec` name that
-matches no function without parameters. The test slice adds `ORC0242` for a
+every exact integer, and `orangec` adds `ORC1016` for a `--spec` or
+`--function` name that selects nothing, and for an analysis whose selector
+or shape the command cannot take, and `ORC1017` for an
+analysis whose bits, table, or layer the search cannot accept. A step overrun
+during that analysis is still `ORC0301`. The test slice adds `ORC0242` for a
 test's title that is empty, longer than 128 bytes, not printable ASCII,
 holding a backslash, or repeating another's, and it reuses `ORC0101` for a
 test without a quoted title or a body, `ORC0214` for a claim that is not a
@@ -4637,7 +4640,15 @@ each use.
 
 ### The command line
 
-`orangec` has eleven commands:
+`orangec` has twelve commands. `analyze` computes the properties of one
+checked function. An S-box or a Boolean function is evaluated at every
+input. A linear layer with `--linear` is checked at every input when it has
+at most 16 bits. A wider layer is checked only at zero, at each single-bit
+input, and at each two-bit input: the summary says that shows no term of
+degree 2 and that higher degrees are unchecked. The branch numbers are those
+of the matrix read from zero and the single-bit inputs, or they read
+`not computed` when the search is too large. With `--layer` and `--rounds`
+it bounds the trails of a small substitution-permutation network.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
@@ -4648,6 +4659,10 @@ orangec fmt --check <FILE>...
 orangec doc <FILE>
 orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                [--bits <N[,M]> | --linear [--word <W>]]
+                [--layer <MODULE::NAME> --rounds <R>]
+                [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4674,6 +4689,17 @@ orangec schemes [<NAME>...]
 - `replay` validates one program and reference-evaluates one selected Boolean
   function/instance for a typed local witness file; both completed Boolean
   outcomes use status 0.
+- `analyze` reads the modules a program imports the way `replay` does, then
+  computes the exact metrics of one checked S-box or Boolean function, the
+  branch numbers of a linear layer, or the bounded trail weights of a small
+  substitution-permutation network. `--function` and `--instance` select that
+  function, as they do for `replay`. `--bits`, `--linear`, `--word`,
+  `--table`, `--layer`, and `--rounds` belong to `analyze` alone, and
+  `--rounds` is a canonical decimal from 1 through 32. `--steps` and
+  `--stats` apply to `analyze` as well.
+  A clean run is not a proof that a cipher is secure, not a constant-time or
+  side-channel check, and not a verification of the implementation. It
+  reports properties of the one function it was given.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
   `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
@@ -4685,7 +4711,7 @@ orangec schemes [<NAME>...]
   ciphers run on the reference evaluator, which is not constant-time, nothing
   about them is verified, and keys are stored unencrypted.
 
-`check`, `eval`, `test` and `replay` treat each source as the root of a
+`check`, `eval`, `test`, `replay` and `analyze` treat each source as the root of a
 program and read the modules it uses from beside it, as
 [Standards built on standards](#standards-built-on-standards) describes; `lex`,
 `fmt` and `doc` read only the source they are given.
@@ -5798,6 +5824,16 @@ The amount slice let rotations by data be written as their designers write
 them: RC6 encrypts and decrypts its paper's vectors, SHA3-256 computes its
 rotation offsets and round constants as FIPS 202 defines them, and ML-KEM's
 transform constants are derived by reversing bits.
+The nested-array slice let a state be a table of rows: the first two
+quadratic factors of FIPS 203 are multiplied as pairs, each axis checked on
+its own, and the products match the hand-derived answers.
+The static-modulus slice let one `spec` serve every modulus in a finite size
+range: addition, reduction, and inversion are written once, and each instance
+keeps its own residue domain.
+The dimension slice let a standard draw its state on every axis it has:
+AES-128's state is the 4 × 4 array FIPS 197 draws and reproduces Appendix
+A.1 and Appendices B and C.1, SHA3-256 indexes its lanes as FIPS 202 does,
+and ML-KEM-512's NTT runs over a matrix of polynomials.
 These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
@@ -6986,6 +7022,10 @@ orangec fmt --check <FILE>...
 orangec doc <FILE>
 orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                [--bits <N[,M]> | --linear [--word <W>]]
+                [--layer <MODULE::NAME> --rounds <R>]
+                [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -6999,6 +7039,7 @@ orangec schemes [<NAME>...]
 | `fmt` | Print one formatted source or check sources without changing them |
 | `doc` | Print standalone offline HTML for one parsed source |
 | `replay` | Validate one program and reference-evaluate a Boolean specification for exact typed local arguments |
+| `analyze` | Read imported modules as `replay` does, then compute the exact metrics of one checked S-box or Boolean function, the branch numbers of a linear layer, or the bounded trail weights of a small substitution-permutation network. A clean run reports properties of that one function. It is not a proof the cipher is secure, not a constant-time or side-channel check, and not a verification of the implementation |
 | `test` | Validate one program, then run its root module's tests in source order, printing `test "TITLE" ... ok` or `... FAILED` for each and a count; status 1 when any fails |
 | `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
 | `enc` | Seal one file as `FILE.orange` with its key's scheme |
@@ -7006,19 +7047,24 @@ orangec schemes [<NAME>...]
 | `schemes` | List the built-in schemes or check a scheme program |
 
 Options are `--edition <YEAR>` (only `2026`, at most once), for `eval`,
-`test` and `replay` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
+`test`, `replay` and `analyze` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
 once; default 1,048,576) and `--stats` (report each evaluated function's or
 test's steps and the total on standard error, after the values or the
 report), for `eval` only `--spec <NAME>` (evaluate only this function without
 parameters; up to 64 names), for `fmt` only `--check` (check one through 256
 sources without changing files; otherwise `fmt` requires exactly one source),
-for `replay` `--function <MODULE::NAME>`, `--witness <FILE>` and optional
-`--instance <N[,N...]>` (an exact numeric finite-instance vector), `--scheme <NAME>`
+for `replay` and `analyze` `--function <MODULE::NAME>` and optional
+`--instance <N[,N...]>` (an exact numeric finite-instance vector), for
+`replay` only `--witness <FILE>`, for `analyze` only `--bits <N[,M]>` (the
+low N input bits and M output bits), `--linear` (a linear layer over GF(2)),
+`--word <W>` (the word width of a `--linear` layer, defaulting to the element's width, or to 8), `--table <TABLE>`
+(`values`, `ddt`, `lat`, `bct`, `anf`, or `matrix`), `--layer <MODULE::NAME>`,
+and `--rounds <R>` (a canonical decimal from 1 through 32), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
 UTF-8 source from standard input, once per invocation. For `check`, `eval`,
-`test` and `replay`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
+`test`, `replay` and `analyze`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
 or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
@@ -7033,7 +7079,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
 | `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
+| `ORC1001`–`ORC1017` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` or `--function` name that selects nothing, an analysis whose selector or shape the command cannot take, an analysis whose bits, table, or layer the search cannot accept |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
@@ -7199,11 +7245,11 @@ controls how far its prose may go.
 | I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.20 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
 | I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.20 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.20 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices implemented, specifications in review; complete semantic Core remains open |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.20 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, amount, nested-array, static-modulus, and dimension slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.20 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.20 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, amount, nested-array, static-modulus, and dimension slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
