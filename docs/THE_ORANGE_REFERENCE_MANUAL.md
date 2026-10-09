@@ -90,14 +90,14 @@ Edition: `2026`
 
 - [Part VII: Specification Corpus & Reference Cryptographic Standards](#part-vii-specification-corpus--reference-cryptographic-standards)
   - [§48. Mathematical Transcription Methodology and Traceability](#48-mathematical-transcription-methodology-and-traceability)
-  - [§49. Complete Reference Specification: FIPS 180-4 SHA-256](#49-complete-reference-specification-fips-180-4-sha-256)
-  - [§50. Complete Reference Specification: RFC 8439 ChaCha20](#50-complete-reference-specification-rfc-8439-chacha20)
-  - [§51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)](#51-complete-reference-specification-curve25519--x25519-rfc-7748)
-  - [§52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-complete-reference-specification-poly1305-field-mac-rfc-8439)
-  - [§52A. Complete Reference Specification: FIPS 197 AES](#52a-complete-reference-specification-fips-197-aes)
-  - [§52B. Complete Reference Specification: FIPS 198-1 HMAC](#52b-complete-reference-specification-fips-198-1-hmac)
-  - [§52C. Complete Reference Specification: RFC 5869 HKDF](#52c-complete-reference-specification-rfc-5869-hkdf)
-  - [§52D. Complete Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD](#52d-complete-reference-specification-rfc-8439-chacha20-poly1305-aead)
+  - [§49. Reference Specification: FIPS 180-4 SHA-256](#49-reference-specification-fips-180-4-sha-256)
+  - [§50. Reference Specification: RFC 8439 ChaCha20](#50-reference-specification-rfc-8439-chacha20)
+  - [§51. Reference Specification: Curve25519 / X25519 (RFC 7748)](#51-reference-specification-curve25519--x25519-rfc-7748)
+  - [§52. Reference Specification: Poly1305 Field MAC (RFC 8439)](#52-reference-specification-poly1305-field-mac-rfc-8439)
+  - [§52A. Reference Specification: FIPS 197 AES](#52a-reference-specification-fips-197-aes)
+  - [§52B. Reference Specification: FIPS 198-1 HMAC](#52b-reference-specification-fips-198-1-hmac)
+  - [§52C. Reference Specification: RFC 5869 HKDF](#52c-reference-specification-rfc-5869-hkdf)
+  - [§52D. Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD](#52d-reference-specification-rfc-8439-chacha20-poly1305-aead)
   - [SHA-3 and SHAKE, FIPS 202](#sha-3-and-shake-fips-202)
 
 - [Part VIII: Implementation Stratum (`impl`) & Memory Model](#part-viii-implementation-stratum-impl--memory-model)
@@ -1653,7 +1653,7 @@ constructs:
 | $\text{SHR}^n(x)$ | `x >> n` | Logical Right Shift |
 | $A \mathbin{\Vert} B$ | `A ++ B` | Contiguous Array Concatenation |
 
-### §49. Complete Reference Specification: FIPS 180-4 SHA-256
+### §49. Reference Specification: FIPS 180-4 SHA-256
 
 SHA-256 as FIPS 180-4 (NIST, August 2015, DOI 10.6028/NIST.FIPS.180-4) writes
 it: the word operations of section 3.2, the functions of section 4.1.2, the
@@ -2101,7 +2101,7 @@ module sha256_spec {
 }
 ```
 
-### §50. Complete Reference Specification: RFC 8439 ChaCha20
+### §50. Reference Specification: RFC 8439 ChaCha20
 
 ChaCha20 as RFC 8439 (2018) writes it: the quarter round of section 2.1, the
 quarter round on the state of section 2.2, the block function of section 2.3,
@@ -2419,7 +2419,7 @@ module chacha20_spec {
 }
 ```
 
-### §51. Complete Reference Specification: Curve25519 / X25519 (RFC 7748)
+### §51. Reference Specification: Curve25519 / X25519 (RFC 7748)
 
 X25519 as RFC 7748 (2016) section 5 writes it, with the Diffie-Hellman
 functions of section 6.1. The field is the integers modulo
@@ -2783,7 +2783,7 @@ module x25519_spec {
 }
 ```
 
-### §52. Complete Reference Specification: Poly1305 Field MAC (RFC 8439)
+### §52. Reference Specification: Poly1305 Field MAC (RFC 8439)
 
 Poly1305 as RFC 8439 section 2.5 writes it. Section 2.8's AEAD construction,
 which feeds Poly1305 a padded string of additional data, ciphertext, and
@@ -2949,7 +2949,7 @@ module poly1305_spec {
 }
 ```
 
-### §52A. Complete Reference Specification: FIPS 197 AES
+### §52A. Reference Specification: FIPS 197 AES
 
 AES-128, AES-192, and AES-256 as NIST FIPS 197-upd1 writes them. The cited
 edition is Federal Information Processing Standards Publication 197, published
@@ -3788,7 +3788,7 @@ of one packed word, and the other cells are the same literal, unchecked here
 one by one. Nothing in this section is a claim of constant time or of
 deployment.
 
-### §52B. Complete Reference Specification: FIPS 198-1 HMAC
+### §52B. Reference Specification: FIPS 198-1 HMAC
 
 HMAC-SHA-256 as FIPS 198-1 writes it, and as RFC 2104 defined the
 construction. The cited HMAC standard is NIST FIPS PUB 198-1, July 2008,
@@ -4460,7 +4460,7 @@ The 32-byte case 5 MAC is not a line of the RFC. Nothing here is a timing
 measurement, a CMVP result, or the security discussion RFC 4231 section 5
 declines to make.
 
-### §52C. Complete Reference Specification: RFC 5869 HKDF
+### §52C. Reference Specification: RFC 5869 HKDF
 
 HKDF-SHA-256 as RFC 5869 writes it. The cited text is RFC 5869, May 2010,
 category Informational, Krawczyk and Eronen: sections 2.2 and 2.3, and
@@ -4984,7 +4984,7 @@ longer than 32 octets, info longer than 150 bytes, or a salt or IKM longer
 than 247 bytes. Section 3 is not transcribed. Nothing here is a timing
 measurement or a proof of the construction.
 
-### §52D. Complete Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD
+### §52D. Reference Specification: RFC 8439 ChaCha20-Poly1305 AEAD
 
 AEAD_CHACHA20_POLY1305 as RFC 8439 section 2.8 writes it. The cited text is
 RFC 8439, June 2018, category Informational, Nir and Langley, which
@@ -7166,7 +7166,7 @@ relation, target architectural profile, noninterference policy, and checkable ev
 
 ### §83. The Ten Mandatory Claim Families (CF-01 through CF-10)
 
-Assurance graphs in Orange are partitioned into ten orthogonal, normative claim families:
+Assurance graphs in Orange are partitioned into ten orthogonal, **Proposed** claim families:
 
 | ID | Family | Formal Relational Predicate | Scope and Verification Artifact |
 | :--- | :--- | :--- | :--- |
@@ -7207,7 +7207,7 @@ A compound claim $C_1 \land C_2$ is $\mathbf{satisfied}$ if and only if both con
 are independently $\mathbf{satisfied}$. Any falsified premise immediately collapses the outcome
 to $\mathbf{not\_satisfied}$.
 
-#### 2. Normative Claim Record Schema
+#### 2. Proposed Claim Record Schema
 
 ```json
 {
@@ -7275,7 +7275,7 @@ to $\mathbf{not\_satisfied}$.
    |   +-- certificates/             (LRAT/DRAT and LFSC proof certificates)
    |   +-- objects/                  (native ELF/Mach-O .o binary artifacts)
    |   +-- headers/                  (generated C11 headers)
-   +-- claims/                       (normative JSON claim graph records)
+   +-- claims/                       (**Proposed** JSON claim graph records)
    +-- provenance/                   (CycloneDX 1.6 CBOM, SPDX 3.0 SBOM, SLSA attestations)
    ```
 
@@ -7548,7 +7548,30 @@ the per-axis length cap or the total-scalars cap (§102) is `ORC0221`.
 Indexing a non-array is `ORC0224`, and so is an update path that indexes past
 the scalars (§25.5). An update path on rank 2 or rank 3 is checked; a fifth
 index is `ORC0101` (§25.5). Driver limits such as the 16 MiB source ceiling
-are `ORC1003`, outside this range.
+are `ORC1003`. The command-line codes are the table below.
+Appendix A of `docs/THE_ORANGE_BOOK.md` names that family in one row.
+Each code is the variant of that number in `define_cli_diagnostic_codes!`
+in `compiler/crates/orangec/src/main.rs`.
+
+| Code | Meaning |
+| :--- | :--- |
+| `ORC1001` | Unreadable input |
+| `ORC1002` | Invalid UTF-8 |
+| `ORC1003` | Oversized input: one source exceeds 16 MiB |
+| `ORC1004` | Duplicate standard input |
+| `ORC1005` | The source file or its name could not be represented |
+| `ORC1006` | A phase returned neither a complete artifact nor a diagnostic |
+| `ORC1007` | Output limit |
+| `ORC1008` | Oversized input: the invocation's source bytes exceed 64 MiB |
+| `ORC1009` | Key file |
+| `ORC1010` | Scheme |
+| `ORC1011` | The file being sealed or opened could not be read |
+| `ORC1012` | The sealed or opened output could not be written, or its path already exists |
+| `ORC1013` | Sealed-file format |
+| `ORC1014` | A chunk that is not authentic |
+| `ORC1015` | Randomness |
+| `ORC1016` | A `--spec` or `--function` name that selects nothing, or an analysis whose selector or shape the command cannot take |
+| `ORC1017` | An analysis whose bits, table, or layer the search cannot accept |
 
 ### §93. Diagnostic Philosophy, Severity Structure, and Error Budgets
 
