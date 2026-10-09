@@ -2012,6 +2012,37 @@ class ManuscriptManifest(unittest.TestCase):
                     if page.is_file():
                         self.assertNotIn(real_sha, page.read_text(encoding='utf-8'))
 
+    def test_table_pipe_escape_uses_backslash_parity(self):
+        import tempfile
+
+        # 0, 1, 2, and 3 backslashes before the pipe between a and b.
+        opening = (
+            '# Pipes\n\n'
+            '| a | b |\n'
+            '| --- | --- |\n'
+            '| a | b |\n'
+            '| a \\| b |\n'
+            '| a \\\\| b |\n'
+            '| a \\\\\\| b |\n'
+            '| `a|b` |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            rows = re.findall(r'<tr>(.*?)</tr>', page, re.S)
+            self.assertEqual(len(rows), 6, page)
+            counts = [len(re.findall(r'<t[dh]>', row)) for row in rows]
+            self.assertEqual(counts, [2, 2, 1, 2, 1, 1], rows)
+            self.assertIn('<td>a | b</td>', rows[2])
+            self.assertIn('<td>a \\\\</td>', rows[3])
+            self.assertIn('<td>b</td>', rows[3])
+            self.assertIn('<td>a \\\\| b</td>', rows[4])
+            self.assertIn('<code>a|b</code>', rows[5])
+            self.assertEqual(len(re.findall(r'<td>', rows[5])), 1)
+
 
 def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
     import json

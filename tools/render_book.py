@@ -688,9 +688,11 @@ def table_rows(lines: list[str], index: int) -> tuple[list[list[str]], int]:
 
 
 def split_table_cells(line: str) -> list[str]:
-    """Split a row on pipes that are outside code spans and ``\\|`` escapes.
+    """Split a row on pipes that are outside code spans and unescaped.
 
-    An escaped pipe is kept as a literal ``|``. A pipe inside an inline code
+    A pipe is escaped only when an odd number of backslashes precedes it,
+    the same rule as ``_ends_with_unescaped_pipe``. The escaping backslash
+    is dropped and the pipe stays in the cell. A pipe inside an inline code
     span is part of that span, not a column boundary.
     """
     text = line.strip()
@@ -702,10 +704,6 @@ def split_table_cells(line: str) -> list[str]:
     buf: list[str] = []
     index = 0
     while index < len(text):
-        if text[index] == "\\" and index + 1 < len(text) and text[index + 1] == "|":
-            buf.append("|")
-            index += 2
-            continue
         if text[index] == "`":
             end = index + 1
             while end < len(text) and text[end] == "`":
@@ -721,6 +719,16 @@ def split_table_cells(line: str) -> list[str]:
             index = close + len(ticks)
             continue
         if text[index] == "|":
+            slashes = 0
+            probe = len(buf) - 1
+            while probe >= 0 and buf[probe] == "\\":
+                slashes += 1
+                probe -= 1
+            if slashes % 2 == 1:
+                buf.pop()
+                buf.append("|")
+                index += 1
+                continue
             cells.append("".join(buf).strip())
             buf = []
             index += 1
