@@ -230,6 +230,24 @@ constructions, then investigate representation, composition and implementation
 hazards. Establish algorithm prerequisites before presenting the algorithm.
 Orange is the working language, not decoration around prose.
 
+- **J3.** [The Corpus as Acceptance Test](JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#j3-the-corpus-as-acceptance-test):
+  what this repository runs as a test corpus, and what one known-answer
+  test establishes. The reader reads `orangec test` on the algorithm
+  sources, including a report of zero tests and the one source that
+  declares tests. A padded block is derived from the rule the SHA-256
+  entry attributes to FIPS 180-4 §5.1.1, pinned to the August 2015
+  edition, and checked with `orangec test`. A length field copied from
+  the 56-byte message fails, and the report names the first differing
+  byte. A counting argument shows that k passing vectors do not
+  separate functions that agree on those k inputs, beside two Orange
+  functions that witness the count. Ten exercises with worked answers.
+  The five outcomes in that section are the finish line.
+  The locked label is J3. It is not a manuscript chapter numeral.
+  The manuscript chapter titled *The Corpus as Acceptance Test* keeps
+  that title and that number. This lesson does not transcribe the
+  SHA-256 compression function or its message schedule.
+  [Worked answers](JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#worked-answers).
+
 ### Existing manuscript integrated here
 
 | Existing chapter | Role in the new progression |
@@ -377,7 +395,8 @@ These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
 answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
-integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, and document structure. Python test
+integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
+lesson-J3 answers and the J3 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -422,6 +441,20 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --l
 
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
+The Rust integration test `compiler/crates/orangec/tests/book_j3.rs`
+reads the nine Orange listings in J3. It checks silent `check`, the
+printed `eval` lines, and the printed test reports, including the two
+failing reports. It also runs `orangec test` on every `.or` source under
+`algorithms/` and checks the zero-test line and the limb-file report
+against the lesson. A passing test in that file is a Match of the `Bool`
+the listing writes. It does not establish a cryptographic security
+claim, and it does not transcribe FIPS 180-4 §6.2.2. Run it in a
+build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j3 --locked --offline
+```
+
 No native code generation or cryptographic security claim is added.
 
 New drafting and integration through Chapters 4–6 are AI-assisted with
@@ -434,6 +467,7 @@ at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the
 owner's direction. Lesson N14, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, and N14 review are
+direction. Lesson J3, including its Orange listings, is AI-assisted
+with Grok 4.7 in Cursor, 2026-10-09, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, and J3 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
