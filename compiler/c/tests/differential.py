@@ -165,6 +165,7 @@ INVALID = [
     "s3m/invalid-sizes-syntax.or",
     "s3n/invalid-order.or",
     "s3n/invalid-order-syntax.or",
+    "s3o/invalid-alias-listed.or",
     "s3o/invalid-types.or",
     "s3o/invalid-types-syntax.or",
     "s3o/invalid-nested.or",

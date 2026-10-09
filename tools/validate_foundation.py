@@ -518,6 +518,7 @@ compiler/fixtures/s3n/valid-poly1305.or
 compiler/fixtures/s3n/valid-sha256.or
 compiler/fixtures/s3n/valid-sha512.or
 compiler/fixtures/s3n/valid-x25519.or
+compiler/fixtures/s3o/invalid-alias-listed.or
 compiler/fixtures/s3o/invalid-nested.or
 compiler/fixtures/s3o/invalid-project.or
 compiler/fixtures/s3o/invalid-types-syntax.or
