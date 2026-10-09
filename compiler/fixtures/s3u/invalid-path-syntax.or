@@ -1,0 +1,9 @@
+// S3u conformance: an update path has at most four indices, each a single
+// index; a run of a row is replaced by updating the row itself.
+edition 2026;
+module paths {
+  type Row = Word[8]^2; type Plane = Row^2; type Cube = Plane^2; type Hyper = Cube^2;
+  spec five(h: Hyper) -> Hyper { h with [0][0][0][0][0] = 1 }
+  spec run(c: Cube) -> Cube { c with [0][0..1] = [[1, 2]] }
+  spec bare(c: Cube) -> Cube { c with [0][] = [1, 2] }
+}

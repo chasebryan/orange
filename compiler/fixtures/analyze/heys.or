@@ -1,0 +1,25 @@
+// The toy substitution-permutation network of Howard M. Heys, "A Tutorial
+// on Linear and Differential Cryptanalysis" (Cryptologia 26(3), 2002): a
+// 16-bit state, four copies of one 4-bit S-box (table 1), then a
+// transposition of the bits (table 3), which sends input bit 4 c + d to
+// output bit 4 d + c. `orangec analyze --function heys::sbox --bits 4
+// --layer heys::permute --rounds 3` bounds its trails. Its difference
+// table has entries of 6, so trail weights are not integers, and only
+// active S-boxes are counted.
+edition 2026;
+module heys {
+  spec sbox(x: Word[8]) -> Word[8] {
+    let table: Word[8]^16 = [0xe, 0x4, 0xd, 0x1, 0x2, 0xf, 0xb, 0x8, 0x3, 0xa, 0x6, 0xc, 0x5, 0x9, 0x0, 0x7];
+    table[x & 0x0f]
+  }
+
+  spec permute(x: Word[16]) -> Word[16] {
+    for i in 0..16 with y: Word[16] = 0 {
+      y | (((x >> i) & 1) << (((i % 4) * 4) + (i / 4)))
+    }
+  }
+
+  test "the transposition swaps bits 1 and 4 and keeps bits 0, 5 and 15" {
+    (permute(0x0002) == 0x0010) && (permute(0x0010) == 0x0002) && (permute(0x8021) == 0x8021)
+  }
+}

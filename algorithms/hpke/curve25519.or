@@ -1,0 +1,88 @@
+// X25519 of RFC 7748, "Elliptic Curves for Security" (Langley, Hamburg,
+// Turner, January 2016), https://www.rfc-editor.org/rfc/rfc7748: the field
+// of section 4.1 and the function of section 5, written from the section 5
+// pseudocode over Mod[2^255 - 19]. It is the DH of DHKEM(X25519,
+// HKDF-SHA256) in RFC 9180 section 7.1 (kem_id 0x0020), for which `hpke`
+// uses it. The module has no tests of its own: the vectors of RFC 9180
+// Appendix A.2 in `hpke` run through it.
+edition 2026;
+module curve25519 {
+  // Section 4.1: the field of curve25519, the integers modulo
+  // p = 2^255 - 19.
+  type F = Mod[(1 << 255) - 19];
+
+  // Section 5, decodeUCoordinate: the 32 bytes little-endian with the most
+  // significant bit of the last byte masked. A value of p or more is
+  // reduced modulo p, as the section requires of non-canonical values.
+  spec decode_u_coordinate(u: Word[8]^32) -> F {
+    (u with [31] = u[31] & 0x7f) as little F
+  }
+
+  // Section 5, encodeUCoordinate: the least residue as 32 little-endian
+  // bytes.
+  spec encode_u_coordinate(x: F) -> Word[8]^32 {
+    let n: Int = x as Int;
+    n as little Word[8]^32
+  }
+
+  // Section 5, decodeScalar25519: the three least significant bits of the
+  // first byte cleared, and of the last byte the most significant bit
+  // cleared and the second most significant set. RFC 9180 section 7.1.2
+  // calls this clamping. The scalar stays bytes; the ladder reads its bits.
+  spec decode_scalar(k: Word[8]^32) -> Word[8]^32 {
+    (k with [0] = k[0] & 0xf8) with [31] = (k[31] & 0x7f) | 0x40
+  }
+
+  // Section 5: cswap(swap, x_2, x_3) exchanges the pair when swap is 1.
+  // The RFC writes it with a mask so that it takes constant time; here it
+  // is a conditional, a specification of the choice and not a
+  // constant-time swap.
+  spec cswap(swap: Word[8], a: F, b: F) -> (F, F) {
+    if swap == 1 { (b, a) } else { (a, b) }
+  }
+
+  // Section 5: one step of the Montgomery ladder, from A = x_2 + z_2
+  // through z_2 = E * (AA + a24 * E), with a24 = 121665 for curve25519.
+  // (x_2 : z_2) is doubled and added to (x_3 : z_3), whose difference is
+  // (x_1 : 1).
+  spec ladder_step(x_1: F, x_2: F, z_2: F, x_3: F, z_3: F) -> (F, F, F, F) {
+    let a: F = x_2 + z_2;
+    let aa: F = a * a;
+    let b: F = x_2 - z_2;
+    let bb: F = b * b;
+    let e: F = aa - bb;
+    let c: F = x_3 + z_3;
+    let d: F = x_3 - z_3;
+    let da: F = d * a;
+    let cb: F = c * b;
+    let s: F = da + cb;
+    let t: F = da - cb;
+    (aa * bb, e * (aa + 121665 * e), s * s, x_1 * (t * t))
+  }
+
+  // Section 5: X25519(k, u). The ladder runs over the bits k_t of the
+  // decoded scalar for t = bits - 1 = 254 down to 0, bit t being bit t % 8
+  // of byte t / 8 (little-endian); swap carries the previous bit, so each
+  // step swaps exactly when k_t differs from it, and a last cswap undoes
+  // the pending swap. The result is x_2 * z_2^(p - 2), which is x_2 / z_2
+  // by Fermat's little theorem, and 0 when z_2 is 0, as the division of a
+  // residue by 0 is.
+  spec x25519(k: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+    let scalar: Word[8]^32 = decode_scalar(k);
+    let x_1: F = decode_u_coordinate(u);
+    let r: (F, F, F, F, Word[8]) = for i in 0..255
+      with (x_2: F, z_2: F, x_3: F, z_3: F, swap: Word[8]) = (1, 0, x_1, 1, 0) {
+      let k_t: Word[8] = (scalar[(254 - i) / 8] >> ((254 - i) % 8)) & 1;
+      let (x_a: F, x_b: F) = cswap(swap ^ k_t, x_2, x_3);
+      let (z_a: F, z_b: F) = cswap(swap ^ k_t, z_2, z_3);
+      let (x_c: F, z_c: F, x_d: F, z_d: F) = ladder_step(x_1, x_a, z_a, x_b, z_b);
+      (x_c, z_c, x_d, z_d, k_t)
+    };
+    let (x_2: F, x_3: F) = cswap(r.4, r.0, r.2);
+    let (z_2: F, z_3: F) = cswap(r.4, r.1, r.3);
+    encode_u_coordinate(x_2 / z_2)
+  }
+
+  // Section 6.1: the base point, u = 9.
+  spec base_point() -> Word[8]^32 { hex"09" ++ [0; 31] }
+}

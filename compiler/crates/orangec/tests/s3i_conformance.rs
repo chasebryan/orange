@@ -222,8 +222,8 @@ const CASES: [Case; 7] = [
                 "each `type` declaration of a module names a different type",
                 "`M` is declared by a later `type` declaration; a `type` declaration uses only \
                  the names declared before it",
-                "`Grid` already has two array dimensions",
-                "arrays have at most two dimensions",
+                "`Hyper` already has 4 array dimensions",
+                "arrays have at most 4 dimensions",
                 "the admitted types are `Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, \
                  `Word[64]`, `Mod[m]`, and the names of earlier `type` declarations",
             ],

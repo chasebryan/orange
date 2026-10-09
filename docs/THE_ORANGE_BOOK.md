@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-10-02
+Snapshot: 2026-10-05
 
-Manuscript version: 0.26
+Manuscript version: 0.27
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -121,8 +121,11 @@ are written as the RFC prints them, the S3q slice lets a module state its
 known answers as tests beside its functions, so that RFC 8439's examples are
 claims the program checks, and the S3r slice lets a shift or rotation take an
 amount computed from data, so that RC6 and SHA-3 turn their words as their
-designers write them. S3s adds tables of scalar rows, and S3t lets each finite
-size instance compute its own exact modulus. None of them
+designers write them. S3s adds tables of scalar rows, S3t lets each finite
+size instance compute its own exact modulus, and S3u carries arrays to four
+dimensions, so that ML-KEM's matrix of polynomials is one type, with updates
+that name one index per dimension, as AES and Keccak update their states.
+None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -1000,7 +1003,8 @@ the syntax tree in source order and does five things:
 2. It resolves each typed specification's signature. The scalar types are
    `Int` and `Bool`, with no width; `Word[8]`, `Word[16]`, `Word[32]`, and
    `Word[64]`, with the width written as a plain decimal token; and `Mod[m]`,
-   whose modulus is a constant. `T^n` is an array of any of them, and a name
+   a constant modulus, or one that a sized function computes from its own
+   sizes. `T^n` is an array of any of them, and a name
    declared by `type` stands for its type. `Word[08]`, `Word[0x8]`,
    `Word[12]`, `Int[8]`, and every other form are errors. Parameter names must
    be distinct within one function.
@@ -1027,13 +1031,20 @@ like any other call, and because uses have no cycle, the call graph of the
 whole program is acyclic when each module's own is.
 
 Within a module, types come before functions. The analyzer first evaluates
-every modulus the module writes, once each: a modulus is built from integer
-literals with `+`, `-`, `*`, `<<`, and parentheses, and must lie from 2
-through 2^521 − 1. It then resolves the `type` declarations in source order,
-each against the names declared before it, and only then the signatures. A
-declared name is another spelling of its type, so a module that writes `F`
-and one that writes `Mod[(1 << 255) - 19]` mean the same thing, and the name
-stays in its module.
+every modulus that uses no size name, once each and in source order: those
+in `type` declarations, then those in each typed spec's finite
+type-parameter lists, parameters, result, bindings, and body. Such a
+modulus is built from integer literals with `+`, `-`, `*`, `<<`, and
+parentheses, and must lie from 2 through 2^521 − 1. A test's moduli are
+resolved only where its body is checked. A sized function may use that
+same vocabulary and its own size names. A modulus that uses a function's
+finite size names is evaluated again in each concrete instance, and that
+instance is checked with the exact modulus those sizes give, still from 2
+through 2^521 − 1. It then resolves the `type` declarations in source
+order, each against the names declared before it, and only then the
+signatures. A declared name is another spelling of its type, so a module
+that writes `F` and one that writes `Mod[(1 << 255) - 19]` mean the same
+thing, and the name stays in its module.
 
 The types are where the language's character first shows. `Int` is the
 type of mathematical integers. It has no maximum and does not overflow. The
@@ -1177,7 +1188,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The eighteen current slices complete bounded parts of the roadmap's S3 stage:
+The twenty-one current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1195,7 +1206,12 @@ once for each, then arrays of up to 65,536 elements, so that a standard's long
 vectors are written whole, then known-answer tests and equality of whole
 arrays and tuples, so that a standard's examples are claims inside the
 program, then shift and rotation amounts computed from data, each with the
-value the arithmetic gives.
+value the arithmetic gives, then arrays of scalar rows, so that a state is a
+table whose axes are checked separately, then modulus expressions over a
+function's own finite sizes, each instance checked with its exact residue
+domain, then arrays of three and four dimensions and update paths, so that a
+matrix of polynomials is one type and a state is updated one index per
+dimension.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
@@ -1755,9 +1771,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [lengths specification](LENGTHS_2026.md) of S3p, the
 [tests specification](TESTS_2026.md) of S3q, and the
 [computed amounts specification](AMOUNTS_2026.md) of S3r, the
-[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, and the
-[static moduli specification](STATIC_MODULI_2026.md) of S3t. S3b through
-S3t are implemented and tested, but their specifications are **proposed**:
+[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, the
+[static moduli specification](STATIC_MODULI_2026.md) of S3t, and the
+[array dimensions specification](DIMENSIONS_2026.md) of S3u. S3b through
+S3u are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1775,8 +1792,9 @@ S3t are implemented and tested, but their specifications are **proposed**:
 [OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md),
 [OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md),
 [OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md),
-[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md), and
-[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) are in
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md),
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), and
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -2153,10 +2171,12 @@ error[ORC0223]: index `16` is out of range for `Word[32]^16`
 ```
 
 And operators act on elements: `x ^ y` on two arrays is `ORC0215`, so an
-operator always means one ring operation on one pair of values. There are no
-arrays of arrays and no empty arrays. With arrays alone, the fixture's ten
-double rounds are ten bindings, one after another. The next section removes
-that repetition.
+operator always means one ring operation on one pair of values. Empty arrays
+are rejected. Arrays of ranks two through four, and an update that names one
+index per dimension, are in [Arrays of rows](#arrays-of-rows) and
+[Four dimensions, one index each](#four-dimensions-one-index-each). With
+arrays alone, the fixture's ten double rounds are ten bindings, one after
+another. The next section removes that repetition.
 
 ### Rounds as one expression
 
@@ -2669,7 +2689,8 @@ time depends on the value, and nothing here says how a field operation on a
 secret is to be compiled; that belongs, like the conditional swap, to
 [Chapter 6](#chapter-6-secrets-are-a-semantic-concern) and code generation.
 The slice also stops short of generic fields: `ladder` is written for one `F`,
-because a function cannot yet take its modulus as a parameter.
+because, until S3t, a function could not take its modulus from a finite size
+parameter, and even now it cannot take one at run time.
 
 ### Rounds in the words of their standard
 
@@ -3415,11 +3436,13 @@ every length and bound as an integer.
 
 That leaves seams. Nothing is proved for every value of a size at once, only
 for each value in its range, one instance at a time, so a family is finite,
-and, until S3p, an array still held at most 256 elements. No modulus is written with a
-parameter, so one `spec` cannot yet serve every field, and no position is a
-parameter, so one quarter round cannot act on four positions of a whole
-state. And a size is fixed in each instance, as a slice's position is, so a
-format that reads a length and then that many bytes still cannot be written.
+and, until S3p, an array still held at most 256 elements. Until S3t, no
+modulus was written with a parameter. S3t lets a finite size parameter stand
+in `Mod[m]`, and even now a function cannot take one at run time. No
+position is a parameter, so one quarter round cannot act on four positions
+of a whole state. And a size is fixed in each instance, as a slice's
+position is, so a format that reads a length and then that many bytes still
+cannot be written.
 The roadmap lists those next. The next section closes one more seam: through
 S3m, bytes and words were converted by functions a program writes, one for
 each width and each order.
@@ -4664,7 +4687,7 @@ must leave it byte-identical. Generated layout whitespace uses LF, while bytes
 inside strings and comments are retained. Formatting does not load imports or
 check types. It changes source bytes, spans and digests and does not preserve
 or migrate source-bound proof/evidence identities. It adds no proof claim and
-leaves the S3t language marker unchanged.
+leaves the language marker unchanged.
 
 The [documentation generator](DOCUMENTATION_2026.md) describes the module's
 imports, aliases, specifications, implementation declarations and tests in
@@ -4689,7 +4712,7 @@ source/proof/evidence identity. D-009 remains without actual candidate runs.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4826,8 +4849,9 @@ module rows {
 The outer index chooses a row; the inner index chooses its scalar. Each is
 proved in range on its own axis. The rows have one exact type, so a short row,
 a different word width, or another residue modulus is rejected. A matrix
-holds at most 65,536 scalars, including the product of both dimensions. A
-third dimension and arrays of tuples remain outside this bounded slice.
+holds at most 65,536 scalars, including the product of both dimensions.
+Arrays of tuples remain outside this bounded slice, and a third and fourth
+dimension arrive with S3u, below.
 
 Rows are immutable values. Updating one row can share every other row, and
 slices and joins preserve the row type. Equality visits every row and every
@@ -4870,15 +4894,81 @@ in owner review.
 The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
 implement OEP-0022 P2: reconstruction, abstraction and tight/loose/canonical
 predicates, followed by addition, carrying and canonicalization. Partial P4
-mathematical preparation adds multiplication. Five exact `Int` accumulators hold the
+mathematical preparation adds multiplication, biased subtraction, dedicated
+squaring and multiplication by a24. Five exact `Int` accumulators hold the
 folded products, and three normalization passes expose each digit array and
-top carry before canonicalization. Boundary and generated binary-reference
-tests check coefficients and every carry stage; the third pass can be needed
-to keep every output digit below 2^51. These definitions supply no native wide
-multiplication primitive and do not complete P4. Transparent type aliases do
-not enforce the predicates, and these tests are not P3 checked refinement proofs.
-The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
-later proof, compiler, corpus and release obligations explicit.
+top carry before canonicalization. Biased subtraction adds the limb form of
+2p and carries limbs below 4B on its own schedule; dedicated squaring doubles
+off-diagonal pairs; a24 coefficients are kept in `Int` because they exceed
+`Word[64]`. Boundary and generated binary-reference tests check coefficients,
+differences, squares, a24 products and every carry stage; the third product
+pass can be needed to keep every output digit below 2^51. These definitions
+supply no native wide multiplication primitive and do not complete P4.
+Transparent type aliases do not enforce the predicates, and these tests are
+not P3 checked refinement proofs. The
+[complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those later
+proof, compiler, corpus and release obligations explicit.
+
+### Four dimensions, one index each
+
+Lattice cryptography has more than two dimensions. FIPS 203 writes
+ML-KEM's public matrix as a k × k array of polynomials, each 256
+coefficients modulo q = 3329. S3u names each dimension with one more
+`type` declaration, up to four, and lets an update name one index per
+dimension it reaches:
+
+```orange
+edition 2026;
+module lattice {
+  type Zq = Mod[3329];
+  type Poly = Zq^4;
+  type Vector = Poly^2;
+  type Matrix = Vector^2;
+  spec transpose(a: Matrix) -> Matrix {
+    for i in 0..2 with t: Matrix = a {
+      for j in 0..2 with u: Matrix = t { u with [i][j] = a[j][i] }
+    }
+  }
+  spec sample() -> Matrix {
+    [[[1, 2, 3, 4], [5, 6, 7, 8]], [[9, 10, 11, 12], [13, 14, 15, 3328]]]
+  }
+  test "the transpose exchanges A[0][1] and A[1][0]" {
+    let t: Matrix = transpose(sample());
+    (t[0][1] == [9, 10, 11, 12]) && (transpose(t) == sample())
+  }
+  test "one coefficient, three indices deep" {
+    let b: Matrix = sample() with [1][1][3] = sample()[1][1][3] + 1;
+    b[1][1] == [13, 14, 15, 0]
+  }
+}
+```
+
+Polynomials here have four coefficients so the example fits on a page;
+the conformance corpus uses all 256. `u with [i][j] = a[j][i]` replaces
+one polynomial of the matrix, and `with [1][1][3]` one coefficient of one
+polynomial. A path means the nested updates it abbreviates,
+`m with [i] = (m[i] with [j] = v)`, and every index is proved in range on
+its own axis before the program runs. Its cost is one step for each array
+of up to 64 elements it copies, so it is cheaper than the nested form,
+which also selects each row. Every axis is positive, and the product of all
+of them is at most 65,536 scalars, so a 16 × 16 × 16 × 16 array fits.
+
+Repeated powers are still not types. `Zq^256^2^2` reads in mathematics as
+a tower of exponents, and a declaration names the object a standard names:
+a polynomial, a vector, a matrix. The display spells the type from the
+innermost dimension out, as `((Mod[3329]^256)^2)^2`, for readers, not as
+source.
+
+The S3u corpus writes AES-128's state as FIPS 197 draws it, a 4 × 4 array
+`s[r][c]`, and reproduces Appendix A.1's key expansion and the cipher
+examples of Appendices B and C.1; SHA3-256 with its lanes `A[x][y]` as
+FIPS 202 indexes them; and ML-KEM-512's NTT over a 2 × 2 matrix of
+polynomials, checked against Appendix A's zetas, against reduction modulo
+each of its 128 quadratic factors, and against multiplication in
+Z_q[X]/(X^256 + 1). The [array dimensions specification](DIMENSIONS_2026.md)
+and [OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md)
+record S3u in owner review. The corpus tests representation and arithmetic;
+it makes no complete ML-KEM claim.
 
 ### What Orange 2026 does not have
 
@@ -4889,7 +4979,7 @@ that take modules as parameters, attributes, visibility, type parameters of
 about for all their values at once, lists of types named once for several
 functions, sizes fitted outside the finite argument and expected-result
 types, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
+shadowing, type inference, arrays of rank five or more, tuples of tuples, arrays of
 tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
 arrays of more than 65,536 elements, step budgets written in a source,
@@ -4924,10 +5014,11 @@ through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
-through OEP-0023, and S3t's, which builds on S3s, through OEP-0024.
+through OEP-0023, and S3t's, which builds on S3s, through OEP-0024, and
+S3u's, which builds on S3t, through OEP-0025.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All nineteen migrations so far are small: every source
+documented migration. All twenty migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4953,6 +5044,8 @@ below the width. Every source S3r accepted retains its values and costs
 under S3s; rank-two type aliases and chained indices are newly admitted.
 S3t retains S3s values and costs and admits own finite size names in modulus
 expressions, while rejecting invalid concrete instances before evaluation.
+S3u retains S3t values and costs; a third and fourth dimension and update
+paths, both rejected before, are newly admitted.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6305,7 +6398,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3t in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3u in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -7037,6 +7130,7 @@ part are listed here so a reader can move from explanation to authority.
   [amount](AMOUNTS_2026.md) specifications under OEP-0005 through OEP-0021,
   [nested arrays](NESTED_ARRAYS_2026.md) under OEP-0023 and
   [static moduli](STATIC_MODULI_2026.md) under OEP-0024,
+  [array dimensions](DIMENSIONS_2026.md) under OEP-0025,
   the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
@@ -7173,6 +7267,10 @@ its typed value boundary, numeric instance selection and reference-only outcomes
 Version 0.26 adds partial P4 mathematical product preparation alongside the
 existing P2 representation definitions, with exact accumulators and three
 normalization passes; it adds no P3 proof or P4 completion claim.
+Version 0.27 adds the [array dimensions specification](DIMENSIONS_2026.md) and
+[OEP-0025](governance/oeps/OEP-0025-orange-2026-array-dimensions.md), and
+extends that partial P4 preparation with biased subtraction, dedicated squaring
+and a24 multiplication schedules; it adds no P3 proof or P4 completion claim.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7358,6 +7456,16 @@ witness replayer. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-02 direction. The semantic boundary remains S3t in review; one concrete
 execution supplies no proof, solver selection, D-009 candidate credit, atomic
 claim authority or release acceptance.
+
+Manuscript version 0.27 revises the preface, Chapter 8, the current slice
+marker, the status ledger and Appendix D for the S3u dimension slice, and adds
+the Chapter 8 section "Four dimensions, one index each". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-10-04, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. The same version also records biased subtraction, dedicated squaring and
+a24 multiplication in the partial P4 preparation on 2026-10-05. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

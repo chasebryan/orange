@@ -1,0 +1,15 @@
+// S3u conformance: an update path names one index per dimension it
+// reaches. A path past the scalars, an index out of range for its own
+// axis, and a value of the wrong type for the path's end are rejected
+// before evaluation.
+edition 2026;
+module paths {
+  type Row = Word[8]^16; type Plane = Row^16; type Cube = Plane^16;
+  spec deep(c: Cube) -> Cube { c with [0][0][0][0] = 1 }
+  spec far(c: Cube) -> Cube { c with [0][16][0] = 1 }
+  spec reach(c: Cube, i: Word[8]) -> Cube { c with [0][i][0] = 1 }
+  spec wrong(c: Cube) -> Cube { c with [0][0] = 1 }
+  spec short(c: Cube) -> Cube { c with [0][0] = [1, 2] }
+  spec kind(c: Cube) -> Cube { c with [0][0][0] = true }
+  spec result(c: Cube) -> Plane { c with [0][0][0] = 1 }
+}

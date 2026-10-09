@@ -1,473 +1,329 @@
-// AES, the Advanced Encryption Standard of FIPS 197 (2001; update 1, 2023),
-// https://doi.org/10.6028/NIST.FIPS.197-upd1, written as the standard writes
-// it: the state is the 4 x 4 byte array of section 3.4 kept column by column,
-// the four transformations of section 5.1 and their inverses of section 5.3
-// act on it, KeyExpansion of section 5.2 makes the round keys for Nk = 4, 6
-// and 8, and Cipher and InvCipher take the number of rounds Nr as the
-// standard's algorithms do. The S-boxes are packed eight entries to a word.
-// The file reproduces the cipher examples of Appendix C.1, C.2 and C.3 and
-// their inverses, and the round-by-round example of Appendix B. The modes of
-// operation of SP 800-38A are in aes-modes.or.
+// AES, the Advanced Encryption Standard of FIPS 197 (NIST, 2001; update 1,
+// May 2023), https://doi.org/10.6028/NIST.FIPS.197-upd1, written as the
+// standard writes it: the state is the 4 x 4 byte array s[r][c] of section
+// 3.4, the four transformations of section 5.1 and their inverses of section
+// 5.3 act on it, KeyExpansion of section 5.2 makes the round keys for
+// Nk = 4, 6 and 8, and Cipher and InvCipher take the number of rounds Nr as
+// the standard's Algorithms 1 and 3 do. The S-box and its inverse are the
+// tables of sections 5.1.1 and 5.3.2, read by the byte they substitute.
+//
+// The file reproduces the cipher examples of Appendix C.1, C.2 and C.3 of the
+// 2001 text (the 2023 update removed them) and their inverses, and the output
+// of the round-by-round example of Appendix B. The modes of operation of
+// SP 800-38A are in aes-modes.or, which uses this module.
 edition 2026;
 module aes {
-  // Section 5.1.1: SubBytes is a table. Indices in Orange are static, so a
-  // lookup selects the word holding the entry and then the byte in it.
-  // The byte at position k of a word holding eight table entries.
-  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
-    if k == 0 { (w >> 56) as Word[8] }
-    else if k == 1 { (w >> 48) as Word[8] }
-    else if k == 2 { (w >> 40) as Word[8] }
-    else if k == 3 { (w >> 32) as Word[8] }
-    else if k == 4 { (w >> 24) as Word[8] }
-    else if k == 5 { (w >> 16) as Word[8] }
-    else if k == 6 { (w >> 8) as Word[8] }
-    else { w as Word[8] }
+  // Section 3.4: the state is four rows of four bytes, s[r][c] the byte in
+  // row r and column c.
+  type Row = Word[8]^4;
+  type State = Row^4;
+
+  // Section 3.4: the input fills the state column by column,
+  // s[r][c] = in[r + 4c], and the output is read back the same way,
+  // out[r + 4c] = s[r][c].
+  spec state(input: Word[8]^16) -> State {
+    for r in 0..4 with s: State = [[0; 4]; 4] {
+      for c in 0..4 with t: State = s { t with [r][c] = input[r + 4 * c] }
+    }
   }
 
-  // Entry x of a 256-entry table packed eight entries to a word.
-  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
-    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
-      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
+  spec output(s: State) -> Word[8]^16 {
+    for i in 0..16 with out: Word[8]^16 = [0; 16] { out with [i] = s[i % 4][i / 4] }
+  }
+
+  // Section 4.2: xtime, multiplication by x in GF(2^8) modulo
+  // m(x) = x^8 + x^4 + x^3 + x + 1.
+  spec xtime(b: Word[8]) -> Word[8] {
+    (b << 1) ^ (if (b & 0x80) != 0 { 0x1b } else { 0 })
+  }
+
+  // Section 4.2: the product a * b, adding x^k a, made by k applications of
+  // xtime, for every bit k of b that is set. MixColumns and InvMixColumns
+  // pass a matrix constant as a and a state byte as b, so the branch on the
+  // bits of b follows the data and the xtime steps on m do not.
+  spec mul(a: Word[8], b: Word[8]) -> Word[8] {
+    let walk: (Word[8], Word[8]) = for k in 0..8 with (p: Word[8], m: Word[8]) = (0, a) {
+      (if ((b >> k) & 1) == 1 { p ^ m } else { p }, xtime(m))
     };
-    byte_at(w, x & 7)
+    walk.0
   }
 
-  // Section 5.1.1, Table 4 (Figure 7 of the 2001 text): the S-box. Entry x
-  // is the affine map b'_i = b_i + b_(i+4) + b_(i+5) + b_(i+6) + b_(i+7) + c_i
+  // Section 5.1.1, Table 4 (Figure 7 of the 2001 text): the S-box, row x (the high four bits of the
+  // byte) as printed, columns y (the low four bits) 0 through f. Entry xy is
+  // the affine map b'_i = b_i + b_(i+4) + b_(i+5) + b_(i+6) + b_(i+7) + c_i
   // over GF(2), the indices taken modulo 8 and c = 0x63, applied to the
-  // multiplicative inverse of x in GF(2^8) modulo x^8 + x^4 + x^3 + x + 1,
-  // the inverse of 0 being 0. Each word below is one half-row of the table
-  // read left to right: 0x637c777bf26b6fc5 holds the entries
-  // 63 7c 77 7b f2 6b 6f c5 for x = 00 through 07.
-  spec sbox() -> Word[64]^32 {
-    [
-      0x637c777bf26b6fc5, 0x3001672bfed7ab76, 0xca82c97dfa5947f0, 0xadd4a2af9ca472c0,
-      0xb7fd9326363ff7cc, 0x34a5e5f171d83115, 0x04c723c31896059a, 0x071280e2eb27b275,
-      0x09832c1a1b6e5aa0, 0x523bd6b329e32f84, 0x53d100ed20fcb15b, 0x6acbbe394a4c58cf,
-      0xd0efaafb434d3385, 0x45f9027f503c9fa8, 0x51a3408f929d38f5, 0xbcb6da2110fff3d2,
-      0xcd0c13ec5f974417, 0xc4a77e3d645d1973, 0x60814fdc222a9088, 0x46eeb814de5e0bdb,
-      0xe0323a0a4906245c, 0xc2d3ac629195e479, 0xe7c8376d8dd54ea9, 0x6c56f4ea657aae08,
-      0xba78252e1ca6b4c6, 0xe8dd741f4bbd8b8a, 0x703eb5664803f60e, 0x613557b986c11d9e,
-      0xe1f8981169d98e94, 0x9b1e87e9ce5528df, 0x8ca1890dbfe64268, 0x41992d0fb054bb16,
-    ]
+  // multiplicative inverse of xy in GF(2^8) modulo m(x), the inverse of 0
+  // being 0.
+  spec sbox() -> Word[8]^256 {
+    hex"63 7c 77 7b f2 6b 6f c5 30 01 67 2b fe d7 ab 76" ++
+    hex"ca 82 c9 7d fa 59 47 f0 ad d4 a2 af 9c a4 72 c0" ++
+    hex"b7 fd 93 26 36 3f f7 cc 34 a5 e5 f1 71 d8 31 15" ++
+    hex"04 c7 23 c3 18 96 05 9a 07 12 80 e2 eb 27 b2 75" ++
+    hex"09 83 2c 1a 1b 6e 5a a0 52 3b d6 b3 29 e3 2f 84" ++
+    hex"53 d1 00 ed 20 fc b1 5b 6a cb be 39 4a 4c 58 cf" ++
+    hex"d0 ef aa fb 43 4d 33 85 45 f9 02 7f 50 3c 9f a8" ++
+    hex"51 a3 40 8f 92 9d 38 f5 bc b6 da 21 10 ff f3 d2" ++
+    hex"cd 0c 13 ec 5f 97 44 17 c4 a7 7e 3d 64 5d 19 73" ++
+    hex"60 81 4f dc 22 2a 90 88 46 ee b8 14 de 5e 0b db" ++
+    hex"e0 32 3a 0a 49 06 24 5c c2 d3 ac 62 91 95 e4 79" ++
+    hex"e7 c8 37 6d 8d d5 4e a9 6c 56 f4 ea 65 7a ae 08" ++
+    hex"ba 78 25 2e 1c a6 b4 c6 e8 dd 74 1f 4b bd 8b 8a" ++
+    hex"70 3e b5 66 48 03 f6 0e 61 35 57 b9 86 c1 1d 9e" ++
+    hex"e1 f8 98 11 69 d9 8e 94 9b 1e 87 e9 ce 55 28 df" ++
+    hex"8c a1 89 0d bf e6 42 68 41 99 2d 0f b0 54 bb 16"
   }
 
   // Section 5.3.2, Table 6 (Figure 14 of the 2001 text): the inverse S-box,
-  // packed the same way.
-  spec inv_sbox() -> Word[64]^32 {
-    [
-      0x52096ad53036a538, 0xbf40a39e81f3d7fb, 0x7ce339829b2fff87, 0x348e4344c4dee9cb,
-      0x547b9432a6c2233d, 0xee4c950b42fac34e, 0x082ea16628d924b2, 0x765ba2496d8bd125,
-      0x72f8f66486689816, 0xd4a45ccc5d65b692, 0x6c704850fdedb9da, 0x5e154657a78d9d84,
-      0x90d8ab008cbcd30a, 0xf7e45805b8b34506, 0xd02c1e8fca3f0f02, 0xc1afbd0301138a6b,
-      0x3a9111414f67dcea, 0x97f2cfcef0b4e673, 0x96ac7422e7ad3585, 0xe2f937e81c75df6e,
-      0x47f11a711d29c589, 0x6fb7620eaa18be1b, 0xfc563e4bc6d27920, 0x9adbc0fe78cd5af4,
-      0x1fdda8338807c731, 0xb11210592780ec5f, 0x60517fa919b54a0d, 0x2de57a9f93c99cef,
-      0xa0e03b4dae2af5b0, 0xc8ebbb3c83539961, 0x172b047eba77d626, 0xe169146355210c7d,
-    ]
+  // laid out the same way.
+  spec inv_sbox() -> Word[8]^256 {
+    hex"52 09 6a d5 30 36 a5 38 bf 40 a3 9e 81 f3 d7 fb" ++
+    hex"7c e3 39 82 9b 2f ff 87 34 8e 43 44 c4 de e9 cb" ++
+    hex"54 7b 94 32 a6 c2 23 3d ee 4c 95 0b 42 fa c3 4e" ++
+    hex"08 2e a1 66 28 d9 24 b2 76 5b a2 49 6d 8b d1 25" ++
+    hex"72 f8 f6 64 86 68 98 16 d4 a4 5c cc 5d 65 b6 92" ++
+    hex"6c 70 48 50 fd ed b9 da 5e 15 46 57 a7 8d 9d 84" ++
+    hex"90 d8 ab 00 8c bc d3 0a f7 e4 58 05 b8 b3 45 06" ++
+    hex"d0 2c 1e 8f ca 3f 0f 02 c1 af bd 03 01 13 8a 6b" ++
+    hex"3a 91 11 41 4f 67 dc ea 97 f2 cf ce f0 b4 e6 73" ++
+    hex"96 ac 74 22 e7 ad 35 85 e2 f9 37 e8 1c 75 df 6e" ++
+    hex"47 f1 1a 71 1d 29 c5 89 6f b7 62 0e aa 18 be 1b" ++
+    hex"fc 56 3e 4b c6 d2 79 20 9a db c0 fe 78 cd 5a f4" ++
+    hex"1f dd a8 33 88 07 c7 31 b1 12 10 59 27 80 ec 5f" ++
+    hex"60 51 7f a9 19 b5 4a 0d 2d e5 7a 9f 93 c9 9c ef" ++
+    hex"a0 e0 3b 4d ae 2a f5 b0 c8 eb bb 3c 83 53 99 61" ++
+    hex"17 2b 04 7e ba 77 d6 26 e1 69 14 63 55 21 0c 7d"
   }
 
-  // Section 3.4: the state is s[r, c] = in[r + 4c], so a block of sixteen
-  // input bytes is the state read column by column, and the sixteen bytes of
-  // a round key are the four words w[4 round + c] read byte by byte.
-  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  // Section 5.1.1: SubBytes, s'[r][c] = SBOX(s[r][c]), the byte itself the
+  // index into Table 4.
+  spec sub_bytes(s: State) -> State {
+    let sbox: Word[8]^256 = sbox();
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = sbox[s[r][c]] }
+    }
   }
 
-  spec be_bytes(x: Word[32]) -> Word[8]^4 {
-    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  // Section 5.3.2: InvSubBytes, s'[r][c] = INVSBOX(s[r][c]).
+  spec inv_sub_bytes(s: State) -> State {
+    let inv_sbox: Word[8]^256 = inv_sbox();
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = inv_sbox[s[r][c]] }
+    }
   }
 
-  // Section 5.1.1: SubBytes, the S-box applied to every byte of the state.
-  // The table s is passed in so that a caller loads it once per block.
-  spec sub_bytes(state: Word[8]^16, s: Word[64]^32) -> Word[8]^16 {
-    [
-      lookup(s, state[0]), lookup(s, state[1]), lookup(s, state[2]), lookup(s, state[3]),
-      lookup(s, state[4]), lookup(s, state[5]), lookup(s, state[6]), lookup(s, state[7]),
-      lookup(s, state[8]), lookup(s, state[9]), lookup(s, state[10]), lookup(s, state[11]),
-      lookup(s, state[12]), lookup(s, state[13]), lookup(s, state[14]), lookup(s, state[15]),
-    ]
+  // Section 5.1.2: ShiftRows turns row r left by r places,
+  // s'[r][c] = s[r][(c + r) mod 4].
+  spec shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c + r) % 4] }
+    }
   }
 
-  // Section 5.1.2: ShiftRows moves row r left by r, s'[r, c] = s[r, c + r mod 4];
-  // in column-major order that is the fixed reindexing below.
-  spec shift_rows(s: Word[8]^16) -> Word[8]^16 {
-    [
-      s[0], s[5], s[10], s[15],
-      s[4], s[9], s[14], s[3],
-      s[8], s[13], s[2], s[7],
-      s[12], s[1], s[6], s[11],
-    ]
+  // Section 5.3.1: InvShiftRows turns row r right by r places,
+  // s'[r][c] = s[r][(c - r) mod 4].
+  spec inv_shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c - r) % 4] }
+    }
   }
 
-  // Section 4.2: xtime, multiplication by x in GF(2^8) modulo x^8 + x^4 + x^3 + x + 1.
-  spec xtime(a: Word[8]) -> Word[8] {
-    (a << 1) ^ (if (a & 0x80) != 0 { 0x1b } else { 0 })
+  // Sections 5.1.3 and 5.3.3: each column multiplied by a fixed matrix whose
+  // rows are rotations of its first row m, so that
+  // s'[r][c] = m[0] s[r][c] + m[1] s[r + 1][c] + m[2] s[r + 2][c] + m[3] s[r + 3][c],
+  // the row indices taken modulo 4. This is the product of the column with a
+  // fixed polynomial modulo x^4 + 1, as the 2001 text writes it.
+  spec mix(s: State, m: Row) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t {
+        u with [r][c] = mul(m[0], s[r][c])
+          ^ mul(m[1], s[(r + 1) % 4][c])
+          ^ mul(m[2], s[(r + 2) % 4][c])
+          ^ mul(m[3], s[(r + 3) % 4][c])
+      }
+    }
   }
 
-  // Section 5.1.3: MixColumns multiplies each column by the fixed polynomial
-  // a(x) = {03}x^3 + {01}x^2 + {01}x + {02}, where {03}b = xtime(b) + b.
-  spec mix_column(s0: Word[8], s1: Word[8], s2: Word[8], s3: Word[8]) -> Word[8]^4 {
-    [
-      xtime(s0) ^ (xtime(s1) ^ s1) ^ s2 ^ s3,
-      s0 ^ xtime(s1) ^ (xtime(s2) ^ s2) ^ s3,
-      s0 ^ s1 ^ xtime(s2) ^ (xtime(s3) ^ s3),
-      (xtime(s0) ^ s0) ^ s1 ^ s2 ^ xtime(s3),
-    ]
+  // Section 5.1.3: MixColumns, the polynomial
+  // a(x) = {03}x^3 + {01}x^2 + {01}x + {02} (Equation 5.5 of the 2001 text;
+  // the 2023 text gives its coefficients as the word [{02}, {01}, {01}, {03}]),
+  // whose matrix has first row {02} {03} {01} {01}.
+  spec mix_columns(s: State) -> State { mix(s, [0x02, 0x03, 0x01, 0x01]) }
+
+  // Section 5.3.3: InvMixColumns, the inverse polynomial
+  // a^-1(x) = {0b}x^3 + {0d}x^2 + {09}x + {0e} (Equation 5.9 of the 2001 text;
+  // the 2023 text gives the word [{0e}, {09}, {0d}, {0b}]), first row
+  // {0e} {0b} {0d} {09}.
+  spec inv_mix_columns(s: State) -> State { mix(s, [0x0e, 0x0b, 0x0d, 0x09]) }
+
+  // Section 5.1.4: AddRoundKey adds word w[4 round + c] of the round key to
+  // column c. A word [a0, a1, a2, a3] is held here with a0 its most
+  // significant byte, as KeyExpansion reads the key, so its bytes from the
+  // most significant down go to rows 0 through 3.
+  spec add_round_key(s: State, k: Word[32]^4) -> State {
+    for c in 0..4 with t: State = s {
+      let word: Word[8]^4 = k[c] as big Word[8]^4;
+      for r in 0..4 with u: State = t { u with [r][c] = s[r][c] ^ word[r] }
+    }
   }
 
-  spec mix_columns(s: Word[8]^16) -> Word[8]^16 {
-    let c0: Word[8]^4 = mix_column(s[0], s[1], s[2], s[3]);
-    let c1: Word[8]^4 = mix_column(s[4], s[5], s[6], s[7]);
-    let c2: Word[8]^4 = mix_column(s[8], s[9], s[10], s[11]);
-    let c3: Word[8]^4 = mix_column(s[12], s[13], s[14], s[15]);
-    [
-      c0[0], c0[1], c0[2], c0[3],
-      c1[0], c1[1], c1[2], c1[3],
-      c2[0], c2[1], c2[2], c2[3],
-      c3[0], c3[1], c3[2], c3[3],
-    ]
-  }
-
-  // Section 5.1.4: AddRoundKey, the four words of the round key added to the
-  // four columns.
-  spec add_round_key(s: Word[8]^16, k: Word[32]^4) -> Word[8]^16 {
-    let k0: Word[8]^4 = be_bytes(k[0]);
-    let k1: Word[8]^4 = be_bytes(k[1]);
-    let k2: Word[8]^4 = be_bytes(k[2]);
-    let k3: Word[8]^4 = be_bytes(k[3]);
-    [
-      s[0] ^ k0[0], s[1] ^ k0[1], s[2] ^ k0[2], s[3] ^ k0[3],
-      s[4] ^ k1[0], s[5] ^ k1[1], s[6] ^ k1[2], s[7] ^ k1[3],
-      s[8] ^ k2[0], s[9] ^ k2[1], s[10] ^ k2[2], s[11] ^ k2[3],
-      s[12] ^ k3[0], s[13] ^ k3[1], s[14] ^ k3[2], s[15] ^ k3[3],
-    ]
-  }
-
-  // Section 5.3.1: InvShiftRows, s'[r, c] = s[r, c - r mod 4].
-  spec inv_shift_rows(s: Word[8]^16) -> Word[8]^16 {
-    [
-      s[0], s[13], s[10], s[7],
-      s[4], s[1], s[14], s[11],
-      s[8], s[5], s[2], s[15],
-      s[12], s[9], s[6], s[3],
-    ]
-  }
-
-  // Section 5.3.2: InvSubBytes, with the inverse S-box passed in as s.
-  spec inv_sub_bytes(state: Word[8]^16, s: Word[64]^32) -> Word[8]^16 {
-    sub_bytes(state, s)
-  }
-
-  // Section 5.3.3: InvMixColumns multiplies each column by
-  // a^-1(x) = {0b}x^3 + {0d}x^2 + {09}x + {0e}. The constants are sums of
-  // b, {02}b, {04}b and {08}b, three applications of xtime.
-  spec inv_mix_column(s0: Word[8], s1: Word[8], s2: Word[8], s3: Word[8]) -> Word[8]^4 {
-    let x2: Word[8]^4 = [xtime(s0), xtime(s1), xtime(s2), xtime(s3)];
-    let x4: Word[8]^4 = [xtime(x2[0]), xtime(x2[1]), xtime(x2[2]), xtime(x2[3])];
-    let x8: Word[8]^4 = [xtime(x4[0]), xtime(x4[1]), xtime(x4[2]), xtime(x4[3])];
-    // {09}b = {08}b + b, {0b}b = {08}b + {02}b + b, {0d}b = {08}b + {04}b + b,
-    // {0e}b = {08}b + {04}b + {02}b.
-    let m9: Word[8]^4 = [x8[0] ^ s0, x8[1] ^ s1, x8[2] ^ s2, x8[3] ^ s3];
-    let mb: Word[8]^4 = [m9[0] ^ x2[0], m9[1] ^ x2[1], m9[2] ^ x2[2], m9[3] ^ x2[3]];
-    let md: Word[8]^4 = [m9[0] ^ x4[0], m9[1] ^ x4[1], m9[2] ^ x4[2], m9[3] ^ x4[3]];
-    let me: Word[8]^4 = [
-      x8[0] ^ x4[0] ^ x2[0], x8[1] ^ x4[1] ^ x2[1], x8[2] ^ x4[2] ^ x2[2], x8[3] ^ x4[3] ^ x2[3],
-    ];
-    [
-      me[0] ^ mb[1] ^ md[2] ^ m9[3],
-      m9[0] ^ me[1] ^ mb[2] ^ md[3],
-      md[0] ^ m9[1] ^ me[2] ^ mb[3],
-      mb[0] ^ md[1] ^ m9[2] ^ me[3],
-    ]
-  }
-
-  spec inv_mix_columns(s: Word[8]^16) -> Word[8]^16 {
-    let c0: Word[8]^4 = inv_mix_column(s[0], s[1], s[2], s[3]);
-    let c1: Word[8]^4 = inv_mix_column(s[4], s[5], s[6], s[7]);
-    let c2: Word[8]^4 = inv_mix_column(s[8], s[9], s[10], s[11]);
-    let c3: Word[8]^4 = inv_mix_column(s[12], s[13], s[14], s[15]);
-    [
-      c0[0], c0[1], c0[2], c0[3],
-      c1[0], c1[1], c1[2], c1[3],
-      c2[0], c2[1], c2[2], c2[3],
-      c3[0], c3[1], c3[2], c3[3],
-    ]
-  }
-
-  // Section 5.2: the words of the key schedule. RotWord is a cyclic shift of
-  // the four bytes, SubWord the S-box on each of them, and Rcon[j] is the
-  // word [x^(j-1), 00, 00, 00] with the powers of x taken in GF(2^8)
-  // (Table 5). The schedule w has 4(Nr + 1) words; the array is sized for
-  // AES-256, and AES-128 and AES-192 leave its tail at zero.
+  // Section 5.2: RotWord([a0, a1, a2, a3]) = [a1, a2, a3, a0] and SubWord,
+  // the S-box on each of the four bytes, with a0 the most significant byte
+  // of the word.
   spec rot_word(w: Word[32]) -> Word[32] { w <<< 8 }
 
-  spec sub_word(w: Word[32], s: Word[64]^32) -> Word[32] {
-    load_be32(
-      lookup(s, (w >> 24) as Word[8]),
-      lookup(s, (w >> 16) as Word[8]),
-      lookup(s, (w >> 8) as Word[8]),
-      lookup(s, w as Word[8]),
-    )
+  spec sub_word(w: Word[32]) -> Word[32] {
+    let sbox: Word[8]^256 = sbox();
+    let a: Word[8]^4 = w as big Word[8]^4;
+    [sbox[a[0]], sbox[a[1]], sbox[a[2]], sbox[a[3]]] as big Word[32]
   }
 
+  // Section 5.2, Table 5: the round constants Rcon[1] through Rcon[10], the
+  // words [x^(j - 1), 00, 00, 00] with the powers of x taken in GF(2^8).
+  // Rcon[j] is element j - 1 of the array.
   spec rcon() -> Word[32]^10 {
-    [
-      0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000, 0x20000000, 0x40000000, 0x80000000,
-      0x1b000000, 0x36000000,
-    ]
+    (
+      hex"01000000 02000000 04000000 08000000 10000000" ++
+      hex"20000000 40000000 80000000 1b000000 36000000"
+    ) as big Word[32]^10
   }
 
-  // Section 5.2, Algorithm 2 with Nk = 4: w[i] = w[i - 4] + temp, where temp
-  // is w[i - 1], transformed by RotWord, SubWord and Rcon[i / 4] when i is a
-  // multiple of 4.
-  spec key_expansion_128(key: Word[8]^16) -> Word[32]^60 {
-    let s: Word[64]^32 = sbox();
-    let r: Word[32]^10 = rcon();
-    let first: Word[32]^60 = for i in 0..4 with w: Word[32]^60 = [0; 60] {
-      w with [i] = load_be32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
-    };
-    for i in 4..44 with w: Word[32]^60 = first {
-      w with [i] = w[i - 4] ^ (
-        if (i % 4) == 0 { sub_word(rot_word(w[i - 1]), s) ^ r[(i / 4) - 1] } else { w[i - 1] }
-      )
+  // Section 5.2, Algorithm 2: KeyExpansion(key) for a key of Nk words, the
+  // schedule w of 4 Nr + 4 = 4 Nk + 28 words. The key fills w[0] through
+  // w[Nk - 1]; then w[i] = w[i - Nk] + temp, where temp is w[i - 1],
+  // transformed by RotWord, SubWord and Rcon[i / Nk] when i is a multiple of
+  // Nk, and by SubWord alone when Nk > 6 and i mod Nk = 4. AES takes Nk = 4,
+  // 6 and 8; a size ranges over an interval, so the instances 5 and 7 in the
+  // range exist but are not called.
+  spec key_expansion[nk in 4..9](key: Word[8]^(4 * nk)) -> Word[32]^(4 * nk + 28) {
+    let rcon: Word[32]^10 = rcon();
+    let first: Word[32]^(4 * nk + 28) = (key as big Word[32]^nk) ++ [0; (3 * nk + 28)];
+    for i in (nk)..(4 * nk + 28) with w: Word[32]^(4 * nk + 28) = first {
+      let temp: Word[32] = if (i % nk) == 0 {
+        sub_word(rot_word(w[i - 1])) ^ rcon[(i / nk) - 1]
+      } else if (nk > 6) && ((i % nk) == 4) {
+        sub_word(w[i - 1])
+      } else {
+        w[i - 1]
+      };
+      w with [i] = w[i - nk] ^ temp
     }
   }
 
-  // Algorithm 2 with Nk = 6: the same recurrence with period 6.
-  spec key_expansion_192(key: Word[8]^24) -> Word[32]^60 {
-    let s: Word[64]^32 = sbox();
-    let r: Word[32]^10 = rcon();
-    let first: Word[32]^60 = for i in 0..6 with w: Word[32]^60 = [0; 60] {
-      w with [i] = load_be32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+  // Section 5.1, Algorithm 1: Cipher(in, Nr, w). Round 0 adds the first
+  // round key; rounds 1 through Nr - 1 apply SubBytes, ShiftRows, MixColumns
+  // and AddRoundKey; round Nr omits MixColumns. Round key `round` is the
+  // four words w[4 round] through w[4 round + 3], the slice
+  // w[4 round .. 4 round + 4]. The standard's parameter Nr is the size `nr`;
+  // its range 10..15 also holds 11 and 13, which AES does not use, and the
+  // callers tie Nr = Nk + 6 (aes128 calls cipher[10], aes192 cipher[12],
+  // aes256 cipher[14]).
+  spec cipher[nr in 10..15](input: Word[8]^16, w: Word[32]^(4 * nr + 4)) -> Word[8]^16 {
+    let first: State = add_round_key(state(input), w[0..4]);
+    let middle: State = for round in 1..(nr) with s: State = first {
+      add_round_key(mix_columns(shift_rows(sub_bytes(s))), w[4 * round..4 * round + 4])
     };
-    for i in 6..52 with w: Word[32]^60 = first {
-      w with [i] = w[i - 6] ^ (
-        if (i % 6) == 0 { sub_word(rot_word(w[i - 1]), s) ^ r[(i / 6) - 1] } else { w[i - 1] }
-      )
-    }
+    output(add_round_key(shift_rows(sub_bytes(middle)), w[4 * nr..4 * nr + 4]))
   }
 
-  // Algorithm 2 with Nk = 8: period 8, and SubWord alone when i is 4 more
-  // than a multiple of 8.
-  spec key_expansion_256(key: Word[8]^32) -> Word[32]^60 {
-    let s: Word[64]^32 = sbox();
-    let r: Word[32]^10 = rcon();
-    let first: Word[32]^60 = for i in 0..8 with w: Word[32]^60 = [0; 60] {
-      w with [i] = load_be32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+  // Section 5.3, Algorithm 3: InvCipher(in, Nr, w). Round Nr's key is added
+  // first; the rounds Nr - 1 down to 1 apply InvShiftRows, InvSubBytes,
+  // AddRoundKey and InvMixColumns; the last omits InvMixColumns and adds the
+  // first round key. A loop counts up, so step j runs round Nr - j. Nr is
+  // the size `nr`, as in Cipher.
+  spec inv_cipher[nr in 10..15](input: Word[8]^16, w: Word[32]^(4 * nr + 4)) -> Word[8]^16 {
+    let first: State = add_round_key(state(input), w[4 * nr..4 * nr + 4]);
+    let middle: State = for j in 1..(nr) with s: State = first {
+      inv_mix_columns(add_round_key(
+        inv_sub_bytes(inv_shift_rows(s)),
+        w[4 * (nr - j)..4 * (nr - j) + 4],
+      ))
     };
-    for i in 8..60 with w: Word[32]^60 = first {
-      w with [i] = w[i - 8] ^ (
-        if (i % 8) == 0 { sub_word(rot_word(w[i - 1]), s) ^ r[(i / 8) - 1] }
-        else if (i % 8) == 4 { sub_word(w[i - 1], s) }
-        else { w[i - 1] }
-      )
-    }
-  }
-
-  // Section 5.1, Algorithm 1: Cipher(in, Nr, w). Round 0 adds the first round
-  // key; rounds 1 through Nr - 1 apply SubBytes, ShiftRows, MixColumns and
-  // AddRoundKey; round Nr omits MixColumns. The loop runs to the 14 rounds of
-  // AES-256 and the rounds above Nr leave the state alone, since the round
-  // index must be static to select the round key.
-  spec cipher(input: Word[8]^16, nr: Int, w: Word[32]^60) -> Word[8]^16 {
-    let s: Word[64]^32 = sbox();
-    let start: Word[8]^16 = add_round_key(input, [w[0], w[1], w[2], w[3]]);
-    for round in 1..15 with state: Word[8]^16 = start {
-      if round < nr {
-        add_round_key(
-          mix_columns(shift_rows(sub_bytes(state, s))),
-          [w[4 * round], w[4 * round + 1], w[4 * round + 2], w[4 * round + 3]],
-        )
-      } else if round == nr {
-        add_round_key(
-          shift_rows(sub_bytes(state, s)),
-          [w[4 * round], w[4 * round + 1], w[4 * round + 2], w[4 * round + 3]],
-        )
-      } else { state }
-    }
-  }
-
-  // Section 5.3, Algorithm 3: InvCipher(in, Nr, w). The rounds run from Nr
-  // down to 1, so the loop counts j up and takes round = 14 - j: round Nr
-  // adds the last round key, rounds Nr - 1 through 1 apply InvShiftRows,
-  // InvSubBytes, AddRoundKey and InvMixColumns, and the first round key is
-  // added after the loop.
-  spec inv_cipher(input: Word[8]^16, nr: Int, w: Word[32]^60) -> Word[8]^16 {
-    let s: Word[64]^32 = inv_sbox();
-    let last: Word[8]^16 = for j in 0..14 with state: Word[8]^16 = input {
-      if (14 - j) == nr {
-        add_round_key(
-          state,
-          [w[4 * (14 - j)], w[4 * (14 - j) + 1], w[4 * (14 - j) + 2], w[4 * (14 - j) + 3]],
-        )
-      } else if (14 - j) < nr {
-        inv_mix_columns(add_round_key(
-          inv_sub_bytes(inv_shift_rows(state), s),
-          [w[4 * (14 - j)], w[4 * (14 - j) + 1], w[4 * (14 - j) + 2], w[4 * (14 - j) + 3]],
-        ))
-      } else { state }
-    };
-    add_round_key(inv_sub_bytes(inv_shift_rows(last), s), [w[0], w[1], w[2], w[3]])
+    output(add_round_key(inv_sub_bytes(inv_shift_rows(middle)), w[0..4]))
   }
 
   // Section 5, as the 2023 update names them: AES-128, AES-192 and AES-256
-  // are Cipher with Nr = 10, 12 and 14 under the schedule of their key, and
-  // their inverses are InvCipher under the same schedule.
+  // are Cipher with Nr = 10, 12 and 14 under the schedule KeyExpansion(key),
+  // and their inverses are InvCipher under the same schedule.
   spec aes128(key: Word[8]^16, input: Word[8]^16) -> Word[8]^16 {
-    cipher(input, 10, key_expansion_128(key))
+    cipher[10](input, key_expansion(key))
   }
 
   spec aes192(key: Word[8]^24, input: Word[8]^16) -> Word[8]^16 {
-    cipher(input, 12, key_expansion_192(key))
+    cipher[12](input, key_expansion(key))
   }
 
   spec aes256(key: Word[8]^32, input: Word[8]^16) -> Word[8]^16 {
-    cipher(input, 14, key_expansion_256(key))
+    cipher[14](input, key_expansion(key))
   }
 
   spec aes128_inverse(key: Word[8]^16, input: Word[8]^16) -> Word[8]^16 {
-    inv_cipher(input, 10, key_expansion_128(key))
+    inv_cipher[10](input, key_expansion(key))
   }
 
   spec aes192_inverse(key: Word[8]^24, input: Word[8]^16) -> Word[8]^16 {
-    inv_cipher(input, 12, key_expansion_192(key))
+    inv_cipher[12](input, key_expansion(key))
   }
 
   spec aes256_inverse(key: Word[8]^32, input: Word[8]^16) -> Word[8]^16 {
-    inv_cipher(input, 14, key_expansion_256(key))
+    inv_cipher[14](input, key_expansion(key))
   }
 
-  // FIPS 197, Appendix C.1: AES-128, plaintext 00112233...eeff under the key 000102...0f.
-  spec fips197_c1_aes128() -> Word[8]^16 {
-    aes128(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-      ],
-      [
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-      ],
-    )
+  // The vectors. Appendix C encrypts the plaintext 00112233...eeff under
+  // the keys 000102...0f, 000102...17 and 000102...1f, and its INVERSE
+  // CIPHER sections take each ciphertext back to the plaintext; the values
+  // as printed in OpenSSL's evpciph_aes_common.txt.
+
+  // FIPS 197, Appendix C.1, AES-128 (Nk = 4, Nr = 10).
+  test "FIPS 197 C.1: AES-128 encrypts" {
+    aes128(hex"00010203 04050607 08090a0b 0c0d0e0f", hex"00112233 44556677 8899aabb ccddeeff")
+      == hex"69c4e0d8 6a7b0430 d8cdb780 70b4c55a"
   }
 
-  spec fips197_c1_aes128_expected() -> Word[8]^16 {
-    [
-      0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a,
-    ]
-  }
-
-  // FIPS 197, Appendix C.1, INVERSE CIPHER: the ciphertext back to the
-  // plaintext.
-  spec fips197_c1_aes128_inverse() -> Word[8]^16 {
+  // FIPS 197, Appendix C.1, INVERSE CIPHER.
+  test "FIPS 197 C.1: AES-128 inverse cipher" {
     aes128_inverse(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-      ],
-      [
-        0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a,
-      ],
-    )
+      hex"00010203 04050607 08090a0b 0c0d0e0f",
+      hex"69c4e0d8 6a7b0430 d8cdb780 70b4c55a",
+    ) == hex"00112233 44556677 8899aabb ccddeeff"
   }
 
-  spec fips197_c1_aes128_inverse_expected() -> Word[8]^16 {
-    [
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-    ]
-  }
-
-  // FIPS 197, Appendix C.2: AES-192, plaintext 00112233...eeff under the key 000102...17.
-  spec fips197_c2_aes192() -> Word[8]^16 {
+  // FIPS 197, Appendix C.2, AES-192 (Nk = 6, Nr = 12).
+  test "FIPS 197 C.2: AES-192 encrypts" {
     aes192(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-      ],
-      [
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-      ],
-    )
-  }
-
-  spec fips197_c2_aes192_expected() -> Word[8]^16 {
-    [
-      0xdd, 0xa9, 0x7c, 0xa4, 0x86, 0x4c, 0xdf, 0xe0, 0x6e, 0xaf, 0x70, 0xa0, 0xec, 0x0d, 0x71, 0x91,
-    ]
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617",
+      hex"00112233 44556677 8899aabb ccddeeff",
+    ) == hex"dda97ca4 864cdfe0 6eaf70a0 ec0d7191"
   }
 
   // FIPS 197, Appendix C.2, INVERSE CIPHER.
-  spec fips197_c2_aes192_inverse() -> Word[8]^16 {
+  test "FIPS 197 C.2: AES-192 inverse cipher" {
     aes192_inverse(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-      ],
-      [
-        0xdd, 0xa9, 0x7c, 0xa4, 0x86, 0x4c, 0xdf, 0xe0, 0x6e, 0xaf, 0x70, 0xa0, 0xec, 0x0d, 0x71, 0x91,
-      ],
-    )
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617",
+      hex"dda97ca4 864cdfe0 6eaf70a0 ec0d7191",
+    ) == hex"00112233 44556677 8899aabb ccddeeff"
   }
 
-  spec fips197_c2_aes192_inverse_expected() -> Word[8]^16 {
-    [
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-    ]
-  }
-
-  // FIPS 197, Appendix C.3: AES-256, plaintext 00112233...eeff under the key 000102...1f.
-  spec fips197_c3_aes256() -> Word[8]^16 {
+  // FIPS 197, Appendix C.3, AES-256 (Nk = 8, Nr = 14).
+  test "FIPS 197 C.3: AES-256 encrypts" {
     aes256(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-      ],
-      [
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-      ],
-    )
-  }
-
-  spec fips197_c3_aes256_expected() -> Word[8]^16 {
-    [
-      0x8e, 0xa2, 0xb7, 0xca, 0x51, 0x67, 0x45, 0xbf, 0xea, 0xfc, 0x49, 0x90, 0x4b, 0x49, 0x60, 0x89,
-    ]
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f",
+      hex"00112233 44556677 8899aabb ccddeeff",
+    ) == hex"8ea2b7ca 516745bf eafc4990 4b496089"
   }
 
   // FIPS 197, Appendix C.3, INVERSE CIPHER.
-  spec fips197_c3_aes256_inverse() -> Word[8]^16 {
+  test "FIPS 197 C.3: AES-256 inverse cipher" {
     aes256_inverse(
-      [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-      ],
-      [
-        0x8e, 0xa2, 0xb7, 0xca, 0x51, 0x67, 0x45, 0xbf, 0xea, 0xfc, 0x49, 0x90, 0x4b, 0x49, 0x60, 0x89,
-      ],
-    )
-  }
-
-  spec fips197_c3_aes256_inverse_expected() -> Word[8]^16 {
-    [
-      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-    ]
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f",
+      hex"8ea2b7ca 516745bf eafc4990 4b496089",
+    ) == hex"00112233 44556677 8899aabb ccddeeff"
   }
 
   // FIPS 197, Appendix B: the round-by-round example, input 3243f6a8... under
   // the key 2b7e1516...; the output 3925841d... is the value the Python
   // cryptography package gives for it, since the vector file omits this case.
-  spec fips197_b_aes128() -> Word[8]^16 {
-    aes128(
-      [
-        0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
-      ],
-      [
-        0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34,
-      ],
-    )
-  }
-
-  spec fips197_b_aes128_expected() -> Word[8]^16 {
-    [
-      0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32,
-    ]
+  test "FIPS 197 B: the cipher example" {
+    aes128(hex"2b7e1516 28aed2a6 abf71588 09cf4f3c", hex"3243f6a8 885a308d 313198a2 e0370734")
+      == hex"3925841d 02dc09fb dc118597 196a0b32"
   }
 }
