@@ -564,6 +564,7 @@ compiler/fixtures/s3t/valid-calls.or
 compiler/fixtures/s3t/valid-large.or
 compiler/fixtures/s3t/valid-program.or
 compiler/fixtures/s3t/valid-rings.or
+compiler/fixtures/steps/int-limit.or
 compiler/fixtures/steps/limit-before.or
 compiler/fixtures/steps/limit-while.or
 compiler/fixtures/typed-answer.or

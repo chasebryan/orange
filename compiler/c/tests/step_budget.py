@@ -173,6 +173,16 @@ def main() -> int:
         chacha = FIXTURES / "s3n" / "valid-chacha20.or"
         before = FIXTURES / "steps" / "limit-before.or"
         while_eval = FIXTURES / "steps" / "limit-while.or"
+        int_limit = FIXTURES / "steps" / "int-limit.or"
+        called = write_source(
+            directory,
+            "called.or",
+            "edition 2026;\n"
+            "module m {\n"
+            "  spec s(x: Int) -> Int { x * x }\n"
+            "  spec over() -> Int { s(s(s(s(s(s(s(s(s(s(s(s(s(s(2)))))))))))))) }\n"
+            "}\n",
+        )
 
         def check(ok: bool) -> None:
             nonlocal failures
@@ -199,6 +209,8 @@ def main() -> int:
         check(eval_case(rust_bin, c_bin, "array at 6", while_eval, 6, stats=True))
         check(eval_case(rust_bin, c_bin, "limit 1 before second", before, 1))
         check(eval_case(rust_bin, c_bin, "limit 3 while evaluating", while_eval, 3))
+        check(eval_case(rust_bin, c_bin, "int limit in a loop", int_limit, None))
+        check(eval_case(rust_bin, c_bin, "int limit in a call", called, None))
 
         # The loops cost 1048576 steps and `~` is one more. The default budget
         # stops on that extra step and does not record it.

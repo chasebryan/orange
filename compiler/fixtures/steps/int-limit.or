@@ -1,0 +1,6 @@
+// Fourteen squarings of 2 pass 16384 significant bits. The product is the
+// primary span; the evaluated function is the secondary span.
+edition 2026;
+module limit {
+  spec tower() -> Int { for i in 0..14 with n: Int = 2 { n * n } }
+}

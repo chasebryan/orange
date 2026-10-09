@@ -2119,14 +2119,21 @@ static void pack_write_residue(uint32_t *limbs, uint32_t nlimbs, const Big *valu
     }
 }
 
-static void report_packed_bits(Compiler *c, uint32_t start, uint32_t end) {
+static void report_exact_limit(Compiler *c, uint32_t start, uint32_t end) {
+    Diag *diag;
     add_diag(c, "ORC0301", start, end, "exact integer result exceeds the 16384-significant-bit limit",
              "result is too large for the reference evaluator",
              "`Int` is unbounded; this is a resource limit, not a finite width", 2);
-    if (c->cur_func < c->nfuncs) {
-        diag_add_secondary(c, c->funcs[c->cur_func].name_start, c->funcs[c->cur_func].name_end,
-                           "evaluation of this function");
+    if (c->ndiags == 0) {
+        return;
     }
+    diag = &c->diags[c->ndiags - 1];
+    copy_text(diag->note2, sizeof diag->note2, "no partial value set is returned");
+    diag->has_note2 = 1;
+}
+
+static void report_packed_bits(Compiler *c, uint32_t start, uint32_t end) {
+    report_exact_limit(c, start, end);
 }
 
 static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) {
@@ -2785,8 +2792,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                     remainder = left.big;
                 } else if (!big_div_euclid(&c->arena, &left.big, &right.big, &quotient, &remainder)) {
                     c->failed = 1;
-                    add_diag(c, "ORC0301", expr->op_start, expr->op_end,
-                             "integer result exceeds 16384 significant bits", "magnitude limit reached", NULL, 2);
+                    report_exact_limit(c, expr->start, expr->end);
                     value_clear(&left);
                     value_clear(&right);
                     return 0;
@@ -2866,8 +2872,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (!ok || !residue_reduce(c, &exact, modulus, &reduced)) {
                 c->failed = 1;
-                add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
-                         "magnitude limit reached", NULL, 2);
+                report_exact_limit(c, expr->start, expr->end);
                 value_clear(&left);
                 value_clear(&right);
                 return 0;
@@ -2905,8 +2910,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             }
             if (!ok) {
                 c->failed = 1;
-                add_diag(c, "ORC0301", expr->op_start, expr->op_end, "integer result exceeds 16384 significant bits",
-                         "magnitude limit reached", NULL, 2);
+                report_exact_limit(c, expr->start, expr->end);
                 value_clear(&left);
                 value_clear(&right);
                 return 0;
@@ -4170,6 +4174,21 @@ static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uin
     return 1;
 }
 
+static void stamp_exact_limit(Compiler *c, const Func *func) {
+    Diag *diag;
+    if (c->ndiags == 0) {
+        return;
+    }
+    diag = &c->diags[c->ndiags - 1];
+    if (diag->has_sec || diag->code == NULL || strcmp(diag->code, "ORC0301") != 0) {
+        return;
+    }
+    if (strcmp(diag->message, "exact integer result exceeds the 16384-significant-bit limit") != 0) {
+        return;
+    }
+    diag_add_secondary(c, func->name_start, func->name_end, "evaluation of this function");
+}
+
 static void report_step_limit(Compiler *c, const Func *func, uint64_t steps_before) {
     char note[160];
     Diag *diag;
@@ -4266,6 +4285,8 @@ static int evaluate_source(Compiler *c, FILE *out) {
                         value_clear(&result);
                         if (c->step_hit) {
                             report_step_limit(c, func, steps_before);
+                        } else {
+                            stamp_exact_limit(c, func);
                         }
                         func->result = saved_kind;
                         func->result_len = saved_len;
@@ -4345,6 +4366,8 @@ static int evaluate_source(Compiler *c, FILE *out) {
                 value_clear(&result);
                 if (c->step_hit) {
                     report_step_limit(c, func, steps_before);
+                } else {
+                    stamp_exact_limit(c, func);
                 }
                 break;
             }
