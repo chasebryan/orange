@@ -1,0 +1,75 @@
+// SHA-1 of FIPS 180-4, Secure Hash Standard (NIST, August 2015),
+// https://doi.org/10.6028/NIST.FIPS.180-4: the functions of section 4.1.1,
+// the constants of section 4.2.1, the padding and parsing of sections 5.1.1
+// and 5.2.1, the initial hash value of section 5.3.1, and the hash
+// computation of section 6.1.2. It is the hash and the MGF1 hash of the RSA
+// Laboratories OAEP vectors that `rsa-oaep.or` reproduces; that file runs
+// the tests, and this one holds none of its own.
+edition 2026;
+module sha1 {
+  // Section 4.1.1: f_t is Ch for 0 <= t <= 19, Parity for 20 <= t <= 39,
+  // Maj for 40 <= t <= 59 and Parity again for 60 <= t <= 79.
+  spec f(t: Int, x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    if t < 20 { (x & y) ^ (~x & z) }
+    else if t < 40 { x ^ y ^ z }
+    else if t < 60 { (x & y) ^ (x & z) ^ (y & z) }
+    else { x ^ y ^ z }
+  }
+
+  // Section 4.2.1: K_t, one constant for each twenty steps.
+  spec k(t: Int) -> Word[32] {
+    if t < 20 { 0x5a827999 }
+    else if t < 40 { 0x6ed9eba1 }
+    else if t < 60 { 0x8f1bbcdc }
+    else { 0xca62c1d6 }
+  }
+
+  // Section 5.3.1: H(0).
+  spec initial_hash() -> Word[32]^5 {
+    hex"67452301 efcdab89 98badcfe 10325476 c3d2e1f0" as big Word[32]^5
+  }
+
+  // Section 6.1.2, steps 1 through 4, for one 512-bit block M(i), parsed
+  // into sixteen big-endian words (section 5.2.1).
+  spec compress(h: Word[32]^5, block: Word[8]^64) -> Word[32]^5 {
+    let m: Word[32]^16 = block as big Word[32]^16;
+    // Step 1: the message schedule W_0 through W_79.
+    let w: Word[32]^80 = for t in 16..80 with s: Word[32]^80 = m ++ [0; 64] {
+      s with [t] = (s[t - 3] ^ s[t - 8] ^ s[t - 14] ^ s[t - 16]) <<< 1
+    };
+    // Steps 2 and 3: the working variables a, b, c, d, e from H(i-1),
+    // then eighty steps of T = ROTL^5(a) + f_t(b, c, d) + e + K_t + W_t.
+    let v: Word[32]^5 = for t in 0..80 with v: Word[32]^5 = h {
+      let big_t: Word[32] = (v[0] <<< 5) + f(t, v[1], v[2], v[3]) + v[4] + k(t) + w[t];
+      [big_t, v[0], v[1] <<< 30, v[2], v[3]]
+    };
+    // Step 4: H(i) = H(i-1) + (a, b, c, d, e).
+    for i in 0..5 with out: Word[32]^5 = v { out with [i] = v[i] + h[i] }
+  }
+
+  // Section 5.1.1: a message of l = 8 len bits, the bit 1, k zero bits
+  // with l + 1 + k = 448 mod 512, and l as a 64-bit big-endian integer.
+  // The message is whole octets, so the 1 bit is the octet 0x80; the zero
+  // bits and the 64-bit length together are l written big-endian over the
+  // rest of the last block, which always has eight octets or more.
+  spec pad[len in 1..256](message: Word[8]^len) -> Word[8]^(64 * ((len + 72) / 64)) {
+    let l: Int = 8 * len;
+    message ++ hex"80" ++ (l as big Word[8]^(64 * ((len + 72) / 64) - len - 1))
+  }
+
+  // Section 6.1.2, "for i = 1 to N", and the digest H(N) as twenty octets.
+  spec hash_blocks[blocks in 1..6](padded: Word[8]^(64 * blocks)) -> Word[8]^20 {
+    let h: Word[32]^5 = for i in 0..(blocks) with h: Word[32]^5 = initial_hash() {
+      compress(h, padded[64 * i..64 * i + 64])
+    };
+    h as big Word[8]^20
+  }
+
+  // SHA-1 of a message of 1 through 255 octets.
+  spec digest[len in 1..256](message: Word[8]^len) -> Word[8]^20 { hash_blocks(pad(message)) }
+
+  // SHA-1 of the empty message: an array has at least one element, so its
+  // one padded block, the octet 0x80 and 63 zero octets (l = 0), is written
+  // out.
+  spec digest_empty() -> Word[8]^20 { hash_blocks(hex"80" ++ [0; 63]) }
+}

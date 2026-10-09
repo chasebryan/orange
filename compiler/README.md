@@ -276,6 +276,65 @@ This permanent reference tool does not establish a universal claim, select a
 solver/model format, supply D-009 execution credit, or create canonical Core,
 proof/evidence identity or release authority. The S3u language marker remains.
 
+## Analyzing a function
+
+`orangec analyze --function MODULE::NAME source.or` validates one source
+program, evaluates the selected function at every input, and prints the exact
+properties a cryptanalyst first asks of an S-box or a Boolean function:
+bijectivity and cycle type, differential uniformity and spectrum, linearity,
+nonlinearity and Walsh spectrum, branch numbers, algebraic and inverse degree,
+implicit quadratic equations, and boomerang uniformity. The function takes one
+`Word[8]`, `Word[16]`, `Word[32]` or `Word[64]` and returns a word or `Bool`.
+`--bits N[,M]` analyzes the low N input and M output bits, at most 16 each;
+`--table values|ddt|lat|bct|anf` prints one complete table for functions of at
+most 10 bits. `--instance`, `--steps` and `--stats` keep their `replay`
+meanings, with the step budget applying to each call. The analysis library is
+`orange_compiler::cryptanalysis`; the command only evaluates and prints.
+
+`--linear` analyzes a linear layer instead: a function from a word or a
+one-dimensional array of words, at most 128 bits, to the same type. The
+command reads the constant and the matrix over GF(2) from the values at 0 and
+at each single bit, checks the function against them at every input up to 16
+bits and at every input of two bits beyond, and prints the rank, fixed
+points, involution, row-by-row XOR count, differential and linear branch
+numbers over words (`--word W`, by default the element width or 8), whether
+the layer is maximum distance separable, and the field GF(2^w) whose
+products its blocks are. `--table matrix` prints the matrix itself. The
+library is `orange_compiler::cryptanalysis::linear`.
+
+`--layer MODULE::NAME --rounds R` analyzes rounds of a substitution-permutation
+network instead: the selected function is the S-box, a permutation of 2 to 8
+bits applied to every word of the state, and the layer is a function read and
+checked as `--linear` reads it, which must be invertible. For each number of
+rounds up to R, at most 32, a complete search in the manner of Matsui finds
+the fewest active S-boxes and the least weight of any differential and any
+linear trail, weights being reported when the S-box's tables hold powers of
+two. The command also prints the rounds the network needs for every output
+bit to depend on every input bit. A search that passes 2^28 steps is reported
+as not computed from that round on. The library is
+`orange_compiler::cryptanalysis::trails`.
+
+```sh
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function aes::sbox compiler/fixtures/analyze/aes.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --table ddt compiler/fixtures/analyze/present.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --linear --function aes::mix_column compiler/fixtures/analyze/aes.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- analyze --function present::sbox --bits 4 --layer present::player --rounds 4 compiler/fixtures/analyze/present.or
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test analyze --locked --offline
+```
+
+The [cryptanalysis contract](../docs/CRYPTANALYSIS_2026.md) defines every
+property, the output format and the limits. A function of the wrong shape, or
+one that does not exist at the selected instance, is `ORC1016`; a width beyond
+its type or beyond 16 bits, a result outside the analyzed output bits, a table
+over 10 bits, or a boomerang table of a function that is not a permutation is
+`ORC1017`, and so is a layer wider than 128 bits, a word width that does not
+divide it, a function that is not affine over GF(2), and, for `--layer`, an
+S-box that is not a permutation of 2 to 8 bits, a layer whose width it does
+not divide, or a layer that is not invertible. A property whose
+computation would exceed 2^32 elementary operations is reported as not
+computed, with its cost. Every number is exact for the function under the
+reference evaluator; none is a security claim.
+
 ## Sealing files
 
 `orangec keygen`, `enc`, `dec`, and `schemes` seal files with authenticated
@@ -645,7 +704,7 @@ comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
 A source whose module has `use` declarations is the root of a program. For
-`check`, `eval`, `test` and `replay`, each `use m;` reads the module `m` from
+`check`, `eval`, `test`, `replay` and `analyze`, each `use m;` reads the module `m` from
 the file `m.or` in the root file's directory, or in the current directory when the root is `-`.
 A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
@@ -696,7 +755,7 @@ accepted prefix can end without a final limit notice. After any detected stream
 failure, retained buffered standard output is discarded instead of being
 flushed as later command output.
 Compilation standard output is explicitly flushed only after successful token,
-formatted-source, documentation, witness replay or evaluation bytes have been
+formatted-source, documentation, witness replay, analysis or evaluation bytes have been
 queued; untouched output and diagnostic streams are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger
