@@ -1361,6 +1361,206 @@ class N14ReadyForStandards(unittest.TestCase):
         self.assertNotIn('C3', records)
 
 
+class J3CorpusAsAcceptanceTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j3_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J3\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J3\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J3.{n}' for n in range(1, 11)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('Chapter 12', self.text)
+        self.assertRegex(self.text, r'(?m)^## J3: The Corpus as Acceptance Test$')
+        for number in range(1, 13):
+            self.assertRegex(self.text, rf'(?m)^### J3\.{number} ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'But: program testing can be a very effective way to show the presence of bugs, '
+            'but is hopelessly inadequate for showing their absence.'
+        ])
+        self.assertIn(
+            'https://www.cs.utexas.edu/~EWD/transcriptions/EWD03xx/EWD340.html',
+            self.text,
+        )
+        self.assertIn('**J3.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#j3-the-corpus-as-acceptance-test',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j3-the-corpus-as-acceptance-test', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J3.', self.text)
+        self.assertIn('The locked label is J3.', self.index)
+        self.assertIn('**[S14] Edsger W. Dijkstra.**', self.text)
+        self.assertIn('**[T10] Corpus commands on this tree.**', self.text)
+        self.assertIn('**[C4] Acceptance surface.**', self.text)
+        self.assertIn('Do not call that Match verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+        self.assertIn('0 tests: 0 passed, 0 failed', self.text)
+        self.assertIn('first difference at [0]', self.text)
+
+    def test_j3_listings_do_not_transcribe_sha256_compression(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            [
+                'pair',
+                'abc_pad',
+                'length_field',
+                'wrong_vector',
+                'agree',
+                'count',
+                'another',
+                'empty_pad',
+                'repaired',
+            ],
+        )
+        for forbidden in (
+            'small_sigma0',
+            'small_sigma1',
+            'big_sigma0',
+            'big_sigma1',
+            '0x428a2f98',
+            'spec schedule(',
+            'spec compress(',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('algorithms/sha2/sha2.or', self.text)
+        self.assertIn('field25519-limbs.or', self.text)
+
+    def test_j3_ledger_matches_the_padding_and_the_count(self):
+        block = re.search(r'^```text\nj3-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        message_bytes = 3
+        bit_length = message_bytes * 8
+        one_plus = bit_length + 1
+        k_zeros = 448 - one_plus
+        zero_bits_after = k_zeros - 7
+        zero_bytes = zero_bits_after // 8
+        fifty_six_bits = 56 * 8
+        block_vectors = 13 + 8 + 8 + 6 + 12 + 7 + 12 + 13
+        aead_vectors = 10 + 7 + 25 + 17
+        stream_vectors = 20 + 19 + 5
+        hash_vectors = 13 + 8 + 16
+        public_vectors = 4 + 17
+        published = (
+            block_vectors + aead_vectors + stream_vectors + hash_vectors + public_vectors
+        )
+        codomain = 1
+        for _ in range(8):
+            codomain *= 2
+        entries = [path for path in (ROOT / 'algorithms').iterdir() if path.is_dir()]
+        sources = list((ROOT / 'algorithms').rglob('*.or'))
+        with_tests = [path for path in sources if 'test "' in path.read_text(encoding='utf-8')]
+        expected = {
+            'entries': len(entries),
+            'sources': len(sources),
+            'zero-test-sources': len(sources) - len(with_tests),
+            'limb-tests': with_tests[0].read_text(encoding='utf-8').count('test "'),
+            'block-vectors': block_vectors,
+            'aead-vectors': aead_vectors,
+            'stream-vectors': stream_vectors,
+            'hash-vectors': hash_vectors,
+            'public-vectors': public_vectors,
+            'published-vectors': published,
+            'readme-mathematical-pairs': 12,
+            'recorded-pairs': published + 12,
+            'message-bytes': message_bytes,
+            'bit-length': bit_length,
+            'one-plus-length': one_plus,
+            'k-zeros': k_zeros,
+            'marker': 0x80,
+            'zero-bits-in-marker': 7,
+            'zero-bits-after': zero_bits_after,
+            'zero-bytes-after-marker': zero_bytes,
+            'length-high-zeros': 7,
+            'length-byte': bit_length,
+            'block-bytes': message_bytes + 1 + zero_bytes + 8,
+            'fifty-six-bytes': 56,
+            'fifty-six-bits': fifty_six_bits,
+            'length-high': fifty_six_bits // 256,
+            'length-low': fifty_six_bits % 256,
+            'domain': 3,
+            'corpus': 2,
+            'free': 1,
+            'codomain': codomain,
+            'accepted': codomain ** 1,
+            'covered': codomain ** 0,
+            'empty-length': 0,
+            'unread-empty': 64 - 2,
+            'ascii-a': 0x61,
+            'ascii-b': 0x62,
+            'ascii-c': 0x63,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['k-zeros'], 423)
+        self.assertEqual(expected['zero-bytes-after-marker'], 52)
+        self.assertEqual(expected['length-low'], 0xC0)
+        self.assertEqual(expected['accepted'], 256)
+        self.assertEqual(expected['covered'], 1)
+        self.assertEqual(expected['published-vectors'], 240)
+        self.assertEqual(expected['entries'], 20)
+        self.assertEqual(expected['sources'], 39)
+        self.assertEqual(expected['zero-test-sources'], 38)
+        self.assertEqual(with_tests[0].name, 'field25519-limbs.or')
+        self.assertEqual(
+            message_bytes + 1 + zero_bytes + 7 + 1,
+            64,
+        )
+
+    def test_j3_tags_are_unique_across_book_lessons(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S14'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'Edsger W. Dijkstra.',
+        ))
+        self.assertEqual(records['T10'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'Corpus commands on this tree.',
+        ))
+        self.assertEqual(records['C4'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'Acceptance surface.',
+        ))
+        self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertNotIn('S15', records)
+        self.assertNotIn('T11', records)
+        self.assertNotIn('C5', records)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
