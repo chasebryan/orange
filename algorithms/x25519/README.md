@@ -139,7 +139,7 @@ iterations skipped by a comparison.
 
 The evaluation cost was measured with a filler spec sharing the file's
 budget (`probe.py` in the scratch directory): one X25519 evaluation, from
-the vector's literals to the encoded output, costs about 568,000 of the
+the vector's literals to the encoded output, costs 564,933 steps as of S3u of the
 1,048,576 steps of a file. One rung of the ladder costs about 1,963 steps,
 of which the ten products (65 steps each for two 8-limb numbers) and the
 nine reductions by `%` that follow all but `a24() * e` (129 steps each) are
@@ -350,7 +350,7 @@ guarantee.
 ## Gaps
 
 - The step budget of 1,048,576 steps per file holds one X25519 evaluation
-  (about 568,000 steps) and not two, so the four vectors are four files with
+  (564,933 steps as of S3u) and not two, so the four vectors are four files with
   an identical algorithm part instead of one file, the iterated test of
   section 5.2 is out of reach, and the all-zero check of section 6.1 is
   written (`all_zero`) but not evaluated on a computed shared secret.
