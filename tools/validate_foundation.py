@@ -257,6 +257,7 @@ _SC = "scorecard.yml"
 _DR = "dependency-review.yml"
 _EL = "external-links.yml"
 _O = "workflow-online-audit.yml"
+_BD = "book-deploy-hook.yml"
 _BF = "bounded repository read failed"
 _E = "evidence_refs"
 _FE = "forbidden_events"
@@ -289,6 +290,7 @@ algorithms/x25519/field25519-limbs.or
 .github/dependabot.yml
 .github/dependency-review-config.yml
 .github/pull_request_template.md
+.github/workflows/book-deploy-hook.yml
 .github/workflows/ci.yml
 .github/workflows/dependency-review.yml
 .github/workflows/external-links.yml
@@ -841,10 +843,8 @@ _SP = set(
 schemas/gate0/repository-control-snapshot-v0.1.schema.json
 schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
 )
-_WI = set(
-    "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
-)
-_WT = {"ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_WI = {_BD, "ci.yml", _DR, _EL, _SC, _O}
+_WT = {_BD: 5, "ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
 _IFD = {
     "conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     "oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -4735,7 +4735,9 @@ class FoundationValidator:
                 for event in ("pull_request", "push", "merge_group"):
                     if not re.search(rf"(?m)^\s{{2}}{event}\s*:", text):
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
-            if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
+            if re.search(r"\bpaths-ignore\s*:", active_text) or (
+                n != _BD and re.search(r"\bpaths(?:-ignore)?\s*:", active_text)
+            ):
                 self.add("workflow.path_filter", path, "protected workflows must not use path filters")
             for line_number, line in enumerate(lines, start=1):
                 container_match = CONTAINER_ACTION_RE.search(line)
@@ -4793,9 +4795,12 @@ class FoundationValidator:
             for line_number in unsafe_run_interpolations(lines):
                 self.add("workflow.untrusted_interpolation", path, f"untrusted event data is interpolated into run near line {line_number}")
             concurrency = top_level_block(active_lines, "concurrency")
-            p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(n, path.stem)
-            c = "github.event.pull_request.number || github.ref" if n in {"ci.yml", _DR} else "github.ref"
-            reviewed = (f"  group: {p}-${{{{ {c} }}}}", "  cancel-in-progress: true")
+            if n == _BD:
+                reviewed = ("  group: book-deploy-hook", "  cancel-in-progress: true")
+            else:
+                p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(n, path.stem)
+                c = "github.event.pull_request.number || github.ref" if n in {"ci.yml", _DR} else "github.ref"
+                reviewed = (f"  group: {p}-${{{{ {c} }}}}", "  cancel-in-progress: true")
             if tuple(concurrency) != reviewed:
                 self.add("workflow.concurrency", path, "concurrency contract drift")
             self._validate_required_workflow_content(path, active_text)
@@ -4837,6 +4842,15 @@ class FoundationValidator:
             _SC: f'{push}\n  schedule:\n    - cron: "41 5 * * 6"',
             _EL: f'{push}\n  schedule:\n    - cron: "23 4 * * 1"{dispatch}',
             _O: f'{push}\n  schedule:\n    - cron: "17 6 * * 3"{dispatch}',
+            _BD: (
+                "  push:\n"
+                "    branches:\n"
+                "      - main\n"
+                "    paths:\n"
+                "      - docs/THE_ORANGE_BOOK.md\n"
+                "      - 'docs/book/**'\n"
+                "  workflow_dispatch:"
+            ),
         }
         if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(n):
             self.add("workflow.event_contract", path, "workflow triggers must match their reviewed contract")
@@ -4847,7 +4861,7 @@ class FoundationValidator:
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
-        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata"}.get(n)
+        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata", _BD: "Book Deploy Hook / nosuchmachine"}.get(n)
         if required_name and f"name: {required_name.split(' /')[0]}" not in text.splitlines()[:1]:
             self.add("workflow.name_contract", path, "workflow name drift")
         if required_name and f"    name: {required_name}" not in text.splitlines():
@@ -4879,6 +4893,7 @@ class FoundationValidator:
             ),
             _EL: ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
             _O: ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
+            _BD: ("rebuild", ("Trigger nosuchmachine.net rebuild",)),
         }
         if n in expected_steps:
             job_name, names = expected_steps[n]
@@ -4910,7 +4925,7 @@ class FoundationValidator:
         with:
           fetch-depth: 1
           persist-credentials: false'''
-        if checkout != expected_checkout:
+        if n != _BD and checkout != expected_checkout:
             self.add("workflow.checkout_contract", path, f"{job_name}/Checkout must match the reviewed revision-bound contract")
 
         if n == "ci.yml":
@@ -5056,6 +5071,24 @@ class FoundationValidator:
           version: "1.26.1"'''
             if block != expected:
                 self.add("workflow.online_audit_contract", path, f"{job_name}/Audit workflow source and upstream metadata must match its reviewed online-audit contract")
+        elif n == _BD:
+            block = yaml_without_comments("\n".join(steps.get("Trigger nosuchmachine.net rebuild", [])))
+            expected = """      - name: Trigger nosuchmachine.net rebuild
+        shell: /bin/bash -p -e -o pipefail {0}
+        env:
+          HOOK: ${{ secrets.NOSUCHMACHINE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo '::error::NOSUCHMACHINE_DEPLOY_HOOK is not set' >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 30 -X POST "$HOOK\""""
+            if block != expected:
+                self.add(
+                    "workflow.book_deploy_contract",
+                    path,
+                    f"{job_name}/Trigger nosuchmachine.net rebuild must match its reviewed deploy-hook command",
+                )
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"
