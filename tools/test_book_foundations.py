@@ -1696,6 +1696,191 @@ class ManuscriptManifest(unittest.TestCase):
         finally:
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
+    def test_table_escaped_pipes_keep_four_cells(self):
+        import tempfile
+
+        opening = (
+            '# Operators\n\n'
+            '| Expression | On `Int` | On `Word[n]` | On `Mod[m]` |\n'
+            '| --- | --- | --- | --- |\n'
+            '| `a & b`, `a \\| b`, `a ^ b` | Not defined | Bitwise and, or, exclusive or | Not defined |\n'
+            '| `a % b` | Euclidean remainder, 0 ≤ `a % b` < \\|b\\| | Unsigned remainder | Not defined |\n'
+            '| see `a|b` here | left | right | end |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            rows = re.findall(r'<tr>(.*?)</tr>', page, re.S)
+            self.assertEqual(len(rows), 4, page)
+            for row in rows:
+                cells = re.findall(r'<t[dh]>', row)
+                self.assertEqual(len(cells), 4, row)
+            self.assertIn('<code>a | b</code>', page)
+            self.assertIn('|b|', page)
+            self.assertIn('<code>a|b</code>', page)
+            self.assertNotIn('\\|', page)
+
+    def test_n14_outcomes_render_as_one_ordered_list(self):
+        import tempfile
+
+        source = (ROOT / 'docs' / 'book' / 'NOVICE_N14_READY_FOR_STANDARDS.md').read_text(encoding='utf-8')
+        excerpt = '\n'.join(source.splitlines()[52:65])
+        self.assertTrue(excerpt.startswith('1. You can walk one Orange program'))
+        self.assertIn('are not ready for J2', excerpt)
+        opening = '# Ready for standards\n\n' + excerpt + '\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S)
+            self.assertIsNotNone(article)
+            body = article.group(1)
+            lists = re.findall(r'<ol>.*?</ol>', body, re.S)
+            self.assertEqual(len(lists), 1, body)
+            items = re.findall(r'<li>.*?</li>', lists[0], re.S)
+            self.assertEqual(len(items), 5)
+            self.assertNotIn('<p>', lists[0])
+            self.assertNotRegex(body, r'</ol>\s*<p>')
+            self.assertNotRegex(body, r'</p>\s*<ol>')
+            self.assertIn('actually contains.', lists[0])
+            self.assertIn('arithmetic beside the Orange name.', lists[0])
+            self.assertIn('verified.', lists[0])
+            self.assertIn('non-claims.', lists[0])
+            self.assertIn('are not ready for J2', lists[0])
+
+    def test_non_manuscript_links_pin_to_the_rendered_commit(self):
+        import os
+        import tempfile
+
+        sha = '0123456789abcdef0123456789abcdef01234567'
+        opening = '# Opening\n\nA sentence.\n'
+        original = (
+            '# The Orange Book\n\n'
+            '[notes](NOTES.md#section)\n\n'
+            '[directory](book/)\n\n'
+            '[readme](book/README.md)\n\n'
+            '[status](book/README.md#manuscript-status)\n\n'
+            '[chapter](book/NOVICE_OPENING.md#opening)\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\n## Section\n\nA note.\n', encoding='utf-8')
+            (root / 'docs' / 'book' / 'README.md').write_text(
+                '# Book index\n\n## Manuscript status\n\nRead me.\n',
+                encoding='utf-8',
+            )
+            env = os.environ.copy()
+            env['GITHUB_SHA'] = sha
+            completed = _run_render(root, env)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html').read_text(encoding='utf-8')
+            base = f'https://github.com/chasebryan/orange'
+            self.assertIn(f'{base}/blob/{sha}/docs/NOTES.md#section', page)
+            self.assertIn(f'{base}/tree/{sha}/docs/book"', page)
+            self.assertIn(f'{base}/blob/{sha}/docs/book/README.md"', page)
+            self.assertIn(f'{base}/blob/{sha}/docs/book/README.md#manuscript-status', page)
+            self.assertIn('href="book/NOVICE_OPENING.html#opening"', page)
+            self.assertNotIn(f'{base}/blob/{sha}/docs/book/NOVICE_OPENING.md', page)
+            self.assertNotIn('README.html', page)
+            self.assertNotIn('NOTES.html', page)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(
+                root,
+                opening,
+                '# The Orange Book\n\n[notes](NOTES.md)\n',
+            )
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\nA note.\n', encoding='utf-8')
+            env = os.environ.copy()
+            env.pop('GITHUB_SHA', None)
+            env.pop('GIT_DIR', None)
+            env.pop('GIT_WORK_TREE', None)
+            completed = _run_render(root, env)
+            self.assertNotEqual(completed.returncode, 0, completed.stdout)
+            self.assertIn('rendered commit is unavailable', completed.stderr)
+
+    def test_dangling_local_href_fails_the_render(self):
+        import tempfile
+
+        opening = '# Opening\n\nA sentence.\n'
+        original = '# The Orange Book\n\n[alias](book/alias.md)\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            alias = root / 'docs' / 'book' / 'alias.md'
+            alias.symlink_to('NOVICE_OPENING.md')
+            completed = _run_render(root)
+            self.assertNotEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn('local href does not resolve to a file in the artifact', completed.stderr)
+            self.assertIn('book/alias.html', completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html').read_text(encoding='utf-8')
+            self.assertIn('href="book/alias.html"', page)
+
+
+def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
+    import json
+
+    book = root / 'docs' / 'book'
+    book.mkdir(parents=True)
+    (root / 'docs' / 'THE_ORANGE_BOOK.md').write_text(original, encoding='utf-8')
+    (book / 'NOVICE_OPENING.md').write_text(opening, encoding='utf-8')
+    manifest = {
+        'kind': 'orange-book-manuscript-manifest',
+        'version': 1,
+        'status': 'in-progress',
+        'review': 'Draft.',
+        'chapters': [
+            {
+                'part': 'novice',
+                'id': 'opening',
+                'title': 'Opening',
+                'status': 'draft',
+                'review_state': 'unreviewed',
+                'path': 'docs/book/NOVICE_OPENING.md',
+            },
+            {
+                'part': 'original',
+                'id': 'original',
+                'title': 'The Orange Book',
+                'status': 'original',
+                'path': 'docs/THE_ORANGE_BOOK.md',
+            },
+        ],
+    }
+    (book / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+
+def _run_render(root: Path, env: dict | None = None):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    tools = root / 'tools'
+    tools.mkdir(exist_ok=True)
+    shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+    run_env = os.environ.copy()
+    if env is not None:
+        run_env = env
+    return subprocess.run(
+        [
+            sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+            '-W', 'error::ResourceWarning', 'tools/render_book.py',
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=run_env,
+    )
+
 
 def rotate_byte(value: int, amount: int) -> int:
     """Reference mathematical rotation, not an Orange interpreter."""
