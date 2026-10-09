@@ -90,6 +90,25 @@ static uint32_t *alloc_limbs(Arena *arena, uint32_t count) {
     return arena_alloc(arena, (size_t)count * sizeof(uint32_t), sizeof(uint32_t));
 }
 
+int big_from_limbs(Arena *arena, const uint32_t *limbs, uint32_t nlimbs, int negative, Big *out) {
+    uint32_t count = nlimbs;
+    uint32_t *copy;
+    while (count > 0 && limbs[count - 1] == 0) {
+        count--;
+    }
+    if (count == 0) {
+        *out = big_zero();
+        return 1;
+    }
+    copy = alloc_limbs(arena, count);
+    if (copy == NULL) {
+        return 0;
+    }
+    memcpy(copy, limbs, (size_t)count * sizeof(uint32_t));
+    *out = big_publish(copy, count, negative);
+    return fits_bits(out);
+}
+
 int big_from_u64(Arena *arena, uint64_t value, Big *out) {
     uint32_t *limbs;
     uint32_t count;
@@ -878,6 +897,21 @@ static int limit_literal_self_test(Arena *arena) {
         Big wide = big_zero();
         if (!big_from_u64(arena, 1, &one) || !big_shl(arena, &one, 8, &shifted) || big_bits(&shifted) != 9u ||
             shifted.negative || shifted.nlimbs != 1 || shifted.limbs[0] != 256u || big_shl(arena, &one, 16384u, &wide)) {
+            goto done;
+        }
+    }
+    {
+        uint32_t limbs[2];
+        Big wide = big_zero();
+        limbs[0] = 0xfffffff0u;
+        limbs[1] = 0x0000000fu;
+        if (!big_from_limbs(arena, limbs, 2, 0, &wide) || wide.negative || wide.nlimbs != 2 ||
+            wide.limbs[0] != 0xfffffff0u || wide.limbs[1] != 0x0000000fu || big_bits(&wide) != 36u) {
+            goto done;
+        }
+        limbs[0] = 0;
+        limbs[1] = 0;
+        if (!big_from_limbs(arena, limbs, 2, 1, &wide) || wide.nlimbs != 0 || wide.negative) {
             goto done;
         }
     }

@@ -34,6 +34,8 @@ uint32_t big_limbs(const Big *value);
 
 int big_from_u64(Arena *arena, uint64_t value, Big *out);
 int big_from_digits(Arena *arena, const char *text, size_t length, int negative, Big *out);
+/* Little-endian base-2^32 digits. Leading zeros are dropped. Fails above 16384 bits. */
+int big_from_limbs(Arena *arena, const uint32_t *limbs, uint32_t nlimbs, int negative, Big *out);
 
 int big_add(Arena *arena, const Big *left, const Big *right, Big *out);
 int big_sub(Arena *arena, const Big *left, const Big *right, Big *out);

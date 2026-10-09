@@ -1995,6 +1995,261 @@ static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, 
     return ok;
 }
 
+static int pack_place(uint8_t order, uint32_t index, uint32_t count, uint32_t *place) {
+    if (index >= count || count == 0) {
+        return 0;
+    }
+    if (order == 2) {
+        *place = index;
+        return 1;
+    }
+    *place = count - 1u - index;
+    return 1;
+}
+
+static int pack_write_word(uint32_t *limbs, uint32_t nlimbs, uint32_t bits, uint32_t place, uint64_t word) {
+    uint64_t offset = (uint64_t)bits * (uint64_t)place;
+    uint32_t digit = (uint32_t)(offset / 32u);
+    uint32_t shift = (uint32_t)(offset % 32u);
+    if (bits == 0 || bits > 64 || digit >= nlimbs) {
+        return 0;
+    }
+    if (bits < 64) {
+        word &= (UINT64_C(1) << bits) - 1u;
+    }
+    limbs[digit] |= (uint32_t)word << shift;
+    if (bits == 64) {
+        if (digit + 1u >= nlimbs) {
+            return 0;
+        }
+        limbs[digit + 1u] = (uint32_t)(word >> 32);
+    }
+    return 1;
+}
+
+static int pack_read_word(const uint32_t *limbs, uint32_t nlimbs, uint32_t bits, uint32_t place, uint64_t *word) {
+    uint64_t offset = (uint64_t)bits * (uint64_t)place;
+    uint32_t digit = (uint32_t)(offset / 32u);
+    uint32_t shift = (uint32_t)(offset % 32u);
+    uint64_t low;
+    if (bits == 0 || bits > 64 || digit >= nlimbs) {
+        return 0;
+    }
+    low = limbs[digit];
+    if (bits == 64) {
+        if (digit + 1u >= nlimbs) {
+            return 0;
+        }
+        *word = low | ((uint64_t)limbs[digit + 1u] << 32);
+        return 1;
+    }
+    *word = (low >> shift) & ((UINT64_C(1) << bits) - 1u);
+    return 1;
+}
+
+/* Residue of `value` modulo 2^width, little-endian in `limbs`. A negative
+   value's residue is its two's complement within that width. */
+static void pack_write_residue(uint32_t *limbs, uint32_t nlimbs, const Big *value, uint32_t width) {
+    uint32_t copy = value->nlimbs < nlimbs ? value->nlimbs : nlimbs;
+    uint32_t index;
+    memset(limbs, 0, (size_t)nlimbs * sizeof(uint32_t));
+    if (copy > 0 && value->limbs != NULL) {
+        memcpy(limbs, value->limbs, (size_t)copy * sizeof(uint32_t));
+    }
+    if (value->negative) {
+        uint32_t carry = 1;
+        for (index = 0; index < nlimbs; index++) {
+            uint64_t sum = (uint64_t)(~limbs[index]) + carry;
+            limbs[index] = (uint32_t)sum;
+            carry = (uint32_t)(sum >> 32);
+        }
+    }
+    if (nlimbs > 0 && (width % 32u) != 0) {
+        uint32_t spare = width % 32u;
+        limbs[nlimbs - 1u] &= (UINT32_C(1) << spare) - 1u;
+    }
+}
+
+static void report_packed_bits(Compiler *c, uint32_t start, uint32_t end) {
+    add_diag(c, "ORC0301", start, end, "exact integer result exceeds the 16384-significant-bit limit",
+             "result is too large for the reference evaluator",
+             "`Int` is unbounded; this is a resource limit, not a finite width", 2);
+    if (c->cur_func < c->nfuncs) {
+        diag_add_secondary(c, c->funcs[c->cur_func].name_start, c->funcs[c->cur_func].name_end,
+                           "evaluation of this function");
+    }
+}
+
+static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) {
+    int from_words = type_width(operand->type) > 0;
+    int to_words = type_width(expr->conv_ty) > 0;
+    uint32_t bits;
+    uint32_t count;
+    uint64_t width;
+    uint32_t nlimbs;
+    uint32_t *limbs = NULL;
+    uint64_t cost;
+    uint32_t index;
+    if (!from_words && !to_words) {
+        value_clear(operand);
+        c->failed = 1;
+        return 0;
+    }
+    if (from_words) {
+        bits = (uint32_t)type_width(operand->type);
+        count = operand->length == 0 ? 1u : operand->length;
+    } else {
+        bits = (uint32_t)type_width(expr->conv_ty);
+        count = expr->conv_len == 0 ? 1u : expr->conv_len;
+    }
+    width = (uint64_t)bits * (uint64_t)count;
+    cost = (width + 63u) / 64u;
+    if (cost == 0) {
+        cost = 1;
+    }
+    if (!charge(c, expr->op_start, expr->op_end, cost)) {
+        value_clear(operand);
+        return 0;
+    }
+    nlimbs = (uint32_t)((width + 31u) / 32u);
+    if (nlimbs == 0 || width / bits != count) {
+        value_clear(operand);
+        c->failed = 1;
+        return 0;
+    }
+    limbs = calloc(nlimbs, sizeof(uint32_t));
+    if (limbs == NULL) {
+        value_clear(operand);
+        c->failed = 1;
+        add_diag(c, "ORC0301", expr->start, expr->end, "evaluation could not retain an integer",
+                 "resource limit reached", NULL, 2);
+        return 0;
+    }
+    if (from_words) {
+        for (index = 0; index < count; index++) {
+            uint64_t word = 0;
+            uint32_t place = 0;
+            if (operand->length == 0) {
+                word = operand->word;
+            } else if (operand->elems == NULL || index >= operand->length) {
+                free(limbs);
+                value_clear(operand);
+                c->failed = 1;
+                return 0;
+            } else {
+                word = operand->elems[index].word;
+            }
+            if (!pack_place(expr->conv_order, index, count, &place) ||
+                !pack_write_word(limbs, nlimbs, bits, place, word)) {
+                free(limbs);
+                value_clear(operand);
+                c->failed = 1;
+                return 0;
+            }
+        }
+    } else {
+        if (width > UINT32_MAX) {
+            free(limbs);
+            value_clear(operand);
+            c->failed = 1;
+            report_packed_bits(c, expr->start, expr->end);
+            return 0;
+        }
+        pack_write_residue(limbs, nlimbs, &operand->big, (uint32_t)width);
+    }
+    if (expr->conv_ty == TY_INT || expr->conv_ty == TY_MOD) {
+        Big value = big_zero();
+        if (!big_from_limbs(&c->arena, limbs, nlimbs, 0, &value)) {
+            free(limbs);
+            value_clear(operand);
+            c->failed = 1;
+            report_packed_bits(c, expr->start, expr->end);
+            return 0;
+        }
+        free(limbs);
+        limbs = NULL;
+        if (expr->conv_ty == TY_MOD) {
+            const Big *modulus = modulus_at(c, expr->conv_mod);
+            Big reduced = big_zero();
+            uint64_t extra;
+            if (modulus == NULL) {
+                value_clear(operand);
+                c->failed = 1;
+                return 0;
+            }
+            extra = (uint64_t)big_limbs(&value) * modulus_digits(modulus);
+            if (!charge(c, expr->op_start, expr->op_end, extra)) {
+                value_clear(operand);
+                return 0;
+            }
+            if (!residue_reduce(c, &value, modulus, &reduced)) {
+                value_clear(operand);
+                c->failed = 1;
+                report_packed_bits(c, expr->start, expr->end);
+                return 0;
+            }
+            out->type = TY_MOD;
+            out->mod_index = expr->conv_mod;
+            out->big = reduced;
+            out->word = 0;
+            value_clear(operand);
+            return 1;
+        }
+        out->type = TY_INT;
+        out->big = value;
+        out->word = 0;
+        value_clear(operand);
+        return 1;
+    }
+    if (expr->conv_len == 0) {
+        uint64_t word = 0;
+        uint32_t to_bits = (uint32_t)type_width(expr->conv_ty);
+        if (!pack_read_word(limbs, nlimbs, to_bits, 0, &word)) {
+            free(limbs);
+            value_clear(operand);
+            c->failed = 1;
+            return 0;
+        }
+        free(limbs);
+        out->type = expr->conv_ty;
+        out->word = word;
+        out->big = big_zero();
+        value_clear(operand);
+        return 1;
+    }
+    {
+        Value *items = NULL;
+        uint32_t to_bits = (uint32_t)type_width(expr->conv_ty);
+        uint32_t to_count = expr->conv_len;
+        if (!alloc_array(c, &items, to_count, expr->start, expr->end)) {
+            free(limbs);
+            value_clear(operand);
+            return 0;
+        }
+        for (index = 0; index < to_count; index++) {
+            uint32_t place = 0;
+            uint64_t word = 0;
+            if (!pack_place(expr->conv_order, index, to_count, &place) ||
+                !pack_read_word(limbs, nlimbs, to_bits, place, &word)) {
+                free(limbs);
+                value_list_clear(items, to_count);
+                value_clear(operand);
+                c->failed = 1;
+                return 0;
+            }
+            items[index].type = expr->conv_ty;
+            items[index].word = word;
+        }
+        free(limbs);
+        out->type = expr->conv_ty;
+        out->length = to_count;
+        out->elems = items;
+        out->big = big_zero();
+        value_clear(operand);
+        return 1;
+    }
+}
+
 static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
     const Expr *expr = &c->exprs[index];
     if (c->failed) {
@@ -2632,6 +2887,9 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         memset(&operand, 0, sizeof operand);
         if (!eval_expr(c, expr->left, params, locals, depth, &operand)) {
             return 0;
+        }
+        if (expr->conv_order != 0) {
+            return eval_pack(c, expr, &operand, out);
         }
         if (expr->conv_ty == TY_MOD) {
             const Big *modulus = modulus_at(c, expr->conv_mod);
@@ -4650,7 +4908,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3m\n", stdout);
+            fputs("orangec (standalone C) slice S3n\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {

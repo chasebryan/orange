@@ -290,6 +290,8 @@ typedef struct Expr {
     uint32_t conv_site;
     uint32_t conv_len;
     uint16_t conv_mod;
+    /* 0: plain `as`. 1: `as big`. 2: `as little`. The order word's span is `lit_start`/`lit_end`. */
+    uint8_t conv_order;
     NameRes name_res;
     uint16_t name_index;
     TypeKind name_ty;
@@ -1935,7 +1937,9 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     site->role = role;
     site->has_size_expr = type->has_size_expr;
     site->length_expr = type->length_expr;
-    site->owner_func = c->parsing_func != NULL ? c->nfuncs : UINT32_MAX;
+    /* `nfuncs` already counts this function once its body is parsed, so the
+       owner's index is the slot `parsing_func` points at, not `nfuncs`. */
+    site->owner_func = c->parsing_func != NULL ? (uint32_t)(c->parsing_func - c->funcs) : UINT32_MAX;
     site->wrote_axis = type->has_size_expr || (type->length > 0 && !type->length_bad);
     if (!type->named && !type->bare_mod) {
         site->rank = site->wrote_axis ? 1 : 0;
@@ -3960,6 +3964,17 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
     return 0;
 }
 
+/* A type after `as` starts with `(` or a name other than the operators `as` and `with`. */
+static int type_token_starts(const Compiler *c, Token token) {
+    if (token.kind == TK_LPAREN) {
+        return 1;
+    }
+    if (token.kind != TK_IDENT) {
+        return 0;
+    }
+    return !token_word(c, token, "as") && !token_word(c, token, "with");
+}
+
 static int parse_expr(Compiler *c, uint32_t *out) {
     uint32_t left;
     Token first_op;
@@ -3970,8 +3985,22 @@ static int parse_expr(Compiler *c, uint32_t *out) {
     if (is_as(c)) {
         Token as_token = peek_token(c);
         DeclaredType type;
+        uint8_t order = 0;
+        Token order_token;
         advance_token(c);
-        if (!parse_type(c, &type, 0)) {
+        memset(&order_token, 0, sizeof order_token);
+        /* `big` or `little` is a byte order only when a type starts after it.
+           `as big` alone converts to a type named `big`. */
+        if (c->at + 1 < c->ntokens) {
+            Token word = peek_token(c);
+            Token next = c->tokens[c->at + 1];
+            if ((token_word(c, word, "big") || token_word(c, word, "little")) && type_token_starts(c, next)) {
+                order = token_word(c, word, "big") ? 1 : 2;
+                order_token = word;
+                advance_token(c);
+            }
+        }
+        if (!parse_type(c, &type, order != 0)) {
             return 0;
         }
         if (trailing_joiner(c)) {
@@ -3988,9 +4017,14 @@ static int parse_expr(Compiler *c, uint32_t *out) {
         c->exprs[*out].op_end = as_token.end;
         c->exprs[*out].conv_ty = type.kind;
         c->exprs[*out].conv_ok = type.ok;
+        c->exprs[*out].conv_order = order;
         c->exprs[*out].name_start = type.start;
         c->exprs[*out].name_end = type.end;
         c->exprs[*out].ty_len = type.length;
+        if (order != 0) {
+            c->exprs[*out].lit_start = order_token.start;
+            c->exprs[*out].lit_end = order_token.end;
+        }
         if (!push_site(c, &type, "conversion", &c->exprs[*out].conv_site)) {
             return 0;
         }
@@ -6479,8 +6513,13 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             return -1;
         }
         *type = expr->conv_ty;
+        *length = expr->conv_len;
         if (*type == TY_MOD) {
             c->leaf_mod = expr->conv_mod;
+        }
+        if (*type == TY_TUPLE && expr->conv_site < c->nsites) {
+            c->leaf_tup0 = c->sites[expr->conv_site].tup0;
+            c->leaf_tup_n = c->sites[expr->conv_site].tup_n;
         }
         return 1;
     case EX_BYTES: {
@@ -8873,6 +8912,304 @@ static int operand_passes_branch(const Compiler *c, uint32_t index) {
     return expr->else_nbinds > 0;
 }
 
+static const char ORDER_NOTE[] =
+    "`as big` and `as little` convert a word or an array of words to words of another width, to `Int`, or to "
+    "`Mod[m]`, and back";
+static const char ORDER_WIDTH_NOTE[] =
+    "a byte order keeps every bit of the words it converts, so words convert only to words of the same number of bits";
+
+static const char *order_word(uint8_t order) {
+    return order == 1 ? "big" : "little";
+}
+
+static int side_words(TypeKind type, uint32_t length, uint32_t *bits, uint32_t *count) {
+    int width = type_width(type);
+    if (width <= 0) {
+        return 0;
+    }
+    *bits = (uint32_t)width;
+    *count = length == 0 ? 1u : length;
+    return 1;
+}
+
+static int side_number(TypeKind type, uint32_t length) {
+    return length == 0 && (type == TY_INT || type == TY_MOD);
+}
+
+/* An update has the type of its base. `find_leaf` stops on the update so a
+   plain `as` can still describe it as an array; a byte order reads through. */
+static int ordered_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals, TypeKind *type,
+                        uint32_t *length, uint32_t *leaf, int *silent) {
+    int state = find_leaf(c, index, func_index, locals, type, length, leaf, silent);
+    while (state == 2 && c->exprs[*leaf].kind == EX_UPDATE) {
+        state = find_leaf(c, c->exprs[*leaf].left, func_index, locals, type, length, leaf, silent);
+    }
+    return state;
+}
+
+static void report_order_unpacked(Compiler *c, const Expr *expr, const char *operand) {
+    char message[384];
+    snprintf(message, sizeof message, "`as %s` does not convert %s", order_word(expr->conv_order), operand);
+    add_diag(c, "ORC0215", expr->op_start, expr->op_end, message, "a byte order packs and unpacks words", ORDER_NOTE,
+             2);
+}
+
+static void report_order_unpacking(Compiler *c, const Expr *expr, const char *target) {
+    char message[384];
+    snprintf(message, sizeof message, "`as %s` does not convert to %s", order_word(expr->conv_order), target);
+    add_diag(c, "ORC0215", expr->name_start, expr->name_end, message, "a byte order packs and unpacks words",
+             ORDER_NOTE, 2);
+}
+
+static int literal_count(Compiler *c, const Expr *expr, uint32_t *count) {
+    if (expr->kind == EX_ARRAY) {
+        *count = expr->argc;
+        return expr->argc > 0;
+    }
+    if (expr->kind == EX_FILL) {
+        if (expr->size_expr != UINT32_MAX) {
+            return size_length(c, expr->size_expr, 0, count);
+        }
+        return canonical_array_length(c->text, expr->lit_start, expr->lit_end, count);
+    }
+    return 0;
+}
+
+/* The first element with a type, and the literal's length. Nested array
+   literals are not a word vector; the caller rejects those. */
+static int literal_vector(Compiler *c, const Expr *expr, uint32_t func_index, uint32_t locals, TypeKind *type,
+                          uint32_t *length, uint16_t *mod_index, uint32_t *tup0, uint16_t *tup_n, int *nested) {
+    uint32_t count = 0;
+    uint32_t seen = 0;
+    *nested = 0;
+    if (!literal_count(c, expr, &count)) {
+        return 0;
+    }
+    if (expr->kind == EX_ARRAY) {
+        uint32_t element;
+        for (element = 0; element < expr->argc; element++) {
+            uint32_t child = c->args[expr->arg0 + element];
+            uint32_t leaf = 0;
+            int silent = 0;
+            TypeKind elem = TY_NONE;
+            uint32_t elem_len = 0;
+            int state = ordered_leaf(c, child, func_index, locals, &elem, &elem_len, &leaf, &silent);
+            if (state == 2 && (c->exprs[leaf].kind == EX_ARRAY || c->exprs[leaf].kind == EX_FILL)) {
+                *nested = 1;
+                return 0;
+            }
+            if (state == 1) {
+                *type = elem;
+                *length = elem_len;
+                *mod_index = c->leaf_mod;
+                *tup0 = c->leaf_tup0;
+                *tup_n = c->leaf_tup_n;
+                seen = 1;
+                break;
+            }
+        }
+    } else {
+        uint32_t leaf = 0;
+        int silent = 0;
+        int state = ordered_leaf(c, expr->left, func_index, locals, type, length, &leaf, &silent);
+        if (state == 2 && (c->exprs[leaf].kind == EX_ARRAY || c->exprs[leaf].kind == EX_FILL)) {
+            *nested = 1;
+            return 0;
+        }
+        if (state == 1) {
+            *mod_index = c->leaf_mod;
+            *tup0 = c->leaf_tup0;
+            *tup_n = c->leaf_tup_n;
+            seen = 1;
+        }
+    }
+    if (!seen) {
+        return 0;
+    }
+    /* `length` above is the element's own length. The vector length replaces
+       it when the element is a scalar; an element that is already an array
+       stays nested and is not a flat word vector. */
+    if (*length != 0) {
+        *nested = 1;
+        return 0;
+    }
+    *length = count;
+    return 1;
+}
+
+static int check_order_sides(Compiler *c, const Expr *expr, TypeKind from_type, uint32_t from_len, uint16_t from_mod,
+                             uint32_t from_tup0, uint16_t from_tup_n) {
+    TypeKind to_type = expr->conv_ty;
+    uint32_t to_len = expr->conv_len;
+    uint32_t to_tup0 = 0;
+    uint16_t to_tup_n = 0;
+    int from_words;
+    int to_words;
+    int from_number;
+    int to_number;
+    uint32_t from_bits = 0;
+    uint32_t from_count = 0;
+    uint32_t to_bits = 0;
+    uint32_t to_count = 0;
+    char from_text[96];
+    char to_text[96];
+    if (to_type == TY_TUPLE && expr->conv_site < c->nsites) {
+        to_tup0 = c->sites[expr->conv_site].tup0;
+        to_tup_n = c->sites[expr->conv_site].tup_n;
+    }
+    from_words = side_words(from_type, from_len, &from_bits, &from_count);
+    to_words = side_words(to_type, to_len, &to_bits, &to_count);
+    from_number = side_number(from_type, from_len);
+    to_number = side_number(to_type, to_len);
+    spell_type(c, from_text, sizeof from_text, from_type, from_len, from_mod, from_tup0, from_tup_n);
+    spell_type(c, to_text, sizeof to_text, to_type, to_len, expr->conv_mod, to_tup0, to_tup_n);
+    if (!to_words && !to_number) {
+        char shown[128];
+        snprintf(shown, sizeof shown, "`%s`", to_text);
+        report_order_unpacking(c, expr, shown);
+        return 0;
+    }
+    if (from_number && to_number) {
+        char message[384];
+        char note[192];
+        uint32_t start = expr->lit_start;
+        uint32_t end = expr->lit_end;
+        snprintf(message, sizeof message, "`%s` orders words, but this converts `%s` to `%s`",
+                 order_word(expr->conv_order), from_text, to_text);
+        snprintf(note, sizeof note, "a number converts to another without a byte order, as `x as %s`", to_text);
+        add_diag(c, "ORC0215", start, end, message, "neither side is a word or an array of words", note, 2);
+        return 0;
+    }
+    if (from_words && to_words) {
+        uint64_t from_width = (uint64_t)from_bits * (uint64_t)from_count;
+        uint64_t to_width = (uint64_t)to_bits * (uint64_t)to_count;
+        if (from_width != to_width) {
+            char message[384];
+            char label[192];
+            char second[192];
+            snprintf(message, sizeof message, "`%s` and `%s` have different widths", from_text, to_text);
+            snprintf(label, sizeof label, "`%s` has %llu bits", to_text, (unsigned long long)to_width);
+            snprintf(second, sizeof second, "`%s` has %llu bits", from_text, (unsigned long long)from_width);
+            add_diag(c, "ORC0240", expr->name_start, expr->name_end, message, label, ORDER_WIDTH_NOTE, 2);
+            diag_add_secondary(c, c->exprs[expr->left].start, c->exprs[expr->left].end, second);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int check_packing(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
+                         uint32_t locals_in_scope) {
+    Expr *expr = &c->exprs[index];
+    TypeKind from_type = TY_NONE;
+    uint32_t from_len = 0;
+    uint16_t from_mod = 0;
+    uint32_t from_tup0 = 0;
+    uint16_t from_tup_n = 0;
+    uint32_t leaf = index;
+    int silent = 0;
+    int state;
+    int nested = 0;
+    if (!expr->conv_ok) {
+        int already = expr->conv_site < c->nsites && c->sites[expr->conv_site].reported;
+        if (!already) {
+            reject_type(c, expr->conv_ty, 0, expr->name_start, expr->name_end);
+        }
+    } else {
+        int mod_diff = expr->conv_ty == TY_MOD && expected == TY_MOD && expr->conv_mod != c->expect_mod;
+        int tup_diff = 0;
+        if (expr->conv_ty == TY_TUPLE && expected == TY_TUPLE && expr->conv_site < c->nsites) {
+            tup_diff = !same_tuple(c, c->sites[expr->conv_site].tup0, c->sites[expr->conv_site].tup_n, c,
+                                   c->expect_tup0, c->expect_tup_n);
+        }
+        if (expr->conv_ty != expected || expr->conv_len != expected_len || mod_diff || tup_diff) {
+            char message[384];
+            char expected_text[96];
+            char found_text[96];
+            uint32_t tup0 = 0;
+            uint16_t tup_n = 0;
+            if (expr->conv_ty == TY_TUPLE && expr->conv_site < c->nsites) {
+                tup0 = c->sites[expr->conv_site].tup0;
+                tup_n = c->sites[expr->conv_site].tup_n;
+            }
+            spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+            spell_type(c, found_text, sizeof found_text, expr->conv_ty, expr->conv_len, expr->conv_mod, tup0, tup_n);
+            snprintf(message, sizeof message, "this conversion gives `%s`, but `%s` is required here", found_text,
+                     expected_text);
+            add_expected(c, expr->name_start, expr->name_end, message, expected_text,
+                         "`as` gives exactly the type written after it");
+        }
+    }
+    state = ordered_leaf(c, expr->left, func_index, locals_in_scope, &from_type, &from_len, &leaf, &silent);
+    if (state == 2 && (c->exprs[leaf].kind == EX_ARRAY || c->exprs[leaf].kind == EX_FILL)) {
+        const Expr *literal = &c->exprs[leaf];
+        TypeKind elem = TY_NONE;
+        uint32_t elem_len = 0;
+        if (!literal_vector(c, literal, func_index, locals_in_scope, &elem, &elem_len, &from_mod, &from_tup0,
+                            &from_tup_n, &nested)) {
+            if (nested) {
+                report_order_unpacked(c, expr, "an array");
+                return 1;
+            }
+            state = 0;
+        } else {
+            from_type = elem;
+            from_len = elem_len;
+            state = 1;
+        }
+    }
+    if (state == 2 && c->exprs[leaf].kind == EX_TUPLE) {
+        report_order_unpacked(c, expr, "a tuple");
+        return 1;
+    }
+    if (state == 0) {
+        int branch = operand_passes_branch(c, expr->left);
+        add_diag(c, "ORC0220", c->exprs[expr->left].start, c->exprs[expr->left].end,
+                 "the operand of `as` has no type of its own",
+                 branch ? "a branch's own bindings are not in scope outside it"
+                        : "a literal takes its type from where it is used",
+                 branch ? "bind the conditional's value with a typed `let` first, or convert within each branch"
+                        : "write the literal where its type is required, or give it a type with a `let` binding",
+                 2);
+        return 1;
+    }
+    if (state < 0) {
+        if (!silent) {
+            return check_expr(c, leaf, from_type == TY_NONE ? TY_INT : from_type, 0, func_index, locals_in_scope);
+        }
+        return 1;
+    }
+    if (state == 2) {
+        report_order_unpacked(c, expr, "an array");
+        return 1;
+    }
+    from_mod = c->leaf_mod;
+    from_tup0 = c->leaf_tup0;
+    from_tup_n = c->leaf_tup_n;
+    {
+        uint32_t bits = 0;
+        uint32_t count = 0;
+        if (!side_words(from_type, from_len, &bits, &count) && !side_number(from_type, from_len)) {
+        char found[96];
+        char shown[128];
+        spell_type(c, found, sizeof found, from_type, from_len, from_mod, from_tup0, from_tup_n);
+        snprintf(shown, sizeof shown, "`%s`", found);
+        report_order_unpacked(c, expr, shown);
+        return 1;
+        }
+    }
+    if (expr->conv_ok && !check_order_sides(c, expr, from_type, from_len, from_mod, from_tup0, from_tup_n)) {
+        return 1;
+    }
+    if (from_type == TY_MOD) {
+        return check_at(c, expr->left, from_type, from_len, from_mod, func_index, locals_in_scope);
+    }
+    if (from_type == TY_TUPLE) {
+        return check_as_tuple(c, expr->left, from_tup0, from_tup_n, func_index, locals_in_scope);
+    }
+    return check_expr(c, expr->left, from_type, from_len, func_index, locals_in_scope);
+}
+
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr;
@@ -9539,6 +9876,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t leaf = index;
         int silent = 0;
         int state;
+        if (expr->conv_order != 0) {
+            return check_packing(c, index, expected, expected_len, func_index, locals_in_scope);
+        }
         /* A rejected target is not a type, so it is not also a mismatch with
            `expected`. The operand is still checked: Rust reports both the
            target and whatever the operand itself has wrong. */
