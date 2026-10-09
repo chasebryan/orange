@@ -800,7 +800,7 @@ in answer to this code.
 
 `orangec test --spec first` is a usage error. The status is 2, standard
 output is empty, and the first line of the error is
-`orangec: option `--spec` applies only to eval`. The option was the
+``orangec: option `--spec` applies only to eval``. The option was the
 mistake. The tests were not run.
 
 `--steps N` sets the step budget for one `eval` or one `test`. The count

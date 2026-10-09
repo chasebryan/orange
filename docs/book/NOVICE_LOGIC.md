@@ -649,7 +649,7 @@ Order is part of the statement. Let `S` be the set of bit strings of one
 fixed length `n ≥ 1`, so that a string with a one-bit exists. Let `0`
 denote the all-zero string of that length.
 
-**Example N9.11 — Four readings of “XOR fixes a string.”**
+**Example N9.11 — Four readings of “XOR fixes a string.”**:
 
 1. `∀ x ∈ S, ∀ k ∈ S, (x ⊕ k) ⊕ k = x`. True, by Proposition 3.1. The
    domain is every pair, not one example.
