@@ -1503,9 +1503,232 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
             'Pin surface.',
         ))
         self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
-        self.assertNotIn('S14', records)
-        self.assertNotIn('T10', records)
-        self.assertNotIn('C4', records)
+        self.assertEqual(records['S14'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['T10'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['C4'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertNotIn('S15', records)
+        self.assertNotIn('T11', records)
+        self.assertNotIn('C5', records)
+
+
+class J3CorpusAsAcceptanceTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j3_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J3\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J3\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J3.{n}' for n in range(1, 13)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('Chapter 12', self.text)
+        self.assertNotIn('this chapter', self.text)
+        self.assertNotRegex(self.text, r'J2\.(?:[7-9]|1\d)\b')
+        self.assertNotIn('Listing J2.3', self.text)
+        self.assertNotIn('Listing J2.4', self.text)
+        self.assertRegex(self.text, r'(?m)^## J3: The Corpus as Acceptance Test$')
+        for number in range(1, 8):
+            self.assertRegex(self.text, rf'(?m)^### J3\.{number} ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'An implementation that concurs with the results provided in this '
+            'document should be interoperable with other similar implementations.'
+        ])
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc4231.txt', self.text)
+        self.assertIn('**J3.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#j3-the-corpus-as-acceptance-test',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j3-the-corpus-as-acceptance-test', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J3.', self.text)
+        self.assertIn('The locked label is J3.', self.index)
+        self.assertIn('**[S14] M. Nystrom.**', self.text)
+        self.assertIn('**[T10] Retrieved file.**', self.text)
+        self.assertIn('**[C4] Corpus surface.**', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+        self.assertIn('implemented slice S3t', self.text)
+        self.assertNotIn('S3u', self.text)
+        self.assertIn('Listing J2.1', self.text)
+        self.assertIn('Listing J2.2', self.text)
+        self.assertIn('§J2.3', self.text)
+        self.assertIn('§J2.5', self.text)
+        self.assertIn('December 2005', self.text)
+        self.assertIn('August 2015', self.text)
+
+    def test_j3_corpus_records_three_vectors_from_two_sources(self):
+        self.assertIn('| C1 | RFC 4231 | December 2005 | §4.2 |', self.text)
+        self.assertIn('| C2 | RFC 4231 | December 2005 | §4.3 |', self.text)
+        self.assertIn('| C5 | FIPS PUB 180-4 | August 2015 | §5.1.1 |', self.text)
+        self.assertIn('| C6 | RFC 4231 | December 2005 | §4.4 |', self.text)
+        self.assertIn('What it covers', self.text)
+        self.assertGreaterEqual(self.text.count('| C'), 6)
+        self.assertIn('RFC 2104', self.text)
+        self.assertIn('February 1997', self.text)
+
+    def test_j3_runs_under_orangec_test(self):
+        self.assertIn('./compiler/target/debug/orangec test corpus.or', self.text)
+        self.assertIn('6 tests: 6 passed, 0 failed', self.text)
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            ['corpus', 'wrong_rest', 'mislabelled', 'wrong_table', 'wrong_flip'],
+        )
+        corpus = sources[0]
+        for needle in (
+            'inner(0x0b) == 0x3d',
+            'inner(0x4a) == 0x7c',
+            'inner(0x00) == 0x36',
+            'inner(0xaa) == 0x9c',
+            'abc_bits() == 24',
+        ):
+            self.assertIn(needle, corpus)
+
+    def test_j3_coverage_names_gaps_and_refuses_verified(self):
+        for phrase in (
+            'empty message',
+            '131',
+            'key longer than the block',
+            'index 19',
+            'high bit',
+            'Do not call\nthe count verified.',
+            'Do not call the six\npasses verified.',
+        ):
+            self.assertIn(phrase, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+
+    def test_j3_mislabelled_vector_is_diagnosed_and_repaired(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        mislabelled = next(source for source in sources if '\nmodule mislabelled {' in source)
+        self.assertIn('case2_inner() == 0x3d', mislabelled)
+        self.assertIn('k ^ 0x36', mislabelled)
+        self.assertIn('left:  0x7c', self.text)
+        self.assertIn('right: 0x3d', self.text)
+        self.assertIn('Replacing `0x3d` with `0x7c`', self.text)
+
+    def test_j3_two_wrong_listings_fail_the_distinguishing_vector(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        table = next(source for source in sources if '\nmodule wrong_table {' in source)
+        flip = next(source for source in sources if '\nmodule wrong_flip {' in source)
+        for source in (table, flip):
+            self.assertIn('inner(0x00) == 0x36', source)
+            self.assertIn('inner(0x0b) == 0x3d', source)
+            self.assertIn('inner(0x4a) == 0x7c', source)
+            self.assertIn('== 0x9c', source)
+        self.assertIn('left:  0x00', self.text)
+        self.assertIn('left:  0x9d', self.text)
+        self.assertIn('right: 0x9c', self.text)
+        self.assertIn('RFC 4231', self.text)
+        self.assertIn('§4.4', self.text)
+        self.assertIn('0xaa', self.text)
+        rest = next(source for source in sources if '\nmodule wrong_rest {' in source)
+        self.assertIn('inner(0x01)', rest)
+        self.assertIn('inner(0xaa) == 0x9c', rest)
+
+    def test_j3_listings_avoid_compression_and_byte_packing(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 5)
+        for source in sources:
+            for forbidden in (
+                'Word[32]',
+                'spec pack(',
+                '<<<',
+                ' as ',
+                'spec compress(',
+                'spec schedule(',
+                'small_sigma0',
+                '0x428a2f98',
+            ):
+                self.assertNotIn(forbidden, source)
+        for forbidden in (
+            'small_sigma0',
+            'spec compress(',
+            'spec schedule(',
+            '0x428a2f98',
+            'S3u',
+        ):
+            self.assertNotIn(forbidden, self.text)
+
+    def test_j3_ledger_matches_the_byte_arithmetic(self):
+        block = re.search(r'^```text\nj3-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        expected = {
+            'inner-00': 0x00 ^ 0x36,
+            'inner-0b': 0x0b ^ 0x36,
+            'inner-4a': 0x4a ^ 0x36,
+            'inner-aa': 0xaa ^ 0x36,
+            'flip-aa': (0xaa ^ 0x36) ^ 0x01,
+            'spec-01': 0x01 ^ 0x36,
+            'abc-bits': 3 * 8,
+            'key-len': 20,
+            'block': 64,
+            'fill-count': 64 - 20,
+            'combined': 20 + 50,
+            'long-key': 131,
+            'domain': 256,
+            'thin': 3,
+            'full-bytes': 4,
+            'high-half': 128,
+            'untested-thin': 256 - 3,
+            'untested-full': 256 - 4,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['inner-0b'], 0x3d)
+        self.assertEqual(expected['inner-4a'], 0x7c)
+        self.assertEqual(expected['inner-aa'], 0x9c)
+        self.assertEqual(expected['flip-aa'], 0x9d)
+        self.assertEqual(expected['spec-01'], 0x37)
+        self.assertNotEqual(expected['flip-aa'], expected['inner-aa'])
+
+    def test_j3_tags_are_the_next_free_numbers(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S14'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'M. Nystrom.',
+        ))
+        self.assertEqual(records['T10'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'Retrieved file.',
+        ))
+        self.assertEqual(records['C4'], (
+            'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
+            'Corpus surface.',
+        ))
+        self.assertEqual(records['S13'][0], 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md')
+        self.assertNotIn('S15', records)
+        self.assertNotIn('T11', records)
+        self.assertNotIn('C5', records)
 
 
 def math_gcd(left: int, right: int) -> int:

@@ -245,6 +245,20 @@ Orange is the working language, not decoration around prose.
   *Standards as Versioned Inputs*. The manuscript chapter keeps that
   number. This lesson does not transcribe the SHA-256 compression
   function or its message schedule.
+- **J3.** [The Corpus as Acceptance Test](JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#j3-the-corpus-as-acceptance-test):
+  a corpus is a finite set of pinned vectors, run as Orange tests.
+  The reader builds one from the RFC 4231 cases §J2.3 already names
+  and from the FIPS 180-4 “abc” bit length, runs it with `orangec test`,
+  and says what those tests cover and what they leave out. One
+  mislabelled vector fails and is repaired. Two wrong implementations
+  pass a thinner corpus and fail one further pinned byte, with different
+  computed values. A third implementation passes the whole corpus and
+  still disagrees with the specification on a byte the corpus does not
+  name. The six outcomes in §J3.1 are the finish line.
+  The locked label is J3. It is not manuscript Chapter 12,
+  *The Corpus as Acceptance Test*. The manuscript chapter keeps that
+  number. This lesson does not transcribe the SHA-256 compression
+  function or its message schedule, and it does not pack bytes into a word.
 
 ### Existing manuscript integrated here
 
@@ -394,7 +408,8 @@ answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
 answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
 integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
-lesson-J2 answers and the J2 integer ledger, and document structure. Python test
+lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
+J3 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -451,6 +466,21 @@ build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j2 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j3.rs`
+reads the five Orange listings in J3. It checks silent `check`, the
+printed `eval` lines, the corpus's six passing tests, the same six
+passing tests on the listing that returns `0x00` at `inner(0x01)`,
+the mislabelled vector's failing report, and the two wrong listings
+whose thin tests pass and whose RFC 4231 §4.4 test fails with left
+`0x00` and left `0x9d`. A passing test in that file is a Match of the
+`Bool` the listing writes. It does not establish a cryptographic
+security claim, it does not transcribe FIPS 180-4 §6.2.2, and it does
+not pack bytes into a word. Run it in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j3 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -466,6 +496,8 @@ listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the
 owner's direction. Lesson N14, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
 direction. Lesson J2 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
-at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, and J2 review are
+at the owner's direction. Lesson J3, including its Orange listings, is
+AI-assisted with Grok 4.7 in Cursor, 2026-10-09, at the owner's
+direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, J2, and J3 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
