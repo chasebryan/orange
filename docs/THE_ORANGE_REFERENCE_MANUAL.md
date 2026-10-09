@@ -4460,8 +4460,8 @@ appendix A test cases 1 through 3. The option Hash is SHA-256, so HashLen
 is 32 octets. The pseudorandom function is HMAC-SHA-256 of §52B. The
 listing restates that HMAC, and the SHA-256 it calls, because a module has
 no imports. Appendix A test cases 4 through 7 are SHA-1. This section does
-not restate them. The RFC 4231 cases stay in §52B. One evaluation budget
-is $1\,048\,576$ steps, and the two groups do not both fit in it.
+not restate them. The RFC 4231 cases stay in §52B. One evaluation
+budget is the step budget in §102, and the two groups do not both fit in it.
 `algorithms/hmac-hkdf/hmac-hkdf-rfc5869.or` is the same HKDF text, module
 `hmac_hkdf`, with no `test` member.
 
