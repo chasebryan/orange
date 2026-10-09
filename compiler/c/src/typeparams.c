@@ -1025,7 +1025,7 @@ static void domain_text(const Compiler *target, const Func *func, char *buf, siz
     uint8_t slot;
     buf[0] = '\0';
     for (slot = 0; slot < func->nsizes && used + 8 < cap; slot++) {
-        char piece[192];
+        char piece[256];
         char name[64];
         int wrote;
         span_copy(name, sizeof name, target->text, func->sz_name0[slot], func->sz_name1[slot]);
@@ -1140,7 +1140,7 @@ static void report_unfitted(Compiler *c, Expr *expr, Compiler *target, const Fun
             }
         }
         {
-            char note[320];
+            char note[512];
             snprintf(note, sizeof note, "`%s` is defined for %s", name, domain);
             add_diag(c, "ORC0241", expr->start, expr->end, message, label, note, 2);
             add_note2(c, tp_has_sizes(func) ? MIXED_NOTE : NO_BRACKET_NOTE);
