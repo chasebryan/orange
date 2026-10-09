@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.167",
+  "policy_version": "0.2.168",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -169,6 +169,7 @@
     ".github/dependabot.yml",
     ".github/dependency-review-config.yml",
     ".github/pull_request_template.md",
+    ".github/workflows/book.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/dependency-review.yml",
     ".github/workflows/external-links.yml",
@@ -543,6 +544,7 @@
     "docs/book/NOVICE_PROGRAMMING.md",
     "docs/book/NOVICE_PROTECT.md",
     "docs/book/README.md",
+    "docs/book/manifest.json",
     "docs/governance/adrs/ADR-0000-template.md",
     "docs/governance/adrs/README.md",
     "docs/governance/oeps/OEP-0000-template.md",
@@ -720,6 +722,7 @@
     "tools/d006_shared.py",
     "tools/d011_suite.py",
     "tools/fs_sandbox.c",
+    "tools/render_book.py",
     "tools/test_book_foundations.py",
     "tools/tests/test_book_foundations.py",
     "tools/tests/test_d004_archive.py",
@@ -758,6 +761,7 @@
     "scorecard.yml"
   ],
   "workflow_inventory": [
+    "book.yml",
     "ci.yml",
     "dependency-review.yml",
     "external-links.yml",
@@ -777,6 +781,7 @@
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
+    ".github/workflows/book.yml": "18e6e905287b10a22d814eae764e407bf8cc30e41993fe5e81042a0bc6cb0259",
     ".github/workflows/ci.yml": "e717471c5a9fe9875a6021987c266a383b67a1c07ed993d99f9878831e17248a",
     ".github/workflows/dependency-review.yml": "2441791a4f5f952c9fdd482190d333357bc7e50fbabaad730830a104866a4972",
     ".github/workflows/external-links.yml": "907e36b6d107f3eeb7529616fbd355d7e60b1f63c39eb19ecf03f3938cb52ea9",
@@ -862,7 +867,7 @@
     "docs/LANGUAGE_2026.md": "1e6c20354691c9d8ab69d9d9c8d70875b354b199284f4651a41345ba9cf19f86",
     "docs/SEMANTICS_2026.md": "ea0bedfa76ab4c18fc1da71148fcf8c2d19d5fb14a00d73e4576bc27915e82ab",
     "docs/images/README.md": "16819ad2f9bb83a3b8d5d66bfaece0b162418b31fb74f525ade473aa13a4cf78",
-    "docs/operations/CI_DEPENDENCIES.md": "38556a04bb7057308f2ea82f7a87c5802b4db3b3f3fffeed9cbe83fc3028a7af",
+    "docs/operations/CI_DEPENDENCIES.md": "9aad7d44f862df93d0e387e4c16def5e3f1252faa7e0a998b39bc754e9e9bf76",
     "docs/operations/GITHUB_CONTROLS.md": "b88ce19c6a674a885a6aa556dcf598b574e4f4c607a8b445d4cf0c8bd38ed8f6",
     "docs/security/OSPS_BASELINE.md": "f912af598fcbe2a76b3b774fab5358b8c63aa68794a209b33f3418e656fdda78",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -985,6 +990,9 @@
       "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
     ],
     "allowed_write_permissions": {
+      "book.yml": [
+        "actions"
+      ],
       "scorecard.yml": [
         "security-events"
       ]

@@ -2,6 +2,24 @@
 
 By Chase Bryan
 
+## Manuscript status
+
+This expansion is a living, in-progress manuscript. It is not a finished
+book, and it is not an independent review.
+
+| Part | Drafted in this tree | Only planned |
+| --- | --- | --- |
+| Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
+| Part 2, The Journeyman | None | J2, J3, and J4 (Block A), J5, and the connecting studies below |
+| Part 3, The Master | None | The connecting studies and the capstone dossier below |
+
+The opening was approved by the owner before the continuation. Later
+corrections in that same file, Chapters 4–6, and N7–N14 are draft and
+unreviewed. Journeyman and Master lessons are not written in this tree.
+The original seventeen chapters and four appendices stay in
+[THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
+of drafted and planned chapters is [manifest.json](manifest.json).
+
 Three-part study structure, opening and programming continuation — 2026-10-05.
 
 [Begin reading: A word before we begin](NOVICE_OPENING.md#a-word-before-we-begin)

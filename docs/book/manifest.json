@@ -1,0 +1,234 @@
+{
+  "kind": "orange-book-manuscript-manifest",
+  "version": 1,
+  "status": "in-progress",
+  "review": "Draft lessons are unreviewed except for the owner-approved opening, whose later corrections have not had a separate review. Planned lessons are not written. This manifest is not an assurance claim.",
+  "canonical_manuscript": "docs/THE_ORANGE_BOOK.md",
+  "expansion_index": "docs/book/README.md",
+  "manifest": "docs/book/manifest.json",
+  "chapters": [
+    {
+      "part": "novice",
+      "id": "opening",
+      "title": "A word before we begin",
+      "status": "draft",
+      "review_state": "owner-approved-with-unreviewed-corrections",
+      "path": "docs/book/NOVICE_OPENING.md",
+      "anchor": "a-word-before-we-begin",
+      "summary": "The owner approved the opening before the continuation. Later corrections in the same file have not had a separate review."
+    },
+    {
+      "part": "novice",
+      "id": "n1",
+      "title": "Chapter 1: Before You Hide Anything",
+      "status": "draft",
+      "review_state": "owner-approved-with-unreviewed-corrections",
+      "path": "docs/book/NOVICE_OPENING.md",
+      "anchor": "chapter-1-before-you-hide-anything",
+      "summary": "Drafted in the opening file. The opening was owner-approved; later corrections in that file have not had a separate review."
+    },
+    {
+      "part": "novice",
+      "id": "n2",
+      "title": "Chapter 2: Two Marks, Many Possibilities",
+      "status": "draft",
+      "review_state": "owner-approved-with-unreviewed-corrections",
+      "path": "docs/book/NOVICE_OPENING.md",
+      "anchor": "chapter-2-two-marks-many-possibilities",
+      "summary": "Drafted in the opening file. The opening was owner-approved; later corrections in that file have not had a separate review."
+    },
+    {
+      "part": "novice",
+      "id": "n3",
+      "title": "Chapter 3: A Rule You Can Undo",
+      "status": "draft",
+      "review_state": "owner-approved-with-unreviewed-corrections",
+      "path": "docs/book/NOVICE_OPENING.md",
+      "anchor": "chapter-3-a-rule-you-can-undo",
+      "summary": "Drafted in the opening file. The opening was owner-approved; later corrections in that file have not had a separate review."
+    },
+    {
+      "part": "novice",
+      "id": "n4",
+      "title": "Chapter 4: A Place to Work",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_PROGRAMMING.md",
+      "anchor": "chapter-4-a-place-to-work",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n5",
+      "title": "Chapter 5: Tell the Machine Exactly",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_PROGRAMMING.md",
+      "anchor": "chapter-5-tell-the-machine-exactly",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n6",
+      "title": "Chapter 6: Words Have Edges",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_PROGRAMMING.md",
+      "anchor": "chapter-6-words-have-edges",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n7",
+      "title": "N7. Name the Intermediate Step",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md",
+      "anchor": "n7-name-the-intermediate-step",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n8",
+      "title": "N8. Read and Repair a Program",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_N8_READ_AND_REPAIR.md",
+      "anchor": "n8-read-and-repair-a-program",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n9",
+      "title": "N9. Say What You Mean",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_LOGIC.md",
+      "anchor": "n9-say-what-you-mean",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n10",
+      "title": "N10. Count What You Do Not Know",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_PROBABILITY.md",
+      "anchor": "n10-count-what-you-do-not-know",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n11",
+      "title": "N11. Protect More Than Appearance",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_PROTECT.md",
+      "anchor": "n11-protect-more-than-appearance",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n12",
+      "title": "N12. The First Complete Study",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md",
+      "anchor": "n12-the-first-complete-study",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n13",
+      "title": "N13. Modules and Provenance",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md",
+      "anchor": "n13-modules-and-provenance",
+      "summary": "Draft. Owner review is pending."
+    },
+    {
+      "part": "novice",
+      "id": "n14",
+      "title": "N14. Ready for Standards",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/NOVICE_N14_READY_FOR_STANDARDS.md",
+      "anchor": "n14-ready-for-standards",
+      "summary": "Draft gate. Owner review is pending. It does not open the Journeyman."
+    },
+    {
+      "part": "journeyman",
+      "id": "j2",
+      "title": "J2",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "N14 names J2 as one lesson of Block A. This tree does not contain it."
+    },
+    {
+      "part": "journeyman",
+      "id": "j3",
+      "title": "J3",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "N14 names J3 as one lesson of Block A. This tree does not contain it."
+    },
+    {
+      "part": "journeyman",
+      "id": "j4",
+      "title": "J4",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "N14 names J4 as one lesson of Block A. This tree does not contain it."
+    },
+    {
+      "part": "journeyman",
+      "id": "j5",
+      "title": "J5. SHA-256 compression and message schedule",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "N14 names J5 as the study that would derive FIPS 180-4 section 6.2.2. This tree does not contain that derivation."
+    },
+    {
+      "part": "journeyman",
+      "id": "journeyman-connecting-studies",
+      "title": "Journeyman connecting studies",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "Rings and finite fields, entropy, state, resources, byte order beyond Block A, representative constructions, public-key study, and post-quantum study are named in the index and are not written."
+    },
+    {
+      "part": "master",
+      "id": "master-connecting-studies",
+      "title": "Master connecting studies",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "The formal, compiler, and evidence studies named in the index are not written as Master lessons."
+    },
+    {
+      "part": "master",
+      "id": "master-capstone",
+      "title": "Auditable claim dossier",
+      "status": "planned",
+      "review_state": "unwritten",
+      "path": null,
+      "summary": "The capstone named in the index is not written. Completing the reading is not verification."
+    },
+    {
+      "part": "original",
+      "id": "original-manuscript",
+      "title": "Existing seventeen chapters and four appendices",
+      "status": "original",
+      "review_state": "canonical-manuscript",
+      "path": "docs/THE_ORANGE_BOOK.md",
+      "anchor": "preface",
+      "summary": "The canonical manuscript. Linked from the expansion index. Not rewritten into the new Novice, Journeyman, and Master lessons."
+    }
+  ]
+}

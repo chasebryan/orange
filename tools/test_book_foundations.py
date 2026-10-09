@@ -1389,6 +1389,73 @@ def successor_bezout(integer: int, modulus: int) -> tuple[int, int]:
     return inner_y, inner_x - quotient * inner_y
 
 
+class ManuscriptManifest(unittest.TestCase):
+    def test_manifest_names_drafted_and_planned_chapters(self):
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import PART_TITLES, load_manifest
+
+        manifest = load_manifest(ROOT)
+        self.assertEqual(manifest['status'], 'in-progress')
+        self.assertEqual(manifest['manifest'], 'docs/book/manifest.json')
+        drafted = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'draft']
+        planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
+        self.assertEqual(
+            [chapter['part'] for chapter in drafted],
+            ['novice'] * len(drafted),
+        )
+        self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
+        self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
+        self.assertIn('owner-approved-with-unreviewed-corrections', {
+            chapter['review_state'] for chapter in drafted
+        })
+        self.assertIn('unreviewed', {chapter['review_state'] for chapter in drafted})
+        index = INDEX.read_text(encoding='utf-8')
+        self.assertIn('## Manuscript status', index)
+        self.assertIn('[manifest.json](manifest.json)', index)
+        self.assertIn('living, in-progress manuscript', index)
+        for part in ('Part 1, The Novice', 'Part 2, The Journeyman', 'Part 3, The Master'):
+            self.assertIn(part, index)
+            self.assertEqual(PART_TITLES[{
+                'Part 1, The Novice': 'novice',
+                'Part 2, The Journeyman': 'journeyman',
+                'Part 3, The Master': 'master',
+            }[part]], part)
+        for chapter in drafted:
+            short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
+            self.assertIn(short, index)
+        self.assertIn('| Part 2, The Journeyman | None |', index.replace('\n', ' '))
+        self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
+        for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
+            text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
+            self.assertIn('S3u', text)
+            self.assertNotIn('S3t', text)
+
+    def test_rendered_book_shows_planned_chapters_without_pages(self):
+        import tempfile
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import render
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'book'
+            render(ROOT, output)
+            index = (output / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('Living, in-progress manuscript', index)
+            self.assertIn('J2', index)
+            self.assertIn('planned', index)
+            self.assertIn('Auditable claim dossier', index)
+            self.assertTrue((output / 'docs' / 'book' / 'NOVICE_OPENING.html').is_file())
+            self.assertTrue((output / 'docs' / 'THE_ORANGE_BOOK.html').is_file())
+            self.assertFalse((output / 'docs' / 'book' / 'J2.html').exists())
+            opening = (output / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('Draft.', opening)
+            self.assertNotIn('<script', opening.lower())
+            self.assertIn('&lt;', (output / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.html').read_text(encoding='utf-8')[:5000] or 'skip')
+
+
 def rotate_byte(value: int, amount: int) -> int:
     """Reference mathematical rotation, not an Orange interpreter."""
     if not 0 <= value < 256:
