@@ -904,19 +904,23 @@ follow a slice, and no operation selects a rectangular window across several axe
 
 #### 5. Update Paths
 
-This compiler updates one index, one index per dimension through the maximum
-array rank (§102), or one slice: `a with [i] = v`, `a with [i][j] = v`,
-`c with [i][j][k] = v`, or `a with [x..y] = b`. `orangec check` accepts an
-update path on rank 2 and on rank 3, and a path of one index per dimension of
-a rank-4 array. The value must have the type at the end of the path. A value
-of the wrong type is `ORC0214`. A value of the wrong length is `ORC0222`.
+This compiler updates one index, a path of one or more indices up to the
+array's rank and through the maximum array rank (§102), or one slice:
+`a with [i] = v`, `a with [i][j] = v`, `c with [i][j][k] = v`,
+`m with [1][0] = p` on a rank-3 array, or `a with [x..y] = b`.
+`orangec check` accepts an update path on rank 2 and on rank 3, a path of
+one index per dimension of a rank-4 array, and a shorter path such as
+`m with [1][0] = p`. The value must have the type at the end of the path.
+A value of the wrong type is `ORC0214`. A value of the wrong length is
+`ORC0222`.
 
 A fifth index is `ORC0101` before a type is checked. The message is
 `` expected `=` after the updated index ``, and the note is
 `` an element of a row is updated with `x with [i][j] = v`, one index per dimension; a run of a row is updated as `x with [i] = (x[i] with [a..b] = v)` ``.
 A slice inside a path, `a with [0][1..2] = v`, is the same code. Its message
 is `` expected `]` after the index ``, with that note. A missing `=` after
-two indices uses the note
+a single index uses the note below, and so does a missing `=` after two
+indices:
 `` an update is written `x with [i] = value`, or `x with [i][j] = value` for an element of a row ``.
 
 A further index on a value that is not an array is `ORC0224`. After two
@@ -1317,16 +1321,20 @@ $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n)}
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad \mathcal{C} \vdash i : \text{Index}(n) \quad \mathcal{C} \vdash v : T}{\mathcal{C} \vdash (A \text{ with } [i] = v) : T^n} \quad (\text{T-Update})$$
 
-T-Update is one index. T-Update-Path is Current (§25.5): one index per
-dimension, from 2 through the maximum array rank (§102). `a with [i][j] = v`
-on rank 2 or rank 3 is that rule. It is not `ORC0101`.
+T-Update is one index whose value has the element type. T-Update-Path is
+Current (§25.5): from 1 through $\operatorname{rank}(\tau)$ indices, and at
+most the maximum array rank (§102). The value has the type at the end of
+the path. `m with [1][0] = p` on a rank-3 array, with `p` of the type those
+two indices reach, is that rule, and so is a path that names every axis.
+It is not `ORC0101`.
 
-$$\frac{2 \le \operatorname{rank}(\tau) = r \le R \quad \mathcal{C} \vdash A : \tau \quad \forall j \in [1, r].\ \mathcal{C} \vdash i_j : \operatorname{Index}(\operatorname{axis}_j(\tau)) \quad \mathcal{C} \vdash v : \operatorname{leaf}(\tau)}{\mathcal{C} \vdash (A \text{ with } [i_1][i_2] \dots [i_r] = v) : \tau} \quad (\text{T-Update-Path})$$
+$$\frac{1 \le k \le \operatorname{rank}(\tau) = r \le R \quad \mathcal{C} \vdash A : \tau \quad \forall j \in [1, k].\ \mathcal{C} \vdash i_j : \operatorname{Index}(\operatorname{axis}_j(\tau)) \quad \mathcal{C} \vdash v : \tau_k}{\mathcal{C} \vdash (A \text{ with } [i_1] \dots [i_k] = v) : \tau} \quad (\text{T-Update-Path})$$
 
-$R$ is the maximum array rank (§102). A path with more indices than
-$\operatorname{rank}(\tau)$ is the update-path form of `ORC0224` (§25.5), and
-the value's type is the type at the end of the path, the leaf when the path
-names every axis. A fifth index is `ORC0101`, with the note in §25.5.
+$R$ is the maximum array rank (§102). $\tau_0 = \tau$, and $\tau_j$ is the
+element type of $\tau_{j-1}$, so $\tau_k$ is the type at the end of the path
+and $\tau_r$ is the leaf. A path with more indices than
+$\operatorname{rank}(\tau)$ is the update-path form of `ORC0224` (§25.5).
+A fifth index is `ORC0101`, with the note in §25.5.
 
 $$\frac{\mathcal{C} \vdash A : T^n \quad 0 \le l \le u \le n}{\mathcal{C} \vdash A[l..u] : T^{u - l}} \quad (\text{T-Slice})$$
 
@@ -1455,8 +1463,9 @@ An immutable association mapping variable identifiers to semantic values.
 #### 3. Deterministic Step Budget ($K$)
 
 Dynamic execution is guarded by a step budget. The default $K_0$ is the step
-budget in §102. `orangec eval --steps N` and `orangec test --steps N` admit
-$N$ from 1 through 1,073,741,824. Exhausting the budget emits `ORC0301`.
+budget in §102. `orangec eval`, `orangec test`, `orangec replay`, and
+`orangec analyze` take `--steps N` in the range that row records. Exhausting
+the budget emits `ORC0301`.
 
 A step is not one primitive. An array update, fill, join, or slice of $n$
 elements costs $\lceil n / 64 \rceil$ steps. A byte-order conversion costs one
@@ -2431,13 +2440,13 @@ operation.
 
 **Current** for the listing in this section. `orangec test` on that listing,
 with the S3u binary of §49, accepts the first vector of section 5.2 and fails
-none. One `X25519` evaluation costs 564,933 of the step budget in §102
-(`MAX_EVALUATION_STEPS_PER_SOURCE` in
+none. One `X25519` evaluation costs 564,933 steps as of S3u, of the step
+budget in §102 (`MAX_EVALUATION_STEPS_PER_SOURCE` in
 `compiler/crates/orange-compiler/src/eval.rs`).
 A file that evaluates two of them exceeds that budget and the evaluator
 reports `ORC0301`. That is why each further vector is its own file.
 `algorithms/x25519/x25519.or` is that algorithm without a `test` member.
-Its comment says about 568,000 steps. `orangec check` accepts that file.
+`orangec check` accepts that file.
 The other three files are the same algorithm with a different vector spec.
 
 | Text | Status | Check |
@@ -2595,11 +2604,10 @@ $2^{254} + 8 \cdot n$ for an integer $n$ with $0 \le n \le 2^{251} - 1$.
 // https://www.rfc-editor.org/rfc/rfc7748
 //
 // This file reproduces the first test vector of section 5.2.
-// One X25519 evaluation costs 564,933 steps, within the default step budget,
-// so each vector file holds one vector. The algorithm is the same in
-// x25519.or, x25519-second-vector.or, x25519-diffie-hellman.or, and
-// x25519-wycheproof.or. Those files' comments say about 568,000 steps.
-// Only the vector specs differ.
+// One X25519 evaluation costs 564,933 steps as of S3u, within the default
+// step budget, so each vector file holds one vector. The algorithm is the
+// same in x25519.or, x25519-second-vector.or, x25519-diffie-hellman.or, and
+// x25519-wycheproof.or. Only the vector specs differ.
 edition 2026;
 module x25519_spec {
   // Section 4.1: p = 2^255 - 19 and A = 486662; section 5: a24 = (A - 2) / 4.
@@ -7748,9 +7756,10 @@ the run controls (§96, `ORC0202`).
   ```
 
 - **Remediation:** Supply the required syntactic delimiter: `edition 2026;`.
-  A fifth update index, and a slice inside an update path, are this code.
-  Their notes are the ones §25.5 quotes. A path of one index per dimension,
-  through the maximum array rank (§102), is checked and is not this code.
+  A fifth update index, a slice inside an update path, and a missing `=`
+  after one index or after two, are this code. Their notes are the ones
+  §25.5 quotes. A path of 1 through the maximum array rank (§102) indices,
+  ending at or before the last axis, is checked and is not this code.
 
 #### `ORC0102` — `UnsupportedSourceEdition`
 
@@ -8427,18 +8436,23 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
   edition 2026;
   module bad_loop {
       spec rev() -> Word[32] {
-          for i in 10..5 with acc = 0 { acc + i } // Decreasing range prohibited
+          for i in 10..5 with acc: Word[32] = 0 { acc + (i as Word[32]) }
       }
   }
   ```
 
-- **Remediation:** Ensure bounds satisfy $0 \le \text{low} \le \text{high} \le 65,536$:
+  `orangec check` reports
+  `` error[ORC0225]: the loop range 10..5 is empty ``, label
+  `` a loop runs at least once ``, note
+  `` a loop `for i in a..b` runs once for each i from a up to b - 1, with a < b <= 65536 ``.
+
+- **Remediation:** Write a non-empty range. `orangec check` accepts:
 
   ```orange
   edition 2026;
   module bad_loop {
       spec rev() -> Word[32] {
-          for i in 5..10 with acc = 0 { acc + i }
+          for i in 5..10 with acc: Word[32] = 0 { acc + (i as Word[32]) }
       }
   }
   ```
@@ -8831,21 +8845,24 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
 
 #### `ORC0273` — `InvalidWitnessReplayBinding`
 
-- **Subsystem:** Witness Replay Driver (`orangec replay`)
-- **Formal Trigger Predicate:**
-  $$\text{Trigger}(f) \iff \text{ReturnType}(f) \ne \text{Bool}$$
-- **Theoretical Rationale:** Witness replay checks whether a property holds or is falsified.
-  The target specification function MUST return `Bool`.
-- **Erroneous Example:**
-
-  ```orange
-  edition 2026;
-  module bad_replay {
-      spec hash(x: Word[32]) -> Word[32] { x } // Returns Word[32], not Bool
-  }
-  ```
-
-- **Remediation:** Target a boolean predicate function `spec prop(...) -> Bool`.
+- **Subsystem:** Witness replay binding (`replay_witness`)
+- **Formal Trigger Predicate:** Not reachable from a command a user can type
+  in slice S3u. `replay_witness` in
+  `compiler/crates/orange-compiler/src/witness.rs` returns this code when
+  the function is not that evaluator's own `Bool` function with argument
+  types equal to the decoded values. `orangec replay` calls it only from
+  `prepare_replay` in `compiler/crates/orangec/src/main.rs`, and only after
+  that driver has accepted a `Bool` result and a witness decoded against
+  the selected parameters. A result that is not `Bool` stops as `ORC1016`
+  before the call. A witness that does not match those parameters is
+  `ORC0270`, `ORC0271`, or `ORC0272`, and that decode returns no arguments.
+- **Theoretical Rationale:** Witness replay checks whether a property holds
+  or is falsified for one Boolean function and one argument vector. In S3u
+  the command line enforces that before this code.
+- **Remediation:** Select a function whose checked result type is `Bool`.
+  For any other result, `orangec replay` reports `ORC1016`,
+  `` witness replay requires a Boolean function result ``, note
+  `` select a function whose checked result type is Bool ``.
 
 #### `ORC0274` — `WitnessReplayInconsistency`
 
@@ -8913,7 +8930,7 @@ Usage: orangec <COMMAND> [OPTIONS] <FILE>
 #### Global Options
 
 - `--edition 2026`: Explicitly specifies the source edition.
-- `--steps <COUNT>`: Evaluation step budget, from 1 through 1,073,741,824. The default is the step budget in §102.
+- `--steps <COUNT>`: Step budget for `eval`, `test`, `replay`, and `analyze`. The default and the range `--steps` sets are the step-budget row in §102.
 - `--spec <NAME>`: Evaluate only this function without parameters. Repeatable, at most 64 names. `eval` only.
 - `--stats`: Report the steps each function or test used, on stderr. It does not report memory words. It applies to `eval`, `test`, and `replay`.
 - `--version`: Emits package version, edition, and latest implemented slice:
@@ -8944,7 +8961,7 @@ total-scalars cap are two limits.
 | **Per-axis length cap** | As of S3u. Each axis is from 1 through 65,536 | `ORC0221` |
 | **Total-scalars cap** | As of S3u. The product of the axes is at most 65,536 scalars | `ORC0221` |
 | **Tuple Arity Range ($k$)** | $2 \le k \le 16$ | `ORC0101` below 2; `ORC0106` above 16 |
-| **Step budget** | As of S3u. 1,048,576 steps ($2^{20}$) | `ORC0301` |
+| **Step budget** | As of S3u. Default 1,048,576 steps ($2^{20}$); `--steps` sets 1 through 1,073,741,824 | `ORC0301` |
 | **Documentation Work Items** | 1,048,576 items ($2^{20}$) | `ORC0260` |
 | **Documentation Output Size** | 16,777,216 HTML bytes (16 MiB) | `ORC0260` |
 
