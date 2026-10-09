@@ -71,4 +71,14 @@ module nested {
 
   // The same tuple-result call across a module boundary, and it is evaluated.
   spec from_lib_pair[K in {Int, Word[8]}]() -> (K, K) { nestlib::wrapped() }
+
+  // An update's type is the call's result type, so it chooses the instance.
+  spec vec[K in {Int, Word[8]}]() -> K^2 { [0 - 1, 1] }
+
+  spec revised[K in {Int, Word[8]}]() -> K^2 { vec() with [0] = 1 }
+
+  // The parameter type of `head` chooses `vec`.
+  spec head[K in {Int, Word[8]}](x: K^2) -> K { x[0] }
+
+  spec through[K in {Int, Word[8]}]() -> K { head(vec()) }
 }

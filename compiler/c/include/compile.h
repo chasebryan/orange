@@ -1365,8 +1365,10 @@ static void analyze(Compiler *c) {
         }
         if (!func->result_ok) {
             /* A rejected result is already diagnosed at its type. Do not also
-               check the bindings or the body (Float and Mod[1] must not add
-               ORC0207 or ORC0211). */
+               check the bindings or the body against that type (Float and
+               Mod[1] must not add ORC0207 or ORC0211). A result the parser
+               rejects, such as a tuple of tuples, still has its body parsed,
+               so a repeated syntax error there is reported on its own. */
             if (!func->result_reported) {
                 reject_declared(c, func->result, func->result_length_bad, func->result_start, func->result_end,
                                 func->result_length_start, func->result_length_end);

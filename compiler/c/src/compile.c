@@ -3680,7 +3680,32 @@ static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
     {
         DeclaredType declared;
         if (!parse_type(c, &declared, 1)) {
-            skip_function_body(c, 0);
+            /* The result type is already diagnosed. Still parse the body when
+               it is present, so a copy of that type on a `let` is diagnosed
+               too. `-> ((K, K), K) { let p: ((K, K), K) = ... }` is two
+               ORC0101s, not one. A result that is not a type at all, with no
+               body after it, is unchanged. */
+            if (peek_kind(c) != TK_LBRACE) {
+                skip_function_body(c, 0);
+                return 1;
+            }
+            advance_token(c);
+            func->local0 = c->nlocals;
+            while (starts_let_binding(c)) {
+                if (!parse_binding(c, func)) {
+                    skip_function_body(c, 1);
+                    return 1;
+                }
+            }
+            if (peek_kind(c) != TK_RBRACE && !parse_expr(c, &func->body)) {
+                skip_function_body(c, 1);
+                return 1;
+            }
+            if (peek_kind(c) == TK_RBRACE) {
+                advance_token(c);
+            } else {
+                skip_function_body(c, 1);
+            }
             return 1;
         }
         store_declared(&declared, &func->result, &func->result_len, &func->result_ok, &func->result_length_bad,
@@ -5816,7 +5841,18 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
         return 2;
     case EX_INDEX:
     case EX_SELECT: {
-        int state = index_subject(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        /* `[i]` does not give the base call a result type. Clearing the
+           expected type and asking for a report makes `m()[0]` fail with
+           ORC0239 when more than one instance fits, instead of inheriting
+           the element's type and then treating the call as already diagnosed. */
+        int saved_set = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = index_subject(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        c->fit_set = saved_set;
+        c->fit_report = saved_report;
         if (state != 1) {
             if (state < 0) {
                 return -1;
@@ -7401,6 +7437,23 @@ static int bool_word(const Compiler *c, uint32_t start, uint32_t end, int *value
     return 0;
 }
 
+/* A slice, comparison, or byte-order conversion does not put the inner
+   call in a place of the outer type. Drop that type and ask for a report
+   so `m()[..1]`, `m() == [0, 1]`, and `m() as big Word[8]^2` are ORC0239
+   when more than one instance fits. */
+static int probe_unfitted(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
+                          uint32_t *length, uint32_t *leaf, int *silent) {
+    int saved_set = c->fit_set;
+    int saved_report = c->fit_report;
+    int state;
+    c->fit_set = 0;
+    c->fit_report = 1;
+    state = find_leaf(c, index, func_index, locals_in_scope, type, length, leaf, silent);
+    c->fit_set = saved_set;
+    c->fit_report = saved_report;
+    return state;
+}
+
 static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                          uint32_t locals_in_scope) {
     Expr *expr = &c->exprs[index];
@@ -7418,17 +7471,25 @@ static int check_compare(Compiler *c, uint32_t index, TypeKind expected, uint32_
         add_expected(c, expr->start, expr->end, message, expected_text,
                      "a conditional `if c { a } else { b }` chooses a value by a `Bool`");
     }
-    state = find_leaf(c, expr->left, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
+    state = probe_unfitted(c, expr->left, func_index, locals_in_scope, &operand, &operand_len, &leaf, &silent);
     if (state == 0 || state == 2) {
         int left_state = state;
         TypeKind right_type = TY_NONE;
         uint32_t right_len = 0;
         uint32_t right_leaf = 0;
         int right_silent = 0;
-        int right_state = find_leaf(c, expr->right, func_index, locals_in_scope, &right_type, &right_len, &right_leaf,
-                                    &right_silent);
+        int right_state = probe_unfitted(c, expr->right, func_index, locals_in_scope, &right_type, &right_len,
+                                         &right_leaf, &right_silent);
         if (right_state == 1) {
             state = 1;
+            operand = right_type;
+            operand_len = right_len;
+            leaf = right_leaf;
+            silent = right_silent;
+        } else if (right_state < 0 && right_silent) {
+            /* The right call was already diagnosed. A literal on the left
+               does not add ORC0227 on top of that ORC0239. */
+            state = right_state;
             operand = right_type;
             operand_len = right_len;
             leaf = right_leaf;
@@ -7874,7 +7935,7 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     uint32_t base_len = 0;
     uint32_t leaf = 0;
     int silent = 0;
-    int state = find_leaf(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &leaf, &silent);
+    int state = probe_unfitted(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &leaf, &silent);
     uint16_t base_mod = c->leaf_mod;
     uint32_t tup0 = c->leaf_tup0;
     uint16_t tup_n = c->leaf_tup_n;
@@ -8476,7 +8537,15 @@ static int check_packing(Compiler *c, uint32_t index, TypeKind expected, uint32_
                          "`as` gives exactly the type written after it");
         }
     }
-    state = ordered_leaf(c, expr->left, func_index, locals_in_scope, &from_type, &from_len, &leaf, &silent);
+    {
+        int saved_set = c->fit_set;
+        int saved_report = c->fit_report;
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = ordered_leaf(c, expr->left, func_index, locals_in_scope, &from_type, &from_len, &leaf, &silent);
+        c->fit_set = saved_set;
+        c->fit_report = saved_report;
+    }
     if (state == 2 && (c->exprs[leaf].kind == EX_ARRAY || c->exprs[leaf].kind == EX_FILL)) {
         const Expr *literal = &c->exprs[leaf];
         TypeKind elem = TY_NONE;
@@ -8622,7 +8691,15 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
         int silent = 0;
-        int state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        int saved_fit = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        /* The call under `[i]` is not in a place of the element's type. */
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        c->fit_set = saved_fit;
+        c->fit_report = saved_report;
         if (state != 1) {
             if (silent) {
                 return 1;
@@ -9396,7 +9473,15 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
         int silent = 0;
-        int state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        int saved_fit = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        /* A computed index does not choose the base call's instance either. */
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = index_subject(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        c->fit_set = saved_fit;
+        c->fit_report = saved_report;
         if (state != 1) {
             if (silent) {
                 return 1;
