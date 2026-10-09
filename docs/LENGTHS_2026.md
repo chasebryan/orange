@@ -177,8 +177,8 @@ The step table of `EXPRESSIONS_2026.md` section 14, as the later slices extend
 it, is unchanged at every length. In particular, an update, a fill, a join, a
 slice, and a slice update of an array of n elements each cost ceil(n / 64)
 steps; a conversion in a byte order costs one step for each 64 bits of its
-width; and an array literal costs one step and its n elements. Two
-consequences follow.
+width. An array literal costs n steps beyond its elements, so a list of n
+one-step literals costs 2n steps. Two consequences follow.
 
 - **Memory stays proportional to steps.** Every operation that makes an
   array makes at most 64 elements for each step it costs, as it did at 256,
