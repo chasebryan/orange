@@ -1348,9 +1348,9 @@ $$\frac{\mathcal{C} \vdash X : \tau \quad \tau \not\equiv T^n}{\mathcal{C} \vdas
 
 #### 11. Bounded Iteration Loops (§S3e)
 
-$$\frac{\mathcal{C} \vdash \text{init} : \tau_{\text{acc}} \quad 0 \le \text{low} \le \text{high} \le 65,536 \quad \langle \Sigma, \Theta, \Delta, (\Gamma, i : \text{Int}, a : \tau_{\text{acc}}) \rangle \vdash \text{body} : \tau_{\text{acc}}}{\mathcal{C} \vdash (\text{for } i \text{ in } \text{low}..\text{high} \text{ with } a = \text{init} \ \{ \text{body} \}) : \tau_{\text{acc}}} \quad (\text{T-For})$$
+$$\frac{\mathcal{C} \vdash \text{init} : \tau_{\text{acc}} \quad 0 \le \text{low} < \text{high} \le 65,536 \quad \langle \Sigma, \Theta, \Delta, (\Gamma, i : \text{Int}, a : \tau_{\text{acc}}) \rangle \vdash \text{body} : \tau_{\text{acc}}}{\mathcal{C} \vdash (\text{for } i \text{ in } \text{low}..\text{high} \text{ with } a = \text{init} \ \{ \text{body} \}) : \tau_{\text{acc}}} \quad (\text{T-For})$$
 
-$$\frac{\text{low} < 0 \lor \text{low} > \text{high} \lor \text{high} > 65,536}{\mathcal{C} \vdash (\text{for } i \text{ in } \text{low}..\text{high} \dots) : \text{Error}(\text{ORC0225})} \quad (\text{T-For-Range-Err})$$
+$$\frac{\text{low} < 0 \lor \text{low} \ge \text{high} \lor \text{high} > 65,536}{\mathcal{C} \vdash (\text{for } i \text{ in } \text{low}..\text{high} \dots) : \text{Error}(\text{ORC0225})} \quad (\text{T-For-Range-Err})$$
 
 #### 12. Function Application and Monomorphization
 
@@ -1552,7 +1552,7 @@ Let $v_x \in [0, 2^W - 1]$ be a word residue and $k \in \mathbb{Z}$ an evaluatio
 Consider the bounded iteration loop:
 $$L = \text{for } i \text{ in } \text{low}..\text{high} \text{ with } a = e_{\text{init}} \ \{ e_{\text{body}} \}$$
 
-1. **Iteration Bound:** Let $N = \text{high} - \text{low} \in \mathbb{N}$. Since $0 \le \text{low} \le \text{high} \le 65,536$, $0 \le N \le 65,536$.
+1. **Iteration Bound:** Let $N = \text{high} - \text{low} \in \mathbb{N}$. Since $0 \le \text{low} < \text{high} \le 65,536$, $1 \le N \le 65,536$.
 2. **Operational Transition Sequence:**
    - Initialize accumulator: $\langle e_{\text{init}}, \rho, K \rangle \Downarrow \langle a_0, K_0 \rangle$.
    - For each step $j = 0, 1, \dots, N-1$:
@@ -8427,7 +8427,7 @@ The unit test `typed_impls_and_unadmitted_types_fail_closed` reaches
 
 - **Subsystem:** Semantic Analyzer (Loop Verification)
 - **Formal Trigger Predicate:**
-  $$\text{Trigger}(\text{low}, \text{high}) \iff \text{low} < 0 \lor \text{low} > \text{high} \lor \text{high} > 65,536$$
+  $$\text{Trigger}(\text{low}, \text{high}) \iff \text{low} < 0 \lor \text{low} \ge \text{high} \lor \text{high} > 65,536$$
 - **Theoretical Rationale:** Loop bounds in `spec` must be compile-time verifiable, finite,
   non-negative, and monotonically non-decreasing to guarantee bounded normalization.
 - **Erroneous Example:**
