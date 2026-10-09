@@ -453,8 +453,10 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
             site->rank = site->wrote_axis ? 1 : 0;
         } else if (site->tuple_elem && !site->reported &&
                    span_is(c, site->ident_start, site->ident_end, "Word")) {
-            /* Each `Word[1]` in a tuple reports its own width. The tuple is
-               not one unsupported type. Other `Word` sites stay for
+            /* Each `Word[1]` element of a tuple reports its own width here.
+               The tuple is not one unsupported type. A `type` alias of `Word`
+               is reported once by `report_alias_target` at the declaration,
+               used or not. A direct `Word` in a signature stays for
                `reject_declared`, which underlines the width alone. */
             reject_type(c, site->kind, 0, site->start, site->end);
             site->reported = 1;
