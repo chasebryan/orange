@@ -428,11 +428,11 @@ def image(alt: str, url: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    if len(argv) != 1:
         print("usage: render_book.py OUTPUT_DIR", file=sys.stderr)
         return 2
     try:
-        render(ROOT, Path(argv[1]))
+        render(ROOT, Path(argv[0]))
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"orange book render failed: {error}", file=sys.stderr)
         return 1

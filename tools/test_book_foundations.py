@@ -1455,6 +1455,24 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertNotIn('<script', opening.lower())
             self.assertIn('&lt;', (output / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.html').read_text(encoding='utf-8')[:5000] or 'skip')
 
+    def test_renderer_cli_writes_the_index(self):
+        import subprocess
+        import sys
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [sys.executable, str(ROOT / 'tools' / 'render_book.py'), directory],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            index = (Path(directory) / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('Living, in-progress manuscript', index)
+            self.assertIn('planned', index)
+
 
 def rotate_byte(value: int, amount: int) -> int:
     """Reference mathematical rotation, not an Orange interpreter."""
