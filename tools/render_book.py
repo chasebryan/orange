@@ -100,8 +100,22 @@ def relative(path: Path, root: Path) -> str:
 
 
 def heading_anchors(text: str) -> set[str]:
-    anchors: set[str] = set()
+    return set(heading_anchor_list(text))
+
+
+def heading_anchor_list(text: str) -> list[str]:
+    anchors: list[str] = []
     counts: dict[str, int] = {}
+    for title in heading_titles(text):
+        anchor = heading_anchor(title)
+        count = counts.get(anchor, 0)
+        counts[anchor] = count + 1
+        anchors.append(anchor if count == 0 else f"{anchor}-{count}")
+    return anchors
+
+
+def heading_titles(text: str) -> list[str]:
+    titles: list[str] = []
     fence: tuple[str, int] | None = None
     for line in text.splitlines():
         marker = FENCE_RE.match(line)
@@ -115,13 +129,142 @@ def heading_anchors(text: str) -> set[str]:
         if fence:
             continue
         heading = HEADING_RE.match(line)
-        if not heading:
+        if heading:
+            titles.append(heading.group(2))
+    return titles
+
+
+def fence_is_unclosed(text: str) -> bool:
+    fence: tuple[str, int] | None = None
+    for line in text.splitlines():
+        marker = FENCE_RE.match(line)
+        if not marker:
             continue
-        anchor = heading_anchor(heading.group(2))
-        count = counts.get(anchor, 0)
-        counts[anchor] = count + 1
-        anchors.add(anchor if count == 0 else f"{anchor}-{count}")
-    return anchors
+        char, info = marker.group(1)[0], marker.group(2)
+        if fence is None and not (char == "`" and "`" in info):
+            fence = (char, len(marker.group(1)))
+        elif fence and char == fence[0] and len(marker.group(1)) >= fence[1] and not info.strip():
+            fence = None
+    return fence is not None
+
+
+def leading_front_matter(text: str) -> bool:
+    body_text = text.lstrip("\ufeff")
+    return body_text.startswith("---\n") or body_text.startswith("---\r\n")
+
+
+INCLUDE_RE = re.compile(r"""\{%\s*include\s+(?:["']([^"']+)["']|(\S+))\s*%\}""")
+LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+INLINE_CODE_RE = re.compile(r"`+")
+
+
+def prose_lines(text: str) -> list[tuple[int, str]]:
+    """Return one-based lines outside fenced code, with inline code removed."""
+    lines: list[tuple[int, str]] = []
+    fence: tuple[str, int] | None = None
+    for number, line in enumerate(text.splitlines(), start=1):
+        marker = FENCE_RE.match(line)
+        if marker:
+            char, info = marker.group(1)[0], marker.group(2)
+            if fence is None and not (char == "`" and "`" in info):
+                fence = (char, len(marker.group(1)))
+                continue
+            if fence and char == fence[0] and len(marker.group(1)) >= fence[1] and not info.strip():
+                fence = None
+                continue
+        if fence:
+            continue
+        lines.append((number, strip_inline_code(line)))
+    return lines
+
+
+def strip_inline_code(line: str) -> str:
+    pieces: list[str] = []
+    cursor = 0
+    while cursor < len(line):
+        marker = INLINE_CODE_RE.search(line, cursor)
+        if marker is None:
+            pieces.append(line[cursor:])
+            break
+        pieces.append(line[cursor:marker.start()])
+        close = line.find(marker.group(0), marker.end())
+        if close < 0:
+            break
+        cursor = close + len(marker.group(0))
+    return "".join(pieces)
+
+
+def include_target(root: Path, source: Path, raw_path: str) -> Path | None:
+    root = root.resolve()
+    name = raw_path.strip()
+    if not name or name.startswith(("/", "\\")) or "\\" in name:
+        return None
+    candidate = (source.resolve().parent / name).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    if os.path.commonpath((os.fspath(candidate), os.fspath(root))) != os.fspath(root):
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def require_well_formed(text: str, source: Path, root: Path) -> None:
+    """Reject front matter, an unclosed fence, or a missing include."""
+    problems: list[str] = []
+    if leading_front_matter(text):
+        problems.append(f"{source}: leading front-matter block")
+    if fence_is_unclosed(text):
+        problems.append(f"{source}: unclosed code fence")
+    for number, line in prose_lines(text):
+        for match in INCLUDE_RE.finditer(line):
+            raw_path = match.group(1) or match.group(2)
+            if include_target(root, source, raw_path) is None:
+                problems.append(f"{source}:{number}: include target does not exist: {raw_path}")
+    if problems:
+        raise ValueError("malformed chapter\n" + "\n".join(problems))
+
+
+def source_link_errors(root: Path, sources: list[Path]) -> list[str]:
+    """Return dead relative links as ``file:line: target`` errors."""
+    root = root.resolve()
+    errors: list[str] = []
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        anchors = heading_anchors(text)
+        for number, line in prose_lines(text):
+            for match in LINK_RE.finditer(line):
+                url = match.group(2)
+                problem = relative_link_problem(root, source, url, anchors)
+                if problem is not None:
+                    errors.append(f"{source.relative_to(root)}:{number}: {problem}")
+    return errors
+
+
+def relative_link_problem(
+    root: Path, source: Path, url: str, own_anchors: set[str]
+) -> str | None:
+    if url.startswith(("https://", "http://", "mailto:")):
+        return None
+    if url.startswith(("//", "/")) or "\\" in url:
+        return f"unresolved relative link {url}"
+    path, _, fragment = url.partition("#")
+    if not path:
+        if fragment not in own_anchors:
+            return f"missing anchor {url}"
+        return None
+    target = include_target(root, source, path)
+    if target is None:
+        return f"missing target {url}"
+    if not fragment:
+        return None
+    if target.suffix.lower() != ".md":
+        return f"missing anchor {url}"
+    if fragment not in heading_anchors(target.read_text(encoding="utf-8")):
+        return f"missing anchor {url}"
+    return None
 
 
 def book_output(root: Path) -> Path:
@@ -150,18 +293,26 @@ def within_output(output: Path, relative_path: str) -> Path:
 
 def render(root: Path = ROOT) -> Path:
     """Write the rendered book under ``<root>/build/book`` and return that directory."""
+    root = root.resolve()
     output = book_output(root)
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-    manifest = load_manifest(root.resolve())
+    manifest = load_manifest(root)
+    sources = manuscript_files(manifest)
+    texts = {}
+    for source in sources:
+        path = root / source
+        text = path.read_text(encoding="utf-8")
+        require_well_formed(text, path, root)
+        texts[source] = text
     within_output(output, "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     pages: dict[str, str] = {}
-    for source in manuscript_files(manifest):
-        text = (root.resolve() / source).read_text(encoding="utf-8")
+    for source in sources:
+        text = texts[source]
         destination = html_path(source)
         pages[source] = destination
         target = within_output(output, destination)
@@ -175,7 +326,124 @@ def render(root: Path = ROOT) -> Path:
         page("The Orange Book", index_body(manifest, pages), "", ""),
         encoding="utf-8",
     )
+    require_complete_output(output, list(pages.values()))
+    link_errors = source_link_errors(root, [root / source for source in sources])
+    link_errors.extend(written_href_errors(output, root, pages))
+    if link_errors:
+        raise ValueError("dead links\n" + "\n".join(link_errors))
     return output
+
+
+def require_complete_output(output: Path, destinations: list[str]) -> None:
+    """Require one non-empty HTML page per manuscript file, plus the index."""
+    problems: list[str] = []
+    for relative_path in [*destinations, "index.html"]:
+        path = within_output(output, relative_path)
+        if not path.is_file() or not path.read_text(encoding="utf-8").strip():
+            problems.append(f"missing non-empty page {relative_path}")
+            continue
+        article = re.search(r"<article>(.*)</article>", path.read_text(encoding="utf-8"), re.S)
+        if article is None or not article.group(1).strip():
+            problems.append(f"hollow page {relative_path}")
+    if problems:
+        raise ValueError("hollow rendered book\n" + "\n".join(problems))
+
+
+def written_href_errors(output: Path, root: Path, pages: dict[str, str]) -> list[str]:
+    """Resolve every relative href in the written pages."""
+    output = output.resolve()
+    root = root.resolve()
+    by_destination = {destination: source for source, destination in pages.items()}
+    errors: list[str] = []
+    for destination in [*pages.values(), "index.html"]:
+        page_path = within_output(output, destination)
+        for href in re.findall(r'href="([^"]*)"', page_path.read_text(encoding="utf-8")):
+            problem = written_href_problem(output, root, page_path, href, by_destination)
+            if problem is not None:
+                errors.append(f"{destination}: {problem}")
+    return errors
+
+
+def written_href_problem(
+    output: Path,
+    root: Path,
+    page_path: Path,
+    href: str,
+    by_destination: dict[str, str],
+) -> str | None:
+    if href.startswith(("https://", "http://", "mailto:")):
+        return None
+    if href.startswith(("//", "/")) or "\\" in href:
+        return f"unresolved relative link {href}"
+    path, _, fragment = href.partition("#")
+    if not path:
+        return fragment_problem(root, page_path, output, by_destination, fragment, href)
+    try:
+        resolved = (page_path.parent / path).resolve()
+        relative = resolved.relative_to(output)
+    except ValueError:
+        return f"unresolved relative link {href}"
+    if os.path.commonpath((os.fspath(resolved), os.fspath(output))) != os.fspath(output):
+        return f"unresolved relative link {href}"
+    relative_path = relative.as_posix()
+    if relative_path not in by_destination and relative_path != "index.html":
+        source = repo_file_for_href(root, relative)
+        if source is None:
+            return f"missing target {href}"
+        if fragment and (
+            source.suffix.lower() != ".md"
+            or fragment not in heading_anchors(source.read_text(encoding="utf-8"))
+        ):
+            return f"missing anchor {href}"
+        return None
+    if not resolved.is_file() or not resolved.read_text(encoding="utf-8").strip():
+        return f"missing written page {href}"
+    if not fragment:
+        return None
+    if relative_path == "index.html":
+        return None if fragment in html_ids(resolved.read_text(encoding="utf-8")) else f"missing anchor {href}"
+    source_path = root / by_destination[relative_path]
+    if fragment not in heading_anchors(source_path.read_text(encoding="utf-8")):
+        return f"missing anchor {href}"
+    return None
+
+
+def fragment_problem(
+    root: Path,
+    page_path: Path,
+    output: Path,
+    by_destination: dict[str, str],
+    fragment: str,
+    href: str,
+) -> str | None:
+    if not fragment:
+        return f"unresolved relative link {href}"
+    relative = page_path.resolve().relative_to(output).as_posix()
+    if relative == "index.html":
+        if fragment not in html_ids(page_path.read_text(encoding="utf-8")):
+            return f"missing anchor {href}"
+        return None
+    source = by_destination.get(relative)
+    if source is None:
+        return f"missing anchor {href}"
+    if fragment not in heading_anchors((root / source).read_text(encoding="utf-8")):
+        return f"missing anchor {href}"
+    return None
+
+
+def repo_file_for_href(root: Path, relative: Path) -> Path | None:
+    if relative.suffix.lower() == ".html":
+        markdown = (root / relative).with_suffix(".md")
+        if markdown.is_file():
+            return markdown
+    candidate = root / relative
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def html_ids(text: str) -> set[str]:
+    return set(re.findall(r'\sid="([^"]+)"', text))
 
 
 def manuscript_files(manifest: dict) -> list[str]:
@@ -287,6 +555,7 @@ def body(text: str, source: str) -> str:
     lines = text.splitlines()
     blocks: list[str] = []
     paragraph: list[str] = []
+    heading_counts: dict[str, int] = {}
     index = 0
 
     def flush() -> None:
@@ -302,6 +571,7 @@ def body(text: str, source: str) -> str:
             marker, length = fence.group(1)[0], len(fence.group(1))
             code: list[str] = []
             index += 1
+            closed = False
             while index < len(lines):
                 close = FENCE_RE.match(lines[index])
                 if (
@@ -310,9 +580,12 @@ def body(text: str, source: str) -> str:
                     and len(close.group(1)) >= length
                     and not close.group(2).strip()
                 ):
+                    closed = True
                     break
                 code.append(lines[index])
                 index += 1
+            if not closed:
+                raise ValueError(f"{source}: unclosed code fence")
             blocks.append(f"<pre><code>{html.escape(chr(10).join(code))}</code></pre>")
             index += 1
             continue
@@ -321,8 +594,12 @@ def body(text: str, source: str) -> str:
             flush()
             level = len(heading.group(1))
             title = heading.group(2).strip()
+            anchor = heading_anchor(title)
+            count = heading_counts.get(anchor, 0)
+            heading_counts[anchor] = count + 1
+            ident = anchor if count == 0 else f"{anchor}-{count}"
             blocks.append(
-                f'<h{level} id="{html.escape(heading_anchor(title), quote=True)}">'
+                f'<h{level} id="{html.escape(ident, quote=True)}">'
                 f"{inline(title, source)}</h{level}>"
             )
             index += 1
@@ -423,21 +700,19 @@ def inline(text: str, source: str) -> str:
 def safe_url(url: str, source: str) -> str | None:
     if url.startswith(("https://", "http://", "mailto:")):
         return url
-    if url.startswith(("#", "/")) or "\\" in url or url.startswith("//"):
-        return url if url.startswith("#") else None
-    if ".." in Path(url.split("#", 1)[0]).parts:
+    if url.startswith("#"):
+        return url
+    if url.startswith(("//", "/")) or "\\" in url:
         return None
-    rewritten = url
     path, _, fragment = url.partition("#")
+    if include_target(ROOT, ROOT / source, path) is None:
+        return None
     if path.endswith(".md"):
         rewritten = str(Path(path).with_suffix(".html")).replace("\\", "/")
         if fragment:
             rewritten += f"#{fragment}"
-    base = Path(source).parent
-    target = (base / rewritten.split("#", 1)[0]).as_posix()
-    if target.startswith("..") and "docs/" not in target and not target.endswith(".html"):
-        return None
-    return rewritten
+        return rewritten
+    return url
 
 
 def link(label: str, url: str, source: str) -> str:

@@ -1454,8 +1454,81 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertIn('Draft.', opening)
             self.assertNotIn('<script', opening.lower())
             self.assertIn('&lt;', (output / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.html').read_text(encoding='utf-8')[:5000] or 'skip')
+            from render_book import load_manifest, manuscript_files
+            manifest = load_manifest(ROOT)
+            for source in manuscript_files(manifest):
+                page = output / source.replace('.md', '.html')
+                self.assertTrue(page.is_file(), source)
+                text = page.read_text(encoding='utf-8')
+                self.assertTrue(text.strip(), source)
+                self.assertIn('<article>', text)
+                self.assertNotRegex(text, r'<article>\s*</article>')
+            index_text = (output / 'index.html').read_text(encoding='utf-8')
+            self.assertTrue(index_text.strip())
+            self.assertNotRegex(index_text, r'<article>\s*</article>')
         finally:
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
+
+    def test_malformed_chapters_fail(self):
+        from render_book import require_well_formed
+        source = ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md'
+        samples = (
+            '---\ntitle: draft\n---\n# Chapter\n',
+            '# Chapter\n\n```\nnot closed\n',
+            '# Chapter\n\n{% include missing-chapter.md %}\n',
+        )
+        for sample in samples:
+            with self.assertRaises(ValueError):
+                require_well_formed(sample, source, ROOT)
+
+    def test_dead_links_fail(self):
+        import tempfile
+        from render_book import source_link_errors, written_href_errors
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / 'docs'
+            docs.mkdir()
+            chapter = docs / 'chapter.md'
+            chapter.write_text(
+                '# Title\n\n[missing file](missing.md)\n[missing anchor](#absent)\n',
+                encoding='utf-8',
+            )
+            errors = source_link_errors(root, [chapter])
+            self.assertTrue(any('missing.md' in error for error in errors))
+            self.assertTrue(any('#absent' in error for error in errors))
+            sound = docs / 'sound.md'
+            sound.write_text(
+                '# Title\n\n[here](#title)\n[chapter](chapter.md#title)\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(source_link_errors(root, [sound]), [])
+            output = root / 'build' / 'book'
+            page = output / 'docs'
+            page.mkdir(parents=True)
+            (page / 'chapter.html').write_text(
+                '<article><a href="missing.html">x</a>'
+                '<a href="#absent">y</a></article>',
+                encoding='utf-8',
+            )
+            (output / 'index.html').write_text('<article><p>index</p></article>', encoding='utf-8')
+            href_errors = written_href_errors(
+                output, root, {'docs/chapter.md': 'docs/chapter.html'}
+            )
+            self.assertTrue(any('missing.html' in error for error in href_errors))
+            self.assertTrue(any('#absent' in error for error in href_errors))
+
+    def test_hollow_output_fails(self):
+        import tempfile
+        from render_book import require_complete_output
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / 'docs').mkdir()
+            (output / 'docs' / 'chapter.html').write_text(
+                '<article></article>', encoding='utf-8'
+            )
+            (output / 'index.html').write_text('', encoding='utf-8')
+            with self.assertRaises(ValueError):
+                require_complete_output(output, ['docs/chapter.html'])
 
     def test_renderer_cli_writes_the_index(self):
         import shutil
