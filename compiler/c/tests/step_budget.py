@@ -218,8 +218,12 @@ def main() -> int:
                     check(eval_case(rust_bin, c_bin, f"{head} one under", path, spent + count - 1))
                 spent += count
 
-        one_under("lengths", FIXTURES / "s3p" / "valid-lengths.or", 2097152, {"pepin", "halves", "words"})
-        one_under("rfc8439", FIXTURES / "s3p" / "valid-rfc8439.or", 1048576, {"a2_2"})
+        lengths = FIXTURES / "s3p" / "valid-lengths.or"
+        # Pepin's test is the first spec and does not finish in the default
+        # 1048576 steps. The full ORC0301 text has to match with no --steps.
+        check(eval_case(rust_bin, c_bin, "pepin at default budget", lengths, None))
+        one_under("lengths", lengths, 2097152, {"pepin", "halves", "words", "widest"})
+        one_under("rfc8439", FIXTURES / "s3p" / "valid-rfc8439.or", 1048576, {"a2_2", "a3_3", "a5_authentic"})
         check(eval_case(rust_bin, c_bin, "updates at 323", updates, 323, stats=True))
         check(eval_case(rust_bin, c_bin, "updates at 322", updates, 322))
         check(eval_case(rust_bin, c_bin, "chacha20 at 14595", chacha, 14595, stats=True))

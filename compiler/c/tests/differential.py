@@ -70,6 +70,7 @@ VALID = [
     "s3o/valid-nested.or",
     "s3o/valid-tuple.or",
     "s3p/valid-rfc8439.or",
+    "s3p/valid-share.or",
 ]
 # Pepin's test does not finish in the default 1048576 steps. Rust's
 # conformance run uses this budget and prints --stats.

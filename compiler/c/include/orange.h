@@ -365,6 +365,11 @@ typedef struct LoopDesc {
     uint32_t an_site[MAX_TUPLE];
     uint32_t tup0;
     uint16_t tup_n;
+    /* 1 after the step is scanned. A component with one use is moved out of
+       the accumulator, so a later update of that array is the only owner. */
+    uint8_t sole_ready;
+    uint8_t sole_whole;
+    uint8_t sole_comp[MAX_TUPLE];
 } LoopDesc;
 
 typedef struct OpenLoop {
@@ -473,12 +478,18 @@ typedef struct Diag {
     uint8_t has_note3;
 } Diag;
 
+typedef struct Pack Pack;
+
 typedef struct Value {
     TypeKind type;
     uint32_t length;
-    /* Owned element block when length > 0. A copy duplicates the block;
-       value_clear releases it. Scalar values leave this null. */
+    /* Owned element block when length > 0 and `pack` is null. A copy
+       duplicates the block; value_clear releases it. Words and residues
+       whose modulus fits in 64 bits use `pack` instead, and that block is
+       shared until an update needs a private copy. Scalar values leave both
+       null. */
     struct Value *elems;
+    Pack *pack;
     uint64_t word;
     Big big;
     uint16_t mod_index;

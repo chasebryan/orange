@@ -307,10 +307,12 @@ compiler/c/README.md
 compiler/c/include/bigint.h
 compiler/c/include/compile.h
 compiler/c/include/orange.h
+compiler/c/include/pack.h
 compiler/c/include/typeparams.h
 compiler/c/src/bigint.c
 compiler/c/src/compile.c
 compiler/c/src/main.c
+compiler/c/src/pack.c
 compiler/c/src/typeparams.c
 compiler/c/tests/differential.py
 compiler/c/tests/step_budget.py
@@ -533,6 +535,7 @@ compiler/fixtures/s3o/valid-types.or
 compiler/fixtures/s3p/invalid-lengths.or
 compiler/fixtures/s3p/valid-lengths.or
 compiler/fixtures/s3p/valid-rfc8439.or
+compiler/fixtures/s3p/valid-share.or
 compiler/fixtures/s3q/failing-tests.or
 compiler/fixtures/s3q/invalid-test-syntax.or
 compiler/fixtures/s3q/invalid-tests.or
