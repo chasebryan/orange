@@ -640,6 +640,7 @@ static void prepare_types(Compiler *c) {
             decl->installed = 1;
         }
         resolve_site(c, &c->sites[decl->site], 1, index);
+        report_alias_target(c, &c->sites[decl->site]);
     }
     for (index = 0; index < c->nsites; index++) {
         resolve_site(c, &c->sites[index], 0, c->ntypes);
