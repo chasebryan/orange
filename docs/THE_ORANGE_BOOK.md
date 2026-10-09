@@ -12,7 +12,7 @@ Manuscript version: 0.27
 
 The earlier manuscript is this file. It is an earlier draft, and its chapters
 keep their current numbers until one later renumbering pass.
-[The curriculum (in progress)](book/) is the Novice, Journeyman and Master
+[The curriculum (in progress)](book/README.md) is the Novice, Journeyman and Master
 parts being written now. Which chapters in each part are drafted, and which
 are only planned, is recorded in the
 [Drafted / Only planned](book/README.md#manuscript-status) table.
@@ -2689,8 +2689,8 @@ error[ORC0215]: `<` is not defined for `Mod[(1 << 255) - 19]`
 The [modular fixtures](../compiler/fixtures/s3i/valid-x25519.or) write X25519 over `F` with
 no `%` anywhere and reproduce the first test vector of RFC 7748 section 5.2,
 keep [Poly1305](../compiler/fixtures/s3i/valid-poly1305.or)'s accumulator in `Mod[(1 << 130) - 5]` and reproduce the tag of
-RFC 8439 section 2.5.2, and compute constants in the rings their standards
-define: the three above, Ed25519's square root of −1, and a check, made in
+RFC 8439 section 2.5.2, and [compute constants in the rings their standards define](../compiler/fixtures/s3i/valid-fields.or):
+the three above, Ed25519's square root of −1, and a check, made in
 P-256's own field, that its generator lies on its curve:
 
 ```text
