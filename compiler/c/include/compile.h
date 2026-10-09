@@ -4333,6 +4333,8 @@ static void compiler_free(Compiler *compiler) {
     free(compiler->requested);
     free(compiler->types);
     free(compiler->sites);
+    free(compiler->tp_sites);
+    free(compiler->stamps);
     free(compiler->telems);
     free(compiler->moduli);
     free(compiler->finished);
