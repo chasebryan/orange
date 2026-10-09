@@ -4640,10 +4640,15 @@ each use.
 
 ### The command line
 
-`orangec` has twelve commands. `analyze` computes the exact properties of one
-checked function at every input: an S-box or a Boolean function, a linear
-layer with `--linear`, or the trails of a small substitution-permutation
-network with `--layer` and `--rounds`.
+`orangec` has twelve commands. `analyze` computes the properties of one
+checked function. An S-box or a Boolean function is evaluated at every
+input. A linear layer with `--linear` is checked at every input when it has
+at most 16 bits. A wider layer is checked only at zero, at each single-bit
+input, and at each two-bit input: the summary says that shows no term of
+degree 2 and that higher degrees are unchecked. The branch numbers are those
+of the matrix read from zero and the single-bit inputs, or they read
+`not computed` when the search is too large. With `--layer` and `--rounds`
+it bounds the trails of a small substitution-permutation network.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
