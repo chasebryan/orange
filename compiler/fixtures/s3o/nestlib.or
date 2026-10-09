@@ -9,4 +9,8 @@ module nestlib {
   spec pair[K in {Int, Word[8]}]() -> (K, K) { (m(), m()) }
 
   spec wrapped[K in {Int, Word[8]}]() -> (K, K) { pair() }
+
+  spec tm[K in {Int, Word[8]}]() -> (K, K) { (0, 0 - 1) }
+
+  spec tpair[K in {Int, Word[8]}]() -> (K, K) { tm() }
 }

@@ -518,6 +518,10 @@ typedef struct TpStamp {
     TypeKind ty;
     uint32_t ty_len;
     uint16_t ty_mod;
+    /* Tuple shape for this instance when `ty` is a tuple. Each element is a
+       scalar or an array (`TupleElem.length` is the array length). A nested
+       call is chosen by the whole shape, so `(K, Bool)`, `(Int, K)`, and
+       `(K^2, K)` follow the caller's K on the parts that mention it. */
     uint32_t tup0;
     uint16_t tup_n;
     TypeKind conv_ty;

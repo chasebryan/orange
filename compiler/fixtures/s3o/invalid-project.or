@@ -1,0 +1,12 @@
+// Projecting an element does not choose which instance a bracket-less call
+// returns. Both `m[Int]` and `m[Word[8]]` fit, so the call is ORC0239.
+edition 2026;
+module project {
+  spec m[K in {Int, Word[8]}]() -> (K, K) { (0, 0 - 1) }
+
+  spec pick[K in {Int, Word[8]}]() -> K { m().0 }
+
+  spec rows[K in {Int, Word[8]}]() -> (K^2, K) { ([0, 1], 0) }
+
+  spec cell[K in {Int, Word[8]}]() -> K { rows().0[1] }
+}

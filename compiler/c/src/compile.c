@@ -4517,7 +4517,18 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return 0;
     }
     if (expr->kind == EX_PROJECT) {
-        int state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        /* `.k` does not give the base call a result type. Clearing the
+           expected type and asking for a report makes `m().0` fail with
+           ORC0239 when more than one instance fits, instead of inheriting
+           the element's type and then succeeding with no diagnostic. */
+        int saved_set = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = base_type(c, expr->left, func_index, locals_in_scope, type, length, silent);
+        c->fit_set = saved_set;
+        c->fit_report = saved_report;
         uint32_t tup0 = c->leaf_tup0;
         uint16_t tup_n = c->leaf_tup_n;
         const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
@@ -5790,7 +5801,14 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
         return 1;
     }
     case EX_PROJECT: {
-        int state = base_type(c, index, func_index, locals_in_scope, type, length, silent);
+        int saved_set = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = base_type(c, index, func_index, locals_in_scope, type, length, silent);
+        c->fit_set = saved_set;
+        c->fit_report = saved_report;
         return state;
     }
     case EX_FILL:
@@ -8689,7 +8707,15 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
         int silent = 0;
-        int state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        int saved_fit = c->fit_set;
+        int saved_report = c->fit_report;
+        int state;
+        /* The call under `.k` is not in a place of the element's type. */
+        c->fit_set = 0;
+        c->fit_report = 1;
+        state = base_type(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &silent);
+        c->fit_set = saved_fit;
+        c->fit_report = saved_report;
         uint32_t tup0 = c->leaf_tup0;
         uint16_t tup_n = c->leaf_tup_n;
         const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;

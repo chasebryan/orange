@@ -519,12 +519,14 @@ compiler/fixtures/s3n/valid-sha256.or
 compiler/fixtures/s3n/valid-sha512.or
 compiler/fixtures/s3n/valid-x25519.or
 compiler/fixtures/s3o/invalid-nested.or
+compiler/fixtures/s3o/invalid-project.or
 compiler/fixtures/s3o/invalid-types-syntax.or
 compiler/fixtures/s3o/invalid-types.or
 compiler/fixtures/s3o/nestlib.or
 compiler/fixtures/s3o/valid-fields.or
 compiler/fixtures/s3o/valid-nested.or
 compiler/fixtures/s3o/valid-sha2.or
+compiler/fixtures/s3o/valid-tuple.or
 compiler/fixtures/s3o/valid-types.or
 compiler/fixtures/s3p/invalid-lengths.or
 compiler/fixtures/s3p/valid-lengths.or

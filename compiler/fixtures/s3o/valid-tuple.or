@@ -1,0 +1,57 @@
+// A nested call whose result is a tuple is chosen by that tuple's shape.
+// The second element is `0 - 1`, so the value is `(0, -1)` for Int and
+// `(0x00, 0xff)` for Word[8]. Selecting the other instance cannot pass.
+edition 2026;
+module tuples {
+  use nestlib;
+
+  spec m[K in {Int, Word[8]}]() -> (K, K) { (0, 0 - 1) }
+
+  spec pair[K in {Int, Word[8]}]() -> (K, K) { m() }
+
+  spec bound[K in {Int, Word[8]}]() -> (K, K) {
+    let p: (K, K) = m();
+    p
+  }
+
+  // Each arm is a place of type `(K, K)`. Both arms are evaluated.
+  spec arms[K in {Int, Word[8]}]() -> (K, K) {
+    let a: (K, K) = if true { m() } else { m() };
+    let b: (K, K) = if false { m() } else { m() };
+    (a.0 + b.0, a.1 + b.1)
+  }
+
+  spec take[K in {Int, Word[8]}](p: (K, K)) -> (K, K) { p }
+
+  spec passed[K in {Int, Word[8]}]() -> (K, K) { take(m()) }
+
+  spec summed[K in {Int, Word[8]}]() -> (K, K) {
+    for i in 0..1 with a: (K, K) = m() { a }
+  }
+
+  // `deep` calls `pair`, which calls `m`. Two levels, both chosen by K.
+  spec deep[K in {Int, Word[8]}]() -> (K, K) { pair() }
+
+  spec opened[K in {Int, Word[8]}]() -> K {
+    let (a: K, b: K) = m();
+    a + b
+  }
+
+  spec from_lib[K in {Int, Word[8]}]() -> (K, K) { nestlib::tpair() }
+
+  spec arr[K in {Int, Word[8]}]() -> K^2 { [0 - 1, 1] }
+
+  spec from_arr[K in {Int, Word[8]}]() -> K^2 { arr() }
+
+  spec mixb[K in {Int, Word[8]}]() -> (K, Bool) { (0 - 1, true) }
+
+  spec call_mixb[K in {Int, Word[8]}]() -> (K, Bool) { mixb() }
+
+  spec mixi[K in {Int, Word[8]}]() -> (Int, K) { (0 - 1, 0 - 1) }
+
+  spec call_mixi[K in {Int, Word[8]}]() -> (Int, K) { mixi() }
+
+  spec rows[K in {Int, Word[8]}]() -> (K^2, K) { ([0 - 1, 1], 0 - 1) }
+
+  spec call_rows[K in {Int, Word[8]}]() -> (K^2, K) { rows() }
+}
