@@ -1,0 +1,16 @@
+// Declaring a matrix does not reject the module. Rank-1 neighbours evaluate.
+edition 2026;
+module neighbours {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Wide = Word[8]^4;
+  type Pair = (Row, Int);
+
+  spec row() -> Row { [1, 2] }
+  spec wide() -> Wide { [1, 2, 3, 4] }
+  spec pick[K in {Row, Wide}](x: K) -> K { x }
+  spec picked_row() -> Row { pick([1, 2]) }
+  spec picked_wide() -> Wide { pick([1, 2, 3, 4]) }
+  spec wrapped() -> Pair { (row(), 7) }
+  spec head() -> Word[8] { wide()[0] }
+}

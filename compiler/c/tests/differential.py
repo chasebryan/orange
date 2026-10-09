@@ -69,6 +69,14 @@ VALID = [
     "s3o/valid-sha2.or",
     "s3o/valid-nested.or",
     "s3o/valid-tuple.or",
+    "s3p/valid-rfc8439.or",
+    "s3p/valid-share.or",
+    "s3p/valid-rank2.or",
+]
+# Pepin's test does not finish in the default 1048576 steps. Rust's
+# conformance run uses this budget and prints --stats.
+STEPPED = [
+    ("s3p/valid-lengths.or", ["--steps", "2097152", "--stats"]),
 ]
 # Admitted by S3e. Kept inline so this check does not add a Gate 0 path.
 # large-int-array: Int^2 of 2^16384-1 does not fit in an 8192-byte value buffer.
@@ -170,6 +178,165 @@ INVALID = [
     "s3o/invalid-types-syntax.or",
     "s3o/invalid-nested.or",
     "s3o/invalid-project.or",
+    "s3p/invalid-lengths.or",
+    "s3p/invalid-rank2.or",
+]
+
+# Rust evaluates these matrices. This slice rejects the value and pins C's
+# diagnostic so it cannot drift. The reason is printed and is not a step-budget
+# skip: step_budget.py's SKIPS stays empty.
+RANK2_REASON = "rank-2 arrays: nested-array slice"
+RANK2 = [
+    (
+        "s3p/rank2-id.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:14
+  |
+6 |   spec id(a: Mat) -> Mat {{ a }}
+  |              ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:22
+  |
+6 |   spec id(a: Mat) -> Mat {{ a }}
+  |                      ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:7:16
+  |
+7 |   spec pass(a: Mat) -> Int {{ 0 }}
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-index.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:29
+  |
+6 |   spec row(a: Mat) -> Row {{ a[0] }}
+  |                             ^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-listed.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:21
+  |
+6 |   spec f[K in {{Row, Mat}}](x: K) -> K {{ x }}
+  |                     ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-nested.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:26
+  |
+6 |   spec nested() -> Mat {{ [[1, 2], [3, 4]] }}
+  |                          ^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-update.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
+ --> {path}:5:34
+  |
+5 |   spec cell(x: Row^3) -> Row^3 {{ x with [1] = (x[1] with [2] = 9) }}
+  |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
+ --> {path}:7:20
+  |
+7 |     let x: Row^3 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
+ --> {path}:8:5
+  |
+8 |     x with [1] = (x[1] with [2] = 9)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-uses.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:16
+  |
+6 |   type Alias = Mat;
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:7:16
+  |
+7 |   type Pair = (Mat, Int);
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:9:18
+  |
+9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
+  |                  ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:9:28
+  |
+9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
+  |                            ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:10:16
+   |
+10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
+   |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:10:37
+   |
+10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
+   |                                     ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:18
+   |
+11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                  ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:39
+   |
+11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                                       ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:67
+   |
+11 | ... nt {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                                             ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
 ]
 
 
@@ -663,6 +830,45 @@ def residue_modules(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
+def rank2_pins(rust_compiler: Path, c_compiler: Path) -> int:
+    """Skip Rust's matrix evaluation and pin this slice's diagnostic."""
+    failures = 0
+    print(f"skip {RANK2_REASON}")
+    if not RANK2_REASON.strip():
+        print("FAIL rank-2 skip reason is empty")
+        return 1
+    for relative, pin in RANK2:
+        path = str(FIXTURES / relative)
+        expected = pin.format(path=path)
+        rust_check = run(rust_compiler, ["check", path])
+        rust_eval = run(rust_compiler, ["eval", path])
+        c_check = run(c_compiler, ["check", path])
+        c_eval = run(c_compiler, ["eval", path])
+        if (
+            rust_check.returncode != 0
+            or rust_eval.returncode != 0
+            or c_check.returncode == 0
+            or c_eval.returncode == 0
+            or c_check.stderr != expected
+            or c_eval.stderr != expected
+            or c_eval.stdout != ""
+        ):
+            failures += 1
+            print(f"FAIL rank2 {relative}")
+            print(f"  rust check {rust_check.returncode} eval {rust_eval.returncode}")
+            print(f"  c check {c_check.returncode} eval {c_eval.returncode}")
+            if c_check.stderr != expected:
+                print("  c check stderr:", c_check.stderr)
+                print("  pinned:", expected)
+            if c_eval.stderr != expected:
+                print("  c eval stderr:", c_eval.stderr)
+            if c_eval.stdout:
+                print("  c eval stdout:", c_eval.stdout)
+        else:
+            print(f"ok   rank2 {relative}")
+    return failures
+
+
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -689,6 +895,26 @@ def main() -> int:
                 print("  c:   ", c_result.stdout)
             if c_result.stderr:
                 print("  c stderr:", c_result.stderr)
+        else:
+            print(f"ok   eval {relative}")
+
+    for relative, extra in STEPPED:
+        path = str(FIXTURES / relative)
+        args = ["eval", *extra, path]
+        rust = run(rust_compiler, args)
+        c_result = run(c_compiler, args)
+        if rust.returncode != 0 or c_result.returncode != 0 or rust.stdout != c_result.stdout or rust.stderr != c_result.stderr:
+            failures += 1
+            print(f"FAIL eval {relative}")
+            print(f"  rust exit {rust.returncode} c exit {c_result.returncode}")
+            if rust.stdout != c_result.stdout:
+                print("  stdout mismatch")
+                print("  rust:", rust.stdout)
+                print("  c:   ", c_result.stdout)
+            if rust.stderr != c_result.stderr:
+                print("  stderr mismatch")
+                print("  rust:", rust.stderr)
+                print("  c:   ", c_result.stderr)
         else:
             print(f"ok   eval {relative}")
 
@@ -731,6 +957,8 @@ def main() -> int:
                 print("  c stderr:", c_result.stderr)
         else:
             print(f"ok   check {relative}")
+
+    failures += rank2_pins(rust_compiler, c_compiler)
 
     sample = FIXTURES / "s3b" / "valid-int-arithmetic.or"
     first = run(c_compiler, ["lex", str(sample)])

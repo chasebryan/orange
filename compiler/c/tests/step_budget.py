@@ -17,14 +17,9 @@ ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = ROOT / "compiler" / "fixtures"
 RUST_DEFAULT = ROOT / "compiler" / "target" / "debug" / "orangec"
 
-# Explicit skips. Do not drop an entry without running the case.
-SKIPS = [
-    (
-        "[0; 65536]",
-        "C still caps an array at 256 elements, so this 65536-element fill is not evaluated. "
-        "S3p sets MAX_ARRAY_LENGTH to 65536, empties this list, and runs the fill at --steps 1025 and 1024.",
-    ),
-]
+# S3p runs every case, including `[0; 65536]`. A later skip needs a reason,
+# and the list must stay empty: this slice is not done while an entry remains.
+SKIPS = []
 
 
 def run(compiler: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -113,11 +108,9 @@ def main() -> int:
         return 2
 
     failures = 0
-    if not SKIPS or any(not reason.strip() for _, reason in SKIPS):
-        fail("step-budget skip list must be non-empty and each entry needs a reason")
+    if SKIPS or any(not reason.strip() for _, reason in SKIPS):
+        fail("step-budget skip list must be empty, and any future entry needs a reason")
         return 1
-    for case, reason in SKIPS:
-        print(f"skip {case}: {reason}")
 
     with tempfile.TemporaryDirectory(prefix="orangec-steps-") as temporary:
         directory = Path(temporary)
@@ -200,6 +193,37 @@ def main() -> int:
             check(eval_case(rust_bin, c_bin, f"{name} at {total}", path, total, stats=True))
             check(eval_case(rust_bin, c_bin, f"{name} at {total - 1}", path, total - 1))
 
+        wide_fill = write_source(directory, "fill-65536.or", array_fill(65536))
+        check(eval_case(rust_bin, c_bin, "fill 65536 at 1025", wide_fill, 1025, stats=True))
+        check(eval_case(rust_bin, c_bin, "fill 65536 at 1024", wide_fill, 1024))
+
+        def one_under(label: str, path: Path, budget: int, names: set[str]) -> None:
+            stats = run(rust_bin, ["eval", "--steps", str(budget), "--stats", str(path)])
+            if stats.returncode != 0:
+                fail(f"{label} rust did not finish")
+                failures += 1
+                return
+            check(eval_case(rust_bin, c_bin, f"{label} at {budget}", path, budget, stats=True))
+            spent = 0
+            for line in stats.stderr.splitlines():
+                if line.startswith("total:"):
+                    break
+                head, _, rest = line.partition(": ")
+                count_text = rest.split(" ", 1)[0]
+                if not count_text.isdigit():
+                    continue
+                count = int(count_text)
+                short = head.split("::")[-1]
+                if short in names:
+                    check(eval_case(rust_bin, c_bin, f"{head} one under", path, spent + count - 1))
+                spent += count
+
+        lengths = FIXTURES / "s3p" / "valid-lengths.or"
+        # Pepin's test is the first spec and does not finish in the default
+        # 1048576 steps. The full ORC0301 text has to match with no --steps.
+        check(eval_case(rust_bin, c_bin, "pepin at default budget", lengths, None))
+        one_under("lengths", lengths, 2097152, {"pepin", "halves", "words", "widest"})
+        one_under("rfc8439", FIXTURES / "s3p" / "valid-rfc8439.or", 1048576, {"a2_2", "a3_3", "a5_authentic"})
         check(eval_case(rust_bin, c_bin, "updates at 323", updates, 323, stats=True))
         check(eval_case(rust_bin, c_bin, "updates at 322", updates, 322))
         check(eval_case(rust_bin, c_bin, "chacha20 at 14595", chacha, 14595, stats=True))

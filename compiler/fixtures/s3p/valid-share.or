@@ -1,0 +1,56 @@
+// An array that still has another owner is copied by an update. The owner
+// that was not updated keeps every element it had. A loop accumulator used
+// once is the only owner, so the next step sees the updated array, while a
+// second read in the same step still sees the value from before that update.
+edition 2026;
+module share {
+  type F4 = Mod[(1 << 16) + 1];
+
+  spec kept() -> (Word[8]^4, Word[8]^4) {
+    let a: Word[8]^4 = [1, 2, 3, 4];
+    let b: Word[8]^4 = a;
+    let c: Word[8]^4 = a with [0] = 9;
+    (b, c)
+  }
+
+  spec filled() -> (Word[8], Word[8]) {
+    let a: Word[8]^8 = [7; 8];
+    let b: Word[8]^8 = a;
+    let c: Word[8]^8 = a with [3] = 1;
+    (b[3], c[3])
+  }
+
+  spec middle() -> (Word[8], Word[8], Word[8]) {
+    let a: Word[8]^6 = [1, 2, 3, 4, 5, 6];
+    let b: Word[8]^6 = a;
+    let c: Word[8]^6 = a with [2..4] = [8, 9];
+    (b[2], c[2], c[3])
+  }
+
+  spec split() -> (Word[8], Word[8]) {
+    let pair: (Word[8]^2, Word[8]) =
+      for i in 0..1 with (s: Word[8]^2, prev: Word[8]) = ([1, 2], 0) {
+        (s with [i] = 9, s[0])
+      };
+    (pair.0[0], pair.1)
+  }
+
+  spec runs() -> Word[8] {
+    let s: Word[8]^4 = for i in 0..4 with a: Word[8]^4 = [0; 4] { a with [i] = 1 };
+    s[3]
+  }
+
+  spec field() -> (F4, F4) {
+    let a: F4^4 = [1, 2, 3, 4];
+    let b: F4^4 = a;
+    let c: F4^4 = a with [1] = 0 - 1;
+    (b[1], c[1])
+  }
+
+  spec signed() -> (Int, Int) {
+    let a: Int^3 = [1, 2, 3];
+    let b: Int^3 = a;
+    let c: Int^3 = a with [0] = 0 - 1;
+    (b[0], c[0])
+  }
+}

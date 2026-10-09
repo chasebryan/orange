@@ -7,6 +7,7 @@ int orange_main(int argc, char **argv);
 
 /* Pasted into src/compile.c when ORANGE_COMPILE_REST is set. */
 #ifdef ORANGE_COMPILE_REST
+#include "pack.h"
 static const char MODULUS_NOTE[] =
     "a modulus is a constant built from integer literals with `+`, `-`, `*`, `<<`, and parentheses, as in "
     "`Mod[(1 << 255) - 19]`";
@@ -168,7 +169,7 @@ void bind_modulus(Compiler *c, TypeSite *site) {
 
 static void walk_moduli(Compiler *c, uint32_t index) {
     const Expr *expr;
-    uint16_t arg;
+    uint32_t arg;
     if (index == UINT32_MAX || c->resource) {
         return;
     }
@@ -333,6 +334,33 @@ static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, 
     }
     *out0 = start;
     return 1;
+}
+
+/* `type Mat = Row^2` defines a matrix. Every other rank-2 site uses one. */
+static int matrix_defined_here(const Compiler *c, const TypeSite *site, const TypeSite *target) {
+    uint32_t at;
+    uint32_t index;
+    if (c->sites == NULL || site < c->sites || site >= c->sites + c->nsites || !site->wrote_axis || target->rank >= 2) {
+        return 0;
+    }
+    at = (uint32_t)(site - c->sites);
+    for (index = 0; index < c->ntypes; index++) {
+        if (c->types[index].site == at) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A parameter, result, binding, or accumulator is checked with its body.
+   A clean body is rejected later; a body error stays the diagnostic Rust prints. */
+static int matrix_checked_with_body(const TypeSite *site) {
+    const char *role = site->role;
+    if (role == NULL) {
+        return 0;
+    }
+    return strcmp(role, "parameter type") == 0 || strcmp(role, "result type") == 0 ||
+           strcmp(role, "binding type") == 0 || strcmp(role, "accumulator type") == 0;
 }
 
 void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
@@ -528,6 +556,17 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->inner_len = target->inner_len;
     }
     site->ok = 1;
+    /* Rank-2 use guard. A defining `type` declaration is exempt. Signature and
+       binding sites stay ok so an ill-typed body still reports Rust's error;
+       reject_clean_matrices covers the ones whose bodies check. */
+    if (site->rank >= 2 && !matrix_defined_here(c, site, target) && !matrix_checked_with_body(site)) {
+        uint16_t saved_mod = c->expect_mod;
+        c->expect_mod = site->mod_index;
+        report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+        c->expect_mod = saved_mod;
+        site->ok = 0;
+        site->reported = 1;
+    }
 }
 
 static void publish_site(const Compiler *c, uint32_t site_index, TypeKind *kind, uint32_t *length, int *ok,
@@ -719,7 +758,19 @@ typedef struct Applied {
     int reported;
     uint32_t tup0;
     uint16_t tup_n;
+    int rank;
+    uint32_t inner;
 } Applied;
+
+static void note_applied_rank(const TypeSite *site, Applied *out) {
+    if (!out->ok || out->kind == TY_TUPLE || site->rank <= 0) {
+        return;
+    }
+    out->rank = site->rank;
+    if (site->rank >= 2) {
+        out->inner = site->inner_len;
+    }
+}
 
 static int site_uses_size(const Compiler *c, uint32_t site_index) {
     const TypeSite *site;
@@ -772,6 +823,7 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
         if (out->kind == TY_TUPLE) {
             out->length = 0;
         }
+        note_applied_rank(site, out);
         return 1;
     }
     if (site->kind == TY_TUPLE || site->is_tuple) {
@@ -817,10 +869,15 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
             return 1;
         }
         site->length = length;
-        site->rank = 1;
+        /* Resolution already counted the alias's axes. A computed length
+           replaces the outer axis; forcing rank 1 would flatten a matrix. */
+        if (site->rank <= 0) {
+            site->rank = 1;
+        }
         out->length = length;
         out->ok = 1;
     }
+    note_applied_rank(site, out);
     return 1;
 }
 
@@ -986,6 +1043,8 @@ static int capture_instance(Compiler *c, uint32_t func_index, Instance *inst) {
     inst->result_ok = result.ok;
     inst->tup0 = result.tup0;
     inst->tup_n = result.tup_n;
+    inst->result_rank = result.rank;
+    inst->result_inner = result.inner;
     inst->param0 = c->niparams;
     inst->signature_ok = result.ok;
     for (param = 0; param < func->nparams; param++) {
@@ -1001,6 +1060,8 @@ static int capture_instance(Compiler *c, uint32_t func_index, Instance *inst) {
         shape.type_ok = applied.ok;
         shape.tup0 = applied.tup0;
         shape.tup_n = applied.tup_n;
+        shape.rank = applied.rank;
+        shape.inner = applied.inner;
         if (!applied.ok) {
             inst->signature_ok = 0;
         }
@@ -1028,6 +1089,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         func->result_reported = applied.reported;
         func->tup0 = applied.tup0;
         func->tup_n = applied.tup_n;
+        func->result_rank = applied.rank;
+        func->result_inner = applied.inner;
     }
     for (param = 0; param < func->nparams; param++) {
         Param *item = &c->params[func->param0 + param];
@@ -1044,6 +1107,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     for (local = 0; local < func->nlocals; local++) {
         Local *item = &c->locals[func->local0 + local];
@@ -1060,6 +1125,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     if (func->nlocals > 0) {
         seal_patterns(c, &c->locals[func->local0], func->nlocals);
@@ -1079,6 +1146,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         item->type_reported = applied.reported;
         item->tup0 = applied.tup0;
         item->tup_n = applied.tup_n;
+        item->rank = applied.rank;
+        item->inner = applied.inner;
     }
     for (index = 0; index < c->nloops; index++) {
         LoopDesc *loop = &c->loops[index];
@@ -1095,6 +1164,8 @@ static int live_apply(Compiler *c, uint32_t func_index) {
         loop->acc_reported = applied.reported;
         loop->tup0 = applied.tup0;
         loop->tup_n = applied.tup_n;
+        loop->acc_rank = applied.rank;
+        loop->acc_inner = applied.inner;
     }
     tp_refresh_convs(c, func_index);
     return 1;
@@ -1268,6 +1339,58 @@ static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) 
         }
     }
     return 0;
+}
+
+static void emit_matrix_site(Compiler *c, TypeSite *site) {
+    uint16_t saved_mod;
+    if (site->reported || site->rank < 2) {
+        return;
+    }
+    saved_mod = c->expect_mod;
+    c->expect_mod = site->mod_index;
+    report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+    c->expect_mod = saved_mod;
+    site->reported = 1;
+}
+
+/* Rank-2 use guard for a function whose body checked. Removing this accepts
+   `id` and `pass`, which Rust evaluates and this slice must not. */
+static void reject_clean_matrices(Compiler *c, Func *func, uint32_t func_index) {
+    uint16_t slot;
+    uint32_t index;
+    if (func->result_rank >= 2 && func->result_site < c->nsites) {
+        emit_matrix_site(c, &c->sites[func->result_site]);
+    }
+    for (slot = 0; slot < func->nparams; slot++) {
+        Param *param = &c->params[func->param0 + slot];
+        if (param->rank >= 2 && param->site < c->nsites) {
+            emit_matrix_site(c, &c->sites[param->site]);
+        }
+    }
+    for (slot = 0; slot < func->nlocals; slot++) {
+        Local *local = &c->locals[func->local0 + slot];
+        if (local->rank >= 2 && local->site < c->nsites) {
+            emit_matrix_site(c, &c->sites[local->site]);
+        }
+    }
+    for (index = 0; index < c->nblock_locals; index++) {
+        Local *local = &c->block_locals[index];
+        if (local->site >= c->nsites || c->sites[local->site].owner_func != func_index) {
+            continue;
+        }
+        if (local->rank >= 2) {
+            emit_matrix_site(c, &c->sites[local->site]);
+        }
+    }
+    for (index = 0; index < c->nloops; index++) {
+        LoopDesc *loop = &c->loops[index];
+        if (loop->site >= c->nsites || c->sites[loop->site].owner_func != func_index) {
+            continue;
+        }
+        if (loop->acc_rank >= 2) {
+            emit_matrix_site(c, &c->sites[loop->site]);
+        }
+    }
 }
 
 static void analyze(Compiler *c) {
@@ -1486,15 +1609,20 @@ static void analyze(Compiler *c) {
             if (local->type == TY_TUPLE) {
                 check_as_tuple(c, local->value, local->tup0, local->tup_n, index, local_index);
             } else {
-                check_at(c, local->value, local->type, local->length, local->mod_index, index, local_index);
+                check_ranked(c, local->value, local->type, local->length, local->mod_index, local->rank, local->inner,
+                             index, local_index);
             }
         }
         if (func->body != UINT32_MAX) {
             if (func->result == TY_TUPLE) {
                 check_as_tuple(c, func->body, func->tup0, func->tup_n, index, func->nlocals);
             } else {
-                check_at(c, func->body, func->result, func->result_len, func->result_mod, index, func->nlocals);
+                check_ranked(c, func->body, func->result, func->result_len, func->result_mod, func->result_rank,
+                             func->result_inner, index, func->nlocals);
             }
+        }
+        if (c->ndiags == diags_before) {
+            reject_clean_matrices(c, func, index);
         }
         if (c->ndiags > diags_before) {
             name_sized_diags(c, func, c->cur_inst, diags_before);
@@ -1578,14 +1706,19 @@ static void analyze(Compiler *c) {
 
 static void value_clear(Value *value) {
     Value *elems;
+    Pack *pack;
     uint32_t length;
     uint32_t index;
     if (value == NULL) {
         return;
     }
     elems = value->elems;
+    pack = value->pack;
     length = value->length;
     memset(value, 0, sizeof *value);
+    if (pack != NULL) {
+        pack_release(pack);
+    }
     if (elems == NULL) {
         return;
     }
@@ -1622,9 +1755,20 @@ static int value_clone(Compiler *c, Value *dst, const Value *src, uint32_t start
         return 0;
     }
     value_clear(dst);
+    if (src->pack != NULL) {
+        if (!pack_retain(src->pack)) {
+            c->failed = 1;
+            add_diag(c, "ORC0301", start, end, "evaluation could not retain an array", "resource limit reached", NULL, 2);
+            return 0;
+        }
+        *dst = *src;
+        dst->elems = NULL;
+        return 1;
+    }
     if (src->length == 0) {
         *dst = *src;
         dst->elems = NULL;
+        dst->pack = NULL;
         return 1;
     }
     if (src->elems == NULL) {
@@ -1906,6 +2050,88 @@ static const Big *modulus_at(const Compiler *c, uint16_t index) {
     return &c->moduli[index];
 }
 
+static int array_oom(Compiler *c, uint32_t start, uint32_t end) {
+    c->failed = 1;
+    add_diag(c, "ORC0301", start, end, "evaluation could not retain an array", "resource limit reached", NULL, 2);
+    return 0;
+}
+
+static int scalar_word(const Value *value, uint64_t *word) {
+    if (value->length != 0 || value->pack != NULL || value->is_tuple) {
+        return 0;
+    }
+    if (value->type == TY_INT || value->type == TY_MOD) {
+        if (value->big.negative || value->big.nlimbs > 2) {
+            return 0;
+        }
+        *word = 0;
+        if (value->big.nlimbs > 0) {
+            *word = value->big.limbs[0];
+        }
+        if (value->big.nlimbs > 1) {
+            *word |= (uint64_t)value->big.limbs[1] << 32;
+        }
+        return 1;
+    }
+    if (type_width(value->type) > 0) {
+        *word = value->word;
+        return 1;
+    }
+    return 0;
+}
+
+static int scalar_from_word(Compiler *c, Value *out, TypeKind type, uint16_t mod_index, uint64_t word) {
+    memset(out, 0, sizeof *out);
+    out->type = type;
+    out->mod_index = mod_index;
+    out->big = big_zero();
+    if (type == TY_MOD || type == TY_INT) {
+        return big_from_u64(&c->arena, word, &out->big);
+    }
+    out->word = word;
+    return 1;
+}
+
+static uint32_t array_stride(Compiler *c, TypeKind type, uint16_t mod_index) {
+    uint32_t bits = 0;
+    if (type == TY_MOD) {
+        const Big *modulus = modulus_at(c, mod_index);
+        if (modulus == NULL) {
+            return 0;
+        }
+        bits = big_bits(modulus);
+    }
+    return pack_stride_of(type, bits);
+}
+
+static void transfer_array(Value *out, Value *base) {
+    out->type = base->type;
+    out->length = base->length;
+    out->mod_index = base->mod_index;
+    out->is_tuple = 0;
+    out->pack = base->pack;
+    out->elems = base->elems;
+    out->word = 0;
+    out->big = big_zero();
+    base->pack = NULL;
+    base->elems = NULL;
+    base->length = 0;
+}
+
+static int elem_word(const Value *array, uint32_t index, uint64_t *word) {
+    if (array->pack != NULL) {
+        if (index >= array->pack->length) {
+            return 0;
+        }
+        *word = pack_get(array->pack, index);
+        return 1;
+    }
+    if (array->elems == NULL || index >= array->length) {
+        return 0;
+    }
+    return scalar_word(&array->elems[index], word);
+}
+
 static int residue_reduce(Compiler *c, const Big *value, const Big *modulus, Big *out) {
     Big quot = big_zero();
     Big rem = big_zero();
@@ -2003,32 +2229,46 @@ static int index_position(Compiler *c, const Value *index_value, uint32_t index_
 }
 
 /* Modulus indices are per module. A value crossing a call wears the index of
-   the module that is about to use it. */
-static void retag_modulus(Value *value, uint16_t mod_index) {
+   the module that is about to use it. A shared pack is copied first so the
+   caller's array keeps its own index. */
+static int retag_modulus(Value *value, uint16_t mod_index) {
     uint32_t index;
     if (value->is_tuple) {
         if (value->elems == NULL) {
-            return;
+            return 1;
         }
         for (index = 0; index < value->length; index++) {
-            retag_modulus(&value->elems[index], mod_index);
+            if (!retag_modulus(&value->elems[index], mod_index)) {
+                return 0;
+            }
         }
-        return;
+        return 1;
+    }
+    if (value->pack != NULL) {
+        if (value->pack->type == TY_MOD) {
+            if (!pack_make_unique(&value->pack)) {
+                return 0;
+            }
+            value->pack->mod_index = mod_index;
+            value->mod_index = mod_index;
+        }
+        return 1;
     }
     if (value->length == 0) {
         if (value->type == TY_MOD) {
             value->mod_index = mod_index;
         }
-        return;
+        return 1;
     }
     if (value->elems == NULL) {
-        return;
+        return 1;
     }
     for (index = 0; index < value->length; index++) {
         if (value->elems[index].type == TY_MOD) {
             value->elems[index].mod_index = mod_index;
         }
     }
+    return 1;
 }
 
 static int eval_expr(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
@@ -2187,11 +2427,13 @@ static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) 
             uint32_t place = 0;
             if (operand->length == 0) {
                 word = operand->word;
-            } else if (operand->elems == NULL || index >= operand->length) {
+            } else if (index >= operand->length || (operand->pack == NULL && operand->elems == NULL)) {
                 free(limbs);
                 value_clear(operand);
                 c->failed = 1;
                 return 0;
+            } else if (operand->pack != NULL) {
+                word = pack_get(operand->pack, index);
             } else {
                 word = operand->elems[index].word;
             }
@@ -2274,12 +2516,16 @@ static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) 
         return 1;
     }
     {
-        Value *items = NULL;
         uint32_t to_bits = (uint32_t)type_width(expr->conv_ty);
         uint32_t to_count = expr->conv_len;
-        if (!alloc_array(c, &items, to_count, expr->start, expr->end)) {
+        uint32_t stride = pack_stride_of(expr->conv_ty, 0);
+        Pack *packed = pack_new(expr->conv_ty, to_count, stride, 0);
+        if (packed == NULL) {
             free(limbs);
             value_clear(operand);
+            c->failed = 1;
+            add_diag(c, "ORC0301", expr->start, expr->end, "evaluation could not retain an array",
+                     "resource limit reached", NULL, 2);
             return 0;
         }
         for (index = 0; index < to_count; index++) {
@@ -2288,22 +2534,209 @@ static int eval_pack(Compiler *c, const Expr *expr, Value *operand, Value *out) 
             if (!pack_place(expr->conv_order, index, to_count, &place) ||
                 !pack_read_word(limbs, nlimbs, to_bits, place, &word)) {
                 free(limbs);
-                value_list_clear(items, to_count);
+                pack_release(packed);
                 value_clear(operand);
                 c->failed = 1;
                 return 0;
             }
-            items[index].type = expr->conv_ty;
-            items[index].word = word;
+            pack_set(packed, index, word);
         }
         free(limbs);
         out->type = expr->conv_ty;
         out->length = to_count;
-        out->elems = items;
+        out->pack = packed;
         out->big = big_zero();
         value_clear(operand);
         return 1;
     }
+}
+
+typedef struct AccWalk {
+    Compiler *c;
+    uint32_t loop;
+    uint32_t uses_whole;
+    uint32_t plain_whole;
+    uint32_t uses_comp[MAX_TUPLE];
+    uint32_t plain_comp[MAX_TUPLE];
+    int unsafe;
+    int depth;
+    /* A nested loop evaluates its body once per step, against the same
+       outer accumulator. A single syntactic use there is not one owner. */
+    int repeating;
+} AccWalk;
+
+static void acc_visit(AccWalk *walk, uint32_t index);
+
+static void acc_count(AccWalk *walk, const Expr *expr, int as_update) {
+    uint32_t bump = walk->repeating ? 2u : 1u;
+    if (!expr->is_proj) {
+        walk->uses_whole += bump;
+        if (!as_update) {
+            walk->plain_whole += bump;
+        }
+        return;
+    }
+    if (expr->proj_pos < MAX_TUPLE) {
+        walk->uses_comp[expr->proj_pos] += bump;
+        if (!as_update) {
+            walk->plain_comp[expr->proj_pos] += bump;
+        }
+    }
+}
+
+static void acc_note(AccWalk *walk, uint32_t index, int as_update) {
+    const Expr *expr;
+    if (index == UINT32_MAX) {
+        return;
+    }
+    expr = &walk->c->exprs[index];
+    if (expr->kind == EX_ACCUM && expr->arg0 == walk->loop) {
+        acc_count(walk, expr, as_update);
+        return;
+    }
+    acc_visit(walk, index);
+}
+
+static void acc_binds(AccWalk *walk, uint32_t bind0, uint16_t nbinds) {
+    uint16_t bind;
+    for (bind = 0; bind < nbinds; bind++) {
+        const Local *local = &walk->c->block_locals[bind0 + bind];
+        if (local->pat_i > 0) {
+            continue;
+        }
+        acc_visit(walk, local->value);
+    }
+}
+
+static void acc_visit(AccWalk *walk, uint32_t index) {
+    const Expr *expr;
+    uint32_t child;
+    if (index == UINT32_MAX || walk->unsafe) {
+        return;
+    }
+    if (walk->depth > MAX_HEIGHT + 4) {
+        walk->unsafe = 1;
+        return;
+    }
+    walk->depth++;
+    expr = &walk->c->exprs[index];
+    switch (expr->kind) {
+    case EX_NONE:
+    case EX_LIT:
+    case EX_NAME:
+    case EX_BYTES:
+    case EX_LOOP_INDEX:
+        break;
+    case EX_ACCUM:
+        if (expr->arg0 == walk->loop) {
+            acc_count(walk, expr, 0);
+        }
+        break;
+    case EX_UNARY:
+    case EX_GROUP:
+    case EX_PROJECT:
+    case EX_CONV:
+        acc_visit(walk, expr->left);
+        break;
+    case EX_FILL:
+        acc_visit(walk, expr->left);
+        if (expr->size_expr != UINT32_MAX) {
+            acc_visit(walk, expr->size_expr);
+        }
+        break;
+    case EX_BINARY:
+    case EX_SHIFT:
+    case EX_INDEX:
+    case EX_SELECT:
+        acc_visit(walk, expr->left);
+        acc_visit(walk, expr->right);
+        break;
+    case EX_UPDATE:
+        acc_note(walk, expr->left, 1);
+        acc_visit(walk, expr->right);
+        acc_visit(walk, expr->callee);
+        break;
+    case EX_SLICE:
+        acc_visit(walk, expr->left);
+        if (expr->right != UINT32_MAX) {
+            acc_visit(walk, expr->right);
+        }
+        if (expr->callee != UINT32_MAX) {
+            acc_visit(walk, expr->callee);
+        }
+        break;
+    case EX_SLICE_UP:
+        acc_note(walk, expr->left, 1);
+        if (expr->right != UINT32_MAX) {
+            acc_visit(walk, expr->right);
+        }
+        if (expr->conv_site != UINT32_MAX) {
+            acc_visit(walk, expr->conv_site);
+        }
+        acc_visit(walk, expr->callee);
+        break;
+    case EX_ARRAY:
+    case EX_TUPLE:
+    case EX_CALL:
+        for (child = 0; child < expr->argc; child++) {
+            acc_visit(walk, walk->c->args[expr->arg0 + child]);
+        }
+        break;
+    case EX_COND: {
+        uint16_t arm;
+        for (arm = 0; arm < expr->argc; arm++) {
+            CondArm *slot = &walk->c->cond_arms[expr->arg0 + arm];
+            acc_visit(walk, slot->cond);
+            acc_binds(walk, slot->bind0, slot->nbinds);
+            acc_visit(walk, slot->value);
+        }
+        acc_binds(walk, expr->else_bind0, expr->else_nbinds);
+        acc_visit(walk, expr->right);
+        break;
+    }
+    case EX_LOOP: {
+        const LoopDesc *nested = &walk->c->loops[expr->arg0];
+        int nested_loop = expr->arg0 != walk->loop;
+        if (nested_loop) {
+            walk->repeating++;
+        }
+        acc_visit(walk, nested->init_expr);
+        acc_binds(walk, nested->bind0, nested->nbinds);
+        acc_visit(walk, nested->step_expr);
+        if (nested_loop) {
+            walk->repeating--;
+        }
+        break;
+    }
+    default:
+        walk->unsafe = 1;
+        break;
+    }
+    walk->depth--;
+}
+
+static int acc_sole(const AccWalk *walk, uint32_t uses, uint32_t plain) {
+    (void)plain;
+    return !walk->unsafe && uses == 1;
+}
+
+static void mark_sole_accum(Compiler *c, uint32_t loop_id) {
+    LoopDesc *loop = &c->loops[loop_id];
+    AccWalk walk;
+    uint8_t index;
+    memset(&walk, 0, sizeof walk);
+    walk.c = c;
+    walk.loop = loop_id;
+    acc_binds(&walk, loop->bind0, loop->nbinds);
+    acc_visit(&walk, loop->step_expr);
+    loop->sole_whole = (uint8_t)acc_sole(&walk, walk.uses_whole, walk.plain_whole);
+    for (index = 0; index < MAX_TUPLE; index++) {
+        loop->sole_comp[index] = 0;
+    }
+    for (index = 0; index < loop->nacc && index < MAX_TUPLE; index++) {
+        loop->sole_comp[index] = (uint8_t)acc_sole(&walk, walk.uses_comp[index], walk.plain_comp[index]);
+    }
+    loop->sole_ready = 1;
 }
 
 static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *locals, int depth, Value *out) {
@@ -2512,8 +2945,12 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                         arg_type = target->iparams[called->param0 + arg].type;
                     }
                 }
-                if (arg_type == TY_MOD) {
-                    retag_modulus(&arguments[arg], mod_index);
+                if (arg_type == TY_MOD && !retag_modulus(&arguments[arg], mod_index)) {
+                    c->failed = 1;
+                    add_diag(c, "ORC0301", expr->start, expr->end, "evaluation could not retain an array",
+                             "resource limit reached", NULL, 2);
+                    value_list_clear(arguments, count);
+                    return 0;
                 }
             }
             /* One step budget and one failure flag for the whole program.
@@ -2575,8 +3012,12 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             c->cur_func = saved_func;
             c->cur_inst = saved_inst;
         }
-        if (ok && expr->ty == TY_MOD) {
-            retag_modulus(out, expr->ty_mod);
+        if (ok && expr->ty == TY_MOD && !retag_modulus(out, expr->ty_mod)) {
+            c->failed = 1;
+            add_diag(c, "ORC0301", expr->start, expr->end, "evaluation could not retain an array",
+                     "resource limit reached", NULL, 2);
+            value_list_clear(arguments, count);
+            return 0;
         }
         value_list_clear(arguments, count);
         return ok;
@@ -2666,6 +3107,58 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             uint64_t cost;
             Value *items = NULL;
             uint32_t slot;
+            if (left.pack != NULL || right.pack != NULL) {
+                Pack *joined;
+                if (left.length == 0 || right.length == 0 || left.type != right.type || left.is_tuple || right.is_tuple ||
+                    left.length > UINT32_MAX - right.length) {
+                    c->failed = 1;
+                    value_clear(&left);
+                    value_clear(&right);
+                    return 0;
+                }
+                total = left.length + right.length;
+                cost = ((uint64_t)total + 63u) / 64u;
+                if (!charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+                    value_clear(&left);
+                    value_clear(&right);
+                    return 0;
+                }
+                if (left.pack != NULL && right.pack != NULL) {
+                    joined = pack_concat(left.pack, right.pack);
+                } else {
+                    uint32_t stride = left.pack != NULL ? left.pack->stride : right.pack->stride;
+                    uint16_t mod_index = left.pack != NULL ? left.pack->mod_index : right.pack->mod_index;
+                    uint32_t index;
+                    joined = pack_new(left.type, total, stride, mod_index);
+                    for (index = 0; joined != NULL && index < total; index++) {
+                        uint64_t word = 0;
+                        const Value *source = index < left.length ? &left : &right;
+                        uint32_t at = index < left.length ? index : index - left.length;
+                        if (!elem_word(source, at, &word)) {
+                            pack_release(joined);
+                            joined = NULL;
+                            c->failed = 1;
+                            break;
+                        }
+                        pack_set(joined, index, word);
+                    }
+                }
+                if (joined == NULL) {
+                    value_clear(&left);
+                    value_clear(&right);
+                    if (!c->failed) {
+                        return array_oom(c, expr->start, expr->end);
+                    }
+                    return 0;
+                }
+                out->type = left.type;
+                out->length = total;
+                out->mod_index = joined->mod_index;
+                out->pack = joined;
+                value_clear(&left);
+                value_clear(&right);
+                return 1;
+            }
             if (left.length == 0 || right.length == 0 || left.elems == NULL || right.elems == NULL ||
                 left.type != right.type || left.is_tuple || right.is_tuple || left.length > UINT32_MAX - right.length) {
                 c->failed = 1;
@@ -3091,6 +3584,40 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_list_clear(items, expr->argc);
             return 0;
         }
+        {
+            uint32_t stride = array_stride(c, expr->ty, items[0].mod_index);
+            int scalars = stride != 0;
+            uint32_t slot;
+            for (slot = 0; scalars && slot < expr->argc; slot++) {
+                if (items[slot].length != 0 || items[slot].pack != NULL || items[slot].type != expr->ty) {
+                    scalars = 0;
+                }
+            }
+            if (scalars) {
+                Pack *packed = pack_new(expr->ty, expr->argc, stride, items[0].mod_index);
+                uint32_t element;
+                if (packed == NULL) {
+                    value_list_clear(items, expr->argc);
+                    return array_oom(c, expr->start, expr->end);
+                }
+                for (element = 0; element < expr->argc; element++) {
+                    uint64_t word = 0;
+                    if (!scalar_word(&items[element], &word)) {
+                        pack_release(packed);
+                        value_list_clear(items, expr->argc);
+                        c->failed = 1;
+                        return 0;
+                    }
+                    pack_set(packed, element, word);
+                }
+                value_list_clear(items, expr->argc);
+                out->type = expr->ty;
+                out->length = expr->argc;
+                out->mod_index = packed->mod_index;
+                out->pack = packed;
+                return 1;
+            }
+        }
         out->type = expr->ty;
         out->length = expr->argc;
         out->elems = items;
@@ -3113,10 +3640,19 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         if (magnitude.nlimbs > 0) {
             position = magnitude.limbs[0];
         }
-        if (position >= base.length || base.elems == NULL) {
+        if (position >= base.length || (base.pack == NULL && base.elems == NULL)) {
             c->failed = 1;
             value_clear(&base);
             return 0;
+        }
+        if (base.pack != NULL) {
+            if (!scalar_from_word(c, out, base.type, base.pack->mod_index, pack_get(base.pack, position))) {
+                value_clear(&base);
+                c->failed = 1;
+                return 0;
+            }
+            value_clear(&base);
+            return 1;
         }
         if (!value_clone(c, out, &base.elems[position], expr->start, expr->end)) {
             value_clear(&base);
@@ -3144,11 +3680,22 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&index_value);
             return 0;
         }
-        if (position >= base.length || base.elems == NULL) {
+        if (position >= base.length || (base.pack == NULL && base.elems == NULL)) {
             c->failed = 1;
             value_clear(&base);
             value_clear(&index_value);
             return 0;
+        }
+        if (base.pack != NULL) {
+            if (!scalar_from_word(c, out, base.type, base.pack->mod_index, pack_get(base.pack, position))) {
+                value_clear(&base);
+                value_clear(&index_value);
+                c->failed = 1;
+                return 0;
+            }
+            value_clear(&base);
+            value_clear(&index_value);
+            return 1;
         }
         if (!value_clone(c, out, &base.elems[position], expr->start, expr->end)) {
             value_clear(&base);
@@ -3163,12 +3710,9 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         Value base;
         Value index_value;
         Value element;
-        Value *items = NULL;
         uint32_t position = 0;
-        uint32_t slot;
         uint32_t length;
         uint64_t cost;
-        TypeKind element_type;
         memset(&base, 0, sizeof base);
         memset(&index_value, 0, sizeof index_value);
         memset(&element, 0, sizeof element);
@@ -3180,7 +3724,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&element);
             return 0;
         }
-        if (base.length == 0 || base.elems == NULL ||
+        if (base.length == 0 || (base.pack == NULL && base.elems == NULL) ||
             !index_position(c, &index_value, c->exprs[expr->right].start, c->exprs[expr->right].end, &position)) {
             c->failed = 1;
             value_clear(&base);
@@ -3189,7 +3733,6 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             return 0;
         }
         length = base.length;
-        element_type = base.type;
         cost = ((uint64_t)length + 63u) / 64u;
         if (position >= length || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
             c->failed = 1;
@@ -3198,28 +3741,34 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&element);
             return 0;
         }
-        if (!alloc_array(c, &items, length, expr->start, expr->end)) {
-            value_clear(&base);
-            value_clear(&index_value);
-            value_clear(&element);
-            return 0;
-        }
-        for (slot = 0; slot < length; slot++) {
-            const Value *source = slot == position ? &element : &base.elems[slot];
-            if (!value_clone(c, &items[slot], source, expr->start, expr->end)) {
-                value_list_clear(items, length);
+        if (base.pack != NULL) {
+            uint64_t word = 0;
+            if (!scalar_word(&element, &word)) {
+                c->failed = 1;
                 value_clear(&base);
                 value_clear(&index_value);
                 value_clear(&element);
                 return 0;
             }
+            if (!pack_make_unique(&base.pack)) {
+                value_clear(&base);
+                value_clear(&index_value);
+                value_clear(&element);
+                return array_oom(c, expr->start, expr->end);
+            }
+            pack_set(base.pack, position, word);
+            transfer_array(out, &base);
+            value_clear(&base);
+            value_clear(&index_value);
+            value_clear(&element);
+            return 1;
         }
+        value_clear(&base.elems[position]);
+        value_move(&base.elems[position], &element);
+        transfer_array(out, &base);
         value_clear(&base);
         value_clear(&index_value);
         value_clear(&element);
-        out->type = element_type;
-        out->length = length;
-        out->elems = items;
         return 1;
     }
     case EX_FILL: {
@@ -3249,6 +3798,25 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         if (!charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
             value_clear(&element);
             return 0;
+        }
+        if (element.length == 0 && element.pack == NULL) {
+            uint32_t stride = array_stride(c, element.type, element.mod_index);
+            uint64_t word = 0;
+            if (stride != 0 && scalar_word(&element, &word)) {
+                Pack *packed = pack_new(element.type, count, stride, element.mod_index);
+                if (packed == NULL) {
+                    value_clear(&element);
+                    return array_oom(c, expr->start, expr->end);
+                }
+                pack_fill(packed, word);
+                element_type = element.type;
+                value_clear(&element);
+                out->type = element_type;
+                out->length = count;
+                out->mod_index = packed->mod_index;
+                out->pack = packed;
+                return 1;
+            }
         }
         if (!alloc_array(c, &items, count, expr->start, expr->end)) {
             value_clear(&element);
@@ -3307,6 +3875,9 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             loop->step_expr == UINT32_MAX) {
             c->failed = 1;
             return 0;
+        }
+        if (!loop->sole_ready) {
+            mark_sole_accum(c, expr->arg0);
         }
         if (!eval_expr(c, loop->init_expr, params, locals, depth, &acc) ||
             !charge(c, expr->start, expr->end, 1)) {
@@ -3385,19 +3956,36 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
     }
     case EX_ACCUM: {
         uint32_t steps = expr->is_proj ? 2u : 1u;
+        Value *acc;
+        Value *slot;
+        int move = 0;
         if (c->loop_acc == NULL || !charge(c, expr->start, expr->end, steps)) {
             c->failed = 1;
             return 0;
         }
+        acc = &c->loop_acc[expr->arg0];
+        if (expr->arg0 < c->nloops && c->loops[expr->arg0].sole_ready) {
+            const LoopDesc *loop = &c->loops[expr->arg0];
+            if (expr->is_proj) {
+                move = expr->proj_pos < MAX_TUPLE && loop->sole_comp[expr->proj_pos];
+            } else {
+                move = loop->sole_whole;
+            }
+        }
         if (expr->is_proj) {
-            Value *acc = &c->loop_acc[expr->arg0];
             if (!acc->is_tuple || acc->elems == NULL || expr->proj_pos >= acc->length) {
                 c->failed = 1;
                 return 0;
             }
-            return value_clone(c, out, &acc->elems[expr->proj_pos], expr->start, expr->end);
+            slot = &acc->elems[expr->proj_pos];
+        } else {
+            slot = acc;
         }
-        return value_clone(c, out, &c->loop_acc[expr->arg0], expr->start, expr->end);
+        if (move) {
+            value_move(out, slot);
+            return 1;
+        }
+        return value_clone(c, out, slot, expr->start, expr->end);
     }
     case EX_COND: {
         uint32_t arg0 = expr->arg0;
@@ -3432,27 +4020,36 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         return eval_block(c, else_bind0, else_nbinds, otherwise, params, locals, depth, out);
     }
     case EX_BYTES: {
-        uint8_t bytes[MAX_ARRAY_LENGTH];
+        uint8_t *bytes = NULL;
         uint32_t count = 0;
         uint32_t err_start = 0;
         uint32_t err_end = 0;
         uint32_t point = 0;
-        Value *items = NULL;
+        Pack *packed;
         uint32_t slot;
-        if (decode_bytes(c, expr, bytes, &count, &err_start, &err_end, &point) != BYTES_OK ||
-            !charge(c, expr->start, expr->end, 1) || !alloc_array(c, &items, count, expr->start, expr->end)) {
+        if (decode_bytes(c, expr, NULL, &count, &err_start, &err_end, &point) != BYTES_OK || count == 0) {
             c->failed = 1;
             return 0;
         }
+        bytes = malloc(count);
+        if (bytes == NULL || decode_bytes(c, expr, bytes, &count, &err_start, &err_end, &point) != BYTES_OK ||
+            !charge(c, expr->start, expr->end, 1)) {
+            free(bytes);
+            c->failed = 1;
+            return 0;
+        }
+        packed = pack_new(TY_W8, count, 1, 0);
+        if (packed == NULL) {
+            free(bytes);
+            return array_oom(c, expr->start, expr->end);
+        }
         for (slot = 0; slot < count; slot++) {
-            items[slot].type = TY_W8;
-            items[slot].word = bytes[slot];
-            items[slot].length = 0;
-            items[slot].big = big_zero();
+            pack_set(packed, slot, bytes[slot]);
         }
         out->type = TY_W8;
         out->length = count;
-        out->elems = items;
+        out->pack = packed;
+        free(bytes);
         return 1;
     }
     case EX_SLICE:
@@ -3511,8 +4108,9 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             value_clear(&base);
             return 0;
         }
-        if (base.length == 0 || base.elems == NULL || end_at < start_at || end_at > base.length ||
-            (updating && (replacement.length != end_at - start_at || replacement.elems == NULL))) {
+        if (base.length == 0 || (base.pack == NULL && base.elems == NULL) || end_at < start_at || end_at > base.length ||
+            (updating && (replacement.length != end_at - start_at ||
+                          (replacement.pack == NULL && replacement.elems == NULL)))) {
             c->failed = 1;
             value_clear(&base);
             value_clear(&replacement);
@@ -3520,8 +4118,52 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         }
         length = updating ? base.length : end_at - start_at;
         cost = ((uint64_t)(updating ? base.length : length) + 63u) / 64u;
-        if (length == 0 || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost) ||
-            !alloc_array(c, &items, length, expr->start, expr->end)) {
+        if (length == 0 || !charge(c, expr->start, expr->end, cost == 0 ? 1 : cost)) {
+            value_clear(&base);
+            value_clear(&replacement);
+            return 0;
+        }
+        if (base.pack != NULL) {
+            if (!updating) {
+                Pack *sliced = pack_slice(base.pack, start_at, length);
+                if (sliced == NULL) {
+                    value_clear(&base);
+                    value_clear(&replacement);
+                    return array_oom(c, expr->start, expr->end);
+                }
+                out->type = base.type;
+                out->length = length;
+                out->mod_index = sliced->mod_index;
+                out->pack = sliced;
+            } else {
+                uint32_t index;
+                if (!pack_make_unique(&base.pack)) {
+                    value_clear(&base);
+                    value_clear(&replacement);
+                    return array_oom(c, expr->start, expr->end);
+                }
+                if (replacement.pack != NULL && replacement.pack->stride == base.pack->stride) {
+                    pack_write_from(base.pack, start_at, replacement.pack);
+                } else {
+                    uint32_t count = end_at - start_at;
+                    for (index = 0; index < count; index++) {
+                        uint64_t word = 0;
+                        if (!elem_word(&replacement, index, &word)) {
+                            c->failed = 1;
+                            value_clear(&base);
+                            value_clear(&replacement);
+                            return 0;
+                        }
+                        pack_set(base.pack, start_at + index, word);
+                    }
+                }
+                transfer_array(out, &base);
+            }
+            value_clear(&base);
+            value_clear(&replacement);
+            return 1;
+        }
+        if (!alloc_array(c, &items, length, expr->start, expr->end)) {
             value_clear(&base);
             value_clear(&replacement);
             return 0;
@@ -3606,6 +4248,37 @@ static int text_append(TextBuf *buf, const char *bytes, size_t count) {
 /* Decimal spelling of an admitted Int. 2^16384-1 is 4933 digits, plus a sign. */
 #define MAX_INT_DECIMAL 8192u
 
+static int format_packed_word(TypeKind type, uint64_t word, TextBuf *buf) {
+    if (type == TY_INT || type == TY_MOD) {
+        uint32_t limbs[2];
+        Big big = big_zero();
+        char digits[96];
+        if (word > 0xffffffffu) {
+            limbs[0] = (uint32_t)word;
+            limbs[1] = (uint32_t)(word >> 32);
+            big.limbs = limbs;
+            big.nlimbs = 2;
+        } else if (word != 0) {
+            limbs[0] = (uint32_t)word;
+            big.limbs = limbs;
+            big.nlimbs = 1;
+        }
+        if (!big_format(&big, digits, sizeof digits)) {
+            return 0;
+        }
+        return text_append(buf, digits, strlen(digits));
+    }
+    {
+        char hex[32];
+        int width = type_width(type) / 4;
+        int length = snprintf(hex, sizeof hex, "0x%0*llx", width, (unsigned long long)word);
+        if (length < 0 || (size_t)length >= sizeof hex) {
+            return 0;
+        }
+        return text_append(buf, hex, (size_t)length);
+    }
+}
+
 static int format_value(const Value *value, TextBuf *buf) {
     uint32_t index;
     if (value->is_tuple) {
@@ -3621,6 +4294,20 @@ static int format_value(const Value *value, TextBuf *buf) {
             }
         }
         return text_append(buf, ")", 1);
+    }
+    if (value->length > 0 && value->pack != NULL) {
+        if (!text_append(buf, "[", 1)) {
+            return 0;
+        }
+        for (index = 0; index < value->length; index++) {
+            if (index > 0 && !text_append(buf, ", ", 2)) {
+                return 0;
+            }
+            if (!format_packed_word(value->pack->type, pack_get(value->pack, index), buf)) {
+                return 0;
+            }
+        }
+        return text_append(buf, "]", 1);
     }
     if (value->length > 0) {
         if (value->elems == NULL || !text_append(buf, "[", 1)) {
@@ -4354,6 +5041,13 @@ static int evaluate_source(Compiler *c, FILE *out) {
                 break;
             }
             continue;
+        }
+        if (func->result_rank >= 2) {
+            c->failed = 1;
+            report_matrix(c, func->body != UINT32_MAX ? c->exprs[func->body].start : func->name_start,
+                          func->body != UINT32_MAX ? c->exprs[func->body].end : func->name_end, func->result,
+                          func->result_len, func->result_inner);
+            break;
         }
         memset(&result, 0, sizeof result);
         c->cur_func = index;
@@ -5166,10 +5860,14 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3o\n", stdout);
+            fputs("orangec (standalone C) slice S3p\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {
+            if (!pack_self_test()) {
+                fputs("pack self-test failed\n", stderr);
+                return 1;
+            }
             if (!bigint_self_test()) {
                 fputs("bigint self-test failed\n", stderr);
                 return 1;

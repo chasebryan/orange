@@ -424,7 +424,10 @@ static int sites_equal(const Compiler *c, const TypeSite *left, const TypeSite *
     if (left->kind == TY_TUPLE || left->is_tuple || right->kind == TY_TUPLE) {
         return same_tuple(c, left->tup0, left->tup_n, c, right->tup0, right->tup_n);
     }
-    if (site_length(left) != site_length(right)) {
+    if (site_length(left) != site_length(right) || left->rank != right->rank) {
+        return 0;
+    }
+    if (left->rank >= 2 && left->inner_len != right->inner_len) {
         return 0;
     }
     if (left->kind == TY_MOD && left->mod_index != right->mod_index) {
@@ -753,7 +756,7 @@ static void ty_from_param(const Compiler *owner, const InstParam *param, TpTy *o
 static void arg_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals, TpTy *out);
 
 static void arg_array(Compiler *c, const Expr *expr, uint32_t func_index, uint32_t locals, TpTy *out) {
-    uint16_t index;
+    uint32_t index;
     int all = 1;
     int got = 0;
     TpTy first;

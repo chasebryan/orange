@@ -22,8 +22,8 @@
 /* The most steps `eval --steps` admits: 1,024 times the default budget. */
 #define MAX_STEP_LIMIT 1073741824ull
 #define MAX_CALL_DEPTH 256
-#define MAX_ARRAY_LENGTH 256u
-#define MAX_ARRAY_ELEMENTS 256u
+#define MAX_ARRAY_LENGTH 65536u
+#define MAX_ARRAY_ELEMENTS 65536u
 #define MAX_LOOP_BOUND 65536u
 #define MAX_OPEN_LOOPS 64
 #define ARENA_BYTES (16u * 1024u * 1024u)
@@ -228,7 +228,7 @@ typedef struct Expr {
     uint32_t name_start;
     uint32_t name_end;
     uint32_t callee;
-    uint16_t argc;
+    uint32_t argc;
     uint32_t arg0;
     TokenKind op;
     uint32_t left;
@@ -288,6 +288,9 @@ typedef struct Param {
     int type_reported;
     uint32_t tup0;
     uint16_t tup_n;
+    /* 2 when this parameter is a matrix. `inner` is the row length. */
+    int rank;
+    uint32_t inner;
 } Param;
 
 typedef struct Local {
@@ -316,6 +319,9 @@ typedef struct Local {
     uint16_t pat_len;
     uint32_t tup0;
     uint16_t tup_n;
+    /* 2 when this binding is a matrix. `inner` is the row length. */
+    int rank;
+    uint32_t inner;
 } Local;
 
 typedef struct Edge {
@@ -365,6 +371,13 @@ typedef struct LoopDesc {
     uint32_t an_site[MAX_TUPLE];
     uint32_t tup0;
     uint16_t tup_n;
+    int acc_rank;
+    uint32_t acc_inner;
+    /* 1 after the step is scanned. A component with one use is moved out of
+       the accumulator, so a later update of that array is the only owner. */
+    uint8_t sole_ready;
+    uint8_t sole_whole;
+    uint8_t sole_comp[MAX_TUPLE];
 } LoopDesc;
 
 typedef struct OpenLoop {
@@ -409,6 +422,8 @@ typedef struct Func {
     int result_reported;
     uint32_t tup0;
     uint16_t tup_n;
+    int result_rank;
+    uint32_t result_inner;
     uint32_t body;
     uint32_t edge0;
     uint32_t nedges;
@@ -443,6 +458,8 @@ typedef struct Instance {
     int result_ok;
     uint32_t tup0;
     uint16_t tup_n;
+    int result_rank;
+    uint32_t result_inner;
     uint32_t param0;
     int signature_ok;
 } Instance;
@@ -454,6 +471,8 @@ typedef struct InstParam {
     int type_ok;
     uint32_t tup0;
     uint16_t tup_n;
+    int rank;
+    uint32_t inner;
 } InstParam;
 
 typedef struct Diag {
@@ -473,12 +492,18 @@ typedef struct Diag {
     uint8_t has_note3;
 } Diag;
 
+typedef struct Pack Pack;
+
 typedef struct Value {
     TypeKind type;
     uint32_t length;
-    /* Owned element block when length > 0. A copy duplicates the block;
-       value_clear releases it. Scalar values leave this null. */
+    /* Owned element block when length > 0 and `pack` is null. A copy
+       duplicates the block; value_clear releases it. Words and residues
+       whose modulus fits in 64 bits use `pack` instead, and that block is
+       shared until an update needs a private copy. Scalar values leave both
+       null. */
     struct Value *elems;
+    Pack *pack;
     uint64_t word;
     Big big;
     uint16_t mod_index;
@@ -634,10 +659,16 @@ typedef struct Compiler {
     /* Tuple shape required where a tuple is being checked. Indices into `telems`. */
     uint32_t expect_tup0;
     uint16_t expect_tup_n;
+    /* Rank of the type required here. 2 is a matrix; `expect_inner` is its row length. */
+    int expect_rank;
+    uint32_t expect_inner;
     /* Shape of the typed leaf most recently found. Owned by `leaf_owner`. */
     uint32_t leaf_tup0;
     uint16_t leaf_tup_n;
     const struct Compiler *leaf_owner;
+    /* Rank of that leaf. 2 is a matrix; `leaf_inner` is its row length. */
+    int leaf_rank;
+    uint32_t leaf_inner;
     Instance *instances;
     uint32_t ninstances;
     size_t instance_cap;

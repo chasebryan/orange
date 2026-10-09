@@ -1749,7 +1749,8 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
 }
 
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
-    uint32_t local_elems[MAX_ARRAY_ELEMENTS];
+    uint32_t *local_elems = NULL;
+    size_t local_cap = 0;
     uint32_t count = 0;
     Token close;
     int height = 1;
@@ -1764,7 +1765,15 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         leave_nest(c);
         return 0;
     }
+    local_elems = malloc(sizeof(uint32_t));
+    if (local_elems == NULL) {
+        resource_diag(c, "ORC0106", open.start, open.end, "parser could not retain array elements");
+        leave_nest(c);
+        return 0;
+    }
+    local_cap = 1;
     if (!parse_expr(c, &local_elems[0])) {
+        free(local_elems);
         leave_nest(c);
         return 0;
     }
@@ -1773,6 +1782,8 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         Token length;
         uint32_t element = local_elems[0];
         uint32_t size = UINT32_MAX;
+        free(local_elems);
+        local_elems = NULL;
         int sized = 0;
         advance_token(c);
         length = peek_token(c);
@@ -1830,12 +1841,40 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
             break;
         }
         if (count >= MAX_ARRAY_ELEMENTS) {
-            resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
-                          "array literal exceeds the 256-element limit");
+            uint32_t extra = 0;
+            if (!parse_expr(c, &extra)) {
+                free(local_elems);
+                leave_nest(c);
+                return 0;
+            }
+            c->resource = 1;
+            add_diag(c, "ORC0106", c->exprs[extra].start, c->exprs[extra].end,
+                     "array literal has more than 65536 elements",
+                     "deterministic parser resource limit reached",
+                     "simplify or split the source before parsing it again", 1);
+            free(local_elems);
             leave_nest(c);
             return 0;
         }
+        if (count == local_cap) {
+            size_t next = local_cap * 2u;
+            uint32_t *grown;
+            if (next > MAX_ARRAY_ELEMENTS) {
+                next = MAX_ARRAY_ELEMENTS;
+            }
+            grown = realloc(local_elems, next * sizeof(uint32_t));
+            if (grown == NULL) {
+                resource_diag(c, "ORC0106", peek_token(c).start, peek_token(c).end,
+                              "parser could not retain array elements");
+                free(local_elems);
+                leave_nest(c);
+                return 0;
+            }
+            local_elems = grown;
+            local_cap = next;
+        }
         if (!parse_expr(c, &local_elems[count])) {
+            free(local_elems);
             leave_nest(c);
             return 0;
         }
@@ -1845,21 +1884,24 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
     close = peek_token(c);
     if (close.kind != TK_RBRACKET) {
         add_diag(c, "ORC0101", close.start, close.end, "expected `]`", "unclosed array literal", NULL, 1);
+        free(local_elems);
         return 0;
     }
     advance_token(c);
     if (!ensure_cap((void **)&c->args, &c->arg_cap, c->nargs + count, sizeof(uint32_t), MAX_EXPRS)) {
         resource_diag(c, "ORC0106", open.start, close.end, "parser could not retain array elements");
+        free(local_elems);
         return 0;
     }
     if (!new_expr(c, out)) {
+        free(local_elems);
         return 0;
     }
     c->exprs[*out].kind = EX_ARRAY;
     c->exprs[*out].start = open.start;
     c->exprs[*out].end = close.end;
     c->exprs[*out].arg0 = c->nargs;
-    c->exprs[*out].argc = (uint16_t)count;
+    c->exprs[*out].argc = count;
     memcpy(c->args + c->nargs, local_elems, (size_t)count * sizeof(uint32_t));
     c->nargs += count;
     for (uint32_t index = 0; index < count; index++) {
@@ -1869,6 +1911,7 @@ static int parse_array(Compiler *c, Token open, uint32_t *out) {
         }
     }
     c->exprs[*out].height = height;
+    free(local_elems);
     return note_height(c, *out);
 }
 
@@ -4492,6 +4535,33 @@ static int adopt_modulus(Compiler *c, const Compiler *owner, uint16_t foreign, u
 static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
                       uint32_t locals, uint32_t *inst_id);
 
+static void note_name_rank(Compiler *c, uint32_t func_index, NameRes res, uint16_t slot, uint32_t abs_index) {
+    int rank = 0;
+    uint32_t inner = 0;
+    if (func_index < c->nfuncs && (res == NAME_PARAM || res == NAME_LOCAL || res == NAME_BLOCK)) {
+        if (res == NAME_BLOCK) {
+            if (abs_index < c->nblock_locals) {
+                rank = c->block_locals[abs_index].rank;
+                inner = c->block_locals[abs_index].inner;
+            }
+        } else if (res == NAME_LOCAL) {
+            const Func *func = &c->funcs[func_index];
+            if ((uint32_t)slot < func->nlocals && func->local0 + slot < c->nlocals) {
+                rank = c->locals[func->local0 + slot].rank;
+                inner = c->locals[func->local0 + slot].inner;
+            }
+        } else {
+            const Func *func = &c->funcs[func_index];
+            if ((uint32_t)slot < func->nparams && func->param0 + slot < c->nparams) {
+                rank = c->params[func->param0 + slot].rank;
+                inner = c->params[func->param0 + slot].inner;
+            }
+        }
+    }
+    c->leaf_rank = rank;
+    c->leaf_inner = inner;
+}
+
 static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -4502,6 +4572,8 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     c->leaf_tup0 = 0;
     c->leaf_tup_n = 0;
     c->leaf_owner = c;
+    c->leaf_rank = 0;
+    c->leaf_inner = 0;
     if (expr->kind == EX_NAME) {
         NameRes res;
         uint16_t slot = 0;
@@ -4537,6 +4609,7 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
                     c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
                 }
             }
+            note_name_rank(c, func_index, res, slot, abs_index);
             return 1;
         }
         return 0;
@@ -5610,6 +5683,8 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
     c->leaf_tup0 = 0;
     c->leaf_tup_n = 0;
     c->leaf_owner = c;
+    c->leaf_rank = 0;
+    c->leaf_inner = 0;
     switch (expr->kind) {
     case EX_LIT:
         return 0;
@@ -5702,6 +5777,7 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
                     c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
                 }
             }
+            note_name_rank(c, func_index, res, slot, abs_index);
             return 1;
         }
         if (span_is(c, expr->name_start, expr->name_end, "true") ||
@@ -6203,8 +6279,107 @@ void spell_type(const Compiler *owner, char *buffer, size_t cap, TypeKind type, 
     }
 }
 
+static void add_expected(Compiler *c, uint32_t start, uint32_t end, const char *message, const char *expected_text,
+                         const char *note);
+static void report_name_mismatch(Compiler *c, uint32_t start, uint32_t end, TypeKind found, uint32_t found_len,
+                                 uint16_t found_mod, uint32_t found_tup0, uint16_t found_tup_n, TypeKind expected,
+                                 uint32_t expected_len);
+
+static void spell_matrix(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t outer, uint32_t inner,
+                         uint16_t mod) {
+    char row[128];
+    char built[160];
+    int wrote;
+    if (inner == 0 || !format_type(c, row, sizeof row, type, inner, type == TY_MOD ? mod : 0)) {
+        copy_text(buffer, cap, "?");
+        return;
+    }
+    wrote = snprintf(built, sizeof built, "(%s)^%u", row, outer);
+    if (wrote < 0 || (size_t)wrote >= sizeof built) {
+        copy_text(buffer, cap, "?");
+        return;
+    }
+    copy_text(buffer, cap, built);
+}
+
 static void spell_expected(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length) {
+    if (c->expect_rank >= 2) {
+        spell_matrix(c, buffer, cap, type, length, c->expect_inner, c->expect_mod);
+        return;
+    }
     spell_type(c, buffer, cap, type, length, c->expect_mod, c->expect_tup0, c->expect_tup_n);
+}
+
+/* A matrix value is recognized and rejected. Nested arrays are evaluated by a
+   later slice; this one must not print them as a single row. */
+static void report_matrix(Compiler *c, uint32_t start, uint32_t end, TypeKind type, uint32_t outer, uint32_t inner) {
+    char message[384];
+    char shown[96];
+    spell_matrix(c, shown, sizeof shown, type, outer, inner, c->expect_mod);
+    snprintf(message, sizeof message, "a value of type `%s` is a matrix, which this compiler does not evaluate", shown);
+    add_diag(c, "ORC0203", start, end, message, "rank-2 arrays: nested-array slice",
+             "a row holds scalars; a matrix holds rows of the same type", 2);
+}
+
+static void binding_axes(const Compiler *c, uint32_t func_index, NameRes res, uint16_t slot, uint32_t abs_index,
+                         int *rank, uint32_t *inner) {
+    *rank = 0;
+    *inner = 0;
+    if (res == NAME_BLOCK) {
+        if (abs_index < c->nblock_locals) {
+            *rank = c->block_locals[abs_index].rank;
+            *inner = c->block_locals[abs_index].inner;
+        }
+        return;
+    }
+    if (func_index >= c->nfuncs) {
+        return;
+    }
+    if (res == NAME_LOCAL) {
+        const Func *func = &c->funcs[func_index];
+        if ((uint32_t)slot < func->nlocals && func->local0 + slot < c->nlocals) {
+            *rank = c->locals[func->local0 + slot].rank;
+            *inner = c->locals[func->local0 + slot].inner;
+        }
+    } else if (res == NAME_PARAM) {
+        const Func *func = &c->funcs[func_index];
+        if ((uint32_t)slot < func->nparams && func->param0 + slot < c->nparams) {
+            *rank = c->params[func->param0 + slot].rank;
+            *inner = c->params[func->param0 + slot].inner;
+        }
+    }
+}
+
+static int matrix_axes_differ(const Compiler *c, int name_rank, uint32_t name_inner) {
+    return c->expect_rank >= 2 && (name_rank < 2 || name_inner != c->expect_inner);
+}
+
+static void report_ranked_name(Compiler *c, uint32_t start, uint32_t end, TypeKind found, uint32_t found_len,
+                               int found_rank, uint32_t found_inner, uint16_t found_mod, uint32_t found_tup0,
+                               uint16_t found_tup_n, TypeKind expected, uint32_t expected_len) {
+    char message[384];
+    char spelling[64];
+    char expected_text[96];
+    char found_text[96];
+    if (c->expect_rank < 2 && found_rank < 2) {
+        report_name_mismatch(c, start, end, found, found_len, found_mod, found_tup0, found_tup_n, expected,
+                             expected_len);
+        return;
+    }
+    span_copy(spelling, sizeof spelling, c->text, start, end);
+    if (c->expect_rank >= 2) {
+        spell_matrix(c, expected_text, sizeof expected_text, expected, expected_len, c->expect_inner, c->expect_mod);
+    } else {
+        spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
+    }
+    if (found_rank >= 2) {
+        spell_matrix(c, found_text, sizeof found_text, found, found_len, found_inner, found_mod);
+    } else {
+        spell_type(c, found_text, sizeof found_text, found, found_len, found_mod, found_tup0, found_tup_n);
+    }
+    snprintf(message, sizeof message, "`%s` has type `%s`, but `%s` is required here", spelling, found_text,
+             expected_text);
+    add_expected(c, start, end, message, expected_text, IMPLICIT_NOTE);
 }
 
 static void add_expected(Compiler *c, uint32_t start, uint32_t end, const char *message, const char *expected_text,
@@ -7026,11 +7201,16 @@ static int remember_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t
     return 1;
 }
 
+static int check_ranked(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
+                        int rank, uint32_t inner, uint32_t func_index, uint32_t locals_in_scope);
+
 static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, TypeKind expected,
                        uint32_t expected_len, uint16_t expected_mod, uint32_t func_index, uint32_t locals_in_scope) {
     BlockFrame *frame;
     uint16_t bind;
     int ok;
+    int saved_rank = c->expect_rank;
+    uint32_t saved_inner = c->expect_inner;
     if (nbinds == 0) {
         if (value == UINT32_MAX) {
             return 1;
@@ -7047,6 +7227,9 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
     frame->nbinds = nbinds;
     frame->visible = 0;
     frame->slots = NULL;
+    /* A binding has its own type. The block's result keeps the caller's rank. */
+    c->expect_rank = 0;
+    c->expect_inner = 0;
     for (bind = 0; bind < nbinds; bind++) {
         Local *local = &c->block_locals[bind0 + bind];
         if (local->pat_i > 0) {
@@ -7125,13 +7308,15 @@ static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t va
                 c->nframes--;
                 return 0;
             }
-        } else if (!check_at(c, local->value, local->type, local->length, local->mod_index, func_index,
-                             locals_in_scope)) {
+        } else if (!check_ranked(c, local->value, local->type, local->length, local->mod_index, local->rank,
+                                 local->inner, func_index, locals_in_scope)) {
             c->nframes--;
             return 0;
         }
         frame->visible = (uint16_t)(bind + 1);
     }
+    c->expect_rank = saved_rank;
+    c->expect_inner = saved_inner;
     ok = value == UINT32_MAX || check_at(c, value, expected, expected_len, expected_mod, func_index, locals_in_scope);
     c->nframes--;
     if (!ok) {
@@ -7289,16 +7474,24 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         return 1;
     }
     {
+        int place_rank = c->expect_rank;
+        uint32_t place_inner = c->expect_inner;
         int shape_bad = loop->acc_type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && loop->tup_n > 0 &&
                         !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, loop->tup0, loop->tup_n);
-        if (loop->acc_type != expected || loop->acc_len != expected_len || shape_bad ||
+        int axes_bad = place_rank >= 2 && (loop->acc_rank < 2 || loop->acc_inner != place_inner);
+        if (loop->acc_type != expected || loop->acc_len != expected_len || shape_bad || axes_bad ||
             (loop->acc_type == TY_MOD && expected == TY_MOD && loop->acc_mod != c->expect_mod)) {
             char message[384];
             char expected_text[96];
             char found_text[96];
             spell_expected(c, expected_text, sizeof expected_text, expected, expected_len);
-            spell_type(c, found_text, sizeof found_text, loop->acc_type, loop->acc_len, loop->acc_mod, loop->tup0,
-                       loop->tup_n);
+            if (loop->acc_rank >= 2) {
+                spell_matrix(c, found_text, sizeof found_text, loop->acc_type, loop->acc_len, loop->acc_inner,
+                             loop->acc_mod);
+            } else {
+                spell_type(c, found_text, sizeof found_text, loop->acc_type, loop->acc_len, loop->acc_mod, loop->tup0,
+                           loop->tup_n);
+            }
             snprintf(message, sizeof message, "this loop has type `%s`, but `%s` is required here", found_text,
                      expected_text);
             add_expected(c, expr->start, expr->end, message, expected_text,
@@ -7308,12 +7501,16 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     {
         uint32_t saved_tup0 = c->expect_tup0;
         uint16_t saved_tup_n = c->expect_tup_n;
+        int saved_rank = c->expect_rank;
+        uint32_t saved_inner = c->expect_inner;
         int init_ok = 1;
         int step_ok = 1;
         if (loop->acc_type == TY_TUPLE) {
             c->expect_tup0 = loop->tup0;
             c->expect_tup_n = loop->tup_n;
         }
+        c->expect_rank = loop->acc_rank;
+        c->expect_inner = loop->acc_inner;
         if (loop->init_expr != UINT32_MAX) {
             init_ok = check_at(c, loop->init_expr, loop->acc_type, loop->acc_len, loop->acc_mod, func_index,
                                locals_in_scope);
@@ -7323,6 +7520,8 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 resource_diag(c, "ORC0209", expr->start, expr->end, "semantic analysis could not retain loop scopes");
                 c->expect_tup0 = saved_tup0;
                 c->expect_tup_n = saved_tup_n;
+                c->expect_rank = saved_rank;
+                c->expect_inner = saved_inner;
                 return 0;
             }
             c->active_loops[c->nactive++] = expr->arg0;
@@ -7332,6 +7531,8 @@ static int check_loop(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         c->expect_tup0 = saved_tup0;
         c->expect_tup_n = saved_tup_n;
+        c->expect_rank = saved_rank;
+        c->expect_inner = saved_inner;
         return init_ok && step_ok;
     }
 }
@@ -7384,6 +7585,19 @@ static int check_at(Compiler *c, uint32_t index, TypeKind expected, uint32_t exp
     c->expect_mod = saved;
     c->expect_tup0 = saved_tup0;
     c->expect_tup_n = saved_tup_n;
+    return ok;
+}
+
+static int check_ranked(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint16_t expected_mod,
+                        int rank, uint32_t inner, uint32_t func_index, uint32_t locals_in_scope) {
+    int saved_rank = c->expect_rank;
+    uint32_t saved_inner = c->expect_inner;
+    int ok;
+    c->expect_rank = rank;
+    c->expect_inner = inner;
+    ok = check_at(c, index, expected, expected_len, expected_mod, func_index, locals_in_scope);
+    c->expect_rank = saved_rank;
+    c->expect_inner = saved_inner;
     return ok;
 }
 
@@ -7937,6 +8151,10 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     int silent = 0;
     int state = probe_unfitted(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &leaf, &silent);
     uint16_t base_mod = c->leaf_mod;
+    if (state == 1 && c->leaf_rank >= 2) {
+        report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+        return 1;
+    }
     uint32_t tup0 = c->leaf_tup0;
     uint16_t tup_n = c->leaf_tup_n;
     const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
@@ -8660,7 +8878,12 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         }
         check_literal(c, expr, expected, c->expect_mod);
         return 1;
-    case EX_ARRAY:
+    case EX_ARRAY: {
+        uint32_t before = c->ndiags;
+        int matrix = c->expect_rank >= 2;
+        uint32_t element_len = matrix ? c->expect_inner : 0;
+        int saved_rank = c->expect_rank;
+        uint32_t saved_inner = c->expect_inner;
         if (expected_len == 0) {
             char message[384];
             char expected_text[96];
@@ -8681,12 +8904,23 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             add_diag(c, "ORC0222", expr->start, expr->end, message, label,
                      "an array literal lists every element of its type exactly once", 2);
         }
+        /* A matrix element's type is the row, not the scalar. */
+        c->expect_rank = 0;
+        c->expect_inner = 0;
         for (uint16_t element = 0; element < expr->argc; element++) {
-            if (!check_expr(c, c->args[expr->arg0 + element], expected, 0, func_index, locals_in_scope)) {
+            if (!check_expr(c, c->args[expr->arg0 + element], expected, element_len, func_index, locals_in_scope)) {
+                c->expect_rank = saved_rank;
+                c->expect_inner = saved_inner;
                 return 0;
             }
         }
+        c->expect_rank = saved_rank;
+        c->expect_inner = saved_inner;
+        if (matrix && c->ndiags == before) {
+            report_matrix(c, expr->start, expr->end, expected, expected_len, saved_inner);
+        }
         return 1;
+    }
     case EX_INDEX: {
         TypeKind base_kind = TY_NONE;
         uint32_t base_len = 0;
@@ -8705,6 +8939,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 return 1;
             }
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
+        }
+        /* Rank-2 use guard. Indexing must not treat a matrix as a row of scalars. */
+        if (c->leaf_rank >= 2) {
+            report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+            return 1;
         }
         if (base_len == 0) {
             return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
@@ -8881,6 +9120,8 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             return 1;
         }
         if (res == NAME_BLOCK) {
+            int name_rank = 0;
+            uint32_t name_inner = 0;
             uint16_t found_mod = type == TY_MOD ? c->block_locals[abs_index].mod_index : 0;
             if (c->block_locals[abs_index].pat_len > 0 || c->block_locals[abs_index].pat_i > 0) {
                 expr->is_proj = 1;
@@ -8889,10 +9130,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             uint16_t ntn = c->block_locals[abs_index].tup_n;
             int shape = type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && ntn > 0 &&
                         !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
-            if (type != expected || length != expected_len || shape ||
+            binding_axes(c, func_index, res, slot, abs_index, &name_rank, &name_inner);
+            if (type != expected || length != expected_len || shape || matrix_axes_differ(c, name_rank, name_inner) ||
                 (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
-                report_name_mismatch(c, expr->start, expr->end, type, length, found_mod, nt0, ntn, expected,
-                                     expected_len);
+                report_ranked_name(c, expr->start, expr->end, type, length, name_rank, name_inner, found_mod, nt0, ntn,
+                                   expected, expected_len);
             }
             return 1;
         }
@@ -8937,10 +9179,16 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             shape = type == TY_TUPLE && expected == TY_TUPLE && c->expect_tup_n > 0 && ntn > 0 &&
                     !same_tuple(c, c->expect_tup0, c->expect_tup_n, c, nt0, ntn);
-            if (type != expected || length != expected_len || shape ||
-                (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
-                report_name_mismatch(c, expr->start, expr->end, type, length, found_mod, nt0, ntn, expected,
-                                     expected_len);
+            {
+                int name_rank = 0;
+                uint32_t name_inner = 0;
+                binding_axes(c, func_index, res, slot, abs_index, &name_rank, &name_inner);
+                if (type != expected || length != expected_len || shape ||
+                    matrix_axes_differ(c, name_rank, name_inner) ||
+                    (type == TY_MOD && expected == TY_MOD && found_mod != c->expect_mod)) {
+                    report_ranked_name(c, expr->start, expr->end, type, length, name_rank, name_inner, found_mod, nt0,
+                                       ntn, expected, expected_len);
+                }
             }
         }
         return 1;
@@ -9151,8 +9399,21 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                     c->expect_tup0 = shape;
                     c->expect_tup_n = arg_tup_n;
                 }
-                if (!check_at(c, c->args[expr->arg0 + arg], arg_type, arg_len, arg_mod, func_index, locals_in_scope)) {
-                    return 0;
+                {
+                    int arg_rank = 0;
+                    uint32_t arg_inner = 0;
+                    if (inst != NULL) {
+                        arg_rank = target->iparams[inst->param0 + arg].rank;
+                        arg_inner = target->iparams[inst->param0 + arg].inner;
+                    } else {
+                        Param *param = &target->params[callee_func->param0 + arg];
+                        arg_rank = param->rank;
+                        arg_inner = param->inner;
+                    }
+                    if (!check_ranked(c, c->args[expr->arg0 + arg], arg_type, arg_len, arg_mod, arg_rank, arg_inner,
+                                      func_index, locals_in_scope)) {
+                        return 0;
+                    }
                 }
             }
         }
@@ -9315,6 +9576,18 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t leaf = index;
         int silent = 0;
         int state;
+        if (expr->conv_site < c->nsites && c->sites[expr->conv_site].rank >= 2) {
+            TypeSite *site = &c->sites[expr->conv_site];
+            uint16_t saved_mod;
+            if (!site->reported) {
+                saved_mod = c->expect_mod;
+                c->expect_mod = site->mod_index;
+                report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+                c->expect_mod = saved_mod;
+                site->reported = 1;
+            }
+            return 1;
+        }
         if (expr->conv_order != 0) {
             return check_packing(c, index, expected, expected_len, func_index, locals_in_scope);
         }
@@ -9421,17 +9694,28 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint16_t else_nbinds = expr->else_nbinds;
         uint16_t arm;
         uint16_t expect_mod = c->expect_mod;
+        int place_rank = c->expect_rank;
+        uint32_t place_inner = c->expect_inner;
         for (arm = 0; arm < arms; arm++) {
             const CondArm *item = &c->cond_arms[arg0 + arm];
             uint32_t condition = item->cond;
             uint32_t value = item->value;
             uint32_t bind0 = item->bind0;
             uint16_t nbinds = item->nbinds;
-            if (!check_expr(c, condition, TY_BOOL, 0, func_index, locals_in_scope) ||
-                !check_block(c, bind0, nbinds, value, expected, expected_len, expect_mod, func_index, locals_in_scope)) {
+            c->expect_rank = 0;
+            c->expect_inner = 0;
+            if (!check_expr(c, condition, TY_BOOL, 0, func_index, locals_in_scope)) {
+                return 0;
+            }
+            c->expect_rank = place_rank;
+            c->expect_inner = place_inner;
+            if (!check_block(c, bind0, nbinds, value, expected, expected_len, expect_mod, func_index,
+                             locals_in_scope)) {
                 return 0;
             }
         }
+        c->expect_rank = place_rank;
+        c->expect_inner = place_inner;
         return check_block(c, else_bind0, else_nbinds, otherwise, expected, expected_len, expect_mod, func_index,
                            locals_in_scope);
     }
@@ -9488,6 +9772,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
         }
+        /* Rank-2 use guard. A computed index of a matrix is not a scalar load. */
+        if (c->leaf_rank >= 2) {
+            report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+            return 1;
+        }
         if (base_len == 0) {
             return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
         }
@@ -9511,6 +9800,10 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         return check_index_expr(c, expr->right, base_kind, base_len, func_index, locals_in_scope);
     }
     case EX_UPDATE: {
+        if (c->expect_rank >= 2) {
+            report_matrix(c, expr->start, expr->end, expected, expected_len, c->expect_inner);
+            return 1;
+        }
         TypeKind leaf_type = TY_NONE;
         uint32_t leaf_len = 0;
         uint32_t leaf = index;
@@ -9555,6 +9848,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     case EX_FILL: {
         uint32_t length = 0;
         int admitted;
+        uint32_t before = c->ndiags;
+        int matrix = c->expect_rank >= 2;
+        uint32_t element_len = matrix ? c->expect_inner : 0;
+        int saved_rank = c->expect_rank;
+        uint32_t saved_inner = c->expect_inner;
         if (expected_len == 0) {
             char message[384];
             char expected_text[96];
@@ -9567,7 +9865,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         if (expr->size_expr != UINT32_MAX) {
             admitted = size_length(c, expr->size_expr, 1, &length);
             if (!admitted) {
-                return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
+                c->expect_rank = 0;
+                c->expect_inner = 0;
+                return check_expr(c, expr->left, expected, element_len, func_index, locals_in_scope);
             }
         } else {
             admitted = canonical_array_length(c->text, expr->lit_start, expr->lit_end, &length);
@@ -9586,7 +9886,19 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             snprintf(label, sizeof label, "expected %u %s", expected_len, expected_len == 1 ? "element" : "elements");
             add_diag(c, "ORC0222", expr->start, expr->end, message, label, "`[e; n]` is the array of n copies of e", 2);
         }
-        return check_expr(c, expr->left, expected, 0, func_index, locals_in_scope);
+        c->expect_rank = 0;
+        c->expect_inner = 0;
+        if (!check_expr(c, expr->left, expected, element_len, func_index, locals_in_scope)) {
+            c->expect_rank = saved_rank;
+            c->expect_inner = saved_inner;
+            return 0;
+        }
+        c->expect_rank = saved_rank;
+        c->expect_inner = saved_inner;
+        if (matrix && c->ndiags == before) {
+            report_matrix(c, expr->start, expr->end, expected, expected_len, saved_inner);
+        }
+        return 1;
     }
     case EX_BYTES:
         return check_bytes(c, index, expected, expected_len);

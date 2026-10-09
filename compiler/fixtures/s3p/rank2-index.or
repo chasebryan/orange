@@ -1,0 +1,7 @@
+// Rust indexes a matrix as a row. This slice rejects the rank-2 value.
+edition 2026;
+module indexed {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec row(a: Mat) -> Row { a[0] }
+}
