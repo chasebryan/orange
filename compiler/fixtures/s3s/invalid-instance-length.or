@@ -1,0 +1,6 @@
+// S3s rejection: a length product over 65536 inside a generic instance
+// names the first value of `n` that fails.
+edition 2026;
+module length {
+  spec box[n in 256..258](x: Word[8]^(256 * n)) -> Word[8] { 0 }
+}

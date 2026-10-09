@@ -80,6 +80,17 @@ VALID = [
     "s3r/valid-sha3.or",
     "s3r/valid-shift-probes.or",
     "s3r/valid-zetas.or",
+    "s3p/rank2-id.or",
+    "s3p/rank2-index.or",
+    "s3p/rank2-listed.or",
+    "s3p/rank2-nested.or",
+    "s3p/rank2-update.or",
+    "s3p/rank2-uses.or",
+    "s3s/valid-domains.or",
+    "s3s/valid-matrices.or",
+    "s3s/valid-parameters.or",
+    "s3s/valid-quadratic-pairs.or",
+    "s3s/valid-rows.or",
 ]
 # Pepin's test does not finish in the default 1048576 steps. Rust's
 # conformance run uses this budget and prints --stats.
@@ -199,163 +210,16 @@ INVALID = [
     "s3r/invalid-shift-probes.or",
     "s3r/invalid-word-width-array.or",
     "s3r/invalid-word-width-tuple.or",
-]
-
-# Rust evaluates these matrices. This slice rejects the value and pins C's
-# diagnostic so it cannot drift. The reason is printed and is not a step-budget
-# skip: step_budget.py's SKIPS stays empty.
-RANK2_REASON = "rank-2 arrays: nested-array slice"
-RANK2 = [
-    (
-        "s3p/rank2-id.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:14
-  |
-6 |   spec id(a: Mat) -> Mat {{ a }}
-  |              ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:22
-  |
-6 |   spec id(a: Mat) -> Mat {{ a }}
-  |                      ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:7:16
-  |
-7 |   spec pass(a: Mat) -> Int {{ 0 }}
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-index.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:29
-  |
-6 |   spec row(a: Mat) -> Row {{ a[0] }}
-  |                             ^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-listed.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:21
-  |
-6 |   spec f[K in {{Row, Mat}}](x: K) -> K {{ x }}
-  |                     ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-nested.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:26
-  |
-6 |   spec nested() -> Mat {{ [[1, 2], [3, 4]] }}
-  |                          ^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-update.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:5:34
-  |
-5 |   spec cell(x: Row^3) -> Row^3 {{ x with [1] = (x[1] with [2] = 9) }}
-  |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:7:20
-  |
-7 |     let x: Row^3 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:8:5
-  |
-8 |     x with [1] = (x[1] with [2] = 9)
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-uses.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:16
-  |
-6 |   type Alias = Mat;
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:7:16
-  |
-7 |   type Pair = (Mat, Int);
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:9:18
-  |
-9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
-  |                  ^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:9:28
-  |
-9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
-  |                            ^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:10:16
-   |
-10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
-   |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:10:37
-   |
-10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
-   |                                     ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:18
-   |
-11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                  ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:39
-   |
-11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                                       ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:67
-   |
-11 | ... nt {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                                             ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
+    "s3s/invalid-conversions.or",
+    "s3s/invalid-dimensions.or",
+    "s3s/invalid-domains.or",
+    "s3s/invalid-indices.or",
+    "s3s/invalid-instance-axis.or",
+    "s3s/invalid-instance-length.or",
+    "s3s/invalid-instance-matrix.or",
+    "s3s/invalid-instance-width.or",
+    "s3s/invalid-ragged.or",
+    "s3s/invalid-types.or",
 ]
 
 
@@ -849,45 +713,6 @@ def residue_modules(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
-def rank2_pins(rust_compiler: Path, c_compiler: Path) -> int:
-    """Skip Rust's matrix evaluation and pin this slice's diagnostic."""
-    failures = 0
-    print(f"skip {RANK2_REASON}")
-    if not RANK2_REASON.strip():
-        print("FAIL rank-2 skip reason is empty")
-        return 1
-    for relative, pin in RANK2:
-        path = str(FIXTURES / relative)
-        expected = pin.format(path=path)
-        rust_check = run(rust_compiler, ["check", path])
-        rust_eval = run(rust_compiler, ["eval", path])
-        c_check = run(c_compiler, ["check", path])
-        c_eval = run(c_compiler, ["eval", path])
-        if (
-            rust_check.returncode != 0
-            or rust_eval.returncode != 0
-            or c_check.returncode == 0
-            or c_eval.returncode == 0
-            or c_check.stderr != expected
-            or c_eval.stderr != expected
-            or c_eval.stdout != ""
-        ):
-            failures += 1
-            print(f"FAIL rank2 {relative}")
-            print(f"  rust check {rust_check.returncode} eval {rust_eval.returncode}")
-            print(f"  c check {c_check.returncode} eval {c_eval.returncode}")
-            if c_check.stderr != expected:
-                print("  c check stderr:", c_check.stderr)
-                print("  pinned:", expected)
-            if c_eval.stderr != expected:
-                print("  c eval stderr:", c_eval.stderr)
-            if c_eval.stdout:
-                print("  c eval stdout:", c_eval.stdout)
-        else:
-            print(f"ok   rank2 {relative}")
-    return failures
-
-
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -977,8 +802,6 @@ def main() -> int:
         else:
             print(f"ok   check {relative}")
 
-    failures += rank2_pins(rust_compiler, c_compiler)
-
     for relative, expect in (
         ("s3q/valid-rfc8439-tests.or", 0),
         ("s3q/failing-tests.or", 1),
@@ -987,6 +810,11 @@ def main() -> int:
         ("s3r/valid-zetas.or", 0),
         ("s3r/valid-amounts.or", 0),
         ("s3r/valid-shift-probes.or", 0),
+        ("s3s/valid-domains.or", 0),
+        ("s3s/valid-matrices.or", 0),
+        ("s3s/valid-parameters.or", 0),
+        ("s3s/valid-quadratic-pairs.or", 0),
+        ("s3s/valid-rows.or", 0),
     ):
         path = str(FIXTURES / relative)
         rust = run(rust_compiler, ["test", path])

@@ -39,6 +39,7 @@ void bind_modulus(Compiler *c, TypeSite *site);
 int decode_size_bound(Compiler *c, uint32_t start, uint32_t end, int64_t *out, int *too_big);
 int builtin_type_name(const Compiler *c, uint32_t start, uint32_t end);
 void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit);
+int matrix_shape_ok(Compiler *c, TypeSite *site, int report);
 
 int tp_func_has_types(const Func *func);
 int tp_starts_call(const Compiler *c);
@@ -53,6 +54,9 @@ int tp_lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, i
 void tp_format_label(const Compiler *c, uint32_t inst, char *buf, size_t cap);
 void tp_write_values(const Compiler *c, const Func *func, const Instance *inst, char *buf, size_t cap);
 void tp_name_diags(Compiler *c, const Func *func, uint32_t inst, uint32_t from);
+void attach_instance_note(Diag *diag, const char *note);
+void stamp_resolve_instance(Compiler *c, uint32_t func_index, const char *note);
+int pending_resolve_instance(const Compiler *c, uint32_t func_index);
 void tp_refresh_convs(Compiler *c, uint32_t func_index);
 void tp_note_expr(Compiler *c, Expr *expr);
 void tp_apply_stamps(Compiler *c);

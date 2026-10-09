@@ -41,6 +41,8 @@ typedef struct TpTy {
     uint32_t tup0;
     uint16_t tup_n;
     uint32_t alen;
+    int rank;
+    uint32_t inner;
     const Compiler *owner;
 } TpTy;
 
@@ -417,6 +419,8 @@ static int site_length(const TypeSite *site) {
     return site->rank <= 0 ? 0 : (int)site->length;
 }
 
+/* Rank 2 is a matrix. Two sites match when they share the scalar type, both
+   axes, and the row length. A third axis is not a site that reaches here. */
 static int sites_equal(const Compiler *c, const TypeSite *left, const TypeSite *right) {
     if (!left->ok || !right->ok || left->kind != right->kind) {
         return 0;
@@ -674,6 +678,8 @@ static void fill_from_site(const Compiler *owner, const TypeSite *site, TpTy *ou
     out->mod = site->mod_index;
     out->tup0 = site->tup0;
     out->tup_n = site->tup_n;
+    out->rank = site->rank;
+    out->inner = site->inner_len;
 }
 
 void tp_materialize(Compiler *c, TypeSite *site, int report) {
@@ -727,6 +733,9 @@ void tp_materialize(Compiler *c, TypeSite *site, int report) {
         site->rank = 0;
         site->length = 0;
     }
+    if (site->ok && !matrix_shape_ok(c, site, report)) {
+        site->ok = 0;
+    }
 }
 
 static int ty_equal(const TpTy *left, const TpTy *right) {
@@ -738,6 +747,12 @@ static int ty_equal(const TpTy *left, const TpTy *right) {
     }
     if (left->kind == TY_TUPLE) {
         return same_tuple(left->owner, left->tup0, left->tup_n, right->owner, right->tup0, right->tup_n);
+    }
+    if ((left->rank >= 2) != (right->rank >= 2)) {
+        return 0;
+    }
+    if (left->rank >= 2 && left->inner != right->inner) {
+        return 0;
     }
     return 1;
 }
@@ -751,6 +766,8 @@ static void ty_from_param(const Compiler *owner, const InstParam *param, TpTy *o
     out->mod = param->mod_index;
     out->tup0 = param->tup0;
     out->tup_n = param->tup_n;
+    out->rank = param->rank;
+    out->inner = param->inner;
 }
 
 static void arg_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals, TpTy *out);
@@ -778,12 +795,18 @@ static void arg_array(Compiler *c, const Expr *expr, uint32_t func_index, uint32
             break;
         }
     }
-    if (all && got && first.length == 0 && first.kind != TY_TUPLE) {
+    if (all && got && first.kind != TY_TUPLE && first.rank < 2) {
         out->known = 1;
         out->kind = first.kind;
         out->length = expr->argc;
         out->mod = first.mod;
         out->owner = first.owner;
+        if (first.length > 0) {
+            out->rank = 2;
+            out->inner = first.length;
+        } else {
+            out->rank = 1;
+        }
         return;
     }
     out->len_only = 1;
@@ -814,12 +837,18 @@ static void arg_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         TpTy value;
         array_parts(c, index, func_index, locals, &have_len, &len, &have_elem, &elem);
         arg_type(c, expr->left, func_index, locals, &value);
-        if (have_len && value.known && value.length == 0 && value.kind != TY_TUPLE) {
+        if (have_len && value.known && value.kind != TY_TUPLE && value.rank < 2) {
             out->known = 1;
             out->kind = value.kind;
             out->length = len;
             out->mod = value.mod;
             out->owner = value.owner;
+            if (value.length > 0) {
+                out->rank = 2;
+                out->inner = value.length;
+            } else {
+                out->rank = 1;
+            }
             return;
         }
         if (have_len) {
@@ -841,6 +870,8 @@ static void arg_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
             out->mod = c->leaf_mod;
             out->tup0 = c->leaf_tup0;
             out->tup_n = c->leaf_tup_n;
+            out->rank = c->leaf_rank;
+            out->inner = c->leaf_inner;
             out->owner = c->leaf_owner != NULL ? c->leaf_owner : c;
             return;
         }
@@ -981,10 +1012,22 @@ static int type_argument(Compiler *c, uint32_t index, uint32_t caller_func, TpTy
         if (status != 0) {
             return status;
         }
-        if (!elem.known || elem.length != 0 || elem.kind == TY_TUPLE || elem.kind == TY_NONE) {
+        if (!elem.known || elem.kind == TY_TUPLE || elem.kind == TY_NONE || elem.rank >= 2) {
             return 1;
         }
+        if (elem.length > 0) {
+            uint64_t cells = (uint64_t)elem.length * (uint64_t)length;
+            if (cells > MAX_ARRAY_LENGTH) {
+                return 1;
+            }
+            elem.inner = elem.length;
+            elem.length = length;
+            elem.rank = 2;
+            *out = elem;
+            return 0;
+        }
         elem.length = length;
+        elem.rank = 1;
         *out = elem;
         return 0;
     }
@@ -1012,6 +1055,12 @@ static int result_gives(Compiler *c, Compiler *target, const Instance *inst, int
         return 1;
     }
     if (inst->result != kind || inst->result_len != len) {
+        return 0;
+    }
+    if ((c->expect_rank >= 2) != (inst->result_rank >= 2)) {
+        return 0;
+    }
+    if (c->expect_rank >= 2 && inst->result_inner != c->expect_inner) {
         return 0;
     }
     if (kind == TY_MOD && inst->result_mod != mod) {
@@ -1413,6 +1462,44 @@ void tp_format_label(const Compiler *c, uint32_t inst, char *buf, size_t cap) {
     snprintf(buf + name_len, cap - name_len, "[%s]", values);
 }
 
+void attach_instance_note(Diag *diag, const char *note) {
+    if (strcmp(diag->code, "ORC0208") == 0 || strcmp(diag->code, "ORC0209") == 0) {
+        diag->needs_instance = 0;
+        return;
+    }
+    if (diag->note[0] == '\0') {
+        copy_text(diag->note, sizeof diag->note, note);
+    } else if (!diag->has_note2) {
+        copy_text(diag->note2, sizeof diag->note2, note);
+        diag->has_note2 = 1;
+    }
+    diag->needs_instance = 0;
+}
+
+/* Every diagnostic `resolve_site` raised for this function, not only those
+   emitted inside the instance loop. One note names the first instance. */
+void stamp_resolve_instance(Compiler *c, uint32_t func_index, const char *note) {
+    uint32_t index;
+    for (index = 0; index < c->ndiags; index++) {
+        Diag *diag = &c->diags[index];
+        if (!diag->needs_instance || diag->site_func != func_index) {
+            continue;
+        }
+        attach_instance_note(diag, note);
+    }
+}
+
+int pending_resolve_instance(const Compiler *c, uint32_t func_index) {
+    uint32_t index;
+    for (index = 0; index < c->ndiags; index++) {
+        const Diag *diag = &c->diags[index];
+        if (diag->needs_instance && diag->site_func == func_index) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void tp_name_diags(Compiler *c, const Func *func, uint32_t inst, uint32_t from) {
     char label[96];
     char name[64];
@@ -1437,13 +1524,9 @@ void tp_name_diags(Compiler *c, const Func *func, uint32_t inst, uint32_t from) 
         if (strcmp(diag->code, "ORC0208") == 0 || strcmp(diag->code, "ORC0209") == 0) {
             continue;
         }
-        if (diag->note[0] == '\0') {
-            copy_text(diag->note, sizeof diag->note, note);
-        } else if (!diag->has_note2) {
-            copy_text(diag->note2, sizeof diag->note2, note);
-            diag->has_note2 = 1;
-        }
+        attach_instance_note(diag, note);
     }
+    stamp_resolve_instance(c, (uint32_t)(func - c->funcs), note);
 }
 
 void tp_refresh_convs(Compiler *c, uint32_t func_index) {

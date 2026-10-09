@@ -92,6 +92,18 @@ static int same_array_elements(const Value *left, const Value *right) {
     if (left->type != right->type || left->length != right->length) {
         return 0;
     }
+    if (left->rank >= 2 || right->rank >= 2) {
+        if (left->rank < 2 || right->rank < 2 || left->inner != right->inner || left->elems == NULL ||
+            right->elems == NULL) {
+            return 0;
+        }
+        for (index = 0; index < left->length; index++) {
+            if (!same_value(&left->elems[index], &right->elems[index])) {
+                return 0;
+            }
+        }
+        return 1;
+    }
     if (bulk_element(left->type) || left->pack != NULL || right->pack != NULL) {
         for (index = 0; index < left->length; index++) {
             uint64_t left_word = 0;
@@ -250,9 +262,27 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
     }
     if (is_array(left) || is_array(right)) {
         int all = 1;
-        if (!is_array(left) || !is_array(right) || left->type != right->type || left->length != right->length) {
+        if (!is_array(left) || !is_array(right) || left->type != right->type || left->length != right->length ||
+            left->rank != right->rank || left->inner != right->inner) {
             c->failed = 1;
             return 0;
+        }
+        /* A matrix is a value of rows. Visit every row, including rows after a
+           difference. No break. Each row then visits every scalar. */
+        if (left->rank >= 2) {
+            if (left->elems == NULL || right->elems == NULL) {
+                c->failed = 1;
+                return 0;
+            }
+            for (index = 0; index < left->length; index++) {
+                int part = 0;
+                if (!orange_values_equal(c, &left->elems[index], &right->elems[index], &part)) {
+                    return 0;
+                }
+                all &= part;
+            }
+            *equal = all;
+            return 1;
         }
         if (bulk_element(left->type)) {
             uint64_t cost = left->length <= 64u ? 1u : ((uint64_t)left->length + 63u) / 64u;
@@ -404,8 +434,14 @@ int orange_first_difference(const Value *left, const Value *right, char *place, 
 enum { EQ_AUDIT_N = 8 };
 
 static void release_elems(Value *value) {
-    free(value->elems);
-    value->elems = NULL;
+    uint32_t index;
+    if (value->elems != NULL) {
+        for (index = 0; index < value->length; index++) {
+            release_elems(&value->elems[index]);
+        }
+        free(value->elems);
+        value->elems = NULL;
+    }
     if (value->pack != NULL) {
         pack_release(value->pack);
         value->pack = NULL;
@@ -552,6 +588,33 @@ static int make_int_tuple(Compiler *c, Value *out, uint32_t differ_at, int diffe
     return 1;
 }
 
+static int make_word_matrix(Value *out, int differ) {
+    uint32_t row;
+    memset(out, 0, sizeof *out);
+    out->type = TY_W8;
+    out->length = 2;
+    out->rank = 2;
+    out->inner = EQ_AUDIT_N / 2;
+    out->elems = calloc(2, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (row = 0; row < 2; row++) {
+        Value *line = &out->elems[row];
+        line->type = TY_W8;
+        line->length = EQ_AUDIT_N / 2;
+        line->pack = pack_new(TY_W8, line->length, 1, 0);
+        if (line->pack == NULL) {
+            return 0;
+        }
+        pack_fill(line->pack, 0);
+        if (differ && row == 1) {
+            pack_set(line->pack, line->length - 1, 1);
+        }
+    }
+    return 1;
+}
+
 int orange_eq_audit(void) {
     Compiler *c;
     Value left;
@@ -597,6 +660,8 @@ int orange_eq_audit(void) {
     AUDIT_CASE(make_int_array(c, &left, 0, 0), make_int_array(c, &right, EQ_AUDIT_N - 1, 1), "bigint array compared_last");
     AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, 0, 1), "bigint tuple compared_first");
     AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, EQ_AUDIT_N - 1, 1), "bigint tuple compared_last");
+    /* Two rows of four words. The only difference is the last element of the last row. */
+    AUDIT_CASE(make_word_matrix(&left, 0), make_word_matrix(&right, 1), "word matrix compared_last_row");
 #undef AUDIT_CASE
     free(c->moduli);
     arena_dispose(&c->arena);

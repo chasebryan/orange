@@ -255,6 +255,16 @@ def main() -> int:
             522,
             {"charge_small", "charge_huge"},
         )
+        # Measured with `orangec eval --stats`. Each pin is the module total
+        # and one step under the named spec.
+        one_under("products", FIXTURES / "s3s" / "valid-quadratic-pairs.or", 151, {"products"})
+        one_under(
+            "matrices",
+            FIXTURES / "s3s" / "valid-matrices.or",
+            204,
+            {"replaced", "outer_join"},
+        )
+        one_under("sum", FIXTURES / "s3s" / "valid-parameters.or", 183, {"sum"})
 
         # The loops cost 1048576 steps and `~` is one more. The default budget
         # stops on that extra step and does not record it.
