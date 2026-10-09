@@ -1419,7 +1419,7 @@ No translation or alteration of the quoted sentence is involved.
 
 <https://www.csee.umbc.edu/courses/471/papers/turing.pdf>
 
-<https://doi.org/10.1093/mind/LIX.236.433>
+doi:10.1093/mind/LIX.236.433
 
 **[S6] Ronald L. Rivest.** “The RC5 Encryption Algorithm,” *Fast Software
 Encryption*, proceedings of the 1994 Leuven workshop, published 1995,
