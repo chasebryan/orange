@@ -188,6 +188,53 @@ INVALID = [
 RANK2_REASON = "rank-2 arrays: nested-array slice"
 RANK2 = [
     (
+        "s3p/rank2-id.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:14
+  |
+6 |   spec id(a: Mat) -> Mat {{ a }}
+  |              ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:22
+  |
+6 |   spec id(a: Mat) -> Mat {{ a }}
+  |                      ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:7:16
+  |
+7 |   spec pass(a: Mat) -> Int {{ 0 }}
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-index.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:29
+  |
+6 |   spec row(a: Mat) -> Row {{ a[0] }}
+  |                             ^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-listed.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:21
+  |
+6 |   spec f[K in {{Row, Mat}}](x: K) -> K {{ x }}
+  |                     ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
         "s3p/rank2-nested.or",
         """\
 error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
@@ -220,6 +267,73 @@ error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler
   |
 8 |     x with [1] = (x[1] with [2] = 9)
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    ),
+    (
+        "s3p/rank2-uses.or",
+        """\
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:6:16
+  |
+6 |   type Alias = Mat;
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:7:16
+  |
+7 |   type Pair = (Mat, Int);
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:9:18
+  |
+9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
+  |                  ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:9:28
+  |
+9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
+  |                            ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:10:16
+   |
+10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
+   |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:10:37
+   |
+10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
+   |                                     ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:18
+   |
+11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                  ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:39
+   |
+11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                                       ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> {path}:11:67
+   |
+11 | ... nt {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
+   |                                             ^^^ rank-2 arrays: nested-array slice
   = note: a row holds scalars; a matrix holds rows of the same type
 """,
     ),

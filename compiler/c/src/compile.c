@@ -4535,6 +4535,33 @@ static int adopt_modulus(Compiler *c, const Compiler *owner, uint16_t foreign, u
 static int lookup_call(Compiler *c, Expr *expr, Compiler *target, uint32_t callee, int report, uint32_t caller_func,
                       uint32_t locals, uint32_t *inst_id);
 
+static void note_name_rank(Compiler *c, uint32_t func_index, NameRes res, uint16_t slot, uint32_t abs_index) {
+    int rank = 0;
+    uint32_t inner = 0;
+    if (func_index < c->nfuncs && (res == NAME_PARAM || res == NAME_LOCAL || res == NAME_BLOCK)) {
+        if (res == NAME_BLOCK) {
+            if (abs_index < c->nblock_locals) {
+                rank = c->block_locals[abs_index].rank;
+                inner = c->block_locals[abs_index].inner;
+            }
+        } else if (res == NAME_LOCAL) {
+            const Func *func = &c->funcs[func_index];
+            if ((uint32_t)slot < func->nlocals && func->local0 + slot < c->nlocals) {
+                rank = c->locals[func->local0 + slot].rank;
+                inner = c->locals[func->local0 + slot].inner;
+            }
+        } else {
+            const Func *func = &c->funcs[func_index];
+            if ((uint32_t)slot < func->nparams && func->param0 + slot < c->nparams) {
+                rank = c->params[func->param0 + slot].rank;
+                inner = c->params[func->param0 + slot].inner;
+            }
+        }
+    }
+    c->leaf_rank = rank;
+    c->leaf_inner = inner;
+}
+
 static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_in_scope, TypeKind *type,
                      uint32_t *length, int *silent) {
     const Expr *expr = &c->exprs[index];
@@ -4545,6 +4572,8 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     c->leaf_tup0 = 0;
     c->leaf_tup_n = 0;
     c->leaf_owner = c;
+    c->leaf_rank = 0;
+    c->leaf_inner = 0;
     if (expr->kind == EX_NAME) {
         NameRes res;
         uint16_t slot = 0;
@@ -4580,6 +4609,7 @@ static int base_type(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
                     c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
                 }
             }
+            note_name_rank(c, func_index, res, slot, abs_index);
             return 1;
         }
         return 0;
@@ -5653,6 +5683,8 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
     c->leaf_tup0 = 0;
     c->leaf_tup_n = 0;
     c->leaf_owner = c;
+    c->leaf_rank = 0;
+    c->leaf_inner = 0;
     switch (expr->kind) {
     case EX_LIT:
         return 0;
@@ -5745,6 +5777,7 @@ int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t locals_
                     c->leaf_tup_n = c->locals[c->funcs[func_index].local0 + slot].tup_n;
                 }
             }
+            note_name_rank(c, func_index, res, slot, abs_index);
             return 1;
         }
         if (span_is(c, expr->name_start, expr->name_end, "true") ||
@@ -8118,6 +8151,10 @@ static int check_slice(Compiler *c, uint32_t index, TypeKind expected, uint32_t 
     int silent = 0;
     int state = probe_unfitted(c, expr->left, func_index, locals_in_scope, &base_kind, &base_len, &leaf, &silent);
     uint16_t base_mod = c->leaf_mod;
+    if (state == 1 && c->leaf_rank >= 2) {
+        report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+        return 1;
+    }
     uint32_t tup0 = c->leaf_tup0;
     uint16_t tup_n = c->leaf_tup_n;
     const Compiler *owner = c->leaf_owner == NULL ? c : c->leaf_owner;
@@ -8903,6 +8940,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
         }
+        /* Rank-2 use guard. Indexing must not treat a matrix as a row of scalars. */
+        if (c->leaf_rank >= 2) {
+            report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+            return 1;
+        }
         if (base_len == 0) {
             return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);
         }
@@ -9534,6 +9576,18 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t leaf = index;
         int silent = 0;
         int state;
+        if (expr->conv_site < c->nsites && c->sites[expr->conv_site].rank >= 2) {
+            TypeSite *site = &c->sites[expr->conv_site];
+            uint16_t saved_mod;
+            if (!site->reported) {
+                saved_mod = c->expect_mod;
+                c->expect_mod = site->mod_index;
+                report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+                c->expect_mod = saved_mod;
+                site->reported = 1;
+            }
+            return 1;
+        }
         if (expr->conv_order != 0) {
             return check_packing(c, index, expected, expected_len, func_index, locals_in_scope);
         }
@@ -9717,6 +9771,11 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
                 return 1;
             }
             return check_expr(c, expr->left, TY_INT, 0, func_index, locals_in_scope);
+        }
+        /* Rank-2 use guard. A computed index of a matrix is not a scalar load. */
+        if (c->leaf_rank >= 2) {
+            report_matrix(c, expr->start, expr->end, base_kind, base_len, c->leaf_inner);
+            return 1;
         }
         if (base_len == 0) {
             return finish_scalar_index(c, expr->left, base_kind, func_index, locals_in_scope);

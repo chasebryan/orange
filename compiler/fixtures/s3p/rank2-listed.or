@@ -1,0 +1,7 @@
+// Rust accepts a type parameter that lists a matrix. This slice rejects the use.
+edition 2026;
+module listed {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec f[K in {Row, Mat}](x: K) -> K { x }
+}

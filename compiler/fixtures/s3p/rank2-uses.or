@@ -1,0 +1,12 @@
+// Other rank-2 uses. The defining `type Mat = Row^2` is not one of them.
+edition 2026;
+module uses {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Alias = Mat;
+  type Pair = (Mat, Int);
+
+  spec inline(x: Row^2) -> Row^2 { x }
+  spec kept(a: Mat) -> Int { let x: Mat = a; 0 }
+  spec walked(a: Mat) -> Int { let n: Mat = for i in 0..1 with s: Mat = a { s }; 0 }
+}

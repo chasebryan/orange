@@ -666,6 +666,9 @@ typedef struct Compiler {
     uint32_t leaf_tup0;
     uint16_t leaf_tup_n;
     const struct Compiler *leaf_owner;
+    /* Rank of that leaf. 2 is a matrix; `leaf_inner` is its row length. */
+    int leaf_rank;
+    uint32_t leaf_inner;
     Instance *instances;
     uint32_t ninstances;
     size_t instance_cap;

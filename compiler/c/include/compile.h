@@ -336,6 +336,33 @@ static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, 
     return 1;
 }
 
+/* `type Mat = Row^2` defines a matrix. Every other rank-2 site uses one. */
+static int matrix_defined_here(const Compiler *c, const TypeSite *site, const TypeSite *target) {
+    uint32_t at;
+    uint32_t index;
+    if (c->sites == NULL || site < c->sites || site >= c->sites + c->nsites || !site->wrote_axis || target->rank >= 2) {
+        return 0;
+    }
+    at = (uint32_t)(site - c->sites);
+    for (index = 0; index < c->ntypes; index++) {
+        if (c->types[index].site == at) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A parameter, result, binding, or accumulator is checked with its body.
+   A clean body is rejected later; a body error stays the diagnostic Rust prints. */
+static int matrix_checked_with_body(const TypeSite *site) {
+    const char *role = site->role;
+    if (role == NULL) {
+        return 0;
+    }
+    return strcmp(role, "parameter type") == 0 || strcmp(role, "result type") == 0 ||
+           strcmp(role, "binding type") == 0 || strcmp(role, "accumulator type") == 0;
+}
+
 void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
     uint32_t found = 0;
     TypeSite *target;
@@ -529,6 +556,17 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->inner_len = target->inner_len;
     }
     site->ok = 1;
+    /* Rank-2 use guard. A defining `type` declaration is exempt. Signature and
+       binding sites stay ok so an ill-typed body still reports Rust's error;
+       reject_clean_matrices covers the ones whose bodies check. */
+    if (site->rank >= 2 && !matrix_defined_here(c, site, target) && !matrix_checked_with_body(site)) {
+        uint16_t saved_mod = c->expect_mod;
+        c->expect_mod = site->mod_index;
+        report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+        c->expect_mod = saved_mod;
+        site->ok = 0;
+        site->reported = 1;
+    }
 }
 
 static void publish_site(const Compiler *c, uint32_t site_index, TypeKind *kind, uint32_t *length, int *ok,
@@ -1303,6 +1341,58 @@ static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) 
     return 0;
 }
 
+static void emit_matrix_site(Compiler *c, TypeSite *site) {
+    uint16_t saved_mod;
+    if (site->reported || site->rank < 2) {
+        return;
+    }
+    saved_mod = c->expect_mod;
+    c->expect_mod = site->mod_index;
+    report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+    c->expect_mod = saved_mod;
+    site->reported = 1;
+}
+
+/* Rank-2 use guard for a function whose body checked. Removing this accepts
+   `id` and `pass`, which Rust evaluates and this slice must not. */
+static void reject_clean_matrices(Compiler *c, Func *func, uint32_t func_index) {
+    uint16_t slot;
+    uint32_t index;
+    if (func->result_rank >= 2 && func->result_site < c->nsites) {
+        emit_matrix_site(c, &c->sites[func->result_site]);
+    }
+    for (slot = 0; slot < func->nparams; slot++) {
+        Param *param = &c->params[func->param0 + slot];
+        if (param->rank >= 2 && param->site < c->nsites) {
+            emit_matrix_site(c, &c->sites[param->site]);
+        }
+    }
+    for (slot = 0; slot < func->nlocals; slot++) {
+        Local *local = &c->locals[func->local0 + slot];
+        if (local->rank >= 2 && local->site < c->nsites) {
+            emit_matrix_site(c, &c->sites[local->site]);
+        }
+    }
+    for (index = 0; index < c->nblock_locals; index++) {
+        Local *local = &c->block_locals[index];
+        if (local->site >= c->nsites || c->sites[local->site].owner_func != func_index) {
+            continue;
+        }
+        if (local->rank >= 2) {
+            emit_matrix_site(c, &c->sites[local->site]);
+        }
+    }
+    for (index = 0; index < c->nloops; index++) {
+        LoopDesc *loop = &c->loops[index];
+        if (loop->site >= c->nsites || c->sites[loop->site].owner_func != func_index) {
+            continue;
+        }
+        if (loop->acc_rank >= 2) {
+            emit_matrix_site(c, &c->sites[loop->site]);
+        }
+    }
+}
+
 static void analyze(Compiler *c) {
     uint32_t index;
     prepare_types(c);
@@ -1530,6 +1620,9 @@ static void analyze(Compiler *c) {
                 check_ranked(c, func->body, func->result, func->result_len, func->result_mod, func->result_rank,
                              func->result_inner, index, func->nlocals);
             }
+        }
+        if (c->ndiags == diags_before) {
+            reject_clean_matrices(c, func, index);
         }
         if (c->ndiags > diags_before) {
             name_sized_diags(c, func, c->cur_inst, diags_before);

@@ -1,0 +1,8 @@
+// Rust passes a matrix through. This slice rejects the rank-2 parameter and result.
+edition 2026;
+module passed {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec id(a: Mat) -> Mat { a }
+  spec pass(a: Mat) -> Int { 0 }
+}

@@ -424,7 +424,10 @@ static int sites_equal(const Compiler *c, const TypeSite *left, const TypeSite *
     if (left->kind == TY_TUPLE || left->is_tuple || right->kind == TY_TUPLE) {
         return same_tuple(c, left->tup0, left->tup_n, c, right->tup0, right->tup_n);
     }
-    if (site_length(left) != site_length(right)) {
+    if (site_length(left) != site_length(right) || left->rank != right->rank) {
+        return 0;
+    }
+    if (left->rank >= 2 && left->inner_len != right->inner_len) {
         return 0;
     }
     if (left->kind == TY_MOD && left->mod_index != right->mod_index) {
