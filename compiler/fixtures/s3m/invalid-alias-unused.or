@@ -1,0 +1,17 @@
+edition 2026;
+module alias_forms {
+  // Declared and never used. Rust reports each target once.
+  type W1 = Word[1];
+  type W7 = Word[7];
+  type Row5 = Word[1]^5;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Bare = Word;
+  type Both = Word[1]^0;
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type Nested = (Word[1], Int);
+}

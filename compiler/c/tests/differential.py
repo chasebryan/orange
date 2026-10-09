@@ -141,7 +141,12 @@ INVALID = [
     "s3k/invalid-tuple-names.or",
     "s3k/invalid-tuple-syntax.or",
     "s3k/invalid-tuple-types.or",
+    "s3m/invalid-alias-once.or",
+    "s3m/invalid-alias-through.or",
+    "s3m/invalid-alias-tuple.or",
+    "s3m/invalid-alias-twice.or",
     "s3m/invalid-alias-types.or",
+    "s3m/invalid-alias-unused.or",
     "s3l/invalid-bytes-lexical.or",
     "s3l/invalid-bytes-syntax.or",
     "s3l/invalid-bytes-types.or",
@@ -725,6 +730,7 @@ def main() -> int:
     failures += logical_operators(rust_compiler, c_compiler)
     failures += residue_modules(rust_compiler, c_compiler)
     failures += alias_targets(rust_compiler, c_compiler)
+    failures += alias_uses(rust_compiler, c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
@@ -833,6 +839,252 @@ def alias_targets(rust_compiler: Path, c_compiler: Path) -> int:
         finally:
             if path is not None:
                 Path(path).unlink(missing_ok=True)
+    return failures
+
+
+# Codes that reject the type itself. ORC0221 is also raised for fills and
+# byte strings, so a length inside a type is recognized from the source.
+_ALIAS_TYPE_CODES = {"ORC0203", "ORC0204", "ORC0232", "ORC0237"}
+_ALIAS_LENGTH = re.compile(r"\^(?:0(?!\d)|65537|65544|\()")
+_ALIAS_BUILTINS = {"Int", "Bool", "Word", "Mod"}
+_ALIAS_KEYWORDS = {
+    "spec", "module", "edition", "let", "for", "if", "with", "test", "else", "use", "type", "in",
+    "as", "return", "little", "big", "true", "false",
+}
+_ALIAS_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ALIAS_DECL = re.compile(r"^[ \t]*type\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]*);", re.M)
+_ALIAS_PARAM = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s+in\s*\{")
+
+
+def _blank_comments(source: str) -> str:
+    out = []
+    index = 0
+    while index < len(source):
+        if source.startswith("//", index):
+            end = source.find("\n", index)
+            if end < 0:
+                end = len(source)
+            out.append(" " * (end - index))
+            index = end
+            continue
+        out.append(source[index])
+        index += 1
+    return "".join(out)
+
+
+def _match_delim(source: str, index: int, open_c: str, close_c: str):
+    depth = 0
+    while index < len(source):
+        if source[index] == open_c:
+            depth += 1
+        elif source[index] == close_c:
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return None
+
+
+def _parse_alias_type(source: str, index: int):
+    """End index of a type expression at `index`, or None."""
+    index = _skip_space(source, index)
+    if index >= len(source):
+        return None
+    if source[index] == "(":
+        end = _match_delim(source, index, "(", ")")
+        if end is None:
+            return None
+        inner = index + 1
+        saw = False
+        while True:
+            inner = _skip_space(source, inner)
+            if inner < len(source) and source[inner] == ")":
+                return end if saw else None
+            nxt = _parse_alias_type(source, inner)
+            if nxt is None or nxt > end:
+                return None
+            saw = True
+            inner = _skip_space(source, nxt)
+            if inner < len(source) and source[inner] == ",":
+                inner += 1
+                continue
+            if inner < len(source) and source[inner] == ")":
+                return end
+            return None
+    match = _ALIAS_IDENT.match(source, index)
+    if match is None or match.group() in _ALIAS_KEYWORDS:
+        return None
+    cursor = match.end()
+    if cursor < len(source) and source[cursor] == "[":
+        end = _match_delim(source, cursor, "[", "]")
+        if end is None:
+            return None
+        cursor = end
+    caret = _skip_space(source, cursor)
+    if caret < len(source) and source[caret] == "^":
+        start = _skip_space(source, caret + 1)
+        if start < len(source) and source[start] == "(":
+            end = _match_delim(source, start, "(", ")")
+            if end is None:
+                return None
+            cursor = end
+        elif start < len(source) and source[start].isdigit():
+            cursor = start + 1
+            if source[start] == "0" and cursor < len(source) and source[cursor] in "xX":
+                cursor += 1
+                hexed = cursor
+                while cursor < len(source) and source[cursor] in "0123456789abcdefABCDEF":
+                    cursor += 1
+                if cursor == hexed:
+                    return None
+            else:
+                while cursor < len(source) and source[cursor].isdigit():
+                    cursor += 1
+        else:
+            length = _ALIAS_IDENT.match(source, start)
+            if length is None or length.group() in _ALIAS_KEYWORDS:
+                return None
+            cursor = length.end()
+    return cursor
+
+
+def _alias_type_exprs(source: str) -> list[str]:
+    found = []
+
+    def add(start: int, end: int) -> None:
+        expr = re.sub(r"\s+", " ", source[start:end].strip())
+        if expr and expr not in found:
+            found.append(expr)
+
+    for match in re.finditer(r"type\s+[A-Za-z_][A-Za-z0-9_]*\s*=\s*", source):
+        end = _parse_alias_type(source, match.end())
+        if end:
+            add(match.end(), end)
+    for match in re.finditer(r"->\s*", source):
+        end = _parse_alias_type(source, match.end())
+        if end:
+            add(match.end(), end)
+    for match in re.finditer(r"(?<![:\w])as\s+(?:little\s+|big\s+)?", source):
+        end = _parse_alias_type(source, match.end())
+        if end:
+            add(match.end(), end)
+    for match in re.finditer(r"(?<!:):(?!:)", source):
+        end = _parse_alias_type(source, match.end())
+        if end:
+            add(match.end(), end)
+    for match in re.finditer(r"\bin\s*\{", source):
+        cursor = match.end()
+        while True:
+            cursor = _skip_space(source, cursor)
+            if cursor < len(source) and source[cursor] == "}":
+                break
+            end = _parse_alias_type(source, cursor)
+            if end is None:
+                break
+            add(cursor, end)
+            cursor = _skip_space(source, end)
+            if cursor < len(source) and source[cursor] == ",":
+                cursor += 1
+                continue
+            break
+    return found
+
+
+def _alias_decls(source: str):
+    return [(match.group(1), match.group(0).strip(), match.group(2)) for match in _ALIAS_DECL.finditer(source)]
+
+
+def _alias_deps(expr: str, decls) -> list[str]:
+    by_name = {name: (line, rhs) for name, line, rhs in decls}
+    wanted = set()
+    stack = [ident for ident in _ALIAS_IDENT.findall(expr) if ident not in _ALIAS_BUILTINS and ident in by_name]
+    while stack:
+        name = stack.pop()
+        if name in wanted:
+            continue
+        wanted.add(name)
+        for ident in _ALIAS_IDENT.findall(by_name[name][1]):
+            if ident not in _ALIAS_BUILTINS and ident in by_name and ident not in wanted:
+                stack.append(ident)
+    return [by_name[name][0] for name, _, _ in decls if name in wanted]
+
+
+def _alias_program(deps: list[str], expr: str) -> str:
+    lines = [line.strip() for line in deps]
+    lines.append(f"type AliasTarget = {expr};")
+    lines.append("spec use_alias(x: AliasTarget) -> AliasTarget { x }")
+    body = "\n".join("  " + line for line in lines)
+    return f"edition 2026;\nmodule aliasuse {{\n{body}\n}}\n"
+
+
+def _alias_must_cover(codes: list[str], source: str) -> bool:
+    found = set(codes)
+    if found & _ALIAS_TYPE_CODES:
+        return True
+    return "ORC0221" in found and _ALIAS_LENGTH.search(source) is not None
+
+
+def alias_uses(rust_compiler: Path, c_compiler: Path) -> int:
+    """Every rejected type in an invalid fixture is also used behind an alias.
+
+    The direct path is the fixture itself, compared in `main`: a silent accept
+    there fails. This path writes `type AliasTarget = <type>;` and a use of
+    `AliasTarget`, then requires Rust's full stderr. A silent accept of the
+    alias fails. Type parameters stay in the fixture; a module-level alias
+    cannot see them. Declared names the type mentions are copied first.
+    """
+    failures = 0
+    seen = {}
+    rejected = 0
+    for relative in INVALID:
+        text = _blank_comments((FIXTURES / relative).read_text(encoding="utf-8"))
+        rust_fixture = run(rust_compiler, ["check", str(FIXTURES / relative)])
+        fixture_codes = codes(rust_fixture.stderr)
+        params = set(_ALIAS_PARAM.findall(text))
+        decls = _alias_decls(text)
+        covered = False
+        for expr in _alias_type_exprs(text):
+            if any(ident in params for ident in _ALIAS_IDENT.findall(expr)):
+                continue
+            source = _alias_program(_alias_deps(expr, decls), expr)
+            if source in seen:
+                if seen[source]:
+                    covered = True
+                continue
+            path = None
+            try:
+                with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                    handle.write(source)
+                    path = handle.name
+                rust = run(rust_compiler, ["check", path])
+                rust_err = rust.stderr.replace(path, "FILE")
+                rejects = rust.returncode != 0
+                seen[source] = rejects
+                if not rejects:
+                    continue
+                covered = True
+                rejected += 1
+                c_result = run(c_compiler, ["check", path])
+                c_err = c_result.stderr.replace(path, "FILE")
+                if c_result.returncode == 0 or rust_err != c_err:
+                    failures += 1
+                    print(f"FAIL alias use {relative}: {expr}")
+                    print(f"  rust {codes(rust_err)} exit {rust.returncode}")
+                    print(f"  c    {codes(c_err)} exit {c_result.returncode}")
+                    if rust_err != c_err:
+                        print("  rust stderr:", rust_err)
+                        print("  c stderr:", c_err)
+            finally:
+                if path is not None:
+                    Path(path).unlink(missing_ok=True)
+        if _alias_must_cover(fixture_codes, text) and not covered:
+            failures += 1
+            print(f"FAIL alias coverage {relative}")
+    if rejected == 0:
+        failures += 1
+        print("FAIL alias uses found no rejected type")
+    elif failures == 0:
+        print(f"ok   alias uses: {rejected} rejected types match Rust")
     return failures
 
 

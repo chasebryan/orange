@@ -9849,8 +9849,8 @@ static int bad_word_width(const Compiler *c, const TypeSite *site, uint32_t *wid
 
 /* `resolve_site` leaves a bad width or length unreported, and a use of that
    alias is then marked reported. Diagnose the declaration itself: one error
-   for the width, the length, or a size name, whether or not the alias is used.
-   A tuple reports each element. No size parameter is in scope here. */
+   for the width, the length, or a size name. A use, a further alias, and a
+   tuple element do not add another error. No size parameter is in scope here. */
 static void report_alias_target(Compiler *c, TypeSite *site) {
     uint16_t index;
     uint32_t width_start = 0;
