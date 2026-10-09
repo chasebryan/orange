@@ -2043,6 +2043,122 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertIn('<code>a|b</code>', rows[5])
             self.assertEqual(len(re.findall(r'<td>', rows[5])), 1)
 
+    def test_indented_fence_after_a_list_item_renders_pre(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   ```\n'
+            '   code\n'
+            '   ```\n'
+            '\n'
+            '1.  later\n'
+            '   ```\n'
+            '   after\n'
+            '   ```\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<pre><code>code</code></pre></li>', article)
+            self.assertRegex(article, r'</ol>\s*<pre><code>\s*after</code></pre>')
+            self.assertIn('<li>later</li>', article)
+            self.assertNotIn('<li>later<pre>', article)
+
+    def test_indented_heading_after_a_list_item_is_a_heading(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   ## Inside\n'
+            '\n'
+            '1.  later\n'
+            '   ## Outside\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<h2 id="inside">Inside</h2></li>', article)
+            self.assertRegex(article, r'</ol>\s*<h2 id="outside">Outside</h2>')
+            self.assertNotIn('<li>later<h2', article)
+
+    def test_indented_blockquote_after_a_list_item_is_a_blockquote(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   > spoken\n'
+            '\n'
+            '1.  later\n'
+            '   > aside\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<blockquote><p>spoken</p></blockquote></li>', article)
+            self.assertRegex(article, r'</ol>\s*<blockquote><p>aside</p></blockquote>')
+            self.assertNotIn('<li>later<blockquote>', article)
+
+    def test_indented_table_after_a_list_item_is_a_table(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   | a | b |\n'
+            '   | --- | --- |\n'
+            '   | 1 | 2 |\n'
+            '\n'
+            '1.  later\n'
+            '   | c | d |\n'
+            '   | --- | --- |\n'
+            '   | 3 | 4 |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<table>', article)
+            self.assertIn('<td>1</td>', article)
+            self.assertRegex(article, r'</ol>\s*<table>')
+            self.assertNotIn('<li>later<table>', article)
+            self.assertIn('<td>3</td>', article)
+
+    def test_plain_indented_line_continues_the_list_item(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   keeps going\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<li>item keeps going</li>', page)
+            self.assertNotIn('<pre>', page)
+
 
 def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
     import json

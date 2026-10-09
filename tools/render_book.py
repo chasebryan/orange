@@ -28,7 +28,19 @@ PART_TITLES = {
 }
 PART_ORDER = ("novice", "journeyman", "master", "original")
 STATUSES = {"draft", "planned", "original"}
-HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+QUOTE_RE = re.compile(r"^ {0,3}>")
+THEMATIC_BREAK_RE = re.compile(
+    r"^ {0,3}(?:(?:\* *\* *\*[ *]*)|(?:- *- *-[- ]*)|(?:_ *_ *_[ _]*))\s*$"
+)
+HTML_BLOCK_RE = re.compile(
+    r"^ {0,3}<(?:!--|\?|!DOCTYPE|/?(?:address|article|aside|base|basefont|blockquote|body|"
+    r"caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
+    r"footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|"
+    r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|"
+    r"tfoot|th|thead|title|tr|track|ul)\b)",
+    re.IGNORECASE,
+)
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
@@ -641,22 +653,22 @@ def body(text: str, source: str, root: Path = ROOT, manuscript: set[str] | None 
                 index += 1
                 continue
             flush()
-            items, index, ordered, start = list_items(lines, index)
+            items, index, ordered, start = list_items(
+                lines, index, source, root, manuscript, heading_counts
+            )
             if ordered:
                 open_tag = "ol" if start == 1 else f'ol start="{start}"'
                 close_tag = "ol"
             else:
                 open_tag = close_tag = "ul"
-            rendered = "".join(
-                f"<li>{inline(item, source, root, manuscript)}</li>" for item in items
-            )
+            rendered = "".join(f"<li>{item}</li>" for item in items)
             blocks.append(f"<{open_tag}>{rendered}</{close_tag}>")
             continue
-        if line.startswith(">"):
+        if QUOTE_RE.match(line):
             flush()
             quoted: list[str] = []
-            while index < len(lines) and lines[index].startswith(">"):
-                quoted.append(re.sub(r"^>\s?", "", lines[index]))
+            while index < len(lines) and QUOTE_RE.match(lines[index]):
+                quoted.append(re.sub(r"^>\s?", "", re.sub(r"^ {0,3}", "", lines[index])))
                 index += 1
             blocks.append(
                 f"<blockquote><p>{inline(' '.join(quoted), source, root, manuscript)}</p></blockquote>"
@@ -780,7 +792,14 @@ def _ordered_list_interrupts(start: int) -> bool:
     return start == 1
 
 
-def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool, int]:
+def list_items(
+    lines: list[str],
+    index: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[list[str], int, bool, int]:
     start_number = _ordered_start(lines[index])
     ordered = start_number is not None
     start = 1 if start_number is None else start_number
@@ -795,31 +814,294 @@ def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool, int]
                 break
             index = nxt
             continue
-        parts = [re.sub(pattern, "", lines[index]).strip()]
+        content_column = _content_column(lines[index])
+        rest = re.sub(pattern, "", lines[index]).strip()
+        pieces: list[tuple[str, str]] = [("text", rest)] if rest else []
         index += 1
         while index < len(lines):
-            if _is_list_continuation(lines[index]):
-                parts.append(lines[index].strip())
+            action = _continuation_action(lines, index, content_column)
+            if action == "text":
+                pieces.append(("text", lines[index].strip()))
                 index += 1
                 continue
-            if lines[index].strip():
+            if action == "block":
+                block_html, index = _read_item_block(
+                    lines, index, content_column, source, root, manuscript, heading_counts
+                )
+                pieces.append(("html", block_html))
+                continue
+            if action == "blank":
+                nxt = _next_nonblank(lines, index + 1)
+                if nxt is not None and _continuation_action(lines, nxt, content_column) in {"text", "block"}:
+                    index += 1
+                    continue
                 break
-            nxt = _next_nonblank(lines, index + 1)
-            if nxt is not None and _is_list_continuation(lines[nxt]):
-                index += 1
-                continue
             break
-        items.append(" ".join(part for part in parts if part))
+        items.append(_render_item_html(pieces, source, root, manuscript))
     return items, index, ordered, start
 
 
+def _content_column(line: str) -> int:
+    """Column where this item's block content begins."""
+    match = re.match(r"^( {0,3})([-*+]|\d+[.)])([ \t]+)", line)
+    if match is None:
+        return 0
+    indent, marker, pad = match.group(1), match.group(2), match.group(3)
+    column = len(indent) + len(marker)
+    pad_columns = 0
+    for char in pad:
+        if char == "\t":
+            pad_columns += 4 - ((column + pad_columns) % 4)
+        else:
+            pad_columns += 1
+    if pad_columns > 4:
+        return column + 1
+    return column + pad_columns
+
+
+def _leading_spaces(line: str) -> int:
+    count = 0
+    for char in line:
+        if char != " ":
+            break
+        count += 1
+    return count
+
+
+def _dedent_spaces(line: str, columns: int) -> str:
+    return line[min(_leading_spaces(line), columns):]
+
+
+def _block_kind(lines: list[str], index: int, columns: int) -> str | None:
+    """A fence, heading, quote, table, rule, or HTML block at this container.
+
+    ``columns`` is the list item's content indent. Zero asks whether the raw
+    line would open one of those blocks in the document.
+    """
+    if index >= len(lines):
+        return None
+    raw = lines[index]
+    if columns and _leading_spaces(raw) < columns:
+        return None
+    line = _dedent_spaces(raw, columns)
+    fence = FENCE_RE.match(line)
+    if fence and not (fence.group(1)[0] == "`" and "`" in fence.group(2)):
+        return "fence"
+    if HEADING_RE.match(line):
+        return "heading"
+    if QUOTE_RE.match(line):
+        return "quote"
+    if _dedented_table_start(lines, index, columns):
+        return "table"
+    if THEMATIC_BREAK_RE.match(line):
+        return "rule"
+    if HTML_BLOCK_RE.match(line):
+        return "html"
+    return None
+
+
+def _dedented_table_start(lines: list[str], index: int, columns: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    if columns and _leading_spaces(lines[index]) < columns:
+        return False
+    following = lines[index + 1]
+    if columns and following.strip() and _leading_spaces(following) < columns:
+        return False
+    pair = [_dedent_spaces(lines[index], columns), _dedent_spaces(following, columns)]
+    return is_table_start(pair, 0)
+
+
+def _continuation_action(lines: list[str], index: int, content_column: int) -> str:
+    """How a line after a list marker relates to the current item.
+
+    Plain indented text stays in the item. A block at or past the content
+    column is a child block. A block indented less than that ends the list.
+    """
+    line = lines[index]
+    if not line.strip():
+        return "blank"
+    indent = _leading_spaces(line)
+    if indent >= content_column and _block_kind(lines, index, content_column):
+        return "block"
+    if indent < content_column and _block_kind(lines, index, 0):
+        return "stop"
+    if _is_list_continuation(line):
+        return "text"
+    return "stop"
+
+
 def _is_list_continuation(line: str) -> bool:
-    """An indented line that stays in the current item, not a new marker."""
+    """An indented plain-text line that stays in the current item, not a new marker."""
     if not line or line[0] not in " \t" or not line.strip():
         return False
     if re.match(r"^ {0,3}([-*+]|\d+[.)])[ \t]+", line):
         return False
     return True
+
+
+def _render_item_html(
+    pieces: list[tuple[str, str]],
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> str:
+    rendered: list[str] = []
+    text: list[str] = []
+
+    def flush() -> None:
+        if text:
+            rendered.append(inline(" ".join(text), source, root, manuscript))
+            text.clear()
+
+    for kind, value in pieces:
+        if kind == "text":
+            if value:
+                text.append(value)
+            continue
+        flush()
+        rendered.append(value)
+    flush()
+    return "".join(rendered)
+
+
+def _read_item_block(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[str, int]:
+    kind = _block_kind(lines, index, columns)
+    if kind == "fence":
+        return _read_indented_fence(lines, index, columns, source)
+    if kind == "heading":
+        return _read_indented_heading(lines, index, columns, source, root, manuscript, heading_counts)
+    if kind == "quote":
+        return _read_indented_quote(lines, index, columns, source, root, manuscript)
+    if kind == "table":
+        return _read_indented_table(lines, index, columns, source, root, manuscript)
+    if kind == "rule":
+        return "<hr>", index + 1
+    return _read_indented_html(lines, index, columns, source, root, manuscript)
+
+
+def _read_indented_fence(lines: list[str], index: int, columns: int, source: str) -> tuple[str, int]:
+    opening = _dedent_spaces(lines[index], columns)
+    fence = FENCE_RE.match(opening)
+    if fence is None:
+        raise ValueError(f"{source}: expected a code fence")
+    marker, length = fence.group(1)[0], len(fence.group(1))
+    code: list[str] = []
+    index += 1
+    closed = False
+    while index < len(lines):
+        if _leading_spaces(lines[index]) < columns and lines[index].strip():
+            break
+        current = _dedent_spaces(lines[index], columns)
+        close = FENCE_RE.match(current)
+        if (
+            close
+            and close.group(1)[0] == marker
+            and len(close.group(1)) >= length
+            and not close.group(2).strip()
+        ):
+            closed = True
+            break
+        code.append(current)
+        index += 1
+    if not closed:
+        raise ValueError(f"{source}: unclosed code fence")
+    return f"<pre><code>{html.escape(chr(10).join(code))}</code></pre>", index + 1
+
+
+def _read_indented_heading(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[str, int]:
+    heading = HEADING_RE.match(_dedent_spaces(lines[index], columns))
+    if heading is None:
+        raise ValueError(f"{source}: expected a heading")
+    level = len(heading.group(1))
+    title = heading.group(2).strip()
+    anchor = heading_anchor(title)
+    count = heading_counts.get(anchor, 0)
+    heading_counts[anchor] = count + 1
+    ident = anchor if count == 0 else f"{anchor}-{count}"
+    html_heading = (
+        f'<h{level} id="{html.escape(ident, quote=True)}">'
+        f"{inline(title, source, root, manuscript)}</h{level}>"
+    )
+    return html_heading, index + 1
+
+
+def _read_indented_quote(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    quoted: list[str] = []
+    while index < len(lines):
+        raw = lines[index]
+        if columns and raw.strip() and _leading_spaces(raw) < columns:
+            break
+        line = _dedent_spaces(raw, columns)
+        if not QUOTE_RE.match(line):
+            break
+        quoted.append(re.sub(r"^>\s?", "", re.sub(r"^ {0,3}", "", line)))
+        index += 1
+    body_html = inline(" ".join(quoted), source, root, manuscript)
+    return f"<blockquote><p>{body_html}</p></blockquote>", index
+
+
+def _read_indented_table(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    dedented: list[str] = []
+    while index < len(lines):
+        raw = lines[index]
+        if columns and raw.strip() and _leading_spaces(raw) < columns:
+            break
+        line = _dedent_spaces(raw, columns)
+        if not line.lstrip().startswith("|"):
+            break
+        dedented.append(line)
+        index += 1
+    rows, _consumed = table_rows(dedented, 0)
+    return render_table(rows, source, root, manuscript), index
+
+
+def _read_indented_html(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    chunk: list[str] = []
+    while index < len(lines) and lines[index].strip():
+        raw = lines[index]
+        if columns and _leading_spaces(raw) < columns:
+            break
+        chunk.append(_dedent_spaces(raw, columns).strip())
+        index += 1
+    return f"<p>{inline(' '.join(chunk), source, root, manuscript)}</p>", index
 
 
 def _next_nonblank(lines: list[str], index: int) -> int | None:
