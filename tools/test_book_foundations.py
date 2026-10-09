@@ -1470,6 +1470,9 @@ class ManuscriptManifest(unittest.TestCase):
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
     def test_malformed_chapters_fail(self):
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
         from render_book import require_well_formed
         source = ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md'
         samples = (
@@ -1483,6 +1486,9 @@ class ManuscriptManifest(unittest.TestCase):
 
     def test_dead_links_fail(self):
         import tempfile
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
         from render_book import source_link_errors, written_href_errors
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1519,6 +1525,9 @@ class ManuscriptManifest(unittest.TestCase):
 
     def test_hollow_output_fails(self):
         import tempfile
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
         from render_book import require_complete_output
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
