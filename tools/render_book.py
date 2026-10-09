@@ -268,15 +268,42 @@ def relative_link_problem(
 
 
 def book_output(root: Path) -> Path:
-    """Return the only directory the renderer may write: ``<root>/build/book``."""
+    """Return the only directory the renderer may write: ``<root>/build/book``.
+
+    Refuse a symlink at ``build``, ``build/book``, or any component between
+    the repository root and that directory. Each component is checked with
+    ``is_symlink()``; the decision does not follow links.
+    """
     root = root.resolve()
-    output = (root / "build" / "book").resolve()
-    output.relative_to(root)
-    if os.path.commonpath((os.fspath(output), os.fspath(root))) != os.fspath(root):
-        raise ValueError("rendered book must stay inside the repository")
-    if output != (root / "build" / "book").resolve():
+    current = root
+    for part in ("build", "book"):
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"rendered book path is a symlink: {part}")
+    output = root / "build" / "book"
+    if output != current or output.parent != root / "build" or output.parent.parent != root:
         raise ValueError("rendered book must stay in build/book")
     return output
+
+
+def remove_rendered_book(root: Path, output: Path) -> None:
+    """Delete a previous render only when it is a real directory under ``root/build``."""
+    build = root / "build"
+    for candidate in (build, output):
+        if candidate.is_symlink():
+            raise ValueError("rendered book path is a symlink")
+    if not output.exists():
+        return
+    if (
+        output.is_symlink()
+        or build.is_symlink()
+        or not build.is_dir()
+        or not output.is_dir()
+        or output.parent != build
+        or build.parent != root
+    ):
+        raise ValueError("rendered book must stay in build/book")
+    shutil.rmtree(output)
 
 
 def within_output(output: Path, relative_path: str) -> Path:
@@ -295,8 +322,7 @@ def render(root: Path = ROOT) -> Path:
     """Write the rendered book under ``<root>/build/book`` and return that directory."""
     root = root.resolve()
     output = book_output(root)
-    if output.exists():
-        shutil.rmtree(output)
+    remove_rendered_book(root, output)
     output.mkdir(parents=True)
     manifest = load_manifest(root)
     sources = manuscript_files(manifest)

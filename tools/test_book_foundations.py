@@ -1539,6 +1539,132 @@ class ManuscriptManifest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 require_complete_output(output, ['docs/chapter.html'])
 
+    def test_symlink_output_refuses_and_keeps_the_canary(self):
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+
+        script = ROOT / 'tools' / 'render_book.py'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            notes = root / 'notes'
+            notes.mkdir()
+            canary = notes / 'canary'
+            canary.write_text('canary', encoding='utf-8')
+            (root / 'build').mkdir()
+            (root / 'build' / 'book').symlink_to('../notes')
+            tools = root / 'tools'
+            tools.mkdir()
+            shutil.copy(script, tools / 'render_book.py')
+            completed = subprocess.run(
+                [
+                    sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+                    '-W', 'error::ResourceWarning', 'tools/render_book.py',
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
+            self.assertTrue((root / 'build' / 'book').is_symlink())
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / 'docs'
+            docs.mkdir()
+            marker = docs / 'kept.md'
+            marker.write_text('keep', encoding='utf-8')
+            (root / 'build').mkdir()
+            (root / 'build' / 'book').symlink_to('../docs')
+            tools = root / 'tools'
+            tools.mkdir()
+            shutil.copy(script, tools / 'render_book.py')
+            completed = subprocess.run(
+                [
+                    sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+                    '-W', 'error::ResourceWarning', 'tools/render_book.py',
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(marker.read_text(encoding='utf-8'), 'keep')
+            self.assertTrue(docs.is_dir())
+            self.assertFalse(docs.is_symlink())
+
+    def test_render_rejects_malformed_dead_and_hollow_manuscripts(self):
+        import json
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+
+        def run_case(chapter: str) -> subprocess.CompletedProcess[str]:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                book = root / 'docs' / 'book'
+                book.mkdir(parents=True)
+                (root / 'docs' / 'THE_ORANGE_BOOK.md').write_text(
+                    '# The Orange Book\n\nA sentence.\n',
+                    encoding='utf-8',
+                )
+                (book / 'NOVICE_OPENING.md').write_text(chapter, encoding='utf-8')
+                manifest = {
+                    'kind': 'orange-book-manuscript-manifest',
+                    'version': 1,
+                    'status': 'in-progress',
+                    'review': 'Draft.',
+                    'chapters': [
+                        {
+                            'part': 'novice',
+                            'id': 'opening',
+                            'title': 'Opening',
+                            'status': 'draft',
+                            'review_state': 'unreviewed',
+                            'path': 'docs/book/NOVICE_OPENING.md',
+                        },
+                        {
+                            'part': 'original',
+                            'id': 'original',
+                            'title': 'The Orange Book',
+                            'status': 'original',
+                            'path': 'docs/THE_ORANGE_BOOK.md',
+                        },
+                    ],
+                }
+                (book / 'manifest.json').write_text(
+                    json.dumps(manifest),
+                    encoding='utf-8',
+                )
+                tools = root / 'tools'
+                tools.mkdir()
+                shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+                return subprocess.run(
+                    [
+                        sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+                        '-W', 'error::ResourceWarning', 'tools/render_book.py',
+                    ],
+                    cwd=root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+        malformed = run_case('---\ntitle: draft\n---\n# Chapter\n')
+        self.assertNotEqual(malformed.returncode, 0, malformed.stderr)
+        self.assertIn('malformed chapter', malformed.stderr)
+        dead = run_case('# Title\n\n[missing file](missing.md)\n')
+        self.assertNotEqual(dead.returncode, 0, dead.stderr)
+        self.assertIn('missing.md', dead.stderr)
+        hollow = run_case('\n')
+        self.assertNotEqual(hollow.returncode, 0, hollow.stderr)
+        self.assertIn('hollow', hollow.stderr)
+
     def test_renderer_cli_writes_the_index(self):
         import shutil
         import subprocess
