@@ -42,12 +42,18 @@ fn run_with(arguments: &[&str], source: &str) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("start orangec");
-    child
+    // A command can reject its arguments and exit before it reads stdin.
+    // The pipe then closes, and the write reports a broken pipe.
+    let write = child
         .stdin
         .take()
         .expect("piped stdin")
-        .write_all(source.as_bytes())
-        .expect("write the complete listing");
+        .write_all(source.as_bytes());
+    match write {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(error) => panic!("write the complete listing: {error}"),
+    }
     child.wait_with_output().expect("wait for orangec")
 }
 
