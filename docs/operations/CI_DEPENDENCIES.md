@@ -11,7 +11,7 @@ Hosted execution snapshot: 2026-07-11
 
 This document records the Rust compiler toolchain plus third-party Actions,
 downloaded executables, hosted services, and ambient runner tools used by the
-five workflows in `.github/workflows/`. It also separates repeatable validation
+six workflows in `.github/workflows/`. It also separates repeatable validation
 methods from reproducible evidence. The inventory does not by itself satisfy
 every admission or release record required by
 [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md).
@@ -70,10 +70,12 @@ nondeterminism; it is not independently reproduced release evidence.
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
 | `workflow-online-audit.yml` | `main`, scheduled, and manual upstream-metadata observation | Checkout and zizmor | Pulls the digest-pinned zizmor image and intentionally queries current GitHub metadata |
+| `book.yml` | Pull-request validation and every `main` push | Checkout and artifact upload | Renders the in-progress Book with the standard-library renderer and uploads HTML as an artifact; no Pages site and no secret |
 
-Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and
-`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits
-10 minutes; and `scorecard.yml` permits 20 minutes.
+Job deadlines are exact: `book.yml` permits 15 minutes; `ci.yml` permits 30
+minutes; `dependency-review.yml` permits
+10 minutes; `external-links.yml` and `workflow-online-audit.yml` permit 15
+minutes; and `scorecard.yml` permits 20 minutes.
 
 Dependency Review examines runtime, development, and unknown scopes; fails on
 moderate-or-higher vulnerabilities; checks licenses and vulnerabilities; retries
@@ -91,8 +93,9 @@ matching for MD025; and permits only the `img`, `picture`, and `source` HTML ele
 
 `ci.yml` and `dependency-review.yml` supply the two required merge checks bound
 to GitHub Actions by ruleset `18810248`; effective rules still require separate
-readback during drift review. The other three
-workflows are informational. Dependency, link, workflow-metadata, and
+readback during drift review. The other four
+workflows are informational. Book rendering is one of those four: it publishes
+an artifact, not a required merge check. Dependency, link, workflow-metadata, and
 repository-posture results can change while the checked-out repository bytes
 remain fixed.
 
@@ -149,7 +152,7 @@ identities.
 | [`DavidAnson/markdownlint-cli2-action`](https://github.com/DavidAnson/markdownlint-cli2-action/tree/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff), used by required CI | `21c1be1b93ad9ed58fa840aacc3f279cde2a72ff` (`v24.2.0`) | [MIT at the selected revision](https://github.com/DavidAnson/markdownlint-cli2-action/blob/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff/LICENSE); its [exact package manifest](https://github.com/DavidAnson/markdownlint-cli2-action/blob/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff/package.json) names `@actions/core` 3.0.1 and `markdownlint-cli2` 0.23.2 | Bundled JavaScript runs on GitHub-provided Node 24; the repository does not independently hash, archive, or inventory the bundled transitive graph |
 | [`zizmorcore/zizmor-action`](https://github.com/zizmorcore/zizmor-action/tree/cc914d7f3750a2d13d75c7f184a1060aa0e9d482), used by required CI and the online audit | `cc914d7f3750a2d13d75c7f184a1060aa0e9d482` (`v0.6.4`) | [MIT at the selected revision](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/LICENSE); the selected revision's [version map](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/support/versions) supplies the runtime image digest | Composite Bash Action requiring ambient Docker; Orange selects zizmor 1.26.1, whose image digest is recorded in section 5 |
 | [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action/tree/a1d282b36b6f3519aa1f3fc636f609c47dddb294), used by dependency review | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` (`v5.0.0`) | [MIT at the selected revision](https://github.com/actions/dependency-review-action/blob/a1d282b36b6f3519aa1f3fc636f609c47dddb294/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and consumes current GitHub dependency data; neither the bundle closure nor API response is archived here |
-| [`actions/upload-artifact`](https://github.com/actions/upload-artifact/tree/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a), used by Scorecard | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (`v7.0.1`) | [MIT at the selected revision](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the mutable hosted artifact service; service implementation and storage are not reproducible inputs |
+| [`actions/upload-artifact`](https://github.com/actions/upload-artifact/tree/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a), used by Scorecard and the Book | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (`v7.0.1`) | [MIT at the selected revision](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the mutable hosted artifact service; service implementation and storage are not reproducible inputs |
 | [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2), used by Scorecard | `2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2` (`v4.38.2`) | [MIT at the selected revision](https://github.com/github/codeql-action/blob/2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the hosted code-scanning service; neither service behavior nor the transitive bundle is fixed here |
 
 The owner admits Checkout v7.0.1 as a direct replacement for v7.0.0. The need

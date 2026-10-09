@@ -172,6 +172,7 @@ coverage/
 dist/
 out/
 tmp/
+build/
 .env
 .env.*
 !.env.example
@@ -257,6 +258,7 @@ _SC = "scorecard.yml"
 _DR = "dependency-review.yml"
 _EL = "external-links.yml"
 _O = "workflow-online-audit.yml"
+_BOOK = "book.yml"
 _BF = "bounded repository read failed"
 _E = "evidence_refs"
 _FE = "forbidden_events"
@@ -289,6 +291,7 @@ algorithms/x25519/field25519-limbs.or
 .github/dependabot.yml
 .github/dependency-review-config.yml
 .github/pull_request_template.md
+.github/workflows/book.yml
 .github/workflows/ci.yml
 .github/workflows/dependency-review.yml
 .github/workflows/external-links.yml
@@ -380,6 +383,7 @@ compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
+compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
 compiler/crates/orangec/tests/s3h_conformance.rs
@@ -638,6 +642,18 @@ docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/NOVICE_LOGIC.md
+docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
+docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md
+docs/book/NOVICE_N14_READY_FOR_STANDARDS.md
+docs/book/NOVICE_N7_NAME_THE_INTERMEDIATE_STEP.md
+docs/book/NOVICE_N8_READ_AND_REPAIR.md
+docs/book/NOVICE_OPENING.md
+docs/book/NOVICE_PROBABILITY.md
+docs/book/NOVICE_PROGRAMMING.md
+docs/book/NOVICE_PROTECT.md
+docs/book/README.md
+docs/book/manifest.json
 docs/governance/adrs/ADR-0000-template.md
 docs/governance/adrs/README.md
 docs/governance/oeps/OEP-0000-template.md
@@ -707,6 +723,9 @@ tools/d004_run.py
 tools/d004_v08_adapter.py
 tools/d004_v08_run.py
 tools/fs_sandbox.c
+tools/render_book.py
+tools/test_book_foundations.py
+tools/tests/test_book_foundations.py
 tools/tests/test_d004_archive.py
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d004_reviewed_protocol.py
@@ -842,9 +861,9 @@ schemas/gate0/repository-control-snapshot-v0.1.schema.json
 schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
 )
 _WI = set(
-    "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
+    "book.yml ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_WT = {"ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_WT = {_BOOK: 15, "ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
 _IFD = {
     "conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     "oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -937,7 +956,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9e8cebe2b24148468413256a2f7f33afbb0078061b4663a49357b098a64c9270"
+_PHD = "0fd377eae4d98b470fa9c8e310832f3890e69793cbd295ebfdcba7883fdfe3dc"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1253,9 +1272,10 @@ _LM = {
 _WM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
-            "Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and\n"
-            "`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits\n"
-            "10 minutes; and `scorecard.yml` permits 20 minutes."
+            "Job deadlines are exact: `book.yml` permits 15 minutes; `ci.yml` permits 30\n"
+            "minutes; `dependency-review.yml` permits\n"
+            "10 minutes; `external-links.yml` and `workflow-online-audit.yml` permit 15\n"
+            "minutes; and `scorecard.yml` permits 20 minutes."
         ): tuple(_WT[value] for value in sorted(_WT)),
     },
 }
@@ -4784,7 +4804,8 @@ class FoundationValidator:
                     block_text,
                 ):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
-                q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
+                extra = { _SC: "\n      security-events: write" }.get(n, "")
+                q = "    permissions:\n      contents: read" + extra
                 if f"{q}\n    steps:" not in block_text:
                     self.add("workflow.job_permissions", path, f"job {job_name} permission drift")
             jobs = workflow_jobs(lines)
@@ -4837,17 +4858,18 @@ class FoundationValidator:
             _SC: f'{push}\n  schedule:\n    - cron: "41 5 * * 6"',
             _EL: f'{push}\n  schedule:\n    - cron: "23 4 * * 1"{dispatch}',
             _O: f'{push}\n  schedule:\n    - cron: "17 6 * * 3"{dispatch}',
+            _BOOK: f"{pull}\n{push}",
         }
         if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(n):
             self.add("workflow.event_contract", path, "workflow triggers must match their reviewed contract")
         defaults = tuple(top_level_block(text.splitlines(), "defaults"))
         reviewed_defaults = (
             ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
-            if n in {"ci.yml", _EL} else ()
+            if n in {"ci.yml", _EL, _BOOK} else ()
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
-        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata"}.get(n)
+        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata", _BOOK: "Orange Book / render"}.get(n)
         if required_name and f"name: {required_name.split(' /')[0]}" not in text.splitlines()[:1]:
             self.add("workflow.name_contract", path, "workflow name drift")
         if required_name and f"    name: {required_name}" not in text.splitlines():
@@ -4879,6 +4901,15 @@ class FoundationValidator:
             ),
             _EL: ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
             _O: ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
+            _BOOK: (
+                "render",
+                (
+                    "Checkout",
+                    "Validate the manuscript",
+                    "Render the manuscript",
+                    "Upload the rendered book",
+                ),
+            ),
         }
         if n in expected_steps:
             job_name, names = expected_steps[n]
@@ -5056,6 +5087,25 @@ class FoundationValidator:
           version: "1.26.1"'''
             if block != expected:
                 self.add("workflow.online_audit_contract", path, f"{job_name}/Audit workflow source and upstream metadata must match its reviewed online-audit contract")
+        elif n == _BOOK:
+            commands = {
+                "Validate the manuscript": "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/test_book_foundations.py",
+                "Render the manuscript": "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/render_book.py",
+            }
+            for step_name, command in commands.items():
+                expected = f"      - name: {step_name}\n        {command}"
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.book_contract", path, f"{job_name}/{step_name} must match its reviewed manuscript command")
+            upload = yaml_without_comments("\n".join(steps.get("Upload the rendered book", [])))
+            expected_upload = """      - name: Upload the rendered book
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: orange-book
+          path: build/book
+          retention-days: 14"""
+            if upload != expected_upload:
+                self.add("workflow.book_contract", path, f"{job_name}/Upload the rendered book must match its reviewed artifact contract")
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"

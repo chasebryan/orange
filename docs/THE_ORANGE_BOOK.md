@@ -2547,7 +2547,7 @@ read once, however many modules use it. That is a rule of the command line,
 not of the language. A program is a root module and the modules it reaches
 among those supplied with it, and another host may supply them another way.
 
-The [module fixtures](../compiler/fixtures/s3h/) write SHA-256, HMAC, and HKDF
+The [module fixtures](../compiler/fixtures/s3h/valid-vectors.or) write SHA-256, HMAC, and HKDF
 as three files. The program that uses them holds four modules, `hkdf` using
 `hmac` and `hmac` using `sha256`, and `orangec eval` prints only the root's
 values: the SHA-256 digest of "abc" from FIPS 180-4, test cases 1 and 2 of RFC
@@ -2679,9 +2679,9 @@ error[ORC0215]: `<` is not defined for `Mod[(1 << 255) - 19]`
   = note: residues are compared with `==` and `!=`; they have no order, so compare least residues, such as `(x as Int) < (y as Int)`
 ```
 
-The [modular fixtures](../compiler/fixtures/s3i/) write X25519 over `F` with
+The [modular fixtures](../compiler/fixtures/s3i/valid-x25519.or) write X25519 over `F` with
 no `%` anywhere and reproduce the first test vector of RFC 7748 section 5.2,
-keep Poly1305's accumulator in `Mod[(1 << 130) - 5]` and reproduce the tag of
+keep [Poly1305](../compiler/fixtures/s3i/valid-poly1305.or)'s accumulator in `Mod[(1 << 130) - 5]` and reproduce the tag of
 RFC 8439 section 2.5.2, and compute constants in the rings their standards
 define: the three above, Ed25519's square root of −1, and a check, made in
 P-256's own field, that its generator lies on its curve:
@@ -2749,7 +2749,7 @@ spec compress(hash: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
 The last line of the step is the standard's step 3, read left to right: the
 new a is T1 + T2, the new e is d + T1, and every other variable moves down one
 place. A reviewer comparing this text with FIPS 180-4 compares names with
-names. The [block fixtures](../compiler/fixtures/s3j/) hash the same two
+names. The [block fixtures](../compiler/fixtures/s3j/valid-sha256.or) hash the same two
 messages to the same digests as before:
 
 ```text
@@ -2898,7 +2898,7 @@ tuples::wraps: (Word[64]^4, Word[64]) = ([0x0000000000000000, 0x0000000000000000
 ```
 
 With a pattern for its accumulator, the round of SHA-256 from the previous
-section needs no array at all. The [tuple fixtures](../compiler/fixtures/s3k/)
+section needs no array at all. The [tuple fixtures](../compiler/fixtures/s3k/valid-sha256.or)
 carry a through h themselves:
 
 ```orange
