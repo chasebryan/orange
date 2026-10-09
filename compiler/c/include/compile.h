@@ -640,6 +640,10 @@ static void prepare_types(Compiler *c) {
             decl->installed = 1;
         }
         resolve_site(c, &c->sites[decl->site], 1, index);
+        /* `resolve_site` leaves a bad `Word` unreported so `reject_declared`
+           can underline the width of a direct signature. Diagnose the alias
+           once, at this declaration. A use, a further alias, or a tuple
+           element does not add another error. */
         report_alias_target(c, &c->sites[decl->site]);
     }
     for (index = 0; index < c->nsites; index++) {
