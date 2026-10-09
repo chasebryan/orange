@@ -4619,8 +4619,11 @@ entries or a call that several instances fit, `ORC0211` for a type
 parameter's name used as a value, and `ORC0101` for a malformed list. The
 length slice adds no language code: its limits are the old codes with 65536
 in their messages, a number too wide for the evaluator is the `ORC0301` of
-every exact integer, and `orangec` adds `ORC1016` for a `--spec` name that
-matches no function without parameters. The test slice adds `ORC0242` for a
+every exact integer, and `orangec` adds `ORC1016` for a `--spec` or
+`--function` name that selects nothing, and for an analysis whose selector
+or shape the command cannot take, and `ORC1017` for an
+analysis whose bits, table, or layer the search cannot accept. A step overrun
+during that analysis is still `ORC0301`. The test slice adds `ORC0242` for a
 test's title that is empty, longer than 128 bytes, not printable ASCII,
 holding a backslash, or repeating another's, and it reuses `ORC0101` for a
 test without a quoted title or a body, `ORC0214` for a claim that is not a
@@ -4637,7 +4640,10 @@ each use.
 
 ### The command line
 
-`orangec` has eleven commands:
+`orangec` has twelve commands. `analyze` computes the exact properties of one
+checked function at every input: an S-box or a Boolean function, a linear
+layer with `--linear`, or the trails of a small substitution-permutation
+network with `--layer` and `--rounds`.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
@@ -4648,6 +4654,10 @@ orangec fmt --check <FILE>...
 orangec doc <FILE>
 orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                [--bits <N[,M]> | --linear [--word <W>]]
+                [--layer <MODULE::NAME> --rounds <R>]
+                [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4674,6 +4684,17 @@ orangec schemes [<NAME>...]
 - `replay` validates one program and reference-evaluates one selected Boolean
   function/instance for a typed local witness file; both completed Boolean
   outcomes use status 0.
+- `analyze` reads the modules a program imports the way `replay` does, then
+  computes the exact metrics of one checked S-box or Boolean function, the
+  branch numbers of a linear layer, or the bounded trail weights of a small
+  substitution-permutation network. `--function` and `--instance` select that
+  function, as they do for `replay`. `--bits`, `--linear`, `--word`,
+  `--table`, `--layer`, and `--rounds` belong to `analyze` alone, and
+  `--rounds` is a canonical decimal from 1 through 32. `--steps` and
+  `--stats` apply to `analyze` as well.
+  A clean run is not a proof that a cipher is secure, not a constant-time or
+  side-channel check, and not a verification of the implementation. It
+  reports properties of the one function it was given.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
   `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
@@ -4685,7 +4706,7 @@ orangec schemes [<NAME>...]
   ciphers run on the reference evaluator, which is not constant-time, nothing
   about them is verified, and keys are stored unencrypted.
 
-`check`, `eval`, `test` and `replay` treat each source as the root of a
+`check`, `eval`, `test`, `replay` and `analyze` treat each source as the root of a
 program and read the modules it uses from beside it, as
 [Standards built on standards](#standards-built-on-standards) describes; `lex`,
 `fmt` and `doc` read only the source they are given.
@@ -6986,6 +7007,10 @@ orangec fmt --check <FILE>...
 orangec doc <FILE>
 orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                [--bits <N[,M]> | --linear [--word <W>]]
+                [--layer <MODULE::NAME> --rounds <R>]
+                [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -6999,6 +7024,7 @@ orangec schemes [<NAME>...]
 | `fmt` | Print one formatted source or check sources without changing them |
 | `doc` | Print standalone offline HTML for one parsed source |
 | `replay` | Validate one program and reference-evaluate a Boolean specification for exact typed local arguments |
+| `analyze` | Read imported modules as `replay` does, then compute the exact metrics of one checked S-box or Boolean function, the branch numbers of a linear layer, or the bounded trail weights of a small substitution-permutation network. A clean run reports properties of that one function. It is not a proof the cipher is secure, not a constant-time or side-channel check, and not a verification of the implementation |
 | `test` | Validate one program, then run its root module's tests in source order, printing `test "TITLE" ... ok` or `... FAILED` for each and a count; status 1 when any fails |
 | `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
 | `enc` | Seal one file as `FILE.orange` with its key's scheme |
@@ -7006,19 +7032,24 @@ orangec schemes [<NAME>...]
 | `schemes` | List the built-in schemes or check a scheme program |
 
 Options are `--edition <YEAR>` (only `2026`, at most once), for `eval`,
-`test` and `replay` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
+`test`, `replay` and `analyze` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
 once; default 1,048,576) and `--stats` (report each evaluated function's or
 test's steps and the total on standard error, after the values or the
 report), for `eval` only `--spec <NAME>` (evaluate only this function without
 parameters; up to 64 names), for `fmt` only `--check` (check one through 256
 sources without changing files; otherwise `fmt` requires exactly one source),
-for `replay` `--function <MODULE::NAME>`, `--witness <FILE>` and optional
-`--instance <N[,N...]>` (an exact numeric finite-instance vector), `--scheme <NAME>`
+for `replay` and `analyze` `--function <MODULE::NAME>` and optional
+`--instance <N[,N...]>` (an exact numeric finite-instance vector), for
+`replay` only `--witness <FILE>`, for `analyze` only `--bits <N[,M]>` (the
+low N input bits and M output bits), `--linear` (a linear layer over GF(2)),
+`--word <W>` (the word width of a `--linear` layer, defaulting to the element's width, or to 8), `--table <TABLE>`
+(`values`, `ddt`, `lat`, `bct`, `anf`, or `matrix`), `--layer <MODULE::NAME>`,
+and `--rounds <R>` (a canonical decimal from 1 through 32), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
 UTF-8 source from standard input, once per invocation. For `check`, `eval`,
-`test` and `replay`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
+`test`, `replay` and `analyze`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
 or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
@@ -7033,7 +7064,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0260`–`ORC0261` | Documentation | Documentation resource limit or inconsistent construction |
 | `ORC0270`–`ORC0274` | Witness replay | Noncanonical argument value, type mismatch, decode resource limit, invalid binding or inconsistent replay |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
+| `ORC1001`–`ORC1017` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` or `--function` name that selects nothing, an analysis whose selector or shape the command cannot take, an analysis whose bits, table, or layer the search cannot accept |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
