@@ -1,0 +1,16 @@
+// Two Boolean functions: the majority of three bits, and the bent function
+// x0 x1 + x2 x3 of four bits, whose nonlinearity 6 is the largest any
+// Boolean function of four bits has.
+edition 2026;
+module boolean {
+  spec majority(x: Word[8]) -> Bool {
+    let a: Word[8] = x & 1;
+    let b: Word[8] = (x >> 1) & 1;
+    let c: Word[8] = (x >> 2) & 1;
+    ((a & b) | (a & c) | (b & c)) == 1
+  }
+
+  spec bent(x: Word[8]) -> Bool {
+    (((x & (x >> 1)) ^ ((x >> 2) & (x >> 3))) & 1) == 1
+  }
+}

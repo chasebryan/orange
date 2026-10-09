@@ -17,7 +17,7 @@ AES-GCM is too heavy, and it is a current NIST standard: the first
 lightweight authenticated cipher NIST has standardized. This entry writes
 the permutation, Ascon-AEAD128 encryption and decryption, and Ascon-Hash256
 in Orange, and reproduces fourteen entries of the designers' known-answer
-files together with one decryption and one rejected tag.
+files together with two decryptions and one rejected tag.
 
 ## Analysis
 
@@ -31,10 +31,12 @@ to each of the 64 columns of the state, which the standard writes as a
 short bitsliced sequence of xor, and and not on the five words; and the
 linear diffusion layer p_L replaces each word S_i by
 S_i xor (S_i >>> r1) xor (S_i >>> r2) with the rotation pairs (19, 28),
-(61, 39), (1, 6), (10, 17) and (7, 41). The round constants are
-c_i = ((0xf - i) << 4) | i; the standard lists sixteen of them so that up
-to sixteen rounds are defined, and Ascon-p[12] and Ascon-p[8] use the last
-twelve and the last eight.
+(61, 39), (1, 6), (10, 17) and (7, 41). The standard's table of round
+constants lists sixteen so that up to sixteen rounds are defined, and
+Ascon-p[12] and Ascon-p[8] use its last twelve and last eight. This entry
+numbers the twelve it uses c_0 through c_11, its own numbering rather than
+the table's: they are 0xf0, 0xe1, ... 0x4b, c_i = ((0xf - i) << 4) | i,
+and `ascon_p[rnd]` is written for rnd from 1 through 12 only.
 
 Ascon-AEAD128 (section 4) is a duplex construction over that permutation
 with a 128-bit rate (S0 and S1) and a 192-bit capacity. Initialization
@@ -53,22 +55,32 @@ by zeros, Ascon-p[12], 64-bit blocks of the padded message absorbed into
 S0 with Ascon-p[12] after each, and four 64-bit words of S0 squeezed out
 with Ascon-p[12] between them.
 
+The permutation is the module `permutation` (`permutation.or`), which both
+algorithms read with `use permutation;`. The state is `Word[64]^5` in all
+three files, named `State` in each, since a type name does not cross
+modules. Ascon-p[rnd] is one spec with the round number as a size,
+`ascon_p[rnd]`, called as `ascon_p[12]` and `ascon_p[8]`. Byte strings
+(key, nonce, associated data, plaintext, ciphertext, tag, message, digest)
+are `Word[8]^n` whose length is their type.
+
 | Standard section | Orange spec |
 | --- | --- |
-| 2, bytes to words (little-endian) | `load_le64`, `le_bytes64` |
-| 2, padding with a 1 bit and zeros | `pad`, `blocks` |
-| 3.1, p_C and the round constants | `constant_addition`, `round_constants` |
-| 3.2, p_S, the bitsliced S-box | `substitution_layer` |
-| 3.3, p_L, the rotation pairs | `linear_diffusion_layer` |
-| 3, Ascon-p[12] and Ascon-p[8] | `round`, `ascon_p12`, `ascon_p8` |
+| Appendix A.1, bytes to words (little-endian) | `as little Word[64]^2` and `as little Word[8]^16` in `add_to_rate`, `rate`, `initialization` and `finalization`; `as little` in `hash` |
+| 2, padding with a 1 bit and zeros | `padding[len]` and `pad[len]` (`ascon.or`, 16-byte rate); `padding[len]` (`ascon-hash256.or`, 8-byte rate) |
+| 3, the state | `State` (`Word[64]^5`) |
+| 3.2, p_C and the round constants | `constant_addition`, `round_constants` (`permutation.or`) |
+| 3.3, p_S, the bitsliced S-box | `substitution_layer` (`permutation.or`) |
+| 3.4, p_L, the rotation pairs | `linear_diffusion_layer` (`permutation.or`) |
+| 3, Ascon-p[rnd] | `round`, `ascon_p[rnd]` (`permutation.or`) |
 | 4, the initial value | `iv` |
+| 4, the rate S_r | `add_to_rate`, `rate` |
 | 4, initialization | `initialization` |
-| 4, associated data and domain separation | `process_associated_data` |
-| 4, plaintext | `process_plaintext`, `plaintext_block`, `ciphertext_bytes` |
+| 4, associated data and domain separation | `associated_data[b]`, `domain_separation` |
+| 4, plaintext | `plaintext[b]` |
 | 4, finalization and the tag | `finalization` |
-| 4, Algorithm 1, encryption | `ascon_aead128_encrypt`, `ciphertext_and_tag` |
-| 4, Algorithm 2, decryption | `plaintext_bytes`, `keystream_block`, `ascon_aead128_verify`, `ascon_aead128_decrypt` |
-| 5, Algorithm 3, Ascon-Hash256 | `ascon_hash256`, `squeeze` (in `ascon-hash256.or`) |
+| 4, Algorithm 3, encryption | `encrypt[A, len]`, `encrypt_empty_a[len]`, `encrypt_empty_p[A]`, `encrypt_empty` |
+| 4, Algorithm 4, decryption | `ciphertext[b]`, `plaintext_bytes[A, len]`, `verify[A, len]`, `decrypt[A, len]` |
+| 5, Algorithm 5, Ascon-Hash256 | `iv`, `hash[b]`, `hash256[len]` (`ascon-hash256.or`) |
 
 Two conventions of SP 800-232 differ from the submission and decide every
 byte of the vectors. Bytes are loaded into a word little-endian, so the
@@ -97,17 +109,18 @@ inner state during processing does not by itself give the key or let an
 adversary forge freely. The standard claims 128 bits of security for
 confidentiality and integrity in the nonce-respecting setting, with a 128-bit
 key, a 128-bit nonce and a 128-bit tag, under a bound on the data processed
-under one key (the standard's stated limit, 2^54 bytes, was not checked from
-this machine). The claim has two caveats a reader should keep. First, the
+under one key (the standard's limit, 2^54 bytes, is requirement R6 of its
+section 4.3). The claim has two caveats a reader should keep. First, the
 nonce must never repeat under one key: with a repeated nonce the keystream of
 the first blocks repeats, and Baudrin, Canteaut and Perrin (ToSC 2022) gave a
 practical cube attack in the nonce-misuse setting on the 6-round
 permutation that Ascon-128 applies between data blocks (Ascon-AEAD128
-applies 8); the designers make no claim under nonce misuse. Second, decryption
+applies 8); the standard's confidentiality claim does not cover nonce
+misuse. Second, decryption
 produces plaintext blocks before the tag can be checked, and Ascon makes no
 claim when unverified plaintext is released; the standard requires an
-implementation to withhold it, which the Orange `ascon_aead128_decrypt`
-does by construction.
+implementation to withhold it, which the Orange `decrypt` does by
+construction.
 
 The cryptanalytic record is long and stable. The designers' own
 "Cryptanalysis of Ascon" (Dobraunig, Eichlseder, Mendel and Schläffer,
@@ -149,77 +162,108 @@ Nothing in the permutation depends on data: no branch, table or rotation
 amount varies with the state, and the round is four short specs. The S-box
 is the standard's bitsliced sequence, so a reader sees the five `~a & b`
 terms that make it a chi-like map and the four xors around them rather
-than a 32-entry table; the linear layer is ten rotations written out,
-because a rotation amount must be a literal. `Word[64]^5` carries the state
-through the loops of `ascon_p12` and `ascon_p8`, and the two permutations
-differ only in the loop bounds `0..12` and `4..12` over the same constants.
+than a 32-entry table; the linear layer is the five Sigma functions with
+their ten rotation amounts written out as the standard lists them. The
+round constants are one `hex"..."` row, and `ascon_p[rnd]` runs the loop
+`(12 - rnd)..12` over it, so Ascon-p[12] and Ascon-p[8] are visibly the same
+rounds with different first constants.
 
-The mode is where the language shows. Lengths are values and indices are
-static, so a message of n bytes travels in a 32-byte array with n beside
-it; `pad` places the 0x01 byte by comparing the loop index with n, and the
-block loops run over all three possible blocks and absorb block i when
-i <= n / 16, with `i < n / 16` deciding whether Ascon-p[8] follows. The
-accumulator of the plaintext loop is `Word[64]^11`: the state in five words
-and the three ciphertext blocks in six, because a loop carries one value.
+Byte order is written where the standard fixes it: `as little Word[64]^2`
+turns a 16-byte block, the key or the nonce into two words, the first byte
+least significant; `[iv()] ++ ((k ++ n) as little Word[64]^4)` is
+IV || K || N; and `as little Word[8]^16` turns the rate or the tag words
+back into bytes. The domain separation is the literal
+`0x8000000000000000` on S4, the last bit of the state in that order.
+
+Lengths are sizes. `padding[len]()` is what section 2 appends to a string
+of `len` bytes, the byte 0x01 opening a fill of zeros, and the padded
+string is `x ++ padding[len]()`; the empty string has no array, and its
+padded form is `padding[0]()` alone. The block loops take the padded string
+as `Word[8]^(16 * b)` and slice block i out as `x[16 * i..16 * i + 16]`;
+`i < (b - 1)` decides whether Ascon-p[8] follows. Encryption returns
+C || T as `Word[8]^(len + 16)`: the ciphertext blocks are produced whole,
+and `[..len]` cuts the last one to C~. The standard's |A| > 0 and |P| > 0
+cases become four specs, `encrypt`, `encrypt_empty_a`, `encrypt_empty_p`
+and `encrypt_empty`, because an empty A or P is not a value; each test
+calls the one its lengths need, and the KAT file's PT, AD and CT appear in
+it as hex. The associated data is a type parameter `A` listed at the
+vectors' lengths (1, 7, 8, 16 and 32 bytes) and the plaintext a size from 1
+to 32 bytes, so that `encrypt` has 160 instances rather than 1,024.
+
 Decryption is written as the standard describes it, S_r replaced by the
-ciphertext block, and its last block is handled through the observation
-the standard's Algorithm 2 rests on: after P~ is recovered, the state is
-S_r xor pad(P~), the state encryption reaches, so `ascon_aead128_verify`
-recovers P with `plaintext_bytes` and then recomputes the tag through the
-encryption path. The C || T output puts the tag at byte position n, again
-by comparison. Ascon-Hash256 needs the same devices at rate 8 and carries
-its own copy of the permutation, since a module has no imports.
+ciphertext block, and `ciphertext[b]` yields P from the padded C. The last
+block is cut to |C| mod 16 bytes, a length the slice bounds cannot compute,
+so the state after it is rebuilt through the observation the standard's
+Algorithm 4 rests on: S_r <- C_i is S_r <- S_r xor P_i, and after P~ the
+state is S_r xor pad(P~), the state encryption reaches; `verify` encrypts
+the recovered P and compares the last sixteen bytes with T, whole, with
+`==`. `decrypt` returns P only when `verify` holds.
 
-Measured under `orangec eval`, one round costs about 140 steps, Ascon-p[12]
-about 1,760 and Ascon-p[8] about 1,180. One encryption of the empty message
-with no associated data costs about 13,000 steps, of which the two
-12-round permutations are 3,500 and the padding and output loops the rest;
-32 bytes of each costs about 27,000; a verification about 28,000 and a
-decryption about 31,000. Ascon-Hash256 of 0, 32 and 64 bytes costs about
-16,000, 26,000 and 36,000. The twelve pairs of `ascon.or` use about
-250,000 of the 1,048,576-step budget and the five of `ascon-hash256.or`
-about 120,000; nothing was dropped or moved for budget reasons.
+Ascon-Hash256 reads the same permutation module. Its padding is at the
+8-byte rate, `hash[b]` absorbs b blocks with `as little Word[64]` and
+squeezes four words with a tuple accumulator (the state and the digest
+words), and `hash256[len]` pads a message of 1 to 64 bytes; the empty
+message is `hash(padding[0]())`.
+
+Measured with `orangec test --stats`: one round costs about 140 steps,
+Ascon-p[12] about 1,690 and Ascon-p[8] about 1,130 (including the call and
+the constants). Initialization and finalization cost about 1,720 steps each,
+and each further block of associated data or plaintext about 1,170 to
+1,195. By the per-test lines of `--stats`, the test that encrypts the empty
+message with no associated data (Count 1) costs 3,531 steps, and the one
+that encrypts 32 bytes of each (Count 1089) 9,431. The test of a
+verification costs 17,130, since it recovers P and then encrypts it, and
+the test of a decryption 24,832 for Count 1089 and 14,296 for Count 767,
+the verification and the recovery of P once more. The test of Ascon-Hash256
+costs 8,547 steps for the empty message, about 1,707 more for each further
+8-byte block, and 22,211 for 64 bytes. The thirteen tests of `ascon.or`
+use 125,184 steps and the five of `ascon-hash256.or` 64,947.
 
 ## Dissemination
 
 ### Files
 
-- `ascon.or`: the permutation, Ascon-AEAD128 encryption, verification and
-  decryption, and twelve vector pairs (nine encryptions, one decryption, one
-  verdict and one rejected tag).
-- `ascon-hash256.or`: the permutation again and Ascon-Hash256, with five
-  vector pairs. It is a second file because it is a second algorithm of the
-  standard, not because of the budget; both files would fit in one.
+- `permutation.or`: the module `permutation`, Ascon-p[rnd] of section 3,
+  read by both other files. It carries no vectors of its own.
+- `ascon.or`: Ascon-AEAD128 encryption, verification and decryption, and
+  thirteen tests (nine encryptions, two decryptions, one verdict and one
+  rejected tag).
+- `ascon-hash256.or`: Ascon-Hash256, with five tests. It is a second file
+  because it is a second algorithm of the standard.
 
 ### Running
 
 ```console
-orangec eval algorithms/ascon/ascon.or
-orangec eval algorithms/ascon/ascon-hash256.or
+orangec test algorithms/ascon/ascon.or
+orangec test algorithms/ascon/ascon-hash256.or
 python3 algorithms/verify.py algorithms/ascon
 ```
 
 ### Vectors
 
-| Spec | Source | Case |
+Each row is a `test` block. The AEAD tests are in `ascon.or`, the hash tests
+in `ascon-hash256.or`.
+
+| Test | Source | Case |
 | --- | --- | --- |
-| `kat_count_1` | ascon-c `LWC_AEAD_KAT_128_128.txt`, Count 1 | empty plaintext, empty associated data: the tag alone |
-| `kat_count_2` | same file, Count 2 | empty plaintext, 1 byte of associated data |
-| `kat_count_17` | same file, Count 17 | empty plaintext, 16 bytes of associated data, one whole block |
-| `kat_count_33` | same file, Count 33 | empty plaintext, 32 bytes of associated data, two blocks and a padding block |
-| `kat_count_34` | same file, Count 34 | 1-byte plaintext, empty associated data |
-| `kat_count_273` | same file, Count 273 | 8 bytes of each, the half-block boundary of the reference code |
-| `kat_count_545` | same file, Count 545 | 16 bytes of each, whole blocks |
-| `kat_count_767` | same file, Count 767 | 23-byte plaintext, 7 bytes of associated data, partial blocks |
-| `kat_count_1089` | same file, Count 1089 | 32 bytes of each, the largest entry: C (32 bytes) and T |
-| `kat_count_1089_decrypt` | same file, Count 1089, PT field | decryption of its CT under its Key, Nonce and AD |
-| `kat_count_1089_verify` | same file, Count 1089 | the verdict of Algorithm 2: true |
-| `kat_count_1089_altered_tag_verify` | by definition of Algorithm 2; the Python reference agrees | Count 1089 with the last tag byte 0xaa changed to 0xab: false |
-| `kat_count_1` (hash) | ascon-c `LWC_HASH_KAT_128_256.txt`, Count 1 | Ascon-Hash256 of the empty message |
-| `kat_count_2` (hash) | same file, Count 2 | one byte, 00 |
-| `kat_count_9` (hash) | same file, Count 9 | 8 bytes, one whole block |
-| `kat_count_33` (hash) | same file, Count 33 | 32 bytes, four blocks |
-| `kat_count_65` (hash) | same file, Count 65 | 64 bytes, eight blocks |
+| `LWC_AEAD_KAT_128_128 Count 1: empty P and A` | ascon-c `LWC_AEAD_KAT_128_128.txt`, Count 1 | empty plaintext, empty associated data: the tag alone |
+| `LWC_AEAD_KAT_128_128 Count 2: empty P, 1-byte A` | same file, Count 2 | empty plaintext, 1 byte of associated data |
+| `LWC_AEAD_KAT_128_128 Count 17: empty P, 16-byte A` | same file, Count 17 | empty plaintext, 16 bytes of associated data, one whole block |
+| `LWC_AEAD_KAT_128_128 Count 33: empty P, 32-byte A` | same file, Count 33 | empty plaintext, 32 bytes of associated data, two blocks and a padding block |
+| `LWC_AEAD_KAT_128_128 Count 34: 1-byte P, empty A` | same file, Count 34 | 1-byte plaintext, empty associated data |
+| `LWC_AEAD_KAT_128_128 Count 273: 8-byte P, 8-byte A` | same file, Count 273 | 8 bytes of each, the half-block boundary of the reference code |
+| `LWC_AEAD_KAT_128_128 Count 545: 16-byte P, 16-byte A` | same file, Count 545 | 16 bytes of each, whole blocks |
+| `LWC_AEAD_KAT_128_128 Count 767: 23-byte P, 7-byte A` | same file, Count 767 | 23-byte plaintext, 7 bytes of associated data, partial blocks |
+| `LWC_AEAD_KAT_128_128 Count 1089: 32-byte P, 32-byte A` | same file, Count 1089 | 32 bytes of each, the largest entry: C (32 bytes) and T |
+| `LWC_AEAD_KAT_128_128 Count 767: decryption returns P` | same file, Count 767, PT field | decryption of its CT under its Key, Nonce and AD; the last block is partial (7 bytes) |
+| `LWC_AEAD_KAT_128_128 Count 1089: decryption returns P` | same file, Count 1089, PT field | decryption of its CT under its Key, Nonce and AD |
+| `LWC_AEAD_KAT_128_128 Count 1089: the tag verifies` | same file, Count 1089 | the verdict of Algorithm 4: true |
+| `Derived from Count 1089, last tag byte changed: rejected` | by definition of Algorithm 4; the Python reference agrees | Count 1089 with the last tag byte 0xaa changed to 0xab: false |
+| `LWC_HASH_KAT_128_256 Count 1: the empty message` | ascon-c `LWC_HASH_KAT_128_256.txt`, Count 1 | Ascon-Hash256 of the empty message |
+| `LWC_HASH_KAT_128_256 Count 2: the one-byte message 00` | same file, Count 2 | one byte, 00 |
+| `LWC_HASH_KAT_128_256 Count 9: 8 bytes, one whole block` | same file, Count 9 | 8 bytes, one whole block |
+| `LWC_HASH_KAT_128_256 Count 33: 32 bytes, four blocks` | same file, Count 33 | 32 bytes, four blocks |
+| `LWC_HASH_KAT_128_256 Count 65: 64 bytes, eight blocks` | same file, Count 65 | 64 bytes, eight blocks |
 
 The known-answer files are the designers' own, generated by
 `tests/genkat_aead.c` and `tests/genkat_hash.c` of the ascon-c repository
@@ -251,34 +295,71 @@ the entries above, checked each entry's inputs against the generator's
 pattern and its output against the Python reference, and printed the
 `_expected` literals. No `_expected` value was typed by hand or adjusted.
 The section numbers of SP 800-232 named in the source comments (2 for
-notation and padding, 3.1 through 3.3 for the layers of the permutation,
-4 for Ascon-AEAD128 with Algorithms 1 and 2, 5 for Ascon-Hash256 with
-Algorithm 3) are from the worker's knowledge of the publication, whose
-text was not reachable from this machine.
+notation and padding, Appendix A.1 for loading bytes into words, 3.2
+through 3.4 for the layers of the permutation, 4 for Ascon-AEAD128 with
+Algorithms 3 and 4, 5 for Ascon-Hash256 with Algorithm 5) were checked
+against the published text,
+[SP 800-232](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-232.pdf)
+(final, August 2025), with one exception: the body of Appendix A.1 could not
+be read in the final PDF, so the loading rule is taken from the same
+appendix of the initial public draft of November 2024, and the heading of
+A.1 and its Figure 9 from the final's table of contents.
+
+The entry was then rewritten in the current language. Every expected value
+is carried over byte for byte from the first form, where each was a
+`<name>_expected` spec of byte or Bool literals: the new tests state the
+same bytes as `hex"..."` literals, compared with the old values by a
+script, and the two verdicts as `verify(...)` and `!verify(...)`; no
+vector was dropped. The inputs that the first form passed as
+32-byte and 64-byte arrays with a length beside them (the generator's
+plaintext, associated data and hash message) are now each test's own
+`hex"..."` PT, AD or message, the prefix of the generator's pattern of the
+test's length. The permutation, which the first form carried twice, is now
+one module read by both files, and its constants are unchanged.
+
+One test was added in the rewrite: the decryption of Count 767, whose
+23-byte ciphertext ends in a partial block, a path no other test takes. Its
+inputs are the Count 767 entry's AD, and its CT split into the 23 bytes of
+C and the 16 of T; its expected value is the entry's PT, 20 21 ... 36. Both
+were recomputed with a second plain Python Ascon-AEAD128 written from the
+standard's description in the rewrite's scratch directory (run with the
+scratch `venv`; it is not in the repository, and pycryptodome and
+cryptography have no Ascon). That script reproduces the CT of Counts 1 and
+1089 and the decryption of Count 1089, decrypts the Count 767 CT to that
+PT, and rejects it with the last tag bit flipped.
 
 This entry is a reference evaluation of a specification under `orangec
-eval`. It makes no constant-time, side-channel, performance or certification
+test`. It makes no constant-time, side-channel, performance or certification
 claim, and it is not a corpus entry in the sense of The Orange Book
 chapter 12.
 
 ## Gaps
 
-- Indices must be static and an array's length is a type, so a message
-  length cannot parametrize the array: every plaintext, ciphertext and
-  associated-data input is a 32-byte array with its length beside it (64
-  bytes for the hash), and the padding byte, the number of blocks and the
-  position of the tag in C || T are found by comparing loop indices with the
-  length. The cost is about 2,800 steps per padding and 6,600 per C || T
-  assembly, against 3,500 for the two 12-round permutations. Inputs longer
-  than 32 bytes need the array sizes and the block loops' bounds changed.
-- A loop carries one accumulator, so the plaintext loop carries the state
-  and the ciphertext blocks together in `Word[64]^11` and the hash squeeze
-  the state and the digest words in `Word[64]^9`.
-- A loop's step is one expression without `let`, so the per-block work is a
-  helper spec (`plaintext_block`, `keystream_block`, `squeeze`) called from
-  the loop with the recorded words already in place.
+- No array has zero elements, so the empty string is not a value: an empty
+  associated data or plaintext is a spec of its own (`encrypt_empty_a`,
+  `encrypt_empty_p`, `encrypt_empty`), and the hash of the empty message is
+  `hash(padding[0]())`, the padded form alone. Decryption and verification
+  (`plaintext_bytes`, `verify`, `decrypt`) are written only for associated
+  data and ciphertext that are both non-empty: their variants with an empty
+  A, an empty C, or both are not written, because no vector here needs
+  them.
+- A spec has at most 256 instances, counting every combination of its sizes
+  and types, so `encrypt`, `verify` and `decrypt` cannot take every length
+  of both inputs (32 times 32 would be 1,024): the plaintext and ciphertext
+  are any of 1 to 32 bytes, and the associated data is one of the listed
+  lengths 1, 7, 8, 16 and 32, so that `encrypt`, `plaintext_bytes`, `verify`
+  and `decrypt` have 160 instances each. Another length is one more entry in
+  the list, up to eight lengths (8 times 32 is 256); more lengths, or longer
+  inputs, need a narrower plaintext range. Ascon-Hash256 takes messages of 1
+  to 64 bytes.
+- Slice bounds cannot use `/` or `%`, so the last partial block, |P| mod 16
+  bytes, cannot be sliced out of an input by its length: the block loops run
+  over the whole padded string and the result is cut with `[..len]`, and
+  decryption rebuilds the state after the last block by encrypting the
+  recovered plaintext, which doubles its cost.
+- A spec has one result type and Orange has no value for fail, so `decrypt`
+  returns all zeros when the tag does not verify, and `verify` gives the
+  verdict.
 - Ascon-XOF128 and Ascon-CXOF128 are not written; each is the sponge of
   `ascon-hash256.or` with another initial value, a variable-length squeeze
   and, for CXOF, a customization string absorbed first.
-- The step budget was not reached: about 250,000 and 120,000 steps of
-  1,048,576 in the two files.

@@ -1,0 +1,97 @@
+// SHA-256 of FIPS 180-4, Secure Hash Standard (NIST, August 2015),
+// https://doi.org/10.6028/NIST.FIPS.180-4: the functions of section 4.1.2,
+// the constants of section 4.2.2, the padding and parsing of sections 5.1.1
+// and 5.2.1, the initial hash value of section 5.3.3 and the hash
+// computation of section 6.2, written as the `sha2` entry writes them. It is
+// the hash H of HMAC-SHA-256 and HKDF-SHA-256 in `hmac-hkdf`, whose longest
+// message is 216 bytes (the 64-byte inner pad followed by the 152-byte text
+// of RFC 4231 test case 7); every message here is whole bytes, of 1 through
+// 256 bytes, which is the range written. The module has no tests of its
+// own: the vectors in `hmac-hkdf` run through it.
+edition 2026;
+module sha256 {
+  // Section 4.1.2, equations 4.2 through 4.7.
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  // Section 4.2.2: K{256}, the first 32 bits of the fractional parts of the
+  // cube roots of the first 64 primes, in hex from left to right as the
+  // standard prints them, read as big-endian words.
+  spec round_constants() -> Word[32]^64 {
+    (
+      hex"428a2f98 71374491 b5c0fbcf e9b5dba5 3956c25b 59f111f1 923f82a4 ab1c5ed5" ++
+      hex"d807aa98 12835b01 243185be 550c7dc3 72be5d74 80deb1fe 9bdc06a7 c19bf174" ++
+      hex"e49b69c1 efbe4786 0fc19dc6 240ca1cc 2de92c6f 4a7484aa 5cb0a9dc 76f988da" ++
+      hex"983e5152 a831c66d b00327c8 bf597fc7 c6e00bf3 d5a79147 06ca6351 14292967" ++
+      hex"27b70a85 2e1b2138 4d2c6dfc 53380d13 650a7354 766a0abb 81c2c92e 92722c85" ++
+      hex"a2bfe8a1 a81a664b c24b8b70 c76c51a3 d192e819 d6990624 f40e3585 106aa070" ++
+      hex"19a4c116 1e376c08 2748774c 34b0bcb5 391c0cb3 4ed8aa4a 5b9cca4f 682e6ff3" ++
+      hex"748f82ee 78a5636f 84c87814 8cc70208 90befffa a4506ceb bef9a3f7 c67178f2"
+    ) as big Word[32]^64
+  }
+
+  // Section 5.3.3: H(0), the first 32 bits of the fractional parts of the
+  // square roots of the first eight primes.
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // Section 5.1.1: the bits appended to a message of len bytes, l = 8 len
+  // bits: the bit 1, k zero bits with l + 1 + k = 448 mod 512, and l as a
+  // 64-bit big-endian integer. The message is whole bytes, so the bit 1 and
+  // the first seven zero bits are the byte 0x80 that opens the fill. The
+  // padded message M ++ padding[len]() is 64 ((len + 72) / 64) bytes, the
+  // fewest whole 512-bit blocks that hold the message, the byte 0x80 and the
+  // length.
+  spec padding[len in 1..257]() -> Word[8]^(64 * ((len + 72) / 64) - len) {
+    let l: Int = 8 * len;
+    ([0; (64 * ((len + 72) / 64) - len - 8)] with [0] = 0x80) ++ (l as big Word[8]^8)
+  }
+
+  // Section 6.2.2, step 1: the message schedule. W_0 through W_15 are the
+  // block's words; the zeros after them are placeholders that the
+  // recurrence replaces, W_16 through W_63, in order.
+  spec schedule(m: Word[32]^16) -> Word[32]^64 {
+    for t in 16..64 with w: Word[32]^64 = m ++ [0; 48] {
+      w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+    }
+  }
+
+  // Section 6.2.2, step 3: one round on the working variables a through h,
+  // carried as v = [a, b, c, d, e, f, g, h].
+  spec round(v: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+    [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+  }
+
+  // Section 6.2.2, steps 1 through 4: one block, from H(i-1) to H(i).
+  spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(m);
+    let k: Word[32]^64 = round_constants();
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+    for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+  }
+
+  // Section 6.2.2, "for i = 1 to N", over a padded message of N = n blocks,
+  // each parsed as section 5.2.1 parses it: sixteen big-endian 32-bit
+  // words, M(i)_0 the leftmost. A message of 256 bytes pads to five blocks.
+  spec hash[n in 1..6](h0: Word[32]^8, p: Word[8]^(64 * n)) -> Word[32]^8 {
+    for i in 0..(n) with h: Word[32]^8 = h0 {
+      compress(h, p[64 * i..64 * i + 64] as big Word[32]^16)
+    }
+  }
+
+  // Sections 5.1.1 and 6.2.2: the digest of a message of len bytes is
+  // H(N)_0 || H(N)_1 || ... || H(N)_7 of the padded message.
+  spec digest[len in 1..257](m: Word[8]^len) -> Word[8]^32 {
+    hash(initial_hash(), m ++ padding[len]()) as big Word[8]^32
+  }
+}
