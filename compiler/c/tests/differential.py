@@ -75,6 +75,11 @@ VALID = [
     "s3q/valid-equality.or",
     "s3q/valid-rfc8439-tests.or",
     "s3q/failing-tests.or",
+    "s3r/valid-amounts.or",
+    "s3r/valid-rc6.or",
+    "s3r/valid-sha3.or",
+    "s3r/valid-shift-probes.or",
+    "s3r/valid-zetas.or",
 ]
 # Pepin's test does not finish in the default 1048576 steps. Rust's
 # conformance run uses this budget and prints --stats.
@@ -189,6 +194,11 @@ INVALID = [
     "s3q/invalid-test-unclosed-body.or",
     "s3q/invalid-test-syntax.or",
     "s3q/invalid-tests.or",
+    "s3r/invalid-amount-grouping.or",
+    "s3r/invalid-amounts.or",
+    "s3r/invalid-shift-probes.or",
+    "s3r/invalid-word-width-array.or",
+    "s3r/invalid-word-width-tuple.or",
 ]
 
 # Rust evaluates these matrices. This slice rejects the value and pins C's
@@ -972,6 +982,11 @@ def main() -> int:
     for relative, expect in (
         ("s3q/valid-rfc8439-tests.or", 0),
         ("s3q/failing-tests.or", 1),
+        ("s3r/valid-sha3.or", 0),
+        ("s3r/valid-rc6.or", 0),
+        ("s3r/valid-zetas.or", 0),
+        ("s3r/valid-amounts.or", 0),
+        ("s3r/valid-shift-probes.or", 0),
     ):
         path = str(FIXTURES / relative)
         rust = run(rust_compiler, ["test", path])

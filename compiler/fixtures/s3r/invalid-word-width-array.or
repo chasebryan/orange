@@ -1,0 +1,5 @@
+// S3r rejection: `Word[1]^5` underlines only the width `1`.
+edition 2026;
+module invalid_word_width_array {
+  spec bad(x: Word[1]^5) -> Int { 0 }
+}

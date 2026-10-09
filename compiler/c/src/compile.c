@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "amounts.h"
 #include "orange.h"
 #include "tests.h"
 #include "typeparams.h"
@@ -1353,9 +1354,11 @@ void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t en
     if (end >= start + 4 && memcmp(c->text + start, "Word", 4) == 0) {
         if (end >= start + 5 && c->text[start + 4] == '[') {
             uint32_t width_start = start + 5;
-            uint32_t width_end = end;
-            if (width_end > width_start && c->text[width_end - 1] == ']') {
-                width_end--;
+            uint32_t width_end = width_start;
+            /* The caret of `Word[1]^5` is part of the type span. The width is
+               only the digits between `[` and the matching `]`. */
+            while (width_end < end && c->text[width_end] != ']') {
+                width_end++;
             }
             add_diag(c, "ORC0204", width_start, width_end, "`Word` width must be exactly 8, 16, 32, or 64",
                      "unsupported word width", "word widths do not coerce, truncate, or wrap", 2);
@@ -9756,7 +9759,26 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             snprintf(message, sizeof message, "`%s` on `%s` needs an amount from 0 through %d", shift_name(expr->op),
                      type_text, highest);
             snprintf(label, sizeof label, "a literal amount is from 0 through %d", highest);
-            if (amount->kind != EX_LIT || amount->negative) {
+            if (amount->kind != EX_LIT) {
+                TypeKind leaf_type = TY_NONE;
+                uint32_t leaf_len = 0;
+                uint32_t leaf = 0;
+                int silent = 0;
+                int saved_set = c->fit_set;
+                int saved_report = c->fit_report;
+                int state;
+                TypeKind amount_ty = TY_INT;
+                c->fit_set = 0;
+                c->fit_report = 0;
+                state = find_leaf(c, expr->right, func_index, locals_in_scope, &leaf_type, &leaf_len, &leaf, &silent);
+                c->fit_set = saved_set;
+                c->fit_report = saved_report;
+                if (state == 1 && leaf_len == 0 && type_width(leaf_type) != 0) {
+                    amount_ty = leaf_type;
+                }
+                return check_expr(c, expr->right, amount_ty, 0, func_index, locals_in_scope);
+            }
+            if (amount->negative) {
                 add_diag(c, "ORC0216", amount->start, amount->end, message, label, SHIFT_AMOUNT_NOTE, 2);
                 return 1;
             }

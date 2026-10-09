@@ -1,0 +1,98 @@
+// S3r probes: width edges, amounts past 64 bits, and a Word[64] amount.
+// An amount is reduced as an `Int` or as an unsigned word. It is not
+// truncated to a machine word first, and a shift by the width or more is 0.
+edition 2026;
+module shift_probes {
+  spec shl8(a: Word[8], k: Int) -> Word[8] { a << k }
+  spec shr8(a: Word[8], k: Int) -> Word[8] { a >> k }
+  spec rotl8(a: Word[8], k: Int) -> Word[8] { a <<< k }
+  spec rotr8(a: Word[8], k: Int) -> Word[8] { a >>> k }
+  spec shl32(a: Word[32], k: Int) -> Word[32] { a << k }
+  spec shr32(a: Word[32], k: Int) -> Word[32] { a >> k }
+  spec rotl32(a: Word[32], k: Int) -> Word[32] { a <<< k }
+  spec rotr32(a: Word[32], k: Int) -> Word[32] { a >>> k }
+  spec shl64(a: Word[64], k: Int) -> Word[64] { a << k }
+  spec shr64(a: Word[64], k: Int) -> Word[64] { a >> k }
+  spec rotl64(a: Word[64], k: Int) -> Word[64] { a <<< k }
+  spec rotr64(a: Word[64], k: Int) -> Word[64] { a >>> k }
+
+  spec edge_shl() -> (Word[8]^5, Word[32]^5, Word[64]^5) {
+    (
+      [shl8(0x96, 0), shl8(0x96, 7), shl8(0x96, 8), shl8(0x96, 9), shl8(0x96, 16)],
+      [shl32(0x96, 0), shl32(0x96, 31), shl32(0x96, 32), shl32(0x96, 33), shl32(0x96, 64)],
+      [shl64(0x8000000000000001, 0), shl64(0x8000000000000001, 63), shl64(0x8000000000000001, 64),
+        shl64(0x8000000000000001, 65), shl64(0x8000000000000001, 128)],
+    )
+  }
+
+  spec edge_shr() -> (Word[8]^5, Word[32]^5, Word[64]^5) {
+    (
+      [shr8(0x96, 0), shr8(0x96, 7), shr8(0x96, 8), shr8(0x96, 9), shr8(0x96, 16)],
+      [shr32(0x96, 0), shr32(0x96, 31), shr32(0x96, 32), shr32(0x96, 33), shr32(0x96, 64)],
+      [shr64(0x8000000000000001, 0), shr64(0x8000000000000001, 63), shr64(0x8000000000000001, 64),
+        shr64(0x8000000000000001, 65), shr64(0x8000000000000001, 128)],
+    )
+  }
+
+  spec edge_rotl() -> (Word[8]^5, Word[32]^5, Word[64]^5) {
+    (
+      [rotl8(0x96, 0), rotl8(0x96, 7), rotl8(0x96, 8), rotl8(0x96, 9), rotl8(0x96, 16)],
+      [rotl32(0x96, 0), rotl32(0x96, 31), rotl32(0x96, 32), rotl32(0x96, 33), rotl32(0x96, 64)],
+      [rotl64(0x8000000000000001, 0), rotl64(0x8000000000000001, 63), rotl64(0x8000000000000001, 64),
+        rotl64(0x8000000000000001, 65), rotl64(0x8000000000000001, 128)],
+    )
+  }
+
+  spec edge_rotr() -> (Word[8]^5, Word[32]^5, Word[64]^5) {
+    (
+      [rotr8(0x96, 0), rotr8(0x96, 7), rotr8(0x96, 8), rotr8(0x96, 9), rotr8(0x96, 16)],
+      [rotr32(0x96, 0), rotr32(0x96, 31), rotr32(0x96, 32), rotr32(0x96, 33), rotr32(0x96, 64)],
+      [rotr64(0x8000000000000001, 0), rotr64(0x8000000000000001, 63), rotr64(0x8000000000000001, 64),
+        rotr64(0x8000000000000001, 65), rotr64(0x8000000000000001, 128)],
+    )
+  }
+
+  spec big() -> (Word[8], Word[8], Word[8], Word[8]) {
+    (
+      shl8(0x96, 0x10000000000000000),
+      rotl8(0x96, 0x10000000000000003),
+      shl8(0x96, 0 - 0x10000000000000000),
+      rotl8(0x96, 0 - 0x10000000000000003),
+    )
+  }
+
+  spec wide_byte() -> (Word[8], Word[8], Word[8], Word[8]) {
+    let n: Int = 0xffffffffffffffff;
+    let a: Word[8] = 0x96;
+    let k: Word[64] = n as Word[64];
+    (a << k, a >> k, a <<< k, a >>> k)
+  }
+
+  spec wide_word() -> (Word[64], Word[64], Word[64], Word[64]) {
+    let n: Int = 0xffffffffffffffff;
+    let a: Word[64] = 0x8000000000000001;
+    let k: Word[64] = n as Word[64];
+    (a << k, a >> k, a <<< k, a >>> k)
+  }
+
+  spec charge_small() -> Word[8] { shl8(0x96, 1) }
+  spec charge_huge() -> Word[8] { shl8(0x96, 0x10000000000000000) }
+
+  test "a shift by 2^64 gives 0 and a rotation by 2^64 + 3 turns by 3" {
+    (shl8(0x96, 0x10000000000000000) == 0) && (rotl8(0x96, 0x10000000000000003) == (0x96 <<< 3))
+  }
+
+  test "amounts past 64 bits that are negative still use the low bits" {
+    (shl8(0x96, 0 - 0x10000000000000000) == 0)
+      && (rotl8(0x96, 0 - 0x10000000000000000) == 0x96)
+      && (shr8(0x96, 0 - 0x10000000000000003) == 0)
+      && (rotr8(0x96, 0 - 0x10000000000000003) == rotr8(0x96, 0 - 3))
+  }
+
+  test "a Word[64] amount of all ones shifts a byte to 0 and turns it by 7" {
+    let n: Int = 0xffffffffffffffff;
+    let a: Word[8] = 0x96;
+    let k: Word[64] = n as Word[64];
+    ((a << k) == 0) && ((a >> k) == 0) && ((a <<< k) == (a <<< 7)) && ((a >>> k) == (a >>> 7))
+  }
+}
