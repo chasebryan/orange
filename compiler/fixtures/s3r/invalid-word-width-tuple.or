@@ -1,0 +1,5 @@
+// S3r rejection: each `Word[1]` in a tuple is ORC0204, not one ORC0203.
+edition 2026;
+module invalid_word_width_tuple {
+  spec bad(x: (Word[1]^5, Word[1]^2)) -> Int { 0 }
+}

@@ -560,6 +560,8 @@ compiler/fixtures/s3q/valid-rfc8439-tests.or
 compiler/fixtures/s3r/invalid-amount-grouping.or
 compiler/fixtures/s3r/invalid-amounts.or
 compiler/fixtures/s3r/invalid-shift-probes.or
+compiler/fixtures/s3r/invalid-word-width-array.or
+compiler/fixtures/s3r/invalid-word-width-tuple.or
 compiler/fixtures/s3r/valid-amounts.or
 compiler/fixtures/s3r/valid-rc6.or
 compiler/fixtures/s3r/valid-sha3.or

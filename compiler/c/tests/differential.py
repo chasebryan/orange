@@ -197,6 +197,8 @@ INVALID = [
     "s3r/invalid-amount-grouping.or",
     "s3r/invalid-amounts.or",
     "s3r/invalid-shift-probes.or",
+    "s3r/invalid-word-width-array.or",
+    "s3r/invalid-word-width-tuple.or",
 ]
 
 # Rust evaluates these matrices. This slice rejects the value and pins C's

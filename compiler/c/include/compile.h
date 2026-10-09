@@ -451,6 +451,13 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
     if (!site->named) {
         if (site->ok) {
             site->rank = site->wrote_axis ? 1 : 0;
+        } else if (site->tuple_elem && !site->reported &&
+                   span_is(c, site->ident_start, site->ident_end, "Word")) {
+            /* Each `Word[1]` in a tuple reports its own width. The tuple is
+               not one unsupported type. Other `Word` sites stay for
+               `reject_declared`, which underlines the width alone. */
+            reject_type(c, site->kind, 0, site->start, site->end);
+            site->reported = 1;
         } else if (!span_is(c, site->ident_start, site->ident_end, "Word") && !site->reported) {
             char message[160];
             copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);

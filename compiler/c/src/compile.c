@@ -1354,9 +1354,11 @@ void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t en
     if (end >= start + 4 && memcmp(c->text + start, "Word", 4) == 0) {
         if (end >= start + 5 && c->text[start + 4] == '[') {
             uint32_t width_start = start + 5;
-            uint32_t width_end = end;
-            if (width_end > width_start && c->text[width_end - 1] == ']') {
-                width_end--;
+            uint32_t width_end = width_start;
+            /* The caret of `Word[1]^5` is part of the type span. The width is
+               only the digits between `[` and the matching `]`. */
+            while (width_end < end && c->text[width_end] != ']') {
+                width_end++;
             }
             add_diag(c, "ORC0204", width_start, width_end, "`Word` width must be exactly 8, 16, 32, or 64",
                      "unsupported word width", "word widths do not coerce, truncate, or wrap", 2);
