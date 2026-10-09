@@ -15,6 +15,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MANUSCRIPT = ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md'
 INDEX = ROOT / 'docs' / 'book' / 'README.md'
+# Obviously fake. check-compiler copies the tree with no .git and no GITHUB_SHA.
+TEST_RENDER_SHA = '0' * 39 + '1'
 
 
 def xor_bits(left: str, right: str) -> str:
@@ -1433,6 +1435,7 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertNotIn('S3t', text)
 
     def test_rendered_book_shows_planned_chapters_without_pages(self):
+        import os
         import shutil
         sys_path = str(ROOT / 'tools')
         if sys_path not in __import__('sys').path:
@@ -1440,6 +1443,8 @@ class ManuscriptManifest(unittest.TestCase):
         from render_book import render
 
         output = ROOT / 'build' / 'book'
+        previous = os.environ.get('GITHUB_SHA')
+        os.environ['GITHUB_SHA'] = TEST_RENDER_SHA
         try:
             self.assertEqual(render(ROOT), output.resolve())
             index = (output / 'index.html').read_text(encoding='utf-8')
@@ -1466,7 +1471,19 @@ class ManuscriptManifest(unittest.TestCase):
             index_text = (output / 'index.html').read_text(encoding='utf-8')
             self.assertTrue(index_text.strip())
             self.assertNotRegex(index_text, r'<article>\s*</article>')
+            pages = '\n'.join(
+                path.read_text(encoding='utf-8') for path in output.rglob('*.html')
+            )
+            self.assertEqual(_github_shas(pages), {TEST_RENDER_SHA})
+            self.assertIn(
+                f'https://github.com/chasebryan/orange/blob/{TEST_RENDER_SHA}/docs/book/README.md',
+                pages,
+            )
         finally:
+            if previous is None:
+                os.environ.pop('GITHUB_SHA', None)
+            else:
+                os.environ['GITHUB_SHA'] = previous
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
     def test_malformed_chapters_fail(self):
@@ -1552,9 +1569,13 @@ class ManuscriptManifest(unittest.TestCase):
         from render_book import remove_rendered_book
 
         def render_cli(root: Path) -> subprocess.CompletedProcess[str]:
+            import os
+
             tools = root / 'tools'
             tools.mkdir()
             shutil.copy(script, tools / 'render_book.py')
+            env = os.environ.copy()
+            env['GITHUB_SHA'] = TEST_RENDER_SHA
             return subprocess.run(
                 [
                     sys.executable, '-S', '-P', '-B', '-X', 'utf8',
@@ -1564,6 +1585,7 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
 
         def tree_names(directory: Path) -> list[str]:
@@ -1661,6 +1683,8 @@ class ManuscriptManifest(unittest.TestCase):
         import tempfile
 
         def run_case(chapter: str) -> subprocess.CompletedProcess[str]:
+            import os
+
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 book = root / 'docs' / 'book'
@@ -1700,6 +1724,8 @@ class ManuscriptManifest(unittest.TestCase):
                 tools = root / 'tools'
                 tools.mkdir()
                 shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+                env = os.environ.copy()
+                env['GITHUB_SHA'] = TEST_RENDER_SHA
                 return subprocess.run(
                     [
                         sys.executable, '-S', '-P', '-B', '-X', 'utf8',
@@ -1709,6 +1735,7 @@ class ManuscriptManifest(unittest.TestCase):
                     check=False,
                     capture_output=True,
                     text=True,
+                    env=env,
                 )
 
         malformed = run_case('---\ntitle: draft\n---\n# Chapter\n')
@@ -1722,12 +1749,15 @@ class ManuscriptManifest(unittest.TestCase):
         self.assertIn('hollow', hollow.stderr)
 
     def test_renderer_cli_writes_the_index(self):
+        import os
         import shutil
         import subprocess
         import sys
 
         output = ROOT / 'build' / 'book'
         script = str(ROOT / 'tools' / 'render_book.py')
+        env = os.environ.copy()
+        env['GITHUB_SHA'] = TEST_RENDER_SHA
         try:
             rejected = subprocess.run(
                 [sys.executable, script, '/tmp/elsewhere'],
@@ -1735,6 +1765,7 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             self.assertEqual(rejected.returncode, 2, rejected.stderr)
             self.assertFalse(output.exists())
@@ -1744,11 +1775,20 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             index = (output / 'index.html').read_text(encoding='utf-8')
             self.assertIn('Living, in-progress manuscript', index)
             self.assertIn('planned', index)
+            pages = '\n'.join(
+                path.read_text(encoding='utf-8') for path in output.rglob('*.html')
+            )
+            self.assertEqual(_github_shas(pages), {TEST_RENDER_SHA})
+            self.assertIn(
+                f'https://github.com/chasebryan/orange/blob/{TEST_RENDER_SHA}/docs/book/README.md',
+                pages,
+            )
         finally:
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
@@ -1813,7 +1853,7 @@ class ManuscriptManifest(unittest.TestCase):
         import os
         import tempfile
 
-        sha = '0123456789abcdef0123456789abcdef01234567'
+        sha = TEST_RENDER_SHA
         opening = '# Opening\n\nA sentence.\n'
         original = (
             '# The Orange Book\n\n'
@@ -1919,6 +1959,59 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertIn('<ol><li>item</li></ol>', page)
             self.assertNotIn('1. item', page)
 
+    def test_invalid_github_sha_does_not_fall_back_to_git(self):
+        import os
+        import subprocess
+        import tempfile
+
+        opening = '# Opening\n\nA sentence.\n'
+        original = '# The Orange Book\n\n[notes](NOTES.md)\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\nA note.\n', encoding='utf-8')
+            git_env = os.environ.copy()
+            git_env.pop('GIT_DIR', None)
+            git_env.pop('GIT_WORK_TREE', None)
+            git_env['GIT_CONFIG_GLOBAL'] = '/dev/null'
+            git_env['GIT_CONFIG_NOSYSTEM'] = '1'
+            git_env['GIT_AUTHOR_NAME'] = 'Test'
+            git_env['GIT_AUTHOR_EMAIL'] = 'test@example.com'
+            git_env['GIT_COMMITTER_NAME'] = 'Test'
+            git_env['GIT_COMMITTER_EMAIL'] = 'test@example.com'
+            for command in (
+                ['git', 'init'],
+                ['git', 'add', '.'],
+                ['git', 'commit', '-m', 'pin'],
+            ):
+                completed = subprocess.run(
+                    command, cwd=root, check=False, capture_output=True, text=True, env=git_env,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            head = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=git_env,
+            )
+            self.assertEqual(head.returncode, 0, head.stderr)
+            real_sha = head.stdout.strip()
+            self.assertRegex(real_sha, r'^[0-9a-f]{40}$')
+            for bad in ('not-a-commit', '0' * 39, 'g' * 40):
+                with self.subTest(sha=bad):
+                    env = git_env.copy()
+                    env['GITHUB_SHA'] = bad
+                    completed = _run_render(root, env)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertIn(bad, completed.stderr)
+                    self.assertIn('40-character commit', completed.stderr)
+                    self.assertNotIn(real_sha, completed.stderr)
+                    page = root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html'
+                    if page.is_file():
+                        self.assertNotIn(real_sha, page.read_text(encoding='utf-8'))
+
 
 def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
     import json
@@ -1953,6 +2046,13 @@ def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
     (book / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
 
 
+def _github_shas(text: str) -> set[str]:
+    return set(re.findall(
+        r'https://github.com/chasebryan/orange/(?:blob|tree)/([0-9a-f]{40})',
+        text,
+    ))
+
+
 def _run_render(root: Path, env: dict | None = None):
     import os
     import shutil
@@ -1962,8 +2062,10 @@ def _run_render(root: Path, env: dict | None = None):
     tools = root / 'tools'
     tools.mkdir(exist_ok=True)
     shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
-    run_env = os.environ.copy()
-    if env is not None:
+    if env is None:
+        run_env = os.environ.copy()
+        run_env['GITHUB_SHA'] = TEST_RENDER_SHA
+    else:
         run_env = env
     return subprocess.run(
         [
