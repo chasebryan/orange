@@ -1482,6 +1482,8 @@ void tp_note_expr(Compiler *c, Expr *expr) {
     stamp.ty = expr->ty;
     stamp.ty_len = expr->ty_len;
     stamp.ty_mod = expr->ty_mod;
+    stamp.tup0 = expr->ty_tup0;
+    stamp.tup_n = expr->ty_tup_n;
     stamp.conv_ty = expr->conv_ty;
     stamp.conv_len = expr->conv_len;
     stamp.conv_mod = expr->conv_mod;
@@ -1515,6 +1517,8 @@ void tp_apply_stamps(Compiler *c) {
         expr->ty = stamp->ty;
         expr->ty_len = stamp->ty_len;
         expr->ty_mod = stamp->ty_mod;
+        expr->ty_tup0 = stamp->tup0;
+        expr->ty_tup_n = stamp->tup_n;
         if (expr->kind == EX_CONV) {
             expr->conv_ty = stamp->conv_ty;
             expr->conv_len = stamp->conv_len;

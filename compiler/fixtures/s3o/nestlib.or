@@ -5,4 +5,8 @@ module nestlib {
   spec m[K in {Int, Word[8]}]() -> K { 0 - 1 }
 
   spec deep[K in {Int, Word[8]}]() -> K { m() }
+
+  spec pair[K in {Int, Word[8]}]() -> (K, K) { (m(), m()) }
+
+  spec wrapped[K in {Int, Word[8]}]() -> (K, K) { pair() }
 }

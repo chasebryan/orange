@@ -8540,6 +8540,13 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     if (expected == TY_MOD) {
         expr->ty_mod = c->expect_mod;
     }
+    if (expected == TY_TUPLE) {
+        expr->ty_tup0 = c->expect_tup0;
+        expr->ty_tup_n = c->expect_tup_n;
+    } else {
+        expr->ty_tup0 = 0;
+        expr->ty_tup_n = 0;
+    }
     if (expected != TY_NONE) {
         c->fit_set = 1;
         c->fit_kind = expected;

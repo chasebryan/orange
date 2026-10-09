@@ -2397,9 +2397,10 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
            caller's sizes. Resolve again for the instance now running, so a
            call inside a sized function follows this instance.
            A callee with type parameters is resolved against the concrete type
-           this place expects. Stamps for the caller's instance have already
-           substituted its type parameters, so `m()` inside `deep[Word[8]]`
-           selects `m[Word[8]]` rather than every instance whose arguments fit. */
+           this place expects, including a tuple result. Stamps for the caller's
+           instance have already substituted its type parameters, so `m()` inside
+           `deep[Word[8]]` selects `m[Word[8]]`, and `pair()` inside a function
+           that returns `(K, K)` selects `pair` at that same `K`. */
         if (c->cur_func < c->nfuncs && expr->callee != UINT32_MAX) {
             Compiler *lookup_target = c;
             uint32_t callee_index = expr->callee;
@@ -2423,13 +2424,13 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                     uint32_t saved_tup0 = c->fit_tup0;
                     uint16_t saved_tup_n = c->fit_tup_n;
                     uint32_t fresh = UINT32_MAX;
-                    if (callee_types && expr->ty != TY_NONE && expr->ty != TY_TUPLE) {
+                    if (callee_types && expr->ty != TY_NONE) {
                         c->fit_set = 1;
                         c->fit_kind = expr->ty;
                         c->fit_len = expr->ty_len;
                         c->fit_mod = expr->ty_mod;
-                        c->fit_tup0 = 0;
-                        c->fit_tup_n = 0;
+                        c->fit_tup0 = expr->ty == TY_TUPLE ? expr->ty_tup0 : 0;
+                        c->fit_tup_n = expr->ty == TY_TUPLE ? expr->ty_tup_n : 0;
                     } else if (callee_types) {
                         c->fit_set = 0;
                     }

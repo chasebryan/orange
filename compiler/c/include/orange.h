@@ -236,6 +236,11 @@ typedef struct Expr {
     TypeKind ty;
     uint32_t ty_len;
     uint16_t ty_mod;
+    /* Tuple shape this expression was checked as, when `ty` is a tuple.
+       Indices into `Compiler.telems`. A nested generic call reads them back
+       so the caller's concrete instance chooses the callee. */
+    uint32_t ty_tup0;
+    uint16_t ty_tup_n;
     TypeKind conv_ty;
     int conv_ok;
     uint32_t conv_site;
@@ -513,6 +518,8 @@ typedef struct TpStamp {
     TypeKind ty;
     uint32_t ty_len;
     uint16_t ty_mod;
+    uint32_t tup0;
+    uint16_t tup_n;
     TypeKind conv_ty;
     uint32_t conv_len;
     uint16_t conv_mod;
