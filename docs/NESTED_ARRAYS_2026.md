@@ -4,6 +4,12 @@ Status: proposed S3s semantics under OEP-0023, in owner review; not accepted
 
 Edition: `2026`
 
+> S3u, proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under
+> OEP-0025, extends this slice to arrays of three and four dimensions and
+> adds update paths such as `x with [i][j] = v`. Its rank and path rules
+> replace the rank-two limit and the absence of multi-axis update syntax
+> below. Repeated `^` type syntax remains rejected.
+
 Snapshot: 2026-10-01
 
 This document defines S3s: fixed rectangular arrays of scalar rows. It is a

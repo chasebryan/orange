@@ -1532,7 +1532,7 @@ is the update in the proof of Proposition N12.7. □
 
 Listing N12.5 already contains that repaired step, in `add_original`.
 The minimal edit from Listing N12.6 to that function is the deletion of
-` + 1`. Expanding the edit into a rewrite of `quarter_round` would
+`+ 1`. Expanding the edit into a rewrite of `quarter_round` would
 change a function the diagnostic did not mention. The diagnostic's
 subject is the index expression. The repair's subject is that
 expression.
@@ -1843,7 +1843,6 @@ the transcription it names.
 
 ### N12.24 The readiness check
 
-
 Part 2 begins when you can do four things with a small complete program.
 The index of this book states them, and it states what they are not. They
 are demonstrated reasoning. They are not a certificate. Reading this
@@ -2117,7 +2116,6 @@ The RFC's word for rotation is “roll.” Consulted 2026-10-05 against the
 plain-text document from the RFC Editor. No erratum was applied.
 
 <https://www.rfc-editor.org/rfc/rfc8439>
-
 
 The block-function sections of the same RFC were consulted with the
 quarter-round sections. §2.3 states the input layout and the constants.

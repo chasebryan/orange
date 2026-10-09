@@ -192,15 +192,16 @@ const INDICES: Expectation = Expectation::Failure {
 const TYPES: Expectation = Expectation::Failure {
     codes: &["ORC0203", "ORC0221", "ORC0203"],
     locations: &[
-        "invalid-types.or:5:15",
+        "invalid-types.or:5:56",
         "invalid-types.or:6:19",
         "invalid-types.or:8:16",
     ],
     messages: &[
-        "`Grid` already has two array dimensions",
-        "arrays have at most two dimensions",
+        "`Hyper` already has 4 array dimensions",
+        "arrays have at most 4 dimensions",
+        "this length would add a fifth dimension",
         "an array shape has 65792 scalar elements, exceeding 65536",
-        "both axes are positive and their product is at most 65536",
+        "every axis is positive and the product of the axes is at most 65536",
         "`Pair` is a tuple type, so this is an array of tuples",
     ],
 };
@@ -646,9 +647,10 @@ fn s3s_axis_and_scalar_limits_are_checked_before_evaluation() {
             "an array shape has 65792 scalar elements, exceeding 65536",
         ),
         (
-            "type Row = Word[8]^1; type Grid = Row^1; type Cube = Grid^1;",
+            "type Row = Word[8]^1; type Grid = Row^1; type Cube = Grid^1; type Hyper = Cube^1; \
+             type Five = Hyper^1;",
             "ORC0203",
-            "already has two array dimensions",
+            "already has 4 array dimensions",
         ),
         (
             "type Row = Word[8]^256; spec f[n in 256..258](r: Row) -> Row^n { [r; n] }",

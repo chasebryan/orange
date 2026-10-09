@@ -1408,8 +1408,8 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertIn('**[C3] Pin surface.**', self.text)
         self.assertIn('A Match is not called verified.', self.text)
         self.assertIn('constant-time claim', self.text)
-        self.assertIn('implemented slice S3t', self.text)
-        self.assertNotIn('S3u', self.text)
+        self.assertIn('implemented slice S3u', self.text)
+        self.assertNotIn('S3t', self.text)
         self.assertIn(
             'first sentence of the Abstract\'s second paragraph',
             self.text,
@@ -1422,6 +1422,12 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertIn('FIPS 180-2', self.text)
         self.assertIn('BA7816BF', self.text)
         self.assertIn('no `Obsoletes` line and no `Updates` line', self.text)
+        self.assertIn('Network Working Group', self.text)
+        self.assertIn('RSA Security', self.text)
+        self.assertRegex(
+            self.text,
+            r'That subsection sets the initial hash\s+value H\(0\) from §5\.3\.3\.',
+        )
         self.assertNotIn('spec pack(', self.text)
 
     def test_j2_listings_do_not_transcribe_sha256_compression(self):
@@ -1445,6 +1451,8 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.text)
         self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('Section 6.2.1 is', self.text)
+        self.assertNotIn('Its preprocessing points back', self.text)
         self.assertIn('A Match is not called verified.', self.text)
 
     def test_j2_ledger_matches_the_printed_arithmetic(self):
@@ -1474,6 +1482,14 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertEqual(expected['iv-word'], 1779033703)
         self.assertEqual(expected['p-gap'], 27 * 10 ** 9)
         self.assertLess(expected['iv-word'], 2 ** 32)
+
+    def test_j2_rfc4231_header_is_the_three_line_form(self):
+        header = (
+            'Network Working Group                                         M. Nystrom\n'
+            'Request for Comments: 4231                                  RSA Security\n'
+            'Category: Standards Track                                  December 2005'
+        )
+        self.assertIn(header, self.text)
 
     def test_j2_tags_are_unique_across_book_lessons(self):
         definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
@@ -1534,6 +1550,375 @@ def successor_bezout(integer: int, modulus: int) -> tuple[int, int]:
         return 0, 1
     inner_x, inner_y = successor_bezout(modulus, remainder)
     return inner_y, inner_x - quotient * inner_y
+
+
+class ManuscriptManifest(unittest.TestCase):
+    def test_manifest_names_drafted_and_planned_chapters(self):
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import PART_TITLES, load_manifest
+
+        manifest = load_manifest(ROOT)
+        self.assertEqual(manifest['status'], 'in-progress')
+        self.assertEqual(manifest['manifest'], 'docs/book/manifest.json')
+        drafted = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'draft']
+        planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
+        self.assertEqual(
+            [chapter['part'] for chapter in drafted],
+            ['novice'] * (len(drafted) - 1) + ['journeyman'],
+        )
+        self.assertEqual(drafted[-1]['id'], 'j2')
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+        )
+        self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
+        self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
+        self.assertIn('owner-approved-with-unreviewed-corrections', {
+            chapter['review_state'] for chapter in drafted
+        })
+        self.assertIn('unreviewed', {chapter['review_state'] for chapter in drafted})
+        index = INDEX.read_text(encoding='utf-8')
+        self.assertIn('## Manuscript status', index)
+        self.assertIn('[manifest.json](manifest.json)', index)
+        self.assertIn('living, in-progress manuscript', index)
+        for part in ('Part 1, The Novice', 'Part 2, The Journeyman', 'Part 3, The Master'):
+            self.assertIn(part, index)
+            self.assertEqual(PART_TITLES[{
+                'Part 1, The Novice': 'novice',
+                'Part 2, The Journeyman': 'journeyman',
+                'Part 3, The Master': 'master',
+            }[part]], part)
+        for chapter in drafted:
+            short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
+            self.assertIn(short, index)
+        self.assertIn('| Part 2, The Journeyman | J2 |', index.replace('\n', ' '))
+        self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
+        for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
+            text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
+            self.assertIn('S3u', text)
+            self.assertNotIn('S3t', text)
+
+    def test_rendered_book_shows_planned_chapters_without_pages(self):
+        import shutil
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import render
+
+        output = ROOT / 'build' / 'book'
+        try:
+            self.assertEqual(render(ROOT), output.resolve())
+            index = (output / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('Living, in-progress manuscript', index)
+            self.assertIn('J2', index)
+            self.assertIn('planned', index)
+            self.assertIn('Auditable claim dossier', index)
+            self.assertTrue((output / 'docs' / 'book' / 'NOVICE_OPENING.html').is_file())
+            self.assertTrue((output / 'docs' / 'THE_ORANGE_BOOK.html').is_file())
+            self.assertFalse((output / 'docs' / 'book' / 'J2.html').exists())
+            opening = (output / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('Draft.', opening)
+            self.assertNotIn('<script', opening.lower())
+            self.assertIn('&lt;', (output / 'docs' / 'book' / 'NOVICE_N8_READ_AND_REPAIR.html').read_text(encoding='utf-8')[:5000] or 'skip')
+            from render_book import load_manifest, manuscript_files
+            manifest = load_manifest(ROOT)
+            for source in manuscript_files(manifest):
+                page = output / source.replace('.md', '.html')
+                self.assertTrue(page.is_file(), source)
+                text = page.read_text(encoding='utf-8')
+                self.assertTrue(text.strip(), source)
+                self.assertIn('<article>', text)
+                self.assertNotRegex(text, r'<article>\s*</article>')
+            index_text = (output / 'index.html').read_text(encoding='utf-8')
+            self.assertTrue(index_text.strip())
+            self.assertNotRegex(index_text, r'<article>\s*</article>')
+        finally:
+            shutil.rmtree(ROOT / 'build', ignore_errors=True)
+
+    def test_malformed_chapters_fail(self):
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import require_well_formed
+        source = ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md'
+        samples = (
+            '---\ntitle: draft\n---\n# Chapter\n',
+            '# Chapter\n\n```\nnot closed\n',
+            '# Chapter\n\n{% include missing-chapter.md %}\n',
+        )
+        for sample in samples:
+            with self.assertRaises(ValueError):
+                require_well_formed(sample, source, ROOT)
+
+    def test_dead_links_fail(self):
+        import tempfile
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import source_link_errors, written_href_errors
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / 'docs'
+            docs.mkdir()
+            chapter = docs / 'chapter.md'
+            chapter.write_text(
+                '# Title\n\n[missing file](missing.md)\n[missing anchor](#absent)\n',
+                encoding='utf-8',
+            )
+            errors = source_link_errors(root, [chapter])
+            self.assertTrue(any('missing.md' in error for error in errors))
+            self.assertTrue(any('#absent' in error for error in errors))
+            sound = docs / 'sound.md'
+            sound.write_text(
+                '# Title\n\n[here](#title)\n[chapter](chapter.md#title)\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(source_link_errors(root, [sound]), [])
+            output = root / 'build' / 'book'
+            page = output / 'docs'
+            page.mkdir(parents=True)
+            (page / 'chapter.html').write_text(
+                '<article><a href="missing.html">x</a>'
+                '<a href="#absent">y</a></article>',
+                encoding='utf-8',
+            )
+            (output / 'index.html').write_text('<article><p>index</p></article>', encoding='utf-8')
+            href_errors = written_href_errors(
+                output, root, {'docs/chapter.md': 'docs/chapter.html'}
+            )
+            self.assertTrue(any('missing.html' in error for error in href_errors))
+            self.assertTrue(any('#absent' in error for error in href_errors))
+
+    def test_hollow_output_fails(self):
+        import tempfile
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import require_complete_output
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / 'docs').mkdir()
+            (output / 'docs' / 'chapter.html').write_text(
+                '<article></article>', encoding='utf-8'
+            )
+            (output / 'index.html').write_text('', encoding='utf-8')
+            with self.assertRaises(ValueError):
+                require_complete_output(output, ['docs/chapter.html'])
+
+    def test_symlink_output_refuses_and_keeps_the_canary(self):
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+
+        script = ROOT / 'tools' / 'render_book.py'
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from render_book import remove_rendered_book
+
+        def render_cli(root: Path) -> subprocess.CompletedProcess[str]:
+            tools = root / 'tools'
+            tools.mkdir()
+            shutil.copy(script, tools / 'render_book.py')
+            return subprocess.run(
+                [
+                    sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+                    '-W', 'error::ResourceWarning', 'tools/render_book.py',
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        def tree_names(directory: Path) -> list[str]:
+            if not directory.exists():
+                return []
+            return sorted(
+                path.relative_to(directory).as_posix() for path in directory.rglob('*')
+            )
+
+        def assert_cli_refuses(completed: subprocess.CompletedProcess[str], part: str) -> None:
+            self.assertNotEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, '')
+            self.assertEqual(
+                completed.stderr,
+                f'orange book render failed: rendered book path is a symlink: {part}\n',
+            )
+
+        def assert_removal_refuses(
+            root: Path, tree: Path, expected: list[str], canary: Path, text: str,
+        ) -> None:
+            # The CLI stops in book_output. Call the deleter too: plain shutil.rmtree
+            # follows a symlinked build/ and deletes the real book directory.
+            resolved = root.resolve()
+            caught = None
+            try:
+                remove_rendered_book(resolved, resolved / 'build' / 'book')
+            except (OSError, ValueError) as error:
+                caught = error
+            self.assertEqual(tree_names(tree), expected)
+            self.assertTrue(canary.is_file())
+            self.assertEqual(canary.read_text(encoding='utf-8'), text)
+            self.assertIsInstance(caught, ValueError)
+            self.assertEqual(str(caught), 'rendered book path is a symlink')
+
+        with self.subTest(shape='build/book -> notes'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                notes = root / 'notes'
+                notes.mkdir()
+                canary = notes / 'canary'
+                canary.write_text('canary', encoding='utf-8')
+                (root / 'build').mkdir()
+                (root / 'build' / 'book').symlink_to('../notes')
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'book')
+                self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
+                self.assertTrue((root / 'build' / 'book').is_symlink())
+                self.assertEqual((root / 'build' / 'book').readlink(), Path('../notes'))
+                self.assertEqual(tree_names(notes), ['canary'])
+                assert_removal_refuses(root, notes, ['canary'], canary, 'canary')
+
+        with self.subTest(shape='build/book -> docs'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / 'docs'
+                docs.mkdir()
+                marker = docs / 'kept.md'
+                marker.write_text('keep', encoding='utf-8')
+                (root / 'build').mkdir()
+                (root / 'build' / 'book').symlink_to('../docs')
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'book')
+                self.assertEqual(marker.read_text(encoding='utf-8'), 'keep')
+                self.assertTrue(docs.is_dir())
+                self.assertFalse(docs.is_symlink())
+                self.assertTrue((root / 'build' / 'book').is_symlink())
+                self.assertEqual(tree_names(docs), ['kept.md'])
+                assert_removal_refuses(root, docs, ['kept.md'], marker, 'keep')
+
+        with self.subTest(shape='build -> vault/book'):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vault = root / 'vault'
+                book = vault / 'book'
+                book.mkdir(parents=True)
+                canary = book / 'canary'
+                canary.write_text('canary', encoding='utf-8')
+                (root / 'build').symlink_to('vault', target_is_directory=True)
+                completed = render_cli(root)
+                assert_cli_refuses(completed, 'build')
+                self.assertTrue((root / 'build').is_symlink())
+                self.assertEqual((root / 'build').readlink(), Path('vault'))
+                self.assertFalse((vault / 'book').is_symlink())
+                self.assertEqual(canary.read_text(encoding='utf-8'), 'canary')
+                self.assertEqual(tree_names(vault), ['book', 'book/canary'])
+                assert_removal_refuses(
+                    root, vault, ['book', 'book/canary'], canary, 'canary',
+                )
+
+    def test_render_rejects_malformed_dead_and_hollow_manuscripts(self):
+        import json
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+
+        def run_case(chapter: str) -> subprocess.CompletedProcess[str]:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                book = root / 'docs' / 'book'
+                book.mkdir(parents=True)
+                (root / 'docs' / 'THE_ORANGE_BOOK.md').write_text(
+                    '# The Orange Book\n\nA sentence.\n',
+                    encoding='utf-8',
+                )
+                (book / 'NOVICE_OPENING.md').write_text(chapter, encoding='utf-8')
+                manifest = {
+                    'kind': 'orange-book-manuscript-manifest',
+                    'version': 1,
+                    'status': 'in-progress',
+                    'review': 'Draft.',
+                    'chapters': [
+                        {
+                            'part': 'novice',
+                            'id': 'opening',
+                            'title': 'Opening',
+                            'status': 'draft',
+                            'review_state': 'unreviewed',
+                            'path': 'docs/book/NOVICE_OPENING.md',
+                        },
+                        {
+                            'part': 'original',
+                            'id': 'original',
+                            'title': 'The Orange Book',
+                            'status': 'original',
+                            'path': 'docs/THE_ORANGE_BOOK.md',
+                        },
+                    ],
+                }
+                (book / 'manifest.json').write_text(
+                    json.dumps(manifest),
+                    encoding='utf-8',
+                )
+                tools = root / 'tools'
+                tools.mkdir()
+                shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+                return subprocess.run(
+                    [
+                        sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+                        '-W', 'error::ResourceWarning', 'tools/render_book.py',
+                    ],
+                    cwd=root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+        malformed = run_case('---\ntitle: draft\n---\n# Chapter\n')
+        self.assertNotEqual(malformed.returncode, 0, malformed.stderr)
+        self.assertIn('malformed chapter', malformed.stderr)
+        dead = run_case('# Title\n\n[missing file](missing.md)\n')
+        self.assertNotEqual(dead.returncode, 0, dead.stderr)
+        self.assertIn('missing.md', dead.stderr)
+        hollow = run_case('\n')
+        self.assertNotEqual(hollow.returncode, 0, hollow.stderr)
+        self.assertIn('hollow', hollow.stderr)
+
+    def test_renderer_cli_writes_the_index(self):
+        import shutil
+        import subprocess
+        import sys
+
+        output = ROOT / 'build' / 'book'
+        script = str(ROOT / 'tools' / 'render_book.py')
+        try:
+            rejected = subprocess.run(
+                [sys.executable, script, '/tmp/elsewhere'],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(rejected.returncode, 2, rejected.stderr)
+            self.assertFalse(output.exists())
+            completed = subprocess.run(
+                [sys.executable, script],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            index = (output / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('Living, in-progress manuscript', index)
+            self.assertIn('planned', index)
+        finally:
+            shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
 
 def rotate_byte(value: int, amount: int) -> int:

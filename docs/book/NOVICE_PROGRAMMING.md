@@ -302,7 +302,7 @@ The leading `./` names a path from the working directory. It prevents the
 shell from choosing an unrelated program named `orangec` elsewhere in its
 command search path. `--version` asks the executable to identify itself.
 The baseline reports package version `0.0.1`, Orange edition `2026`, and
-implemented slice `S3t`. The slice records implemented behavior, not formal
+implemented slice `S3u`. The slice records implemented behavior, not formal
 acceptance of every semantic proposal or a production-release promise. [O1]
 
 Do not run later commands after a failed build and assume an old executable
@@ -1419,7 +1419,7 @@ No translation or alteration of the quoted sentence is involved.
 
 <https://www.csee.umbc.edu/courses/471/papers/turing.pdf>
 
-<https://doi.org/10.1093/mind/LIX.236.433>
+doi:10.1093/mind/LIX.236.433
 
 **[S6] Ronald L. Rivest.** “The RC5 Encryption Algorithm,” *Fast Software
 Encryption*, proceedings of the 1994 Leuven workshop, published 1995,

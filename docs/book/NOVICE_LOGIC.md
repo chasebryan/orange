@@ -649,7 +649,7 @@ Order is part of the statement. Let `S` be the set of bit strings of one
 fixed length `n ≥ 1`, so that a string with a one-bit exists. Let `0`
 denote the all-zero string of that length.
 
-**Example N9.11 — Four readings of “XOR fixes a string.”**
+**Example N9.11 — Four readings of “XOR fixes a string.”**:
 
 1. `∀ x ∈ S, ∀ k ∈ S, (x ⊕ k) ⊕ k = x`. True, by Proposition 3.1. The
    domain is every pair, not one example.
@@ -1366,7 +1366,7 @@ not establish a cryptographic security claim.
 
 The compiler used to produce the printed value and the test report
 identifies itself as `orangec 0.0.1 (Orange edition 2026; implemented
-slice S3t)`. The listing uses a bounded `for` and a `test` that this
+slice S3u)`. The listing uses a bounded `for` and a `test` that this
 binary accepts. Implementation of those slices is not acceptance of the
 proposals, and it adds no cryptographic claim.
 

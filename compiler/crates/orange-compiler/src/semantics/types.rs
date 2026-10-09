@@ -17,10 +17,11 @@ pub(super) enum TypeClass {
     /// A size-dependent modulus has no admitted value in this instance.
     Modulus(ModulusFault),
     MissingModulus,
-    /// A declared name whose type already has two array dimensions,
+    /// A declared name whose type already has the most array dimensions,
     /// followed by the span of `^LENGTH`.
     ArrayOfArrays(Span),
-    /// An admitted pair of axis lengths whose scalar product is too large.
+    /// An admitted outer length and the scalars of each element, whose
+    /// product is too large.
     ArrayShape(Span, u32, u32),
     /// A declared name whose type is a tuple, followed by the span of
     /// `^LENGTH`.
@@ -128,7 +129,9 @@ pub(super) fn classify_type(
     }
     let scalar = classify_scalar_type(source, table, syntax);
     match (scalar, syntax.length.as_ref()) {
-        (TypeClass::Resolved(CoreType::Array(row)), Some(length)) if !row.element().is_scalar() => {
+        (TypeClass::Resolved(CoreType::Array(row)), Some(length))
+            if row.dimensions() >= MAX_ARRAY_DIMENSIONS =>
+        {
             TypeClass::ArrayOfArrays(length.span)
         }
         (TypeClass::Resolved(CoreType::Tuple(_)), Some(length)) => {
@@ -141,7 +144,7 @@ pub(super) fn classify_type(
                     None => element
                         .as_array()
                         .map_or(TypeClass::UnsupportedArrayLength(length.span), |row| {
-                            TypeClass::ArrayShape(length.span, row.length(), count)
+                            TypeClass::ArrayShape(length.span, row.scalar_length(), count)
                         }),
                 },
                 Length::Literal => TypeClass::UnsupportedArrayLength(length.span),
@@ -491,6 +494,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Update(update) => {
                 self.resolve_moduli_within(&update.base);
                 self.resolve_moduli_within(&update.index);
+                for index in &update.path {
+                    self.resolve_moduli_within(index);
+                }
                 self.resolve_moduli_within(&update.value);
             }
             ExpressionKind::Loop(r#loop) => {
@@ -847,12 +853,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedType,
-                            format!("`{name}` already has two array dimensions"),
+                            format!("`{name}` already has {MAX_ARRAY_DIMENSIONS} array dimensions"),
                             syntax.span,
                         )
-                        .with_label("arrays have at most two dimensions")
-                        .with_secondary_span(length_span, "this length would add a third dimension")
-                        .with_note("a row holds scalars; a matrix holds rows of the same type"),
+                        .with_label(format!(
+                            "arrays have at most {MAX_ARRAY_DIMENSIONS} dimensions"
+                        ))
+                        .with_secondary_span(length_span, "this length would add a fifth dimension")
+                        .with_note(
+                            "a row holds scalars, and each `^LENGTH` after a named array type \
+                             adds a dimension of its rows",
+                        ),
                     );
                 }
                 None
@@ -871,7 +882,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .with_label("array shape exceeds the scalar element limit")
                         .with_secondary_span(length_span, "outer axis length")
                         .with_note(format!(
-                            "both axes are positive and their product is at most {MAX_ARRAY_LENGTH}"
+                            "every axis is positive and the product of the axes is at most \
+                             {MAX_ARRAY_LENGTH}"
                         )),
                     );
                 }

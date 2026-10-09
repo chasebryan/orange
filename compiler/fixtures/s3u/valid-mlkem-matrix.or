@@ -1,0 +1,171 @@
+// S3u conformance: the module-lattice arithmetic of ML-KEM-512, FIPS 203
+// (August 2024), with its matrix as the standard writes it, a 2 x 2 array of
+// polynomials A[i][j], each 256 coefficients modulo q = 3329: three
+// dimensions. NTT, NTT^-1, MultiplyNTTs and BaseCaseMultiply are Algorithms
+// 9 through 12, with zeta = 17 and BitRev7 as section 4.3 defines them, and
+// the product A o s of K-PKE.KeyGen (a ring circle in the standard) sums
+// MultiplyNTTs along each row. The
+// tests check the transform against its definition, reduction modulo each
+// of the 128 quadratic factors X^2 - zeta^(2 BitRev7(i) + 1), and the
+// matrix product against multiplication in Z_q[X]/(X^256 + 1) term by term.
+edition 2026;
+module mlkem {
+  type Zq = Mod[3329];
+  type Poly = Zq^256;
+  type Vector = Poly^2;
+  type Matrix = Vector^2;
+
+  // Section 4.3: BitRev7(r) for 0 <= r < 128, bit i moving to bit 6 - i.
+  spec bit_rev7(r: Word[8]) -> Word[8] {
+    for i in 0..7 with b: Word[8] = 0 { b | (((r >> i) & 1) << (6 - i)) }
+  }
+
+  // 17^e, by squaring and multiplying from the high bit of e to the low.
+  spec power(e: Word[8]) -> Zq {
+    for i in 0..8 with z: Zq = 1 {
+      if ((e >> (7 - i)) & 1) == 1 { z * z * 17 } else { z * z }
+    }
+  }
+
+  spec zeta(i: Word[8]) -> Zq { power(bit_rev7(i)) }
+
+  spec gamma(i: Word[8]) -> Zq { power((2 * bit_rev7(i)) + 1) }
+
+  // Algorithm 9: NTT. Layer l has 128 butterflies of length 128 / 2^l;
+  // butterfly m is in block m / len, whose zeta is zeta(2^l + block), and
+  // joins coefficients j and j + len.
+  spec ntt(f: Poly) -> Poly {
+    let top: Word[8] = 128;
+    for l in 0..7 with a: Poly = f {
+      let len: Word[8] = top >> l;
+      for m in 0..128 with b: Poly = a {
+        let w: Word[8] = m as Word[8];
+        let block: Word[8] = w / len;
+        let j: Word[8] = w + block * len;
+        let t: Zq = zeta((top >> (7 - l)) + block) * b[j + len];
+        (b with [j + len] = b[j] - t) with [j] = b[j] + t
+      }
+    }
+  }
+
+  // Algorithm 10: NTT^-1, the layers in reverse with the zetas from 127
+  // down, then every coefficient times 128^-1 = 3303.
+  spec inverse_ntt(f: Poly) -> Poly {
+    let top: Word[8] = 128;
+    let two: Word[8] = 2;
+    let unscaled: Poly = for l in 0..7 with a: Poly = f {
+      let len: Word[8] = two << l;
+      for m in 0..128 with b: Poly = a {
+        let w: Word[8] = m as Word[8];
+        let block: Word[8] = w / len;
+        let j: Word[8] = w + block * len;
+        let t: Zq = b[j];
+        (b with [j] = t + b[j + len])
+          with [j + len] = zeta((top >> l) - 1 - block) * (b[j + len] - t)
+      }
+    };
+    for k in 0..256 with g: Poly = unscaled { g with [k] = unscaled[k] * 3303 }
+  }
+
+  // Algorithms 11 and 12: MultiplyNTTs multiplies in each quadratic factor,
+  // (a0 + a1 X)(b0 + b1 X) modulo X^2 - gamma(i).
+  spec multiply_ntts(f: Poly, g: Poly) -> Poly {
+    for i in 0..128 with h: Poly = [0; 256] {
+      let c: Zq = gamma(i as Word[8]);
+      (h with [2 * i] = f[2 * i] * g[2 * i] + f[2 * i + 1] * g[2 * i + 1] * c)
+        with [2 * i + 1] = f[2 * i] * g[2 * i + 1] + f[2 * i + 1] * g[2 * i]
+    }
+  }
+
+  spec add(f: Poly, g: Poly) -> Poly {
+    for k in 0..256 with h: Poly = f { h with [k] = f[k] + g[k] }
+  }
+
+  // K-PKE.KeyGen, line 18: element i of A o s sums A[i][j] o s[j].
+  spec multiply_matrix(a: Matrix, s: Vector) -> Vector {
+    for i in 0..2 with t: Vector = [[0; 256]; 2] {
+      t with [i] = for j in 0..2 with sum: Poly = [0; 256] {
+        add(sum, multiply_ntts(a[i][j], s[j]))
+      }
+    }
+  }
+
+  // A deterministic matrix and vector of small coefficients, each written
+  // one coefficient at a time through three indices.
+  spec matrix() -> Matrix {
+    for i in 0..2 with a: Matrix = [[[0; 256]; 2]; 2] {
+      for j in 0..2 with b: Matrix = a {
+        for k in 0..256 with c: Matrix = b {
+          c with [i][j][k] = ((1009 * i) + (2003 * j) + (7 * k * k) + 1) as Zq
+        }
+      }
+    }
+  }
+
+  spec secret() -> Vector {
+    for j in 0..2 with s: Vector = [[0; 256]; 2] {
+      for k in 0..256 with t: Vector = s { t with [j][k] = ((k * (j + 3)) % 5) as Zq }
+    }
+  }
+
+  spec transform_matrix(a: Matrix) -> Matrix {
+    for i in 0..2 with b: Matrix = a {
+      for j in 0..2 with c: Matrix = b { c with [i][j] = ntt(a[i][j]) }
+    }
+  }
+
+  spec transform_vector(s: Vector) -> Vector {
+    for j in 0..2 with t: Vector = s { t with [j] = ntt(s[j]) }
+  }
+
+  // f modulo X^2 - gamma(i): X^(2m) is gamma^m and X^(2m + 1) is gamma^m X.
+  spec reduce(f: Poly, i: Int) -> (Zq, Zq) {
+    let c: Zq = gamma(i as Word[8]);
+    let r: (Zq, Zq, Zq) = for m in 0..128 with (c0: Zq, c1: Zq, p: Zq) = (0, 0, 1) {
+      (c0 + f[2 * m] * p, c1 + f[2 * m + 1] * p, p * c)
+    };
+    (r.0, r.1)
+  }
+
+  // f * g in Z_q[X]/(X^256 + 1): coefficient k sums f[i] g[k - i], with
+  // X^256 = -1 turning the terms that wrap around negative.
+  spec multiply_ring(f: Poly, g: Poly) -> Poly {
+    for k in 0..256 with h: Poly = [0; 256] {
+      h with [k] = for i in 0..256 with c: Zq = 0 {
+        if i <= k { c + f[i] * g[(k - i) % 256] } else { c - f[i] * g[(k - i) % 256] }
+      }
+    }
+  }
+
+  spec zetas() -> Zq^8 {
+    [zeta(0), zeta(1), zeta(2), zeta(3), zeta(4), zeta(5), zeta(6), zeta(7)]
+  }
+
+  spec gammas() -> Zq^4 { [gamma(0), gamma(1), gamma(2), gamma(3)] }
+
+  test "Appendix A: the first zetas of NTT and of MultiplyNTTs" {
+    (zetas() == [1, 1729, 2580, 3289, 2642, 630, 1897, 848])
+      && (gammas() == [17, 3312, 2761, 568])
+  }
+
+  test "NTT^-1 undoes NTT" {
+    let f: Poly = matrix()[1][0];
+    inverse_ntt(ntt(f)) == f
+  }
+
+  test "NTT reduces modulo each quadratic factor" {
+    let f: Poly = matrix()[0][1];
+    let g: Poly = ntt(f);
+    for i in 0..128 with ok: Bool = true {
+      let r: (Zq, Zq) = reduce(f, i);
+      ok && (g[2 * i] == r.0) && (g[2 * i + 1] == r.1)
+    }
+  }
+
+  test "row 1 of A o s is a row times a column in Z_q[X]/(X^256 + 1)" {
+    let a: Matrix = matrix();
+    let s: Vector = secret();
+    let t: Vector = multiply_matrix(transform_matrix(a), transform_vector(s));
+    inverse_ntt(t[1]) == add(multiply_ring(a[1][0], s[0]), multiply_ring(a[1][1], s[1]))
+  }
+}

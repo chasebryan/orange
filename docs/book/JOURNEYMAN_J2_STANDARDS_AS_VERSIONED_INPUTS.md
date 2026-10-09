@@ -59,7 +59,7 @@ edition's printed value and read the failing report. The report
 names the test, prints the value the program computed, and prints
 the value the test demanded. That rejection is the act a prose book
 cannot perform. The compiler's version line is `orangec 0.0.1
-(Orange edition 2026; implemented slice S3t)`. Every listing is
+(Orange edition 2026; implemented slice S3u)`. Every listing is
 written for that slice. A form this slice does not implement is
 marked Proposed, and this lesson does not use one.
 
@@ -494,8 +494,9 @@ the evaluator is constant-time. It does not say anything about
 collisions. A passing report is a Match of one 32-byte array on one
 message. Do not call that Match verified.
 
-Section 6.2.2 is the SHA-256 hash computation. Its preprocessing
-points back to §5.3.3. The computation itself is the message
+Section 6.2.2 is the SHA-256 hash computation. Section 6.2.1 is
+the SHA-256 preprocessing. That subsection sets the initial hash
+value H(0) from §5.3.3. The computation itself is the message
 schedule and the compression function. Those stay in J5.
 Assumption J2.7 stands. In the October 2008 contents and in the
 August 2015 contents, §5.3.3 is SHA-256 and §6.2.2 is SHA-256 hash
@@ -522,10 +523,9 @@ is not the cover date, and it is not the Orange edition token.
 read on 2026-10-09 from the RFC Editor, is:
 
 ```text
-Request for Comments: 4231
-Category: Standards Track
-M. Nystrom
-December 2005
+Network Working Group                                         M. Nystrom
+Request for Comments: 4231                                  RSA Security
+Category: Standards Track                                  December 2005
 ```
 
 That header prints no `Obsoletes` line and no `Updates` line. The
@@ -1098,8 +1098,11 @@ is
 The errata page and the FIPS 180-3 file were read for statuses,
 contents, and the wrapper date and are not the pin of an expected
 integer. On 2026-10-09 the lesson read the plain-text header of
-RFC 4231 at the RFC Editor for the date, the category, and the
-absence of an `Obsoletes` line and of an `Updates` line. That
+RFC 4231 at the RFC Editor. Those three lines carry
+`Network Working Group` and `M. Nystrom`,
+`Request for Comments: 4231` and `RSA Security`, and
+`Category: Standards Track` and `December 2005`. The header
+prints no `Obsoletes` line and no `Updates` line. That
 reading is not given a file digest here. The expected HMAC line is
 the line N13 already copied from §4.2, not a hash of the RFC file.
 A digest is of the retrieved file. Another rendering can carry the

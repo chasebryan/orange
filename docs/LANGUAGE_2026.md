@@ -149,6 +149,12 @@ unresolved.
 > modulus expressions, as `Mod[(1 << bits) - 19]`. Every concrete instance is
 > checked eagerly and retains its exact residue domain. It changes no grammar,
 > token or reserved word; global aliases and finite type lists remain concrete.
+>
+> The S3u slice proposed in [`DIMENSIONS_2026.md`](DIMENSIONS_2026.md) under
+> OEP-0025, also in review, builds on S3t with arrays of up to four
+> dimensions, each a `type` declaration over the one before it, and update
+> targets of two to four indices, as `x with [i][j][k] = v`. It adds no token
+> or reserved word; repeated `^` type syntax remains rejected.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

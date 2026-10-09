@@ -1113,6 +1113,39 @@ predicates, addition, carrying and canonicalization for p = 2^255 − 19.
 Their mathematical boundary tests do not establish a refinement proof or
 verified machine arithmetic.
 
+### Matrices of polynomials, one index per dimension
+
+An array may have up to four dimensions, each named by one more `type`
+declaration, and an update may name one index per dimension it reaches:
+
+```orange
+edition 2026;
+module aes {
+  type Row = Word[8]^4;
+  type State = Row^4;
+  // FIPS 197, section 5.1.2: ShiftRows turns row r left by r places.
+  spec shift_rows(s: State) -> State {
+    for r in 0..4 with t: State = s {
+      for c in 0..4 with u: State = t { u with [r][c] = s[r][(c + r) % 4] }
+    }
+  }
+  test "each row turns by its index" {
+    shift_rows([[0, 1, 2, 3]; 4]) == [[0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 0, 1], [3, 0, 1, 2]]
+  }
+}
+```
+
+`u with [r][c] = v` means `u with [r] = (u[r] with [c] = v)`, and each index
+is proved in range on its own axis. ML-KEM's matrix is
+`type Poly = Mod[3329]^256; type Vector = Poly^2; type Matrix = Vector^2;`,
+three dimensions; every axis is positive and their product is at most 65,536
+scalars. The S3u corpus writes [AES-128](compiler/fixtures/s3u/valid-aes-state.or),
+[SHA3-256](compiler/fixtures/s3u/valid-keccak-state.or), and
+[ML-KEM-512's NTT over that matrix](compiler/fixtures/s3u/valid-mlkem-matrix.or)
+as FIPS 197, 202, and 203 write them, and reproduces their examples. S3u is implemented and tested, with its
+[specification](docs/DIMENSIONS_2026.md) in review as
+[OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1137,6 +1170,7 @@ cryptography.
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Rectangular arrays of scalar rows, with both axes checked and a bounded scalar product | Working; specification in review ([OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md)) |
+| Arrays of up to four dimensions and update paths `x with [i][j] = v`, one index per dimension | Working; specification in review ([OEP-0025](docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
@@ -1154,6 +1188,9 @@ cryptography.
 | Shift and rotation amounts computed from data, `x <<< r` or `x >> (i % 8)`, with a value at every amount | Working; specification in review ([OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Typed local argument decoding and Boolean witness replay (`orangec replay`) | Working; [tool contract](docs/WITNESS_REPLAY_2026.md) |
+| Exact S-box and Boolean function analysis: differences, correlations, degrees, equations, boomerangs (`orangec analyze`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md) |
+| Exact linear-layer analysis: matrix read back from the function, branch numbers, MDS, field (`orangec analyze --linear`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md#linear-layers) |
+| Exact trail bounds for small substitution-permutation networks: fewest active S-boxes, best trail weights, full diffusion (`orangec analyze --layer`) | Working; [tool contract](docs/CRYPTANALYSIS_2026.md#substitution-permutation-networks) |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
@@ -1217,6 +1254,10 @@ Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec doc <FILE>
        orangec replay --function <MODULE::NAME> [--instance <N[,N...]>]
                       --witness <FILE> [--steps <N>] [--stats] <SOURCE>
+       orangec analyze --function <MODULE::NAME> [--instance <N[,N...]>]
+                       [--bits <N[,M]> | --linear [--word <W>]]
+                       [--layer <MODULE::NAME> --rounds <R>]
+                       [--table <TABLE>] [--steps <N>] [--stats] <SOURCE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1229,6 +1270,7 @@ Commands:
   fmt      Format one source, or check source formatting with --check
   doc      Document one parsed source as standalone HTML
   replay   Replay one exact Boolean function instance on typed witness values
+  analyze  Compute exact cryptanalytic properties of one function at every input
   keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
   enc      Seal a file with the scheme its key belongs to
   dec      Open a sealed file, writing nothing unless all of it is authentic
@@ -1256,6 +1298,25 @@ one selected function's concrete parameter types, and reports `falsified` or
 instance selection, canonical local values and resource boundary. A completed
 result describes that supplied witness; it supplies no proof or solver-trust
 decision evidence.
+
+`orangec analyze --function aes::sbox aes.or` evaluates one function at every
+input and prints what a cryptanalyst first asks of it: differential uniformity
+4, nonlinearity 112, algebraic degree 7, boomerang uniformity 6, and 39
+quadratic equations for the AES S-box computed from its definition in
+[`compiler/fixtures/analyze`](compiler/fixtures/analyze). `--bits N[,M]`
+analyzes a 4-bit, 5-bit or 6-to-4-bit S-box held in a wider word, and `--table`
+prints its difference, linear, boomerang or algebraic normal form table. With
+`--linear`, `orangec analyze --linear --function aes::mix_column aes.or` reads
+the matrix of a linear layer back from the function and reports its rank,
+fixed points, XOR count, and differential and linear branch numbers: 5 of 5
+for AES MixColumns, maximum distance separable, the circulant matrix
+02 03 01 01 over GF(2^8). With `--layer` and `--rounds`, the S-box and the
+layer make a round of a substitution-permutation network, and a complete
+search finds the fewest active S-boxes and the best trail over each number of
+rounds: 10 active S-boxes and a best differential trail of probability 2^-20
+over five rounds of PRESENT. The
+[cryptanalysis contract](docs/CRYPTANALYSIS_2026.md) defines every property.
+Each number is exact for the function as written; none is a security claim.
 
 `orangec enc FILE` seals any file with an authenticated cipher written in
 Orange, and `orangec dec FILE.orange` opens it again. XChaCha20-Poly1305 (the

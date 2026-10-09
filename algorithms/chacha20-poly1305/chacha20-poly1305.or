@@ -11,11 +11,23 @@
 // reproduces the RFC's Poly1305 tag of section 2.5.2 and the eleven vectors
 // of appendix A.3, the one-time keys of section 2.6.2 and appendix A.4, the
 // sealing of section 2.8.2 and its opening with the tag check, the opening of
-// the 265-byte ciphertext of appendix A.5 in a 256-byte head and a 9-byte
-// tail, the AEAD_XCHACHA20_POLY1305 example of the draft's appendix A.1,
-// and Wycheproof chacha20_poly1305 and xchacha20_poly1305 tcId 71.
+// the 265-byte ciphertext of appendix A.5, the AEAD_XCHACHA20_POLY1305
+// example of the draft's appendix A.1, and Wycheproof chacha20_poly1305 and
+// xchacha20_poly1305 tcId 71.
+//
+// Sections are RFC 8439's unless they name the draft. Message lengths are
+// part of the types: each function over byte strings of several lengths has
+// a size parameter, or, for the AEAD, a type parameter listing the lengths
+// of the vectors; a function has at most 256 instances, and each comment
+// says which lengths its instances take in.
 edition 2026;
 module chacha20_poly1305 {
+  // Section 2.5.1: Poly1305 computes in the integers modulo the prime
+  // p = 2^130 - 5.
+  type P = Mod[(1 << 130) - 5];
+
+  // ---- ChaCha20, sections 2.1 through 2.4 ----
+
   // Section 2.1: the quarter round on four 32-bit words a, b, c, d.
   spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
     let a1: Word[32] = a + b;
@@ -50,1103 +62,551 @@ module chacha20_poly1305 {
     ]
   }
 
-  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
-      | ((b3 as Word[32]) << 24)
-  }
-
-  spec le_bytes(x: Word[32]) -> Word[8]^4 {
-    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
-  }
-
-  // Section 2.8: num_to_8_le_bytes, a length as eight little-endian bytes.
-  spec num_to_8_le_bytes(x: Word[64]) -> Word[8]^8 {
-    [
-      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
-      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
-    ]
-  }
-
-  // Section 2.3: the initial state. Words 0 through 3 are the constants
-  // "expand 32-byte k", words 4 through 11 the key, word 12 the block
-  // counter, and words 13 through 15 the nonce, each read little-endian.
-  spec initial_state(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
-    let constants: Word[32]^16 = [
-      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-      0, 0, 0, 0,
-      0, 0, 0, 0,
-      counter, 0, 0, 0,
-    ];
-    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
-      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
-    };
-    for i in 0..3 with s: Word[32]^16 = keyed {
-      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
-    }
-  }
-
-  // Section 2.3: the sixteen words serialized as 64 little-endian bytes,
-  // written as one literal: an update of a 64-byte array costs 64 steps,
-  // a literal element one.
-  spec serialize(s: Word[32]^16) -> Word[8]^64 {
-    let b0: Word[8]^4 = le_bytes(s[0]);
-    let b1: Word[8]^4 = le_bytes(s[1]);
-    let b2: Word[8]^4 = le_bytes(s[2]);
-    let b3: Word[8]^4 = le_bytes(s[3]);
-    let b4: Word[8]^4 = le_bytes(s[4]);
-    let b5: Word[8]^4 = le_bytes(s[5]);
-    let b6: Word[8]^4 = le_bytes(s[6]);
-    let b7: Word[8]^4 = le_bytes(s[7]);
-    let b8: Word[8]^4 = le_bytes(s[8]);
-    let b9: Word[8]^4 = le_bytes(s[9]);
-    let b10: Word[8]^4 = le_bytes(s[10]);
-    let b11: Word[8]^4 = le_bytes(s[11]);
-    let b12: Word[8]^4 = le_bytes(s[12]);
-    let b13: Word[8]^4 = le_bytes(s[13]);
-    let b14: Word[8]^4 = le_bytes(s[14]);
-    let b15: Word[8]^4 = le_bytes(s[15]);
-    [
-      b0[0], b0[1], b0[2], b0[3], b1[0], b1[1], b1[2], b1[3],
-      b2[0], b2[1], b2[2], b2[3], b3[0], b3[1], b3[2], b3[3],
-      b4[0], b4[1], b4[2], b4[3], b5[0], b5[1], b5[2], b5[3],
-      b6[0], b6[1], b6[2], b6[3], b7[0], b7[1], b7[2], b7[3],
-      b8[0], b8[1], b8[2], b8[3], b9[0], b9[1], b9[2], b9[3],
-      b10[0], b10[1], b10[2], b10[3], b11[0], b11[1], b11[2], b11[3],
-      b12[0], b12[1], b12[2], b12[3], b13[0], b13[1], b13[2], b13[3],
-      b14[0], b14[1], b14[2], b14[3], b15[0], b15[1], b15[2], b15[3],
-    ]
-  }
-
-  // Section 2.3: chacha20_block. Twenty rounds, that is ten inner blocks,
-  // then the initial state is added word by word and the result serialized.
+  // Section 2.3: chacha20_block. The state is the constants
+  // "expand 32-byte k", the key, the block counter and the nonce, each read
+  // as little-endian 32-bit words; twenty rounds, that is ten inner blocks,
+  // run on a copy of it, the state is added word by word, and the result is
+  // serialized as 64 little-endian bytes.
   spec chacha20_block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
-    let initial: Word[32]^16 = initial_state(key, counter, nonce);
-    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { inner_block(s) };
-    serialize(for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] })
+    let state: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let working: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = state { inner_block(s) };
+    let sum: Word[32]^16 = for i in 0..16 with s: Word[32]^16 = working {
+      s with [i] = s[i] + state[i]
+    };
+    sum as little Word[8]^64
   }
 
-  // Section 2.4: chacha20_encrypt on a 114-byte message, the length of the
-  // section 2.8.2 example, from block `counter` on: the first 64 bytes use
-  // that block and the remaining 50 the next. A message's length is part of
-  // its array type, so each length the vectors need has its own spec.
-  // Decryption is the same function applied to the ciphertext.
-  spec chacha20_encrypt(
+  // Section 2.4.1: chacha20_encrypt. Block j of the key stream is
+  // chacha20_block(key, counter + j, nonce), and the plaintext is
+  // exclusive-ored with the first n bytes of the ceil(n / 64) blocks, so a
+  // final partial block uses the start of its key-stream block. Decryption
+  // is the same function applied to the ciphertext. n runs from 16 through
+  // 271, which takes in the vectors' 47, 114 and 265 bytes.
+  spec chacha20_encrypt[n in 16..272](
     key: Word[8]^32,
     counter: Word[32],
     nonce: Word[8]^12,
-    plaintext: Word[8]^114,
-  ) -> Word[8]^114 {
-    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
-    let second: Word[8]^64 = chacha20_block(key, counter + 1, nonce);
-    let head: Word[8]^114 = for n in 0..64 with c: Word[8]^114 = plaintext {
-      c with [n] = plaintext[n] ^ first[n]
-    };
-    for n in 64..114 with c: Word[8]^114 = head { c with [n] = plaintext[n] ^ second[n - 64] }
+    plaintext: Word[8]^n,
+  ) -> Word[8]^n {
+    let key_stream: Word[8]^(64 * ((n + 63) / 64)) =
+      for j in 0..((n + 63) / 64) with s: Word[8]^(64 * ((n + 63) / 64)) =
+        [0; (64 * ((n + 63) / 64))] {
+        s with [64 * j..64 * j + 64] = chacha20_block(key, counter + (j as Word[32]), nonce)
+      };
+    for i in 0..(n) with c: Word[8]^n = plaintext { c with [i] = c[i] ^ key_stream[i] }
   }
 
-  // Section 2.4 for a 47-byte message, the length of Wycheproof tcId 71:
-  // one block.
-  spec chacha20_encrypt_47(
-    key: Word[8]^32,
-    counter: Word[32],
-    nonce: Word[8]^12,
-    plaintext: Word[8]^47,
-  ) -> Word[8]^47 {
-    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
-    for n in 0..47 with c: Word[8]^47 = plaintext { c with [n] = plaintext[n] ^ first[n] }
+  // ---- Poly1305, section 2.5 ----
+
+  // Section 2.5.1: clamp(r). r is the first half of the one-time key, read
+  // little-endian, and r &= 0x0ffffffc0ffffffc0ffffffc0fffffff clears the
+  // top four bits of bytes 3, 7, 11 and 15 and the bottom two bits of bytes
+  // 4, 8 and 12; the mask is applied to r's two little-endian 64-bit halves.
+  spec clamp(r: Word[8]^16) -> P {
+    let halves: Word[64]^2 = r as little Word[64]^2;
+    [halves[0] & 0x0ffffffc0fffffff, halves[1] & 0x0ffffffc0ffffffc] as little P
   }
 
-  // Section 2.4 for four whole blocks: the first 256 bytes of the 265-byte
-  // ciphertext of appendix A.5, under block counters counter through
-  // counter + 3.
-  spec chacha20_encrypt_256(
-    key: Word[8]^32,
-    counter: Word[32],
-    nonce: Word[8]^12,
-    plaintext: Word[8]^256,
-  ) -> Word[8]^256 {
-    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
-    let second: Word[8]^64 = chacha20_block(key, counter + 1, nonce);
-    let third: Word[8]^64 = chacha20_block(key, counter + 2, nonce);
-    let fourth: Word[8]^64 = chacha20_block(key, counter + 3, nonce);
-    let c1: Word[8]^256 = for n in 0..64 with c: Word[8]^256 = plaintext {
-      c with [n] = plaintext[n] ^ first[n]
-    };
-    let c2: Word[8]^256 = for n in 64..128 with c: Word[8]^256 = c1 {
-      c with [n] = plaintext[n] ^ second[n - 64]
-    };
-    let c3: Word[8]^256 = for n in 128..192 with c: Word[8]^256 = c2 {
-      c with [n] = plaintext[n] ^ third[n - 128]
-    };
-    for n in 192..256 with c: Word[8]^256 = c3 { c with [n] = plaintext[n] ^ fourth[n - 192] }
+  // Section 2.5.1, the body of the loop over the blocks: a += n, then
+  // a = (r * a) % p, where n is le_bytes_to_num of the block followed by the
+  // byte 0x01. n arrives as seventeen bytes; zero bytes above the 0x01 of a
+  // short block add nothing.
+  spec absorb(a: P, r: P, n: Word[8]^17) -> P { (a + (n as little P)) * r }
+
+  // Section 2.5.1: a += s, then num_to_16_le_bytes(a), the low 128 bits of
+  // the sum, little-endian. s is the second half of the one-time key, read
+  // little-endian.
+  spec finish(a: P, s: Word[8]^16) -> Word[8]^16 {
+    let t: Int = (a as Int) + (s as little Int);
+    t as little Word[8]^16
   }
 
-  // Section 2.4 for the 9 bytes that follow those four blocks, under the
-  // block counter of the fifth.
-  spec chacha20_encrypt_9(
-    key: Word[8]^32,
-    counter: Word[32],
-    nonce: Word[8]^12,
-    plaintext: Word[8]^9,
-  ) -> Word[8]^9 {
-    let first: Word[8]^64 = chacha20_block(key, counter, nonce);
-    for n in 0..9 with c: Word[8]^9 = plaintext { c with [n] = plaintext[n] ^ first[n] }
-  }
-
-  // Section 2.5: Poly1305 works modulo the prime p = 2^130 - 5.
-  spec prime() -> Int { 1361129467683753853853498429727072845819 }
-
-  // Section 2.5: clamp(r) clears the top four bits of bytes 3, 7, 11 and 15
-  // and the bottom two bits of bytes 4, 8 and 12. `Int` has no bitwise and,
-  // so the mask 0ffffffc0ffffffc0ffffffc0fffffff is applied to r's bytes.
-  spec clamp(r: Word[8]^16) -> Word[8]^16 {
-    let mask: Word[8]^16 = [
-      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-    ];
-    for i in 0..16 with c: Word[8]^16 = r { c with [i] = r[i] & mask[i] }
-  }
-
-  // Section 2.5.1: le_bytes_to_num on sixteen bytes.
-  spec le_bytes_to_num(b: Word[8]^16) -> Int {
-    for i in 0..16 with n: Int = 0 { n * 256 + (b[15 - i] as Int) }
-  }
-
-  // Section 2.5.1: r is the first half of the key, clamped; s the second.
-  spec poly1305_r(key: Word[8]^32) -> Int {
-    le_bytes_to_num(clamp(for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = key[i] }))
-  }
-
-  spec poly1305_s(key: Word[8]^32) -> Int {
-    le_bytes_to_num(for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = key[16 + i] })
-  }
-
-  // Section 2.5.1: one block enters the accumulator as a = (r * (a + n)) mod p.
-  spec absorb(a: Int, r: Int, n: Int) -> Int { ((a + n) * r) % prime() }
-
-  // Section 2.5.1: the number n of a block is its bytes, little-endian, with
-  // the byte 0x01 immediately above them: above byte 15 of a whole block,
-  // and above the last byte present of a partial final block. Folding a
-  // block's positions from 15 down to 0, a position inside the message
-  // contributes its byte, the position equal to the length contributes the
-  // 0x01, and positions beyond the length contribute nothing.
-  spec block_byte(n: Int, byte: Word[8], position: Int, len: Int) -> Int {
-    if position < len { n * 256 + (byte as Int) }
-    else if position == len { n * 256 + 1 }
-    else { n }
-  }
-
-  // Section 2.5.1: the blocks of one 256-byte segment of a message of `len`
-  // bytes; the segment holds message bytes `first` through `first + 255`.
-  // Block j is absorbed when it begins inside the message; its number starts
-  // from 1 (the 0x01 above byte 15) when the block is whole and from 0, to
-  // receive the 0x01 at the message's length, when it is partial. A message
-  // of at most 256 bytes is one segment.
-  spec poly1305_blocks(a: Int, r: Int, m: Word[8]^256, first: Int, len: Int) -> Int {
-    for j in 0..16 with acc: Int = a {
-      if (first + 16 * j) < len {
-        absorb(acc, r, for i in 0..16 with n: Int = if (first + 16 * j + 16) <= len { 1 } else { 0 } {
-          block_byte(n, m[16 * j + 15 - i], first + 16 * j + 15 - i, len)
-        })
-      } else { acc }
-    }
-  }
-
-  // 256^i for 0 <= i < 16.
-  spec byte_weights() -> Int^16 {
-    [
-      1, 256,
-      65536, 16777216,
-      4294967296, 1099511627776,
-      281474976710656, 72057594037927936,
-      18446744073709551616, 4722366482869645213696,
-      1208925819614629174706176, 309485009821345068724781056,
-      79228162514264337593543950336, 20282409603651670423947251286016,
-      5192296858534827628530496329220096, 1329227995784915872903807060280344576,
-    ]
-  }
-
-  // Section 2.5.1: num_to_16_le_bytes. Byte i is the residue of x / 256^i
-  // modulo 256, so the bytes above the sixteenth are dropped: the
-  // standard's truncation of a + s to 128 bits.
-  spec num_to_16_le_bytes(x: Int) -> Word[8]^16 {
-    let w: Int^16 = byte_weights();
-    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / w[i]) as Word[8] }
-  }
-
-  // Section 2.5.1: poly1305_mac(msg, key) for a message of `len` bytes,
-  // 0 <= len <= 256, carried in the first `len` bytes of `msg`.
-  spec poly1305_mac(msg: Word[8]^256, len: Int, key: Word[8]^32) -> Word[8]^16 {
-    num_to_16_le_bytes(poly1305_blocks(0, poly1305_r(key), msg, 0, len) + poly1305_s(key))
-  }
-
-  // Section 2.5.1 for a message of 256 < len <= 512 bytes in two segments.
-  spec poly1305_mac_long(
-    head: Word[8]^256,
-    tail: Word[8]^256,
-    len: Int,
+  // Section 2.5.1: poly1305_mac(msg, key). The message is divided into
+  // sixteen-byte blocks, the last of which may be shorter, and each block
+  // with the byte 0x01 immediately above it enters the accumulator. The
+  // message has 256 h + 16 q + k bytes: 16 h + q whole blocks, then a last
+  // block of k bytes, 1 <= k <= 16. m is the message, the 0x01 that follows
+  // it, and zeros, so that m[16 i..16 i + 17] is the last block with its
+  // 0x01, while each earlier block takes its 0x01 above its sixteenth byte.
+  // A function has at most 256 instances, too few for every length from 1
+  // through 375 bytes, so the length is split this way: h is 0 or 1 and q
+  // runs from 0 through 7, and the lengths are 1 through 128 and 257
+  // through 384 bytes, which take in the vectors' 16, 34, 48, 64, 127 and
+  // 375.
+  spec poly1305_mac[h in 0..2, q in 0..8, k in 1..17](
+    msg: Word[8]^(256 * h + 16 * q + k),
     key: Word[8]^32,
   ) -> Word[8]^16 {
-    let r: Int = poly1305_r(key);
-    num_to_16_le_bytes(
-      poly1305_blocks(poly1305_blocks(0, r, head, 0, len), r, tail, 256, len) + poly1305_s(key),
-    )
+    let r: P = clamp(key[..16]);
+    let m: Word[8]^(256 * h + 16 * q + 17) =
+      [0; (256 * h + 16 * q + 17)] with [..(256 * h + 16 * q + k + 1)] = msg ++ hex"01";
+    let a: P = for i in 0..(16 * h + q + 1) with a: P = 0 {
+      if i < (16 * h + q) {
+        absorb(a, r, m[16 * i..16 * i + 16] ++ hex"01")
+      } else {
+        absorb(a, r, m[16 * i..16 * i + 17])
+      }
+    };
+    finish(a, key[16..])
   }
 
-  // Section 2.6: poly1305_key_gen, the first 32 bytes of ChaCha20 block 0
+  // Section 2.5.1 for a message of b whole blocks, which is what the AEAD's
+  // mac_data always is (section 2.8): every block takes the 0x01 above its
+  // sixteenth byte. b runs from 1 through 24, which takes in the vectors'
+  // 5, 10 and 19 blocks.
+  spec poly1305_mac_blocks[b in 1..25](msg: Word[8]^(16 * b), key: Word[8]^32) -> Word[8]^16 {
+    let r: P = clamp(key[..16]);
+    let a: P = for i in 0..(b) with a: P = 0 {
+      absorb(a, r, msg[16 * i..16 * i + 16] ++ hex"01")
+    };
+    finish(a, key[16..])
+  }
+
+  // ---- The AEAD construction, sections 2.6 and 2.8 ----
+
+  // Section 2.6.1: poly1305_key_gen, the first 32 bytes of ChaCha20 block 0
   // under the key and nonce; the other 32 are discarded.
   spec poly1305_key_gen(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
-    let block: Word[8]^64 = chacha20_block(key, 0, nonce);
-    for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block[i] }
+    chacha20_block(key, 0, nonce)[..32]
   }
 
-  // Section 2.8: the input of the MAC is aad || pad16(aad) || ciphertext ||
-  // pad16(ciphertext) || num_to_8_le_bytes(|aad|) ||
-  // num_to_8_le_bytes(|ciphertext|). Every block of it is whole, so it is
-  // absorbed part by part, sixteen bytes at a time, instead of being laid
-  // out in one array: the padded aad, the ciphertext with its last block
-  // padded, and the block of the two lengths.
-  spec whole_block(b: Word[8]^16) -> Int {
-    for i in 0..16 with n: Int = 1 { n * 256 + (b[15 - i] as Int) }
+  // Section 2.8.1: x || pad16(x), x followed by the zero bytes that fill its
+  // last sixteen-byte block. x has 16 q + k bytes, q from 0 through 16 and
+  // k from 1 through 15: every length up to 271 bytes whose last block is
+  // partial, which takes in the vectors' 8, 12, 47, 114 and 265 (255
+  // instances). When x fills its last block pad16(x) is empty; no vector
+  // has such a length.
+  spec padded16[q in 0..17, k in 1..16](x: Word[8]^(16 * q + k)) -> Word[8]^(16 * q + 16) {
+    x ++ [0; (16 - k)]
   }
 
-  // aad || pad16(aad) for 12 bytes of aad: one block.
-  spec absorb_aad_12(a: Int, r: Int, aad: Word[8]^12) -> Int {
-    absorb(a, r, whole_block([
-      aad[0], aad[1], aad[2], aad[3], aad[4], aad[5], aad[6], aad[7],
-      aad[8], aad[9], aad[10], aad[11], 0, 0, 0, 0,
-    ]))
+  // Section 2.8.1: num_to_8_le_bytes(x.length), the length of x in bytes as a
+  // 64-bit little-endian integer, for the lengths padded16 takes.
+  spec length_bytes[q in 0..17, k in 1..16](x: Word[8]^(16 * q + k)) -> Word[8]^8 {
+    let length: Int = 16 * q + k;
+    length as little Word[8]^8
   }
 
-  // aad || pad16(aad) for 8 bytes of aad.
-  spec absorb_aad_8(a: Int, r: Int, aad: Word[8]^8) -> Int {
-    absorb(a, r, whole_block([
-      aad[0], aad[1], aad[2], aad[3], aad[4], aad[5], aad[6], aad[7],
-      0, 0, 0, 0, 0, 0, 0, 0,
-    ]))
-  }
-
-  // ciphertext || pad16(ciphertext) for 114 bytes: seven whole blocks and
-  // two bytes padded to an eighth.
-  spec absorb_ciphertext_114(a: Int, r: Int, c: Word[8]^114) -> Int {
-    let whole: Int = for j in 0..7 with acc: Int = a {
-      absorb(acc, r, whole_block(
-        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = c[16 * j + i] },
-      ))
-    };
-    absorb(whole, r, whole_block(
-      for i in 0..2 with b: Word[8]^16 = [0; 16] { b with [i] = c[112 + i] },
-    ))
-  }
-
-  // ciphertext || pad16(ciphertext) for 47 bytes: two whole blocks and
-  // fifteen bytes padded to a third.
-  spec absorb_ciphertext_47(a: Int, r: Int, c: Word[8]^47) -> Int {
-    let whole: Int = for j in 0..2 with acc: Int = a {
-      absorb(acc, r, whole_block(
-        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = c[16 * j + i] },
-      ))
-    };
-    absorb(whole, r, whole_block(
-      for i in 0..15 with b: Word[8]^16 = [0; 16] { b with [i] = c[32 + i] },
-    ))
-  }
-
-  // ciphertext || pad16(ciphertext) for the 265 bytes of appendix A.5, a
-  // 256-byte head and a 9-byte tail: sixteen whole blocks, then the nine
-  // bytes padded to a seventeenth.
-  spec absorb_ciphertext_265(a: Int, r: Int, head: Word[8]^256, tail: Word[8]^9) -> Int {
-    let whole: Int = for j in 0..16 with acc: Int = a {
-      absorb(acc, r, whole_block(
-        for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = head[16 * j + i] },
-      ))
-    };
-    absorb(whole, r, whole_block(
-      for i in 0..9 with b: Word[8]^16 = [0; 16] { b with [i] = tail[i] },
-    ))
-  }
-
-  // num_to_8_le_bytes(|aad|) || num_to_8_le_bytes(|ciphertext|): the last
-  // block.
-  spec absorb_lengths(a: Int, r: Int, aad_len: Word[64], ciphertext_len: Word[64]) -> Int {
-    let al: Word[8]^8 = num_to_8_le_bytes(aad_len);
-    let cl: Word[8]^8 = num_to_8_le_bytes(ciphertext_len);
-    absorb(a, r, whole_block([
-      al[0], al[1], al[2], al[3], al[4], al[5], al[6], al[7],
-      cl[0], cl[1], cl[2], cl[3], cl[4], cl[5], cl[6], cl[7],
-    ]))
-  }
-
-  // Section 2.8: the tag, poly1305_mac of the MAC input under the one-time
-  // key, for 12 bytes of aad and 114 of ciphertext.
-  spec aead_tag(otk: Word[8]^32, aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^16 {
-    let r: Int = poly1305_r(otk);
-    let a: Int = absorb_ciphertext_114(absorb_aad_12(0, r, aad), r, ciphertext);
-    num_to_16_le_bytes(absorb_lengths(a, r, 12, 114) + poly1305_s(otk))
-  }
-
-  // Section 2.8 for 8 bytes of aad and 47 of ciphertext.
-  spec aead_tag_8_47(otk: Word[8]^32, aad: Word[8]^8, ciphertext: Word[8]^47) -> Word[8]^16 {
-    let r: Int = poly1305_r(otk);
-    let a: Int = absorb_ciphertext_47(absorb_aad_8(0, r, aad), r, ciphertext);
-    num_to_16_le_bytes(absorb_lengths(a, r, 8, 47) + poly1305_s(otk))
-  }
-
-  // Section 2.8 for 12 bytes of aad and 265 of ciphertext.
-  spec aead_tag_12_265(
+  // Section 2.8.1: tag = poly1305_mac(mac_data, otk), where mac_data is
+  // aad || pad16(aad) || ciphertext || pad16(ciphertext) ||
+  // num_to_8_le_bytes(aad.length) || num_to_8_le_bytes(ciphertext.length),
+  // a whole number of blocks, so poly1305_mac_blocks computes the MAC (the
+  // vectors' mac_data of 80, 160 and 304 bytes are not all among the
+  // lengths poly1305_mac takes). The types A and M are the lengths of the
+  // vectors' additional data (8 and 12 bytes) and messages (47, 114 and
+  // 265): a size parameter for each length would give the function more
+  // than 256 instances.
+  spec aead_tag[A in {Word[8]^8, Word[8]^12}, M in {Word[8]^47, Word[8]^114, Word[8]^265}](
     otk: Word[8]^32,
-    aad: Word[8]^12,
-    head: Word[8]^256,
-    tail: Word[8]^9,
+    aad: A,
+    ciphertext: M,
   ) -> Word[8]^16 {
-    let r: Int = poly1305_r(otk);
-    let a: Int = absorb_ciphertext_265(absorb_aad_12(0, r, aad), r, head, tail);
-    num_to_16_le_bytes(absorb_lengths(a, r, 12, 265) + poly1305_s(otk))
+    poly1305_mac_blocks(
+      padded16(aad) ++ padded16(ciphertext) ++ length_bytes(aad) ++ length_bytes(ciphertext),
+      otk,
+    )
   }
 
-  // Section 2.8: chacha20_aead_encrypt. The 96-bit nonce is the constant
-  // and the IV of the standard already joined. The one-time key comes from
-  // block 0, the ciphertext from block 1 on, and the result is the
-  // ciphertext followed by the 16-byte tag.
-  spec chacha20_aead_encrypt(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    plaintext: Word[8]^114,
-  ) -> Word[8]^130 {
+  // Section 2.8.1: chacha20_aead_encrypt. The 96-bit nonce is the
+  // standard's constant and IV already joined. The one-time key comes from
+  // block 0, the ciphertext from block 1 on, and the result is the pair
+  // (ciphertext, tag), as the RFC's pseudocode returns it.
+  spec chacha20_aead_encrypt[
+    A in {Word[8]^8, Word[8]^12},
+    M in {Word[8]^47, Word[8]^114, Word[8]^265}
+  ](aad: A, key: Word[8]^32, nonce: Word[8]^12, plaintext: M) -> (M, Word[8]^16) {
     let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
-    let ciphertext: Word[8]^114 = chacha20_encrypt(key, 1, nonce, plaintext);
-    let tag: Word[8]^16 = aead_tag(otk, aad, ciphertext);
-    let sealed: Word[8]^130 = for i in 0..114 with out: Word[8]^130 = [0; 130] {
-      out with [i] = ciphertext[i]
-    };
-    for i in 0..16 with out: Word[8]^130 = sealed { out with [114 + i] = tag[i] }
+    let ciphertext: M = chacha20_encrypt(key, 1, nonce, plaintext);
+    (ciphertext, aead_tag(otk, aad, ciphertext))
   }
 
-  // Section 2.8 for 8 bytes of aad and a 47-byte plaintext.
-  spec chacha20_aead_encrypt_8_47(
-    aad: Word[8]^8,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    plaintext: Word[8]^47,
-  ) -> Word[8]^63 {
+  // The zero bytes returned in place of a plaintext whose tag does not
+  // verify, for the lengths chacha20_encrypt takes.
+  spec withheld[n in 16..272](ciphertext: Word[8]^n) -> Word[8]^n { [0; (n)] }
+
+  // Section 2.8: decryption recomputes the tag over the additional data and
+  // the received ciphertext and compares it with the received tag, all
+  // sixteen bytes in one comparison. The result is the verdict and the
+  // plaintext, which is released only when the tag verifies; otherwise it is
+  // zeros.
+  spec chacha20_aead_decrypt[
+    A in {Word[8]^8, Word[8]^12},
+    M in {Word[8]^47, Word[8]^114, Word[8]^265}
+  ](aad: A, key: Word[8]^32, nonce: Word[8]^12, ciphertext: M, tag: Word[8]^16) -> (Bool, M) {
     let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
-    let ciphertext: Word[8]^47 = chacha20_encrypt_47(key, 1, nonce, plaintext);
-    let tag: Word[8]^16 = aead_tag_8_47(otk, aad, ciphertext);
-    let sealed: Word[8]^63 = for i in 0..47 with out: Word[8]^63 = [0; 63] {
-      out with [i] = ciphertext[i]
-    };
-    for i in 0..16 with out: Word[8]^63 = sealed { out with [47 + i] = tag[i] }
-  }
-
-  // Section 2.8: decryption recomputes the tag over the received ciphertext
-  // and compares it with the received tag, byte by byte.
-  spec chacha20_aead_verify(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    sealed: Word[8]^130,
-  ) -> Bool {
-    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
-    let ciphertext: Word[8]^114 = for i in 0..114 with c: Word[8]^114 = [0; 114] {
-      c with [i] = sealed[i]
-    };
-    let tag: Word[8]^16 = aead_tag(otk, aad, ciphertext);
-    for i in 0..16 with same: Bool = true { same && (tag[i] == sealed[114 + i]) }
-  }
-
-  // Section 2.8: chacha20_aead_decrypt. The plaintext is released only when
-  // the tag verifies; otherwise the result is all zeros, and the verdict of
-  // chacha20_aead_verify is false.
-  spec chacha20_aead_decrypt(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    sealed: Word[8]^130,
-  ) -> Word[8]^114 {
-    let ciphertext: Word[8]^114 = for i in 0..114 with c: Word[8]^114 = [0; 114] {
-      c with [i] = sealed[i]
-    };
-    if chacha20_aead_verify(aad, key, nonce, sealed) {
-      chacha20_encrypt(key, 1, nonce, ciphertext)
+    if aead_tag(otk, aad, ciphertext) == tag {
+      (true, chacha20_encrypt(key, 1, nonce, ciphertext))
     } else {
-      [0; 114]
+      (false, withheld(ciphertext))
     }
   }
 
-  // Section 2.8 for the 265-byte ciphertext of appendix A.5, passed as a
-  // 256-byte head and a 9-byte tail with its tag apart. The tag check is
-  // one spec and the two parts of the plaintext are two, each released only
-  // when the tag verifies.
-  spec chacha20_aead_verify_265(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    head: Word[8]^256,
-    tail: Word[8]^9,
-    tag: Word[8]^16,
-  ) -> Bool {
-    let otk: Word[8]^32 = poly1305_key_gen(key, nonce);
-    let computed: Word[8]^16 = aead_tag_12_265(otk, aad, head, tail);
-    for i in 0..16 with same: Bool = true { same && (computed[i] == tag[i]) }
-  }
+  // ---- XChaCha20-Poly1305, draft-irtf-cfrg-xchacha-03 ----
 
-  spec chacha20_aead_decrypt_265_head(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    head: Word[8]^256,
-    tail: Word[8]^9,
-    tag: Word[8]^16,
-  ) -> Word[8]^256 {
-    if chacha20_aead_verify_265(aad, key, nonce, head, tail, tag) {
-      chacha20_encrypt_256(key, 1, nonce, head)
-    } else {
-      [0; 256]
-    }
-  }
-
-  spec chacha20_aead_decrypt_265_tail(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^12,
-    head: Word[8]^256,
-    tail: Word[8]^9,
-    tag: Word[8]^16,
-  ) -> Word[8]^9 {
-    if chacha20_aead_verify_265(aad, key, nonce, head, tail, tag) {
-      chacha20_encrypt_9(key, 5, nonce, tail)
-    } else {
-      [0; 9]
-    }
-  }
-
-  // draft-irtf-cfrg-xchacha section 2.2: HChaCha20. The state takes the
-  // sixteen nonce bytes in words 12 through 15, runs the twenty rounds
-  // without the final addition, and returns words 0 through 3 and 12
-  // through 15 serialized: a 256-bit subkey.
+  // Draft section 2.2: HChaCha20. The state takes the sixteen nonce bytes
+  // in words 12 through 15, in place of the block counter and the nonce,
+  // runs the twenty rounds without the final addition, and returns words 0
+  // through 3 and 12 through 15 serialized: a 256-bit subkey.
   spec hchacha20(key: Word[8]^32, nonce: Word[8]^16) -> Word[8]^32 {
-    let keyed: Word[32]^16 = initial_state(key, 0, [0; 12]);
-    let initial: Word[32]^16 = for i in 0..4 with s: Word[32]^16 = keyed {
-      s with [12 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
-    };
-    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { inner_block(s) };
-    let words: Word[32]^8 = [
-      mixed[0], mixed[1], mixed[2], mixed[3], mixed[12], mixed[13], mixed[14], mixed[15],
-    ];
-    for i in 0..8 with bytes: Word[8]^32 = [0; 32] {
-      for j in 0..4 with b: Word[8]^32 = bytes { b with [4 * i + j] = le_bytes(words[i])[j] }
-    }
+    let state: Word[32]^16 = ("expand 32-byte k" ++ key ++ nonce) as little Word[32]^16;
+    let x: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = state { inner_block(s) };
+    [x[0], x[1], x[2], x[3], x[12], x[13], x[14], x[15]] as little Word[8]^32
   }
 
-  // draft-irtf-cfrg-xchacha section 2: AEAD_XChaCha20_Poly1305. Step 1, the
-  // subkey is HChaCha20 of the key and the first sixteen bytes of the 192-bit
-  // nonce; step 2, the ChaCha20 nonce is four zero bytes followed by its last
-  // eight bytes, and AEAD_CHACHA20_POLY1305 runs unchanged under the subkey.
-  spec hchacha20_nonce(nonce: Word[8]^24) -> Word[8]^16 {
-    for i in 0..16 with n: Word[8]^16 = [0; 16] { n with [i] = nonce[i] }
+  // Draft section 2: AEAD_XChaCha20_Poly1305. Step 1, the subkey is
+  // HChaCha20 of the key and the first sixteen bytes of the 192-bit nonce;
+  // step 2, AEAD_CHACHA20_POLY1305 runs unchanged under the subkey, with the
+  // 96-bit nonce made of four zero bytes followed by the last eight bytes.
+  // Section 2 states these two steps for the AEAD; section 2.3 states the
+  // same two for the XChaCha20 stream cipher alone.
+  spec xchacha20_aead_encrypt[
+    A in {Word[8]^8, Word[8]^12},
+    M in {Word[8]^47, Word[8]^114, Word[8]^265}
+  ](aad: A, key: Word[8]^32, nonce: Word[8]^24, plaintext: M) -> (M, Word[8]^16) {
+    chacha20_aead_encrypt(aad, hchacha20(key, nonce[..16]), hex"00000000" ++ nonce[16..], plaintext)
   }
 
-  spec chacha20_nonce(nonce: Word[8]^24) -> Word[8]^12 {
-    [
-      0, 0, 0, 0, nonce[16], nonce[17], nonce[18], nonce[19],
-      nonce[20], nonce[21], nonce[22], nonce[23],
-    ]
+  // ---- The vectors ----
+
+  // RFC 8439 section 2.5.2: Poly1305 of the 34-byte text "Cryptographic
+  // Forum Research Group": two whole blocks and a partial third.
+  test "RFC 8439 2.5.2: Poly1305 tag" {
+    let key: Word[8]^32 =
+      hex"85 d6 be 78 57 55 6d 33 7f 44 52 fe 42 d5 06 a8" ++
+      hex"01 03 80 8a fb 0d b2 fd 4a bf f6 af 41 49 f5 1b";
+    poly1305_mac("Cryptographic Forum Research Group", key) ==
+      hex"a8 06 1d c1 30 51 36 c6 c2 2b 8b af 0c 01 27 a9"
   }
 
-  spec xchacha20_aead_encrypt(
-    aad: Word[8]^12,
-    key: Word[8]^32,
-    nonce: Word[8]^24,
-    plaintext: Word[8]^114,
-  ) -> Word[8]^130 {
-    chacha20_aead_encrypt(
-      aad, hchacha20(key, hchacha20_nonce(nonce)), chacha20_nonce(nonce), plaintext,
-    )
-  }
-
-  spec xchacha20_aead_encrypt_8_47(
-    aad: Word[8]^8,
-    key: Word[8]^32,
-    nonce: Word[8]^24,
-    plaintext: Word[8]^47,
-  ) -> Word[8]^63 {
-    chacha20_aead_encrypt_8_47(
-      aad, hchacha20(key, hchacha20_nonce(nonce)), chacha20_nonce(nonce), plaintext,
-    )
-  }
-
-  // Inputs shared by several vectors: the key, nonce, aad and plaintext of
-  // section 2.8.2, which the draft's appendix A.1 reuses with its own nonce.
-  spec rfc8439_2_8_2_key() -> Word[8]^32 {
-    [
-      0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
-      0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
-    ]
-  }
-
-  spec rfc8439_2_8_2_nonce() -> Word[8]^12 { [
-      0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
-    ] }
-
-  spec rfc8439_2_8_2_aad() -> Word[8]^12 { [
-      0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
-    ] }
-
-  spec sunscreen() -> Word[8]^114 {
-    [
-      0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x47,
-      0x65, 0x6e, 0x74, 0x6c, 0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20,
-      0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x20, 0x6f, 0x66,
-      0x20, 0x27, 0x39, 0x39, 0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
-      0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66, 0x65, 0x72, 0x20, 0x79,
-      0x6f, 0x75, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6f, 0x6e, 0x65, 0x20,
-      0x74, 0x69, 0x70, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x74, 0x68, 0x65, 0x20,
-      0x66, 0x75, 0x74, 0x75, 0x72, 0x65, 0x2c, 0x20, 0x73, 0x75, 0x6e, 0x73,
-      0x63, 0x72, 0x65, 0x65, 0x6e, 0x20, 0x77, 0x6f, 0x75, 0x6c, 0x64, 0x20,
-      0x62, 0x65, 0x20, 0x69, 0x74, 0x2e,
-    ]
-  }
-
-  // RFC 8439 section 2.5.2: the Poly1305 tag of "Cryptographic Forum
-  // Research Group", 34 bytes: two whole blocks and a partial third.
-  spec rfc8439_2_5_2() -> Word[8]^16 {
-    let msg: Word[8]^34 = [
-      0x43, 0x72, 0x79, 0x70, 0x74, 0x6f, 0x67, 0x72, 0x61, 0x70, 0x68, 0x69, 0x63, 0x20, 0x46, 0x6f,
-      0x72, 0x75, 0x6d, 0x20, 0x52, 0x65, 0x73, 0x65, 0x61, 0x72, 0x63, 0x68, 0x20, 0x47, 0x72, 0x6f,
-      0x75, 0x70,
-    ];
-    let key: Word[8]^32 = [
-      0x85, 0xd6, 0xbe, 0x78, 0x57, 0x55, 0x6d, 0x33, 0x7f, 0x44, 0x52, 0xfe, 0x42, 0xd5, 0x06, 0xa8,
-      0x01, 0x03, 0x80, 0x8a, 0xfb, 0x0d, 0xb2, 0xfd, 0x4a, 0xbf, 0xf6, 0xaf, 0x41, 0x49, 0xf5, 0x1b,
-    ];
-    let buffer: Word[8]^256 = for i in 0..34 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 34, key)
-  }
-
-  spec rfc8439_2_5_2_expected() -> Word[8]^16 {
-    [
-      0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27, 0xa9,
-    ]
-  }
-
-  // The 375-byte text of appendix A.3, test vectors 2 and 3, as a 256-byte
-  // head and a 119-byte tail.
-  spec ietf_text_head() -> Word[8]^256 {
-    [
-      0x41, 0x6e, 0x79, 0x20, 0x73, 0x75, 0x62, 0x6d, 0x69, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x20, 0x74,
-      0x6f, 0x20, 0x74, 0x68, 0x65, 0x20, 0x49, 0x45, 0x54, 0x46, 0x20, 0x69, 0x6e, 0x74, 0x65, 0x6e,
-      0x64, 0x65, 0x64, 0x20, 0x62, 0x79, 0x20, 0x74, 0x68, 0x65, 0x20, 0x43, 0x6f, 0x6e, 0x74, 0x72,
-      0x69, 0x62, 0x75, 0x74, 0x6f, 0x72, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x70, 0x75, 0x62, 0x6c, 0x69,
-      0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x61, 0x73, 0x20, 0x61, 0x6c, 0x6c, 0x20, 0x6f, 0x72,
-      0x20, 0x70, 0x61, 0x72, 0x74, 0x20, 0x6f, 0x66, 0x20, 0x61, 0x6e, 0x20, 0x49, 0x45, 0x54, 0x46,
-      0x20, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x20,
-      0x6f, 0x72, 0x20, 0x52, 0x46, 0x43, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x61, 0x6e, 0x79, 0x20, 0x73,
-      0x74, 0x61, 0x74, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x20, 0x6d, 0x61, 0x64, 0x65, 0x20, 0x77, 0x69,
-      0x74, 0x68, 0x69, 0x6e, 0x20, 0x74, 0x68, 0x65, 0x20, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74,
-      0x20, 0x6f, 0x66, 0x20, 0x61, 0x6e, 0x20, 0x49, 0x45, 0x54, 0x46, 0x20, 0x61, 0x63, 0x74, 0x69,
-      0x76, 0x69, 0x74, 0x79, 0x20, 0x69, 0x73, 0x20, 0x63, 0x6f, 0x6e, 0x73, 0x69, 0x64, 0x65, 0x72,
-      0x65, 0x64, 0x20, 0x61, 0x6e, 0x20, 0x22, 0x49, 0x45, 0x54, 0x46, 0x20, 0x43, 0x6f, 0x6e, 0x74,
-      0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x22, 0x2e, 0x20, 0x53, 0x75, 0x63, 0x68, 0x20,
-      0x73, 0x74, 0x61, 0x74, 0x65, 0x6d, 0x65, 0x6e, 0x74, 0x73, 0x20, 0x69, 0x6e, 0x63, 0x6c, 0x75,
-      0x64, 0x65, 0x20, 0x6f, 0x72, 0x61, 0x6c, 0x20, 0x73, 0x74, 0x61, 0x74, 0x65, 0x6d, 0x65, 0x6e,
-    ]
-  }
-
-  spec ietf_text_tail() -> Word[8]^119 {
-    [
-      0x74, 0x73, 0x20, 0x69, 0x6e, 0x20, 0x49, 0x45, 0x54, 0x46, 0x20, 0x73, 0x65, 0x73, 0x73, 0x69,
-      0x6f, 0x6e, 0x73, 0x2c, 0x20, 0x61, 0x73, 0x20, 0x77, 0x65, 0x6c, 0x6c, 0x20, 0x61, 0x73, 0x20,
-      0x77, 0x72, 0x69, 0x74, 0x74, 0x65, 0x6e, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x65, 0x6c, 0x65, 0x63,
-      0x74, 0x72, 0x6f, 0x6e, 0x69, 0x63, 0x20, 0x63, 0x6f, 0x6d, 0x6d, 0x75, 0x6e, 0x69, 0x63, 0x61,
-      0x74, 0x69, 0x6f, 0x6e, 0x73, 0x20, 0x6d, 0x61, 0x64, 0x65, 0x20, 0x61, 0x74, 0x20, 0x61, 0x6e,
-      0x79, 0x20, 0x74, 0x69, 0x6d, 0x65, 0x20, 0x6f, 0x72, 0x20, 0x70, 0x6c, 0x61, 0x63, 0x65, 0x2c,
-      0x20, 0x77, 0x68, 0x69, 0x63, 0x68, 0x20, 0x61, 0x72, 0x65, 0x20, 0x61, 0x64, 0x64, 0x72, 0x65,
-      0x73, 0x73, 0x65, 0x64, 0x20, 0x74, 0x6f,
-    ]
-  }
-
-  // RFC 8439 appendix A.3, test vector 1: the zero key over 64 zero bytes; r =
-  // 0 and s = 0 give the zero tag.
-  spec rfc8439_a3_1() -> Word[8]^16 {
+  // RFC 8439 appendix A.3, test vector 1: the zero key over 64 zero bytes;
+  // r = 0 and s = 0 give the zero tag.
+  test "RFC 8439 A.3 #1: Poly1305, zero key" {
     let msg: Word[8]^64 = [0; 64];
     let key: Word[8]^32 = [0; 32];
-    let buffer: Word[8]^256 = for i in 0..64 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 64, key)
+    poly1305_mac(msg, key) == hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
 
-  spec rfc8439_a3_1_expected() -> Word[8]^16 { [0; 16] }
+  // The 375-byte text of appendix A.3, test vectors 2 and 3, the
+  // contribution notice of the IETF Trust's legal provisions.
+  spec ietf_text() -> Word[8]^375 {
+    "Any submission to the IETF intended by the Contributor for " ++
+    "publication as all or part of an IETF Internet-Draft or RFC and " ++
+    "any statement made within the context of an IETF activity is " ++
+    "considered an \"IETF Contribution\". Such statements include " ++
+    "oral statements in IETF sessions, as well as written and " ++
+    "electronic communications made at any time or place, which are " ++
+    "addressed to"
+  }
 
   // RFC 8439 appendix A.3, test vector 2: r = 0 over the 375-byte text; the
   // tag is s.
-  spec rfc8439_a3_2() -> Word[8]^16 {
-    let key: Word[8]^32 = [
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a, 0x86, 0x3e,
-    ];
-    let text: Word[8]^119 = ietf_text_tail();
-    let tail: Word[8]^256 = for i in 0..119 with m: Word[8]^256 = [0; 256] {
-      m with [i] = text[i]
-    };
-    poly1305_mac_long(ietf_text_head(), tail, 375, key)
+  test "RFC 8439 A.3 #2: Poly1305, r = 0" {
+    let key: Word[8]^32 =
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"36 e5 f6 b5 c5 e0 60 70 f0 ef ca 96 22 7a 86 3e";
+    poly1305_mac(ietf_text(), key) == hex"36 e5 f6 b5 c5 e0 60 70 f0 ef ca 96 22 7a 86 3e"
   }
 
-  spec rfc8439_a3_2_expected() -> Word[8]^16 {
-    [
-      0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a, 0x86, 0x3e,
-    ]
+  // RFC 8439 appendix A.3, test vector 3: the same text under
+  // r = 36e5f6b5... (before clamping) and s = 0; the tag is the reduced
+  // polynomial alone.
+  test "RFC 8439 A.3 #3: Poly1305, s = 0" {
+    let key: Word[8]^32 =
+      hex"36 e5 f6 b5 c5 e0 60 70 f0 ef ca 96 22 7a 86 3e" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(ietf_text(), key) == hex"f3 47 7e 7c d9 54 17 af 89 a6 b8 79 4c 31 0c f0"
   }
 
-  // RFC 8439 appendix A.3, test vector 3: the same text under r = 36e5f6b5...
-  // (before clamping) and s = 0; the tag is the reduced polynomial alone.
-  spec rfc8439_a3_3() -> Word[8]^16 {
-    let key: Word[8]^32 = [
-      0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a, 0x86, 0x3e,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let text: Word[8]^119 = ietf_text_tail();
-    let tail: Word[8]^256 = for i in 0..119 with m: Word[8]^256 = [0; 256] {
-      m with [i] = text[i]
-    };
-    poly1305_mac_long(ietf_text_head(), tail, 375, key)
-  }
-
-  spec rfc8439_a3_3_expected() -> Word[8]^16 {
-    [
-      0xf3, 0x47, 0x7e, 0x7c, 0xd9, 0x54, 0x17, 0xaf, 0x89, 0xa6, 0xb8, 0x79, 0x4c, 0x31, 0x0c, 0xf0,
-    ]
+  // The key of appendix A.5, which appendix A.3 test vector 4 and appendix
+  // A.4 test vector 3 also use.
+  spec key_a5() -> Word[8]^32 {
+    hex"1c 92 40 a5 eb 55 d3 8a f3 33 88 86 04 f6 b5 f0" ++
+    hex"47 39 17 c1 40 2b 80 09 9d ca 5c bc 20 70 75 c0"
   }
 
   // RFC 8439 appendix A.3, test vector 4: the 127-byte Jabberwocky text under
   // the key of appendix A.5: seven whole blocks and a 15-byte final block.
-  spec rfc8439_a3_4() -> Word[8]^16 {
-    let msg: Word[8]^127 = [
-      0x27, 0x54, 0x77, 0x61, 0x73, 0x20, 0x62, 0x72, 0x69, 0x6c, 0x6c, 0x69, 0x67, 0x2c, 0x20, 0x61,
-      0x6e, 0x64, 0x20, 0x74, 0x68, 0x65, 0x20, 0x73, 0x6c, 0x69, 0x74, 0x68, 0x79, 0x20, 0x74, 0x6f,
-      0x76, 0x65, 0x73, 0x0a, 0x44, 0x69, 0x64, 0x20, 0x67, 0x79, 0x72, 0x65, 0x20, 0x61, 0x6e, 0x64,
-      0x20, 0x67, 0x69, 0x6d, 0x62, 0x6c, 0x65, 0x20, 0x69, 0x6e, 0x20, 0x74, 0x68, 0x65, 0x20, 0x77,
-      0x61, 0x62, 0x65, 0x3a, 0x0a, 0x41, 0x6c, 0x6c, 0x20, 0x6d, 0x69, 0x6d, 0x73, 0x79, 0x20, 0x77,
-      0x65, 0x72, 0x65, 0x20, 0x74, 0x68, 0x65, 0x20, 0x62, 0x6f, 0x72, 0x6f, 0x67, 0x6f, 0x76, 0x65,
-      0x73, 0x2c, 0x0a, 0x41, 0x6e, 0x64, 0x20, 0x74, 0x68, 0x65, 0x20, 0x6d, 0x6f, 0x6d, 0x65, 0x20,
-      0x72, 0x61, 0x74, 0x68, 0x73, 0x20, 0x6f, 0x75, 0x74, 0x67, 0x72, 0x61, 0x62, 0x65, 0x2e,
-    ];
-    let key: Word[8]^32 = [
-      0x1c, 0x92, 0x40, 0xa5, 0xeb, 0x55, 0xd3, 0x8a, 0xf3, 0x33, 0x88, 0x86, 0x04, 0xf6, 0xb5, 0xf0,
-      0x47, 0x39, 0x17, 0xc1, 0x40, 0x2b, 0x80, 0x09, 0x9d, 0xca, 0x5c, 0xbc, 0x20, 0x70, 0x75, 0xc0,
-    ];
-    let buffer: Word[8]^256 = for i in 0..127 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 127, key)
-  }
-
-  spec rfc8439_a3_4_expected() -> Word[8]^16 {
-    [
-      0x45, 0x41, 0x66, 0x9a, 0x7e, 0xaa, 0xee, 0x61, 0xe7, 0x08, 0xdc, 0x7c, 0xbc, 0xc5, 0xeb, 0x62,
-    ]
+  test "RFC 8439 A.3 #4: Poly1305, the Jabberwocky text" {
+    let msg: Word[8]^127 =
+      "'Twas brillig, and the slithy toves\nDid gyre and gimble in the " ++
+      "wabe:\nAll mimsy were the borogoves,\nAnd the mome raths " ++
+      "outgrabe.";
+    poly1305_mac(msg, key_a5()) == hex"45 41 66 9a 7e aa ee 61 e7 08 dc 7c bc c5 eb 62"
   }
 
   // RFC 8439 appendix A.3, test vector 5: r = 2, s = 0 and one block of 0xff
   // bytes, whose number 2^129 - 1 doubled is 2^130 - 2, which reduces to 3.
-  spec rfc8439_a3_5() -> Word[8]^16 {
-    let msg: Word[8]^16 = [0xff; 16];
-    let key: Word[8]^32 = [0; 32] with [0] = 0x02;
-    let buffer: Word[8]^256 = for i in 0..16 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 16, key)
+  test "RFC 8439 A.3 #5: Poly1305, 2^130 - 2 reduces to 3" {
+    let msg: Word[8]^16 = hex"ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
+    let key: Word[8]^32 =
+      hex"02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
-
-  spec rfc8439_a3_5_expected() -> Word[8]^16 { [0; 16] with [0] = 0x03 }
 
   // RFC 8439 appendix A.3, test vector 6: r = 2, s = 2^128 - 1 and one block
   // whose number is 2^128 + 2; a + s is 3 * 2^128 + 3 and only its low 128
   // bits are kept.
-  spec rfc8439_a3_6() -> Word[8]^16 {
-    let msg: Word[8]^16 = [0; 16] with [0] = 0x02;
-    let key: Word[8]^32 = [
-      0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    ];
-    let buffer: Word[8]^256 = for i in 0..16 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 16, key)
+  test "RFC 8439 A.3 #6: Poly1305, a + s overflows 2^128" {
+    let key: Word[8]^32 =
+      hex"02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
+    let msg: Word[8]^16 = hex"02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
-
-  spec rfc8439_a3_6_expected() -> Word[8]^16 { [0; 16] with [0] = 0x03 }
 
   // RFC 8439 appendix A.3, test vector 7: r = 1, s = 0 and three blocks whose
   // running sum passes p; the final accumulator 2^128 + 5 is truncated to 5.
-  spec rfc8439_a3_7() -> Word[8]^16 {
-    let msg: Word[8]^48 = [
-      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-      0xf0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-      0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let key: Word[8]^32 = [0; 32] with [0] = 0x01;
-    let buffer: Word[8]^256 = for i in 0..48 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 48, key)
+  test "RFC 8439 A.3 #7: Poly1305, the sum passes p" {
+    let msg: Word[8]^48 =
+      hex"ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff" ++
+      hex"f0 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff" ++
+      hex"11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    let key: Word[8]^32 =
+      hex"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
-
-  spec rfc8439_a3_7_expected() -> Word[8]^16 { [0; 16] with [0] = 0x05 }
 
   // RFC 8439 appendix A.3, test vector 8: r = 1, s = 0 and three blocks whose
   // sum is a multiple of p: the zero tag.
-  spec rfc8439_a3_8() -> Word[8]^16 {
-    let msg: Word[8]^48 = [
-      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-      0xfb, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-    ];
-    let key: Word[8]^32 = [0; 32] with [0] = 0x01;
-    let buffer: Word[8]^256 = for i in 0..48 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 48, key)
+  test "RFC 8439 A.3 #8: Poly1305, the sum is a multiple of p" {
+    let msg: Word[8]^48 =
+      hex"ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff" ++
+      hex"fb fe fe fe fe fe fe fe fe fe fe fe fe fe fe fe" ++
+      hex"01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01";
+    let key: Word[8]^32 =
+      hex"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
-
-  spec rfc8439_a3_8_expected() -> Word[8]^16 { [0; 16] }
 
   // RFC 8439 appendix A.3, test vector 9: r = 2, s = 0 and one block whose
   // doubled number is p - 1; the tag is its low 128 bits, fa ff ... ff.
-  spec rfc8439_a3_9() -> Word[8]^16 {
-    let msg: Word[8]^16 = [
-      0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    ];
-    let key: Word[8]^32 = [0; 32] with [0] = 0x02;
-    let buffer: Word[8]^256 = for i in 0..16 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 16, key)
-  }
-
-  spec rfc8439_a3_9_expected() -> Word[8]^16 {
-    [
-      0xfa, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    ]
+  test "RFC 8439 A.3 #9: Poly1305, the sum is p - 1" {
+    let msg: Word[8]^16 = hex"fd ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff";
+    let key: Word[8]^32 =
+      hex"02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"fa ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff"
   }
 
   // RFC 8439 appendix A.3, test vector 10: r = 2^66 + 1, s = 0 and four
   // blocks; the products spread each block over the 130 bits, and the final
   // accumulator 2^128 + 0x55 * 2^64 + 0x14 keeps only its low 128 bits as the
   // tag.
-  spec rfc8439_a3_10() -> Word[8]^16 {
-    let msg: Word[8]^64 = [
-      0xe3, 0x35, 0x94, 0xd7, 0x50, 0x5e, 0x43, 0xb9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x33, 0x94, 0xd7, 0x50, 0x5e, 0x43, 0x79, 0xcd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let key: Word[8]^32 = ([0; 32] with [0] = 0x01) with [8] = 0x04;
-    let buffer: Word[8]^256 = for i in 0..64 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 64, key)
+  test "RFC 8439 A.3 #10: Poly1305, a 131-bit intermediate result" {
+    let msg: Word[8]^64 =
+      hex"e3 35 94 d7 50 5e 43 b9 00 00 00 00 00 00 00 00" ++
+      hex"33 94 d7 50 5e 43 79 cd 01 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00" ++
+      hex"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    let key: Word[8]^32 =
+      hex"01 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"14 00 00 00 00 00 00 00 55 00 00 00 00 00 00 00"
   }
-
-  spec rfc8439_a3_10_expected() -> Word[8]^16 { ([0; 16] with [0] = 0x14) with [8] = 0x55 }
 
   // RFC 8439 appendix A.3, test vector 11: the first three blocks of test
   // vector 10; the accumulator, 0x13, is the tag itself.
-  spec rfc8439_a3_11() -> Word[8]^16 {
-    let msg: Word[8]^48 = [
-      0xe3, 0x35, 0x94, 0xd7, 0x50, 0x5e, 0x43, 0xb9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x33, 0x94, 0xd7, 0x50, 0x5e, 0x43, 0x79, 0xcd, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let key: Word[8]^32 = ([0; 32] with [0] = 0x01) with [8] = 0x04;
-    let buffer: Word[8]^256 = for i in 0..48 with m: Word[8]^256 = [0; 256] {
-      m with [i] = msg[i]
-    };
-    poly1305_mac(buffer, 48, key)
+  test "RFC 8439 A.3 #11: Poly1305, a 131-bit final result" {
+    let msg: Word[8]^48 =
+      hex"e3 35 94 d7 50 5e 43 b9 00 00 00 00 00 00 00 00" ++
+      hex"33 94 d7 50 5e 43 79 cd 01 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    let key: Word[8]^32 =
+      hex"01 00 00 00 00 00 00 00 04 00 00 00 00 00 00 00" ++
+      hex"00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    poly1305_mac(msg, key) == hex"13 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
   }
 
-  spec rfc8439_a3_11_expected() -> Word[8]^16 { [0; 16] with [0] = 0x13 }
+  // The inputs of section 2.8.2, which the draft's appendix A.1 reuses with
+  // its own nonce: the key 80 81 ... 9f, the nonce (the constant 07 00 00 00
+  // and the IV 40 41 ... 47), the additional data and the 114-byte plaintext.
+  spec key_2_8_2() -> Word[8]^32 {
+    hex"80 81 82 83 84 85 86 87 88 89 8a 8b 8c 8d 8e 8f" ++
+    hex"90 91 92 93 94 95 96 97 98 99 9a 9b 9c 9d 9e 9f"
+  }
+
+  spec nonce_2_8_2() -> Word[8]^12 { hex"07 00 00 00 40 41 42 43 44 45 46 47" }
+
+  spec aad_2_8_2() -> Word[8]^12 { hex"50 51 52 53 c0 c1 c2 c3 c4 c5 c6 c7" }
+
+  spec sunscreen() -> Word[8]^114 {
+    "Ladies and Gentlemen of the class of '99: If I could offer you " ++
+    "only one tip for the future, sunscreen would be it."
+  }
 
   // RFC 8439 section 2.6.2: the one-time key under the key 80 81 ... 9f and
   // the nonce 00 00 00 00 00 01 02 03 04 05 06 07.
-  spec rfc8439_2_6_2() -> Word[8]^32 {
-    poly1305_key_gen(rfc8439_2_8_2_key(), [
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    ])
-  }
-
-  spec rfc8439_2_6_2_expected() -> Word[8]^32 {
-    [
-      0x8a, 0xd5, 0xa0, 0x8b, 0x90, 0x5f, 0x81, 0xcc, 0x81, 0x50, 0x40, 0x27, 0x4a, 0xb2, 0x94, 0x71,
-      0xa8, 0x33, 0xb6, 0x37, 0xe3, 0xfd, 0x0d, 0xa5, 0x08, 0xdb, 0xb8, 0xe2, 0xfd, 0xd1, 0xa6, 0x46,
-    ]
+  test "RFC 8439 2.6.2: Poly1305 key generation" {
+    let nonce: Word[8]^12 = hex"00 00 00 00 00 01 02 03 04 05 06 07";
+    poly1305_key_gen(key_2_8_2(), nonce) == (
+      hex"8a d5 a0 8b 90 5f 81 cc 81 50 40 27 4a b2 94 71" ++
+      hex"a8 33 b6 37 e3 fd 0d a5 08 db b8 e2 fd d1 a6 46"
+    )
   }
 
   // RFC 8439 appendix A.4, test vector 1: the zero key and nonce.
-  spec rfc8439_a4_1() -> Word[8]^32 {
-    poly1305_key_gen([0; 32], [0; 12])
+  test "RFC 8439 A.4 #1: Poly1305 key generation, zero key" {
+    let key: Word[8]^32 = [0; 32];
+    let nonce: Word[8]^12 = [0; 12];
+    poly1305_key_gen(key, nonce) == (
+      hex"76 b8 e0 ad a0 f1 3d 90 40 5d 6a e5 53 86 bd 28" ++
+      hex"bd d2 19 b8 a0 8d ed 1a a8 36 ef cc 8b 77 0d c7"
+    )
   }
 
-  spec rfc8439_a4_1_expected() -> Word[8]^32 {
-    [
-      0x76, 0xb8, 0xe0, 0xad, 0xa0, 0xf1, 0x3d, 0x90, 0x40, 0x5d, 0x6a, 0xe5, 0x53, 0x86, 0xbd, 0x28,
-      0xbd, 0xd2, 0x19, 0xb8, 0xa0, 0x8d, 0xed, 0x1a, 0xa8, 0x36, 0xef, 0xcc, 0x8b, 0x77, 0x0d, 0xc7,
-    ]
+  // RFC 8439 appendix A.4, test vector 3: the key of appendix A.5 and the
+  // nonce 00 ... 00 02.
+  test "RFC 8439 A.4 #3: Poly1305 key generation" {
+    let nonce: Word[8]^12 = hex"00 00 00 00 00 00 00 00 00 00 00 02";
+    poly1305_key_gen(key_a5(), nonce) == (
+      hex"96 5e 3b c6 f9 ec 7e d9 56 08 08 f4 d2 29 f9 4b" ++
+      hex"13 7f f2 75 ca 9b 3f cb dd 59 de aa d2 33 10 ae"
+    )
   }
 
-  // RFC 8439 appendix A.4, test vector 3: the key of appendix A.5 and the nonce 00 ... 00 02.
-  spec rfc8439_a4_3() -> Word[8]^32 {
-    poly1305_key_gen([
-      0x1c, 0x92, 0x40, 0xa5, 0xeb, 0x55, 0xd3, 0x8a, 0xf3, 0x33, 0x88, 0x86, 0x04, 0xf6, 0xb5, 0xf0,
-      0x47, 0x39, 0x17, 0xc1, 0x40, 0x2b, 0x80, 0x09, 0x9d, 0xca, 0x5c, 0xbc, 0x20, 0x70, 0x75, 0xc0,
-    ], [0; 12] with [11] = 0x02)
+  // RFC 8439 section 2.8.2: the published ciphertext of the 114-byte
+  // plaintext and its tag 1a e1 0b 59 ... 06 91.
+  spec sealed_2_8_2() -> (Word[8]^114, Word[8]^16) {
+    (
+      hex"d3 1a 8d 34 64 8e 60 db 7b 86 af bc 53 ef 7e c2" ++
+      hex"a4 ad ed 51 29 6e 08 fe a9 e2 b5 a7 36 ee 62 d6" ++
+      hex"3d be a4 5e 8c a9 67 12 82 fa fb 69 da 92 72 8b" ++
+      hex"1a 71 de 0a 9e 06 0b 29 05 d6 a5 b6 7e cd 3b 36" ++
+      hex"92 dd bd 7f 2d 77 8b 8c 98 03 ae e3 28 09 1b 58" ++
+      hex"fa b3 24 e4 fa d6 75 94 55 85 80 8b 48 31 d7 bc" ++
+      hex"3f f4 de f0 8e 4b 7a 9d e5 76 d2 65 86 ce c6 4b" ++
+      hex"61 16",
+      hex"1a e1 0b 59 4f 09 e2 6a 7e 90 2e cb d0 60 06 91"
+    )
   }
 
-  spec rfc8439_a4_3_expected() -> Word[8]^32 {
-    [
-      0x96, 0x5e, 0x3b, 0xc6, 0xf9, 0xec, 0x7e, 0xd9, 0x56, 0x08, 0x08, 0xf4, 0xd2, 0x29, 0xf9, 0x4b,
-      0x13, 0x7f, 0xf2, 0x75, 0xca, 0x9b, 0x3f, 0xcb, 0xdd, 0x59, 0xde, 0xaa, 0xd2, 0x33, 0x10, 0xae,
-    ]
-  }
-
-  // RFC 8439 section 2.8.2: sealing the 114-byte sunscreen text; the
-  // ciphertext followed by the tag 1a e1 0b 59 ... 06 91.
-  spec rfc8439_2_8_2() -> Word[8]^130 {
-    chacha20_aead_encrypt(rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), sunscreen())
-  }
-
-  spec rfc8439_2_8_2_expected() -> Word[8]^130 {
-    [
-      0xd3, 0x1a, 0x8d, 0x34, 0x64, 0x8e, 0x60, 0xdb, 0x7b, 0x86, 0xaf, 0xbc, 0x53, 0xef, 0x7e, 0xc2,
-      0xa4, 0xad, 0xed, 0x51, 0x29, 0x6e, 0x08, 0xfe, 0xa9, 0xe2, 0xb5, 0xa7, 0x36, 0xee, 0x62, 0xd6,
-      0x3d, 0xbe, 0xa4, 0x5e, 0x8c, 0xa9, 0x67, 0x12, 0x82, 0xfa, 0xfb, 0x69, 0xda, 0x92, 0x72, 0x8b,
-      0x1a, 0x71, 0xde, 0x0a, 0x9e, 0x06, 0x0b, 0x29, 0x05, 0xd6, 0xa5, 0xb6, 0x7e, 0xcd, 0x3b, 0x36,
-      0x92, 0xdd, 0xbd, 0x7f, 0x2d, 0x77, 0x8b, 0x8c, 0x98, 0x03, 0xae, 0xe3, 0x28, 0x09, 0x1b, 0x58,
-      0xfa, 0xb3, 0x24, 0xe4, 0xfa, 0xd6, 0x75, 0x94, 0x55, 0x85, 0x80, 0x8b, 0x48, 0x31, 0xd7, 0xbc,
-      0x3f, 0xf4, 0xde, 0xf0, 0x8e, 0x4b, 0x7a, 0x9d, 0xe5, 0x76, 0xd2, 0x65, 0x86, 0xce, 0xc6, 0x4b,
-      0x61, 0x16, 0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60,
-      0x06, 0x91,
-    ]
+  // RFC 8439 section 2.8.2: sealing the sunscreen text.
+  test "RFC 8439 2.8.2: AEAD seal" {
+    chacha20_aead_encrypt(aad_2_8_2(), key_2_8_2(), nonce_2_8_2(), sunscreen()) == sealed_2_8_2()
   }
 
   // RFC 8439 section 2.8.2 opened: the tag of the published ciphertext
   // verifies, and the decryption is the sunscreen text.
-  spec rfc8439_2_8_2_verify() -> Bool {
-    chacha20_aead_verify(
-      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), rfc8439_2_8_2_expected(),
-    )
+  test "RFC 8439 2.8.2: AEAD open" {
+    let sealed: (Word[8]^114, Word[8]^16) = sealed_2_8_2();
+    chacha20_aead_decrypt(aad_2_8_2(), key_2_8_2(), nonce_2_8_2(), sealed.0, sealed.1) ==
+      (true, sunscreen())
   }
 
-  spec rfc8439_2_8_2_verify_expected() -> Bool { true }
-
-  spec rfc8439_2_8_2_open() -> Word[8]^114 {
-    chacha20_aead_decrypt(
-      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(), rfc8439_2_8_2_expected(),
-    )
+  // The published ciphertext with the last bit of its tag flipped (0x91 to
+  // 0x90): the verdict is false. A check of the tag comparison, not a
+  // published vector.
+  test "RFC 8439 2.8.2: a tag with its last bit flipped is rejected" {
+    let sealed: (Word[8]^114, Word[8]^16) = sealed_2_8_2();
+    let tag: Word[8]^16 = sealed.1;
+    let opened: (Bool, Word[8]^114) = chacha20_aead_decrypt(
+      aad_2_8_2(), key_2_8_2(), nonce_2_8_2(), sealed.0, tag with [15] = 0x90,
+    );
+    !opened.0
   }
 
-  spec rfc8439_2_8_2_open_expected() -> Word[8]^114 { sunscreen() }
-
-  // The published ciphertext with the last bit of its tag flipped: the
-  // verdict is false and the decryption withholds the plaintext. A check of
-  // the tag comparison, not a published vector.
-  spec rfc8439_2_8_2_tampered_verify() -> Bool {
-    chacha20_aead_verify(
-      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(), rfc8439_2_8_2_nonce(),
-      rfc8439_2_8_2_expected() with [129] = 0x90,
-    )
-  }
-
-  spec rfc8439_2_8_2_tampered_verify_expected() -> Bool { false }
-
-  // RFC 8439 appendix A.5: the 265-byte ciphertext, its 12-byte aad and
+  // RFC 8439 appendix A.5: the 265-byte ciphertext, its additional data and
   // its tag under the key 1c 92 40 a5 ... and the nonce 00 00 00 00 01 02
-  // ... 08. The ciphertext is a 256-byte head and a 9-byte tail.
-  spec rfc8439_a5_key() -> Word[8]^32 {
-    [
-      0x1c, 0x92, 0x40, 0xa5, 0xeb, 0x55, 0xd3, 0x8a, 0xf3, 0x33, 0x88, 0x86, 0x04, 0xf6, 0xb5, 0xf0,
-      0x47, 0x39, 0x17, 0xc1, 0x40, 0x2b, 0x80, 0x09, 0x9d, 0xca, 0x5c, 0xbc, 0x20, 0x70, 0x75, 0xc0,
-    ]
+  // ... 08. The tag verifies, and the plaintext is the Internet-Drafts
+  // boilerplate, whose quotation marks are the UTF-8 bytes e2 80 9c and
+  // e2 80 9d.
+  test "RFC 8439 A.5: AEAD open" {
+    let ciphertext: Word[8]^265 =
+      hex"64 a0 86 15 75 86 1a f4 60 f0 62 c7 9b e6 43 bd" ++
+      hex"5e 80 5c fd 34 5c f3 89 f1 08 67 0a c7 6c 8c b2" ++
+      hex"4c 6c fc 18 75 5d 43 ee a0 9e e9 4e 38 2d 26 b0" ++
+      hex"bd b7 b7 3c 32 1b 01 00 d4 f0 3b 7f 35 58 94 cf" ++
+      hex"33 2f 83 0e 71 0b 97 ce 98 c8 a8 4a bd 0b 94 81" ++
+      hex"14 ad 17 6e 00 8d 33 bd 60 f9 82 b1 ff 37 c8 55" ++
+      hex"97 97 a0 6e f4 f0 ef 61 c1 86 32 4e 2b 35 06 38" ++
+      hex"36 06 90 7b 6a 7c 02 b0 f9 f6 15 7b 53 c8 67 e4" ++
+      hex"b9 16 6c 76 7b 80 4d 46 a5 9b 52 16 cd e7 a4 e9" ++
+      hex"90 40 c5 a4 04 33 22 5e e2 82 a1 b0 a0 6c 52 3e" ++
+      hex"af 45 34 d7 f8 3f a1 15 5b 00 47 71 8c bc 54 6a" ++
+      hex"0d 07 2b 04 b3 56 4e ea 1b 42 22 73 f5 48 27 1a" ++
+      hex"0b b2 31 60 53 fa 76 99 19 55 eb d6 31 59 43 4e" ++
+      hex"ce bb 4e 46 6d ae 5a 10 73 a6 72 76 27 09 7a 10" ++
+      hex"49 e6 17 d9 1d 36 10 94 fa 68 f0 ff 77 98 71 30" ++
+      hex"30 5b ea ba 2e da 04 df 99 7b 71 4d 6c 6f 2c 29" ++
+      hex"a6 ad 5c b4 02 2b 02 70 9b";
+    let tag: Word[8]^16 = hex"ee ad 9d 67 89 0c bb 22 39 23 36 fe a1 85 1f 38";
+    let plaintext: Word[8]^265 =
+      "Internet-Drafts are draft documents valid for a maximum of six " ++
+      "months and may be updated, replaced, or obsoleted by other " ++
+      "documents at any time. It is inappropriate to use " ++
+      "Internet-Drafts as reference material or to cite them other " ++
+      "than as /\xe2\x80\x9cwork in progress./\xe2\x80\x9d";
+    let aad: Word[8]^12 = hex"f3 33 88 86 00 00 00 00 00 00 4e 91";
+    let nonce: Word[8]^12 = hex"00 00 00 00 01 02 03 04 05 06 07 08";
+    chacha20_aead_decrypt(aad, key_a5(), nonce, ciphertext, tag) ==
+      (true, plaintext)
   }
 
-  spec rfc8439_a5_nonce() -> Word[8]^12 { [
-      0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-    ] }
-
-  spec rfc8439_a5_aad() -> Word[8]^12 { [
-      0xf3, 0x33, 0x88, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4e, 0x91,
-    ] }
-
-  spec rfc8439_a5_ciphertext_head() -> Word[8]^256 {
-    [
-      0x64, 0xa0, 0x86, 0x15, 0x75, 0x86, 0x1a, 0xf4, 0x60, 0xf0, 0x62, 0xc7, 0x9b, 0xe6, 0x43, 0xbd,
-      0x5e, 0x80, 0x5c, 0xfd, 0x34, 0x5c, 0xf3, 0x89, 0xf1, 0x08, 0x67, 0x0a, 0xc7, 0x6c, 0x8c, 0xb2,
-      0x4c, 0x6c, 0xfc, 0x18, 0x75, 0x5d, 0x43, 0xee, 0xa0, 0x9e, 0xe9, 0x4e, 0x38, 0x2d, 0x26, 0xb0,
-      0xbd, 0xb7, 0xb7, 0x3c, 0x32, 0x1b, 0x01, 0x00, 0xd4, 0xf0, 0x3b, 0x7f, 0x35, 0x58, 0x94, 0xcf,
-      0x33, 0x2f, 0x83, 0x0e, 0x71, 0x0b, 0x97, 0xce, 0x98, 0xc8, 0xa8, 0x4a, 0xbd, 0x0b, 0x94, 0x81,
-      0x14, 0xad, 0x17, 0x6e, 0x00, 0x8d, 0x33, 0xbd, 0x60, 0xf9, 0x82, 0xb1, 0xff, 0x37, 0xc8, 0x55,
-      0x97, 0x97, 0xa0, 0x6e, 0xf4, 0xf0, 0xef, 0x61, 0xc1, 0x86, 0x32, 0x4e, 0x2b, 0x35, 0x06, 0x38,
-      0x36, 0x06, 0x90, 0x7b, 0x6a, 0x7c, 0x02, 0xb0, 0xf9, 0xf6, 0x15, 0x7b, 0x53, 0xc8, 0x67, 0xe4,
-      0xb9, 0x16, 0x6c, 0x76, 0x7b, 0x80, 0x4d, 0x46, 0xa5, 0x9b, 0x52, 0x16, 0xcd, 0xe7, 0xa4, 0xe9,
-      0x90, 0x40, 0xc5, 0xa4, 0x04, 0x33, 0x22, 0x5e, 0xe2, 0x82, 0xa1, 0xb0, 0xa0, 0x6c, 0x52, 0x3e,
-      0xaf, 0x45, 0x34, 0xd7, 0xf8, 0x3f, 0xa1, 0x15, 0x5b, 0x00, 0x47, 0x71, 0x8c, 0xbc, 0x54, 0x6a,
-      0x0d, 0x07, 0x2b, 0x04, 0xb3, 0x56, 0x4e, 0xea, 0x1b, 0x42, 0x22, 0x73, 0xf5, 0x48, 0x27, 0x1a,
-      0x0b, 0xb2, 0x31, 0x60, 0x53, 0xfa, 0x76, 0x99, 0x19, 0x55, 0xeb, 0xd6, 0x31, 0x59, 0x43, 0x4e,
-      0xce, 0xbb, 0x4e, 0x46, 0x6d, 0xae, 0x5a, 0x10, 0x73, 0xa6, 0x72, 0x76, 0x27, 0x09, 0x7a, 0x10,
-      0x49, 0xe6, 0x17, 0xd9, 0x1d, 0x36, 0x10, 0x94, 0xfa, 0x68, 0xf0, 0xff, 0x77, 0x98, 0x71, 0x30,
-      0x30, 0x5b, 0xea, 0xba, 0x2e, 0xda, 0x04, 0xdf, 0x99, 0x7b, 0x71, 0x4d, 0x6c, 0x6f, 0x2c, 0x29,
-    ]
-  }
-
-  spec rfc8439_a5_ciphertext_tail() -> Word[8]^9 { [
-      0xa6, 0xad, 0x5c, 0xb4, 0x02, 0x2b, 0x02, 0x70, 0x9b,
-    ] }
-
-  spec rfc8439_a5_tag() -> Word[8]^16 {
-    [
-      0xee, 0xad, 0x9d, 0x67, 0x89, 0x0c, 0xbb, 0x22, 0x39, 0x23, 0x36, 0xfe, 0xa1, 0x85, 0x1f, 0x38,
-    ]
-  }
-
-  spec rfc8439_a5_verify() -> Bool {
-    chacha20_aead_verify_265(
-      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
-      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+  // Draft appendix A.1 (repeated as continuous hex in A.3.1):
+  // AEAD_XCHACHA20_POLY1305 of the sunscreen text under the key and
+  // additional data of RFC 8439 section 2.8.2 and the 24-byte nonce
+  // 40 41 ... 57; the ciphertext bd 6d 17 9d ... and the tag c0 87 59 24
+  // ... cf 49.
+  test "draft-irtf-cfrg-xchacha A.1: AEAD seal" {
+    let nonce: Word[8]^24 =
+      hex"40 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f" ++
+      hex"50 51 52 53 54 55 56 57";
+    xchacha20_aead_encrypt(aad_2_8_2(), key_2_8_2(), nonce, sunscreen()) == (
+      hex"bd 6d 17 9d 3e 83 d4 3b 95 76 57 94 93 c0 e9 39" ++
+      hex"57 2a 17 00 25 2b fa cc be d2 90 2c 21 39 6c bb" ++
+      hex"73 1c 7f 1b 0b 4a a6 44 0b f3 a8 2f 4e da 7e 39" ++
+      hex"ae 64 c6 70 8c 54 c2 16 cb 96 b7 2e 12 13 b4 52" ++
+      hex"2f 8c 9b a4 0d b5 d9 45 b1 1b 69 b9 82 c1 bb 9e" ++
+      hex"3f 3f ac 2b c3 69 48 8f 76 b2 38 35 65 d3 ff f9" ++
+      hex"21 f9 66 4c 97 63 7d a9 76 88 12 f6 15 c6 8b 13" ++
+      hex"b5 2e",
+      hex"c0 87 59 24 c1 c7 98 79 47 de af d8 78 0a cf 49"
     )
   }
 
-  spec rfc8439_a5_verify_expected() -> Bool { true }
-
-  // The plaintext of appendix A.5, the Internet-Drafts boilerplate, released
-  // by the decryption in the same two parts.
-  spec rfc8439_a5_head() -> Word[8]^256 {
-    chacha20_aead_decrypt_265_head(
-      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
-      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+  // Wycheproof chacha20_poly1305_test.json, tcId 71: a 47-byte message with
+  // 8 bytes of additional data.
+  test "Wycheproof chacha20_poly1305 tcId 71" {
+    let key: Word[8]^32 =
+      hex"6c bf d7 1c 64 5d 18 4c f5 d2 3c 40 2b db 0d 25" ++
+      hex"ec 54 89 8c 8a 02 73 d4 2e b5 be 10 9f dc b2 ac";
+    let msg: Word[8]^47 =
+      hex"a9 89 95 50 4d f1 6f 74 8b fb 77 85 ff 91 ee b3" ++
+      hex"b6 60 ea 9e d3 45 0c 3d 5e 7b 0e 79 ef 65 36 59" ++
+      hex"a9 97 8d 75 54 2e f9 1c 45 67 62 21 56 40 b9";
+    let aad: Word[8]^8 = hex"b3 e4 06 46 83 b0 2d 84";
+    let nonce: Word[8]^12 = hex"d4 d8 07 34 16 83 82 5b 31 cd 4d 95";
+    chacha20_aead_encrypt(aad, key, nonce, msg) == (
+      hex"a1 ff ed 80 76 18 29 ec ce 24 2e 0e 88 b1 38 04" ++
+      hex"90 16 bc a0 18 da 2b 6e 19 98 6b 3e 31 8c ae 8d" ++
+      hex"80 61 98 fb 4c 52 7c c3 93 50 eb dd ea c5 73",
+      hex"c4 cb f0 be fd a0 b7 02 42 c6 40 d7 cd 02 d7 a3"
     )
   }
 
-  spec rfc8439_a5_head_expected() -> Word[8]^256 {
-    [
-      0x49, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x73, 0x20,
-      0x61, 0x72, 0x65, 0x20, 0x64, 0x72, 0x61, 0x66, 0x74, 0x20, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65,
-      0x6e, 0x74, 0x73, 0x20, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x61, 0x20,
-      0x6d, 0x61, 0x78, 0x69, 0x6d, 0x75, 0x6d, 0x20, 0x6f, 0x66, 0x20, 0x73, 0x69, 0x78, 0x20, 0x6d,
-      0x6f, 0x6e, 0x74, 0x68, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x6d, 0x61, 0x79, 0x20, 0x62, 0x65,
-      0x20, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x2c, 0x20, 0x72, 0x65, 0x70, 0x6c, 0x61, 0x63,
-      0x65, 0x64, 0x2c, 0x20, 0x6f, 0x72, 0x20, 0x6f, 0x62, 0x73, 0x6f, 0x6c, 0x65, 0x74, 0x65, 0x64,
-      0x20, 0x62, 0x79, 0x20, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x20, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65,
-      0x6e, 0x74, 0x73, 0x20, 0x61, 0x74, 0x20, 0x61, 0x6e, 0x79, 0x20, 0x74, 0x69, 0x6d, 0x65, 0x2e,
-      0x20, 0x49, 0x74, 0x20, 0x69, 0x73, 0x20, 0x69, 0x6e, 0x61, 0x70, 0x70, 0x72, 0x6f, 0x70, 0x72,
-      0x69, 0x61, 0x74, 0x65, 0x20, 0x74, 0x6f, 0x20, 0x75, 0x73, 0x65, 0x20, 0x49, 0x6e, 0x74, 0x65,
-      0x72, 0x6e, 0x65, 0x74, 0x2d, 0x44, 0x72, 0x61, 0x66, 0x74, 0x73, 0x20, 0x61, 0x73, 0x20, 0x72,
-      0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x20, 0x6d, 0x61, 0x74, 0x65, 0x72, 0x69, 0x61,
-      0x6c, 0x20, 0x6f, 0x72, 0x20, 0x74, 0x6f, 0x20, 0x63, 0x69, 0x74, 0x65, 0x20, 0x74, 0x68, 0x65,
-      0x6d, 0x20, 0x6f, 0x74, 0x68, 0x65, 0x72, 0x20, 0x74, 0x68, 0x61, 0x6e, 0x20, 0x61, 0x73, 0x20,
-      0x2f, 0xe2, 0x80, 0x9c, 0x77, 0x6f, 0x72, 0x6b, 0x20, 0x69, 0x6e, 0x20, 0x70, 0x72, 0x6f, 0x67,
-    ]
-  }
-
-  spec rfc8439_a5_tail() -> Word[8]^9 {
-    chacha20_aead_decrypt_265_tail(
-      rfc8439_a5_aad(), rfc8439_a5_key(), rfc8439_a5_nonce(),
-      rfc8439_a5_ciphertext_head(), rfc8439_a5_ciphertext_tail(), rfc8439_a5_tag(),
+  // Wycheproof xchacha20_poly1305_test.json, tcId 71: a 47-byte message with
+  // 8 bytes of additional data and a 192-bit nonce.
+  test "Wycheproof xchacha20_poly1305 tcId 71" {
+    let key: Word[8]^32 =
+      hex"7c 72 c7 48 ea 00 10 c9 0e 1d fb de 8e 91 ed f6" ++
+      hex"ea d2 47 41 48 cf 23 4e 05 59 dc d8 81 cc 3b 2b";
+    let nonce: Word[8]^24 =
+      hex"7b 97 c8 b1 c0 6b 69 b9 92 20 04 2a b2 ac 65 b8" ++
+      hex"8d 8b 42 94 b7 6b 4b d1";
+    let msg: Word[8]^47 =
+      hex"9a 1f 6c 42 a8 a0 f3 03 2e 8d fa 36 e0 f5 75 04" ++
+      hex"79 27 68 66 c9 20 67 2a 04 54 c4 1b fa e5 dd 74" ++
+      hex"fb f0 fb cc 8e 6f bf 48 43 f2 0d 06 44 08 37";
+    let aad: Word[8]^8 = hex"71 85 f9 cb f5 9d 20 95";
+    xchacha20_aead_encrypt(aad, key, nonce, msg) == (
+      hex"40 93 dc bc a1 55 58 35 b7 81 40 fe 7a 37 98 a7" ++
+      hex"7b d9 7a 01 b0 a7 c1 f7 15 7f ed b2 7c 40 d9 d1" ++
+      hex"6c c3 e9 35 f6 49 fa f0 dc f4 31 63 6c d5 39",
+      hex"c7 c9 13 3f f1 7a 29 6c 98 7d 72 88 51 82 87 4d"
     )
-  }
-
-  spec rfc8439_a5_tail_expected() -> Word[8]^9 { [
-      0x72, 0x65, 0x73, 0x73, 0x2e, 0x2f, 0xe2, 0x80, 0x9d,
-    ] }
-
-  // draft-irtf-cfrg-xchacha appendix A.1 (repeated as continuous hex in
-  // A.3.1): AEAD_XCHACHA20_POLY1305 of the sunscreen text under the key and
-  // aad of RFC 8439 section 2.8.2 and the 24-byte nonce 40 41 ... 57.
-  spec xchacha_draft_a1() -> Word[8]^130 {
-    xchacha20_aead_encrypt(
-      rfc8439_2_8_2_aad(), rfc8439_2_8_2_key(),
-      [
-        0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
-        0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57,
-      ],
-      sunscreen(),
-    )
-  }
-
-  spec xchacha_draft_a1_expected() -> Word[8]^130 {
-    [
-      0xbd, 0x6d, 0x17, 0x9d, 0x3e, 0x83, 0xd4, 0x3b, 0x95, 0x76, 0x57, 0x94, 0x93, 0xc0, 0xe9, 0x39,
-      0x57, 0x2a, 0x17, 0x00, 0x25, 0x2b, 0xfa, 0xcc, 0xbe, 0xd2, 0x90, 0x2c, 0x21, 0x39, 0x6c, 0xbb,
-      0x73, 0x1c, 0x7f, 0x1b, 0x0b, 0x4a, 0xa6, 0x44, 0x0b, 0xf3, 0xa8, 0x2f, 0x4e, 0xda, 0x7e, 0x39,
-      0xae, 0x64, 0xc6, 0x70, 0x8c, 0x54, 0xc2, 0x16, 0xcb, 0x96, 0xb7, 0x2e, 0x12, 0x13, 0xb4, 0x52,
-      0x2f, 0x8c, 0x9b, 0xa4, 0x0d, 0xb5, 0xd9, 0x45, 0xb1, 0x1b, 0x69, 0xb9, 0x82, 0xc1, 0xbb, 0x9e,
-      0x3f, 0x3f, 0xac, 0x2b, 0xc3, 0x69, 0x48, 0x8f, 0x76, 0xb2, 0x38, 0x35, 0x65, 0xd3, 0xff, 0xf9,
-      0x21, 0xf9, 0x66, 0x4c, 0x97, 0x63, 0x7d, 0xa9, 0x76, 0x88, 0x12, 0xf6, 0x15, 0xc6, 0x8b, 0x13,
-      0xb5, 0x2e, 0xc0, 0x87, 0x59, 0x24, 0xc1, 0xc7, 0x98, 0x79, 0x47, 0xde, 0xaf, 0xd8, 0x78, 0x0a,
-      0xcf, 0x49,
-    ]
-  }
-
-  // Wycheproof chacha20_poly1305_test.json, tcId 71: a 47-byte message with 8 bytes of aad.
-  spec wycheproof_chacha20_poly1305_tc_71() -> Word[8]^63 {
-    chacha20_aead_encrypt_8_47(
-      [
-        0xb3, 0xe4, 0x06, 0x46, 0x83, 0xb0, 0x2d, 0x84,
-      ],
-      [
-        0x6c, 0xbf, 0xd7, 0x1c, 0x64, 0x5d, 0x18, 0x4c, 0xf5, 0xd2, 0x3c, 0x40, 0x2b, 0xdb, 0x0d, 0x25,
-        0xec, 0x54, 0x89, 0x8c, 0x8a, 0x02, 0x73, 0xd4, 0x2e, 0xb5, 0xbe, 0x10, 0x9f, 0xdc, 0xb2, 0xac,
-      ],
-      [
-        0xd4, 0xd8, 0x07, 0x34, 0x16, 0x83, 0x82, 0x5b, 0x31, 0xcd, 0x4d, 0x95,
-      ],
-      [
-        0xa9, 0x89, 0x95, 0x50, 0x4d, 0xf1, 0x6f, 0x74, 0x8b, 0xfb, 0x77, 0x85, 0xff, 0x91, 0xee, 0xb3,
-        0xb6, 0x60, 0xea, 0x9e, 0xd3, 0x45, 0x0c, 0x3d, 0x5e, 0x7b, 0x0e, 0x79, 0xef, 0x65, 0x36, 0x59,
-        0xa9, 0x97, 0x8d, 0x75, 0x54, 0x2e, 0xf9, 0x1c, 0x45, 0x67, 0x62, 0x21, 0x56, 0x40, 0xb9,
-      ],
-    )
-  }
-
-  spec wycheproof_chacha20_poly1305_tc_71_expected() -> Word[8]^63 {
-    [
-      0xa1, 0xff, 0xed, 0x80, 0x76, 0x18, 0x29, 0xec, 0xce, 0x24, 0x2e, 0x0e, 0x88, 0xb1, 0x38, 0x04,
-      0x90, 0x16, 0xbc, 0xa0, 0x18, 0xda, 0x2b, 0x6e, 0x19, 0x98, 0x6b, 0x3e, 0x31, 0x8c, 0xae, 0x8d,
-      0x80, 0x61, 0x98, 0xfb, 0x4c, 0x52, 0x7c, 0xc3, 0x93, 0x50, 0xeb, 0xdd, 0xea, 0xc5, 0x73, 0xc4,
-      0xcb, 0xf0, 0xbe, 0xfd, 0xa0, 0xb7, 0x02, 0x42, 0xc6, 0x40, 0xd7, 0xcd, 0x02, 0xd7, 0xa3,
-    ]
-  }
-
-  // Wycheproof xchacha20_poly1305_test.json, tcId 71: a 47-byte message with 8 bytes of aad.
-  spec wycheproof_xchacha20_poly1305_tc_71() -> Word[8]^63 {
-    xchacha20_aead_encrypt_8_47(
-      [
-        0x71, 0x85, 0xf9, 0xcb, 0xf5, 0x9d, 0x20, 0x95,
-      ],
-      [
-        0x7c, 0x72, 0xc7, 0x48, 0xea, 0x00, 0x10, 0xc9, 0x0e, 0x1d, 0xfb, 0xde, 0x8e, 0x91, 0xed, 0xf6,
-        0xea, 0xd2, 0x47, 0x41, 0x48, 0xcf, 0x23, 0x4e, 0x05, 0x59, 0xdc, 0xd8, 0x81, 0xcc, 0x3b, 0x2b,
-      ],
-      [
-        0x7b, 0x97, 0xc8, 0xb1, 0xc0, 0x6b, 0x69, 0xb9, 0x92, 0x20, 0x04, 0x2a, 0xb2, 0xac, 0x65, 0xb8,
-        0x8d, 0x8b, 0x42, 0x94, 0xb7, 0x6b, 0x4b, 0xd1,
-      ],
-      [
-        0x9a, 0x1f, 0x6c, 0x42, 0xa8, 0xa0, 0xf3, 0x03, 0x2e, 0x8d, 0xfa, 0x36, 0xe0, 0xf5, 0x75, 0x04,
-        0x79, 0x27, 0x68, 0x66, 0xc9, 0x20, 0x67, 0x2a, 0x04, 0x54, 0xc4, 0x1b, 0xfa, 0xe5, 0xdd, 0x74,
-        0xfb, 0xf0, 0xfb, 0xcc, 0x8e, 0x6f, 0xbf, 0x48, 0x43, 0xf2, 0x0d, 0x06, 0x44, 0x08, 0x37,
-      ],
-    )
-  }
-
-  spec wycheproof_xchacha20_poly1305_tc_71_expected() -> Word[8]^63 {
-    [
-      0x40, 0x93, 0xdc, 0xbc, 0xa1, 0x55, 0x58, 0x35, 0xb7, 0x81, 0x40, 0xfe, 0x7a, 0x37, 0x98, 0xa7,
-      0x7b, 0xd9, 0x7a, 0x01, 0xb0, 0xa7, 0xc1, 0xf7, 0x15, 0x7f, 0xed, 0xb2, 0x7c, 0x40, 0xd9, 0xd1,
-      0x6c, 0xc3, 0xe9, 0x35, 0xf6, 0x49, 0xfa, 0xf0, 0xdc, 0xf4, 0x31, 0x63, 0x6c, 0xd5, 0x39, 0xc7,
-      0xc9, 0x13, 0x3f, 0xf1, 0x7a, 0x29, 0x6c, 0x98, 0x7d, 0x72, 0x88, 0x51, 0x82, 0x87, 0x4d,
-    ]
   }
 }

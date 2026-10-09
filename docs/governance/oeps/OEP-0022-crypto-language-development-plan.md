@@ -7,7 +7,7 @@ champion: Chase Bryan
 status: Draft
 type: Informational
 created: 2026-09-30
-updated: 2026-10-02
+updated: 2026-10-05
 discussion: owner-direction-2026-09-30-crypto-language-development-plan
 related-decisions:
   - D-002
@@ -73,16 +73,16 @@ only convenient notation.
 
 ## Scope and non-goals
 
-The current accepted foothold is S3a. S3b through S3t are implemented and in
-owner review under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024; implementation is not semantic
-acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
-`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays and rank-two arrays with
+The current accepted foothold is S3a. S3b through S3u are implemented and in
+owner review under OEP-0005 through OEP-0021 and OEP-0023 through OEP-0025;
+implementation is not semantic acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
+`Word[32]`, `Word[64]`, `Mod[m]`, and arrays of up to four dimensions with
 at most 65,536 scalar elements,
 tuples, transparent type aliases, array concatenation and slicing, and bounded
 size and type parameters within those proposed slices.
 [OEP-0023](OEP-0023-orange-2026-nested-arrays.md) supplies bounded scalar-row
-arrays and chained indexing as one P1/P6 vocabulary slice; arrays of matrices
-and tuples remain unsupported. It has no refined representation types,
+arrays and chained indexing as one P1/P6 vocabulary slice; arrays of tuples
+remain unsupported. It has no refined representation types,
 typed implementation bodies, proof
 checking, or native output. The
 [compiler guide](../../../compiler/README.md) and proposed
@@ -127,7 +127,9 @@ state, concatenation and slicing, bounded size parameters, and finite type
 parameters. Their records are OEP-0014, OEP-0015, OEP-0016, and OEP-0018.
 S3s adds bounded scalar rows under OEP-0023. S3t adds modulus expressions
 over own finite size instances under
-[OEP-0024](OEP-0024-orange-2026-static-moduli.md). These implementations
+[OEP-0024](OEP-0024-orange-2026-static-moduli.md). S3u adds third and fourth
+dimensions and update paths under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md). These implementations
 remain in owner review and do not select universal parameter constraints.
 Review these implementations against the criteria below before proposing
 remaining parameter domains or constraints; this plan does not accept them.
@@ -261,15 +263,19 @@ The permanent source
 now supplies **partial P4 mathematical preparation** alongside its P2
 representation definitions: five exact `Int` product accumulators, an explicit
 coefficient-bound predicate, three-pass normalization with each digit/carry
-stage exposed, and tight/canonical mathematical products. Five additional
-hand-derived answer pairs and 129 tight-input pairs checked against independent
-640-bit binary arithmetic exercise products and every carry stage. The selected
-`product_third_pass` uses 1,474 reference steps and rejects a 1,473-step budget
-without value output. This is proof-neutral preparation using existing S3
-specifications; it supplies no native wide primitive, P3 checked contract or
-P4 completion. P3/P4 dependencies and the acceptance criteria above remain
-unchanged. Subtraction, dedicated squaring and ladder-constant operations,
-checked bounds, and complete X25519 refinement remain later work.
+stage exposed, tight/canonical mathematical products, biased subtraction with a
+dedicated difference carry for limbs below 4B, dedicated squaring that counts
+each off-diagonal pair once with factor 2, and multiplication by a24 = 121665
+with exact coefficients that exceed `Word[64]`. Nine additional hand-derived
+answer pairs beyond the product set, 129 tight-input product pairs, and
+independent binary-reference checks for differences, squares and a24 products
+exercise those schedules. The selected `product_third_pass` uses 1,474
+reference steps and rejects a 1,473-step budget without value output;
+`a24_maximum` uses 793 steps and rejects 792. This is proof-neutral preparation
+using existing S3 specifications; it supplies no native wide primitive, P3
+checked contract or P4 completion. P3/P4 dependencies and the acceptance
+criteria above remain unchanged. Checked bounds and complete X25519 refinement
+remain later work.
 
 ### P5 Lowering effects secrecy and leakage
 
@@ -307,8 +313,10 @@ Use the ML-KEM coefficient field modulo q = 3329, with prime evidence where
 field laws are used, and the quotient ring R = F_q[X] / (X^256 + 1). The
 quotient ring does not inherit field division laws from its coefficients.
 The bounded scalar-row surface of S3s supports polynomial vectors and
-scalar matrices. Matrices whose entries are polynomials need a further
-collection slice; rank three and structured array elements remain unsupported.
+scalar matrices. S3u, implemented and in owner review under
+[OEP-0025](OEP-0025-orange-2026-array-dimensions.md), admits rank three and
+four, including a matrix whose entries are polynomials. A quotient-ring
+type distinct from that array, and the criteria below, remain open.
 
 Acceptance criteria:
 
@@ -364,8 +372,11 @@ Acceptance criteria:
   criteria; record no P3 or semantic acceptance from their tests.
 - [ ] Prepare the P3 operation-obligation inventory while the existing S4
   decision work progresses; select no proof foundation or solver by doing so.
-- [ ] Define wide arithmetic and operation schedules before scheduling P4
-  multiplication or complete X25519 implementation refinement.
+- [x] Define proof-neutral mathematical schedules for field products, biased
+  subtraction, dedicated squaring and a24 multiplication before native wide
+  primitives or complete X25519 implementation refinement.
+- [ ] Define native wide arithmetic and checked operation schedules before
+  completing P4 X25519 implementation refinement.
 
 ## Alternatives
 
