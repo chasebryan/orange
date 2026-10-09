@@ -183,8 +183,10 @@ INVALID = [
     "s3o/invalid-project.or",
     "s3p/invalid-lengths.or",
     "s3p/invalid-rank2.or",
-    "s3q/invalid-tests.or",
+    "s3q/invalid-test-missing-body.or",
+    "s3q/invalid-test-missing-brace.or",
     "s3q/invalid-test-syntax.or",
+    "s3q/invalid-tests.or",
 ]
 
 # Rust evaluates these matrices. This slice rejects the value and pins C's

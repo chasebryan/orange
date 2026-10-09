@@ -547,6 +547,8 @@ compiler/fixtures/s3p/valid-lengths.or
 compiler/fixtures/s3p/valid-rfc8439.or
 compiler/fixtures/s3p/valid-share.or
 compiler/fixtures/s3q/failing-tests.or
+compiler/fixtures/s3q/invalid-test-missing-body.or
+compiler/fixtures/s3q/invalid-test-missing-brace.or
 compiler/fixtures/s3q/invalid-test-syntax.or
 compiler/fixtures/s3q/invalid-tests.or
 compiler/fixtures/s3q/valid-equality.or

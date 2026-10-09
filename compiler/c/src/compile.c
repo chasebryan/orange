@@ -3814,6 +3814,8 @@ static int parse_size_params(Compiler *c, Func *func) {
 
 static const char TEST_SHAPE_NOTE[] =
     "a test is written `test \"TITLE\" { EXPRESSION }`, its expression a `Bool`";
+static const char TEST_BODY_NOTE[] =
+    "a test's body holds `let` bindings, if any, and then one `Bool` expression";
 static const char TITLE_NOTE[] =
     "a test's title is 1 through 128 printable ASCII characters, with no backslash, and no two tests of a module "
     "share one";
@@ -3890,8 +3892,10 @@ static void check_test_title(Compiler *c, uint32_t index) {
 
 static int parse_test_body(Compiler *c, Func *func) {
     if (peek_kind(c) != TK_LBRACE) {
-        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{`", "expected a test body",
-                 TEST_SHAPE_NOTE, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `{` after the test's title", label,
+                 TEST_BODY_NOTE, 1);
         skip_function_body(c, 0);
         return 1;
     }
@@ -4298,8 +4302,10 @@ static int parse_source(Compiler *c) {
         }
     }
     if (peek_kind(c) != TK_RBRACE) {
-        add_diag(c, "ORC0103", peek_token(c).start, peek_token(c).end, "expected a function declaration",
-                 "a module member must be `spec` or `impl`", NULL, 1);
+        char label[64];
+        found_token_label(peek_kind(c), label, sizeof label);
+        add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `}` to close the module", label,
+                 "close the module before end of file", 1);
         return 1;
     }
     advance_token(c);

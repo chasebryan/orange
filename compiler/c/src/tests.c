@@ -260,7 +260,8 @@ int orange_values_equal(Compiler *c, const Value *left, const Value *right, int 
                 return 0;
             }
             /* Every word or `Bool`, including those after a difference. No break
-               or memcmp. orange_eq_audit (-DORANGEC_TEST) counts these visits. */
+               or memcmp. orange_eq_audit (-DORANGEC_TEST) counts these visits
+               for word arrays and Bool arrays. */
             for (index = 0; index < left->length; index++) {
                 uint64_t left_word = 0;
                 uint64_t right_word = 0;
@@ -424,6 +425,21 @@ static int expect_visits(Compiler *c, const Value *left, const Value *right, con
     return 1;
 }
 
+static int make_bool_array(Value *out, uint32_t differ_at, int differ) {
+    memset(out, 0, sizeof *out);
+    out->type = TY_BOOL;
+    out->length = EQ_AUDIT_N;
+    out->pack = pack_new(TY_BOOL, EQ_AUDIT_N, 1, 0);
+    if (out->pack == NULL) {
+        return 0;
+    }
+    pack_fill(out->pack, 0);
+    if (differ) {
+        pack_set(out->pack, differ_at, 1);
+    }
+    return 1;
+}
+
 static int make_word_array(Value *out, uint32_t differ_at, int differ) {
     memset(out, 0, sizeof *out);
     out->type = TY_W8;
@@ -567,6 +583,8 @@ int orange_eq_audit(void) {
     } while (0)
     AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, 0, 1), "word array compared_first");
     AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, EQ_AUDIT_N - 1, 1), "word array compared_last");
+    AUDIT_CASE(make_bool_array(&left, 0, 0), make_bool_array(&right, 0, 1), "bool array compared_first");
+    AUDIT_CASE(make_bool_array(&left, 0, 0), make_bool_array(&right, EQ_AUDIT_N - 1, 1), "bool array compared_last");
     AUDIT_CASE(make_word_tuple(&left, 0, 0), make_word_tuple(&right, 0, 1), "word tuple compared_first");
     AUDIT_CASE(make_word_tuple(&left, 0, 0), make_word_tuple(&right, EQ_AUDIT_N - 1, 1), "word tuple compared_last");
     AUDIT_CASE(make_residue_array(&left, 0, 0), make_residue_array(&right, 0, 1), "residue array compared_first");
