@@ -282,7 +282,7 @@ corpus entry in the sense of The Orange Book chapter 12.
   expression (ORC0101 on a `let` inside it), so the keystream block of
   iteration j cannot be bound and written at `64 * j + i` in one loop;
   `xor_block` selects the offset with a four-arm conditional on j instead,
-  costing four comparisons per block.
+  costing at most three comparisons per block.
 - Updating a 256-byte array takes 11 steps, and 64 such updates take 518,
   not one step per element. The file uses 270,926 of 1,048,576 steps, about
   26 percent, with room for 111 more evaluations the size of the 6,944-step
