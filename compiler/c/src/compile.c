@@ -405,9 +405,10 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* Rank counts declared axes 1 through 4 for the type check only.
-       Declarations of 1 to 4 axes are type-checked, with ORC0203 on a
-       fifth; values with more than one axis aren't supported yet. Any use
+    /* Rank always follows the resolved target type. It counts declared
+       axes and is never lowered per site. Declarations of 1 to 4 axes
+       are type-checked, with ORC0203 on a fifth; values with more than
+       one axis aren't supported yet. Any use
        of such a type (a parameter, a result, an alias use, a tuple element,
        and so on) is ORC0203. The message is "a value of type `%s` is a
        matrix, which this compiler does not evaluate". The label is
@@ -10288,8 +10289,8 @@ static void report_alias_target(Compiler *c, TypeSite *site) {
             return;
         }
         site->length = length;
-        /* Rank was taken from the resolved target. A length expression
-           does not lower it. */
+        /* Sets only the length and leaves rank alone. Rank was taken
+           from the resolved target. A length expression does not lower it. */
     }
 }
 

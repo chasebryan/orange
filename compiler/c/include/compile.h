@@ -861,7 +861,8 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
             return 1;
         }
         site->length = length;
-        /* Rank stays the rank resolve_site took from the target. */
+        /* Sets only the length and leaves rank alone. Rank stays the rank
+           resolve_site took from the target. */
         out->length = length;
         out->ok = 1;
     }
