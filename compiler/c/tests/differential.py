@@ -10,7 +10,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 C_DIR = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "compiler" / "fixtures"
+C_FIXTURES = ROOT / "compiler" / "c" / "tests" / "fixtures"
 RUST = ROOT / "compiler" / "target" / "debug" / "orangec"
+
+
+def fixture_path(relative: str) -> Path:
+    """A shared fixture, or a C-only program kept out of main's slice directory."""
+    shared = FIXTURES / relative
+    if shared.is_file():
+        return shared
+    return C_FIXTURES / relative
+
+
 C_COMPILER = C_DIR / "out" / "orangec-asan"
 CODE = re.compile(r"^error\[(ORC[0-9]+)\]", re.MULTILINE)
 
@@ -654,7 +665,7 @@ def main() -> int:
 
     failures = 0
     for relative in VALID:
-        path = str(FIXTURES / relative)
+        path = str(fixture_path(relative))
         rust = run(rust_compiler, ["eval", path])
         c_result = run(c_compiler, ["eval", path])
         again = run(c_compiler, ["eval", path])
@@ -697,7 +708,7 @@ def main() -> int:
                 print(f"ok   eval {label}")
 
     for relative in INVALID:
-        path = str(FIXTURES / relative)
+        path = str(fixture_path(relative))
         rust = run(rust_compiler, ["check", path])
         c_result = run(c_compiler, ["check", path])
         if rust.returncode == 0 or c_result.returncode == 0 or rust.stderr != c_result.stderr:
@@ -807,7 +818,7 @@ def alias_targets(rust_compiler: Path, c_compiler: Path) -> int:
     found = []
     failures = 0
     for relative in INVALID:
-        text = (FIXTURES / relative).read_text(encoding="utf-8")
+        text = fixture_path(relative).read_text(encoding="utf-8")
         for match in position.finditer(text):
             end = _ground_end(text, match.end())
             if end is None:
@@ -1037,8 +1048,9 @@ def alias_uses(rust_compiler: Path, c_compiler: Path) -> int:
     seen = {}
     rejected = 0
     for relative in INVALID:
-        text = _blank_comments((FIXTURES / relative).read_text(encoding="utf-8"))
-        rust_fixture = run(rust_compiler, ["check", str(FIXTURES / relative)])
+        path = fixture_path(relative)
+        text = _blank_comments(path.read_text(encoding="utf-8"))
+        rust_fixture = run(rust_compiler, ["check", str(path)])
         fixture_codes = codes(rust_fixture.stderr)
         params = set(_ALIAS_PARAM.findall(text))
         decls = _alias_decls(text)

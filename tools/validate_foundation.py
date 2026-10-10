@@ -313,6 +313,12 @@ compiler/c/src/bigint.c
 compiler/c/src/compile.c
 compiler/c/src/main.c
 compiler/c/tests/differential.py
+compiler/c/tests/fixtures/s3m/invalid-alias-once.or
+compiler/c/tests/fixtures/s3m/invalid-alias-through.or
+compiler/c/tests/fixtures/s3m/invalid-alias-tuple.or
+compiler/c/tests/fixtures/s3m/invalid-alias-twice.or
+compiler/c/tests/fixtures/s3m/invalid-alias-types.or
+compiler/c/tests/fixtures/s3m/invalid-alias-unused.or
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/cryptanalysis.rs
@@ -515,12 +521,6 @@ compiler/fixtures/s3l/invalid-bytes-types.or
 compiler/fixtures/s3l/valid-aead.or
 compiler/fixtures/s3l/valid-bytes.or
 compiler/fixtures/s3l/valid-hmac.or
-compiler/fixtures/s3m/invalid-alias-once.or
-compiler/fixtures/s3m/invalid-alias-through.or
-compiler/fixtures/s3m/invalid-alias-tuple.or
-compiler/fixtures/s3m/invalid-alias-twice.or
-compiler/fixtures/s3m/invalid-alias-types.or
-compiler/fixtures/s3m/invalid-alias-unused.or
 compiler/fixtures/s3m/invalid-sizes-syntax.or
 compiler/fixtures/s3m/invalid-sizes.or
 compiler/fixtures/s3m/sha256.or
