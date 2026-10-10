@@ -863,6 +863,7 @@ def main() -> int:
     failures += residue_modules(rust_compiler, c_compiler)
     failures += alias_targets(rust_compiler, c_compiler)
     failures += alias_uses(rust_compiler, c_compiler)
+    failures += ranks_3_4(c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
@@ -1154,6 +1155,257 @@ def _alias_must_cover(codes: list[str], source: str) -> bool:
     if found & _ALIAS_TYPE_CODES:
         return True
     return "ORC0221" in found and _ALIAS_LENGTH.search(source) is not None
+
+
+# ranks 3–4 (Rust S3u)
+#
+# Main's Rust admits four array dimensions. This branch still stops at two,
+# so these six programs are the gap. Each pin is C's exact ORC0203 text and
+# main's result at d794b43. The check fails if C's text changes, if that text
+# matches main, or if C accepts a program main rejects. The rank-3/4 slice
+# (Rust S3t/S3u) empties RANKS_3_4; do not refresh a pin to follow a new
+# acceptance.
+RANKS_3_4 = (
+    {
+        "name": 'rank-3 Cube = Grid^1',
+        "reason": 'Grid is rank 2. Cube = Grid^1 adds a third dimension. Main accepts the program. C rejects Grid^1 with ORC0203.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module types {
+  type Row = Word[8]^256;
+  type Grid = Row^256;
+  type Cube = Grid^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Grid^1;
+  |               ^^^^^^ arrays have at most two dimensions
+ ::: FILE:5:20
+  |
+5 |   type Cube = Grid^1;
+  |                    - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Cube = Mat^2',
+        "reason": 'Mat is rank 2. Cube = Mat^2 is a rank-3 parameter of id. Main accepts the program. C rejects Mat^2 with ORC0203.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module cube {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  spec id(x: Cube) -> Cube { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Mat^n',
+        "reason": 'box[n in 1..3](x: Mat^n) instantiates a third dimension. Main accepts it. C rejects both Mat^n occurrences and names box[1].',
+        "main_exit": 0,
+        "source": """// S3s rejection: `Mat^n` stays rank 3, ORC0203, and names `box[1]`.
+edition 2026;
+module matrix {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:6:26
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                          ^^^^^ arrays have at most two dimensions
+ ::: FILE:6:30
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                              - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+
+error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:6:36
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                                    ^^^^^ arrays have at most two dimensions
+ ::: FILE:6:40
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                                        - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Grid^n',
+        "reason": 'box[n in 1..3](x: Grid^n) builds a third axis from a size. Main accepts it. C rejects both Grid^n occurrences and names box[1].',
+        "main_exit": 0,
+        "source": """// S3s rejection: an axis written with a size on a rank-2 type is ORC0203,
+// and the note names the first instance.
+edition 2026;
+module axis {
+  type Row = Word[8]^1;
+  type Grid = Row^1;
+  spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:7:26
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                          ^^^^^^ arrays have at most two dimensions
+ ::: FILE:7:31
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                               - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+
+error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:7:37
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                                     ^^^^^^ arrays have at most two dimensions
+ ::: FILE:7:42
+  |
+7 | ...  spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                                             - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-4 Hyper = Cube^1',
+        "reason": 'Hyper = Cube^1 is rank 4. Main accepts the program. C rejects the rank-3 prefix Cube = Mat^2, so it does not accept Hyper.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module hyper {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  type Hyper = Cube^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-5 Five = Hyper^1',
+        "reason": 'Five = Hyper^1 is rank 5. Main rejects Hyper^1 because Hyper already has 4 dimensions. C rejects the rank-3 prefix and does not accept Five. The texts differ.',
+        "main_exit": 1,
+        "source": """edition 2026;
+module five {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  type Hyper = Cube^1;
+  type Five = Hyper^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """error[ORC0203]: `Hyper` already has 4 array dimensions
+ --> FILE:7:15
+  |
+7 |   type Five = Hyper^1;
+  |               ^^^^^^^ arrays have at most 4 dimensions
+ ::: FILE:7:21
+  |
+7 |   type Five = Hyper^1;
+  |                     - this length would add a fifth dimension
+  = note: a row holds scalars, and each `^LENGTH` after a named array type adds a dimension of its rows
+""",
+    },
+)
+
+
+def ranks_3_4(c_compiler: Path) -> int:
+    """ranks 3–4 (Rust S3u).
+
+    Empty RANKS_3_4 when the C frontend accepts ranks 3 and 4 and rejects
+    rank 5 with main's four-dimension diagnostic. Until then each pinned
+    program must keep today's ORC0203 text.
+    """
+    if not RANKS_3_4:
+        print("ok   ranks 3–4 (Rust S3u): empty")
+        return 0
+    failures = 0
+    for case in RANKS_3_4:
+        name = case["name"]
+        c_pin = case["c_stderr"]
+        main_pin = case["main_stderr"]
+        if c_pin == main_pin or not c_pin.strip():
+            failures += 1
+            print(f"FAIL ranks 3–4 (Rust S3u) {name}: C pin matches main")
+            continue
+        if case["main_exit"] != 0 and not main_pin.strip():
+            failures += 1
+            print(f"FAIL ranks 3–4 (Rust S3u) {name}: main rejection is not pinned")
+            continue
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(case["source"])
+                path = handle.name
+            c_result = run(c_compiler, ["check", path])
+            c_err = c_result.stderr.replace(path, "FILE")
+            if c_result.returncode == 0:
+                failures += 1
+                if case["main_exit"] != 0:
+                    print(f"FAIL ranks 3–4 (Rust S3u) {name}: C accepted what main rejects")
+                else:
+                    print(f"FAIL ranks 3–4 (Rust S3u) {name}: C accepted a pinned gap")
+            elif c_err == main_pin:
+                failures += 1
+                print(f"FAIL ranks 3–4 (Rust S3u) {name}: C matches main")
+            elif c_err != c_pin:
+                failures += 1
+                print(f"FAIL ranks 3–4 (Rust S3u) {name}: C output changed")
+                print("  pinned:", c_pin)
+                print("  c:     ", c_err)
+            else:
+                print(f"ok   ranks 3–4 (Rust S3u) {name}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
 
 
 def alias_uses(rust_compiler: Path, c_compiler: Path) -> int:
