@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | None | J2, J3, and J4 (Block A), J5, and the connecting studies below |
+| Part 2, The Journeyman | J5 | J2, J3, and J4 (Block A), and the connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. Journeyman and Master lessons are not written in this tree.
+unreviewed. J5 is drafted and unreviewed. J2, J3, J4, the other Journeyman studies, and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
 of drafted and planned chapters is [manifest.json](manifest.json).
@@ -173,6 +173,7 @@ further exercises, numbered N10.1 onward. N11 adds sixteen further
 exercises, numbered N11.1 onward. N12 adds twelve further exercises,
 numbered N12.1 onward. N13 adds ten further exercises, numbered N13.1
 onward. N14 adds eight further exercises, numbered N14.1 onward.
+J5 adds eight further exercises, numbered J5.1 onward.
 
 ### Remaining teaching sequence
 
@@ -247,6 +248,15 @@ Work from mathematical definitions and authoritative standards to complete
 constructions, then investigate representation, composition and implementation
 hazards. Establish algorithm prerequisites before presenting the algorithm.
 Orange is the working language, not decoration around prose.
+
+1. **J5.** [SHA-256 as FIPS 180-4 Writes It](JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#j5-sha-256-as-fips-180-4-writes-it).
+   Padding, the message schedule, and one compression round, in the order
+   FIPS PUB 180-4 §6.2 uses them, then both known-answer digests and the
+   intermediate hash after the first block of the longer message. The six
+   outcomes in J5 are the finish line. The locked label is J5. It is not a
+   manuscript chapter numeral. J2 is titled *Standards as Versioned Inputs*.
+   J3 is titled *The Corpus as Acceptance Test*. J4 is titled *Byte Order
+   and Format Boundaries*. Those three lessons are not in this tree.
 
 ### Existing manuscript integrated here
 
@@ -395,7 +405,8 @@ These checks validate the worked examples, finite models, the 52 chapter
 answers, the N7 answers, the 10 lesson-N8 answers, the 20 lesson-N9
 answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
-integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, and document structure. Python test
+integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 8 lesson-J5
+answers and the J5 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -431,11 +442,18 @@ its passing test. The same test reads the three Orange listings in N14.
 It checks `pad.or` with `eval --spec case1_key`, and `pad_seam.or`
 beside that file with `eval --spec inner0` and its one test. It checks
 `sample_line.or` with its evaluation and the report of a root that
-declares no test. Run it in a
-build-capable checkout:
+declares no test. The Rust integration test
+`compiler/crates/orangec/tests/book_j5.rs` reads the nine Orange listings
+in J5. It checks the five passing programs with `check`, `eval --spec`,
+and `test`. It checks the `ORC0220`, `ORC0101`, and `ORC0001` diagnostics
+of the three rejected listings on `check`, `eval`, and `test`. It checks
+the silent `check`, the printed `W17`, and the failing test of the
+listing that writes `SHR 17` where the standard writes `ROTR 17`. Run
+them in a build-capable checkout:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_novice --locked --offline
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j5 --locked --offline
 ```
 
 The existence of this test is not a claim that a run passed. The PR and
@@ -452,6 +470,8 @@ at the owner's direction. Lesson N12 is AI-assisted with Grok 4.7 in Cursor,
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the
 owner's direction. Lesson N14, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
-direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, and N14 review are
+direction. Lesson J5, including its Orange listings, is AI-assisted with
+Grok 4.7 in Cursor, 2026-10-09, at the owner's direction. The opening is
+owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, and J5 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
