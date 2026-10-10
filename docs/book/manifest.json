@@ -187,11 +187,12 @@
     {
       "part": "journeyman",
       "id": "j5",
-      "title": "J5. SHA-256 compression and message schedule",
-      "status": "planned",
-      "review_state": "unwritten",
-      "path": null,
-      "summary": "N14 names J5 as the study that would derive FIPS 180-4 section 6.2.2. This tree does not contain that derivation."
+      "title": "J5. SHA-256 as FIPS 180-4 Writes It",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md",
+      "anchor": "j5-sha-256-as-fips-180-4-writes-it",
+      "summary": "Draft. Owner review is pending. It derives SHA-256 padding, the message schedule, and compression from FIPS PUB 180-4, August 2015."
     },
     {
       "part": "journeyman",
