@@ -4,9 +4,8 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-const J5: &str = include_str!(
-    "../../../../docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md"
-);
+const J5: &str =
+    include_str!("../../../../docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md");
 
 fn fences<'a>(text: &'a str, language: &str) -> Vec<&'a str> {
     let start = format!("```{language}\n");
@@ -92,10 +91,7 @@ fn assert_rejected(name: &str, code: &str, locus: &str) {
     let source = source(name);
     let expected = format!(
         "{}\n",
-        one_text(
-            |text| text.starts_with(code) && text.contains(locus),
-            name
-        )
+        one_text(|text| text.starts_with(code) && text.contains(locus), name)
     );
     for command in ["check", "eval", "test"] {
         let first = run(&[command, "-"], source);
