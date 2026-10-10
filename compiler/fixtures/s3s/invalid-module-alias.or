@@ -1,0 +1,5 @@
+edition 2026;
+module main {
+  use aliaslib;
+  spec f(x: T0) -> T0 { x }
+}

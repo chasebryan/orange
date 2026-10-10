@@ -567,6 +567,8 @@ compiler/fixtures/s3r/valid-rc6.or
 compiler/fixtures/s3r/valid-sha3.or
 compiler/fixtures/s3r/valid-shift-probes.or
 compiler/fixtures/s3r/valid-zetas.or
+compiler/fixtures/s3s/aliaslib.or
+compiler/fixtures/s3s/bothlib.or
 compiler/fixtures/s3s/invalid-conversions.or
 compiler/fixtures/s3s/invalid-dimensions.or
 compiler/fixtures/s3s/invalid-domains.or
@@ -575,6 +577,8 @@ compiler/fixtures/s3s/invalid-instance-axis.or
 compiler/fixtures/s3s/invalid-instance-length.or
 compiler/fixtures/s3s/invalid-instance-matrix.or
 compiler/fixtures/s3s/invalid-instance-width.or
+compiler/fixtures/s3s/invalid-module-alias.or
+compiler/fixtures/s3s/invalid-module-both.or
 compiler/fixtures/s3s/invalid-plain-as.or
 compiler/fixtures/s3s/invalid-ragged.or
 compiler/fixtures/s3s/invalid-types.or

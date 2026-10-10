@@ -219,6 +219,8 @@ INVALID = [
     "s3s/invalid-instance-length.or",
     "s3s/invalid-instance-matrix.or",
     "s3s/invalid-instance-width.or",
+    "s3s/invalid-module-alias.or",
+    "s3s/invalid-module-both.or",
     "s3s/invalid-ragged.or",
     "s3s/invalid-types.or",
 ]

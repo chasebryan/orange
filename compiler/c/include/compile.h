@@ -4454,7 +4454,29 @@ static int compare_diag(const void *left_ptr, const void *right_ptr) {
     if (order != 0) {
         return order;
     }
-    return strcmp(left->note2, right->note2);
+    order = strcmp(left->note2, right->note2);
+    if (order != 0) {
+        return order;
+    }
+    order = strcmp(left->note3, right->note3);
+    if (order != 0) {
+        return order;
+    }
+    /* One secondary span. Rust orders a diagnostic with none before one with
+       a span, then by that span's start, end, and label. */
+    if (left->has_sec != right->has_sec) {
+        return left->has_sec < right->has_sec ? -1 : 1;
+    }
+    if (left->has_sec) {
+        if (left->sec_start != right->sec_start) {
+            return left->sec_start < right->sec_start ? -1 : 1;
+        }
+        if (left->sec_end != right->sec_end) {
+            return left->sec_end < right->sec_end ? -1 : 1;
+        }
+        return strcmp(left->sec_label, right->sec_label);
+    }
+    return 0;
 }
 
 static void line_col(const char *text, size_t length, uint32_t offset, uint32_t *line, uint32_t *column) {
@@ -5506,6 +5528,9 @@ static int link_program(Program *program) {
         uint16_t target;
         if (next >= mod->nuses) {
             state[node] = 2;
+            /* Dependency postorder: a module follows every module it uses.
+               Analysis walks `order`. Diagnostics do not; they render in
+               `mods` insertion order. */
             if (program->norder < MAX_MODULES) {
                 program->order[program->norder++] = node;
             }
@@ -5715,12 +5740,16 @@ static int load_used_modules(Program *program, const char *root_path, FILE *err)
     }
 }
 
-static void render_program_diags(Program *program, FILE *err, int dependency_order) {
+/* Rust `render_diagnostics` orders by source insertion index, then primary
+   span, severity, code, message, label, notes, and secondary spans. The root
+   is inserted first. Each used module follows in the order a `use` first
+   names it, which is `mods[]`. Within one module, `compare_diag` is the rest
+   of that key. */
+static void render_program_diags(Program *program, FILE *err) {
     int index;
     int started = 0;
-    int count = dependency_order ? program->norder : program->nmods;
-    for (index = 0; index < count; index++) {
-        Compiler *mod = dependency_order ? program->mods[program->order[index]] : program->mods[index];
+    for (index = 0; index < program->nmods; index++) {
+        Compiler *mod = program->mods[index];
         if (mod->ndiags > 0) {
             if (started) {
                 fputc('\n', err);
@@ -5912,7 +5941,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         return 1;
     }
     if (!link_program(program)) {
-        render_program_diags(program, err, 0);
+        render_program_diags(program, err);
         program_free(program);
         return 1;
     }
@@ -5925,7 +5954,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         }
     }
     if (status != 0) {
-        render_program_diags(program, err, 1);
+        render_program_diags(program, err);
         program_free(program);
         return 1;
     }
@@ -5947,7 +5976,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
                 fputs("internal error: evaluation failed without a diagnostic\n", err);
             }
             if (seen) {
-                render_program_diags(program, err, 0);
+                render_program_diags(program, err);
             }
         }
     } else {
