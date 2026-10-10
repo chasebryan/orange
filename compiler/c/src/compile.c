@@ -8934,6 +8934,17 @@ static int check_order_sides(Compiler *c, const Expr *expr, TypeKind from_type, 
         to_tup0 = c->sites[expr->conv_site].tup0;
         to_tup_n = c->sites[expr->conv_site].tup_n;
     }
+    /* A matrix is not an array of words. Rust reports it at the target after
+       the operand has already been classified as words or a number. */
+    if (expr->conv_site < c->nsites && c->sites[expr->conv_site].rank >= 2) {
+        TypeSite *site = &c->sites[expr->conv_site];
+        char shown[128];
+        char target[96];
+        spell_matrix(c, target, sizeof target, site->kind, site->length, site->inner_len, site->mod_index);
+        snprintf(shown, sizeof shown, "`%s`", target);
+        report_order_unpacking(c, expr, shown);
+        return 0;
+    }
     from_words = side_words(from_type, from_len, &from_bits, &from_count);
     to_words = side_words(to_type, to_len, &to_bits, &to_count);
     from_number = side_number(from_type, from_len);
