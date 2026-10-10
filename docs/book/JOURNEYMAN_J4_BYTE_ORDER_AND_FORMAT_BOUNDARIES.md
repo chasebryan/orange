@@ -77,7 +77,10 @@ none of them is conferred by reaching the last page.
 4. You can check a format boundary that is not byte order. FIPS
    180-4 §5.1.1 appends a 64-bit length field. For “abc” the field
    is the bit length 24, which the corpus lesson already pinned,
-   not the byte length 3. An Orange test checks the field.
+   not the byte length 3. An Orange test checks the field. A
+   little-endian load of those same bytes fails a second corpus
+   test. You predict `24·2^56` before you run it. The repair is
+   `as big`.
 5. You can compute the first message word and the eight length
    bytes that J5 will take for that padded block. The little-endian
    word is a wrong answer you can write down. This lesson does not
@@ -640,15 +643,86 @@ it by writing `0x80636261`, which is the little-endian word
 Proposition J4.5 just separated, or by writing a length field that
 ends in the byte 3. Neither of those is the input J5 will take.
 
-Listing J4.3 checks the integers on the compiler. `length_be` is
-the field. `length_le` is the other reading of the same eight
-bytes. `word0` is the message word. `word0_le` is the wrong word
+Listing J4.3 reads the eight length bytes little-endian and
+compares that integer with 24. The title names the bit length the
+corpus lesson pinned. The conversion does not. Before you run the
+test, write the two integers the report will show.
+
+The prediction is left `1729382256910270464` and right `24`.
+
+Left is `24·2^56`, the little-endian reading Proposition J4.4
+computed from `00 00 00 00 00 00 00 18`. Right is ℓ. The
+proposition says those integers differ, so the `Bool` is false.
+The wrong value is `1729382256910270464`. It is the value the
+little-endian load computes. It is not the bit length.
+
+**Listing J4.3 — `wrong_length.or`, intentionally failing**
+
+```orange
+edition 2026;
+module wrong_length {
+  spec length() -> Int { hex"0000000000000018" as little Int }
+  test "FIPS 180-4 5.1.1 length field is the bit length" {
+    length() == 24
+  }
+}
+```
+
+The bytes are the length field of Proposition J4.4. The expected
+integer is ℓ. One token is the wrong order: `little` stands where
+§3.1 requires `big`.
+
+```sh
+./compiler/target/debug/orangec check wrong_length.or
+./compiler/target/debug/orangec eval wrong_length.or
+./compiler/target/debug/orangec test wrong_length.or
+```
+
+Check is silent. The status is 0. Standard error is empty. The
+false order is still well-formed. A silent check is not a true
+test.
+
+**Expected evaluation output:**
+
+```text
+wrong_length::length: Int = 1729382256910270464
+```
+
+`eval` does not apply the test. The value is the prediction's left
+integer. Changing the expected integer in the test would not
+change `length`.
+
+**Test report:**
+
+```text
+test "FIPS 180-4 5.1.1 length field is the bit length" ... FAILED
+    left:  1729382256910270464
+    right: 24
+1 test: 0 passed, 1 failed
+```
+
+The status of `test` is 1. Standard error is empty. There is no
+`ORC` code. `left` is the value `length()` denotes. `right` is the
+integer written in the test. Left is the prediction. Right is ℓ.
+The corpus test caught the swapped order of the length field.
+
+Replacing `as little` with `as big` makes the `Bool` true. No
+change to the expected integer is required. The repaired reading
+is `length_be` in Listing J4.4. Rewriting the right-hand side to
+`1729382256910270464` would make the `Bool` true and would make
+the claim false as a reading of §5.1.1. The report's right-hand
+side is the bit length. The left-hand side is the wrong function.
+
+Listing J4.4 checks the integers on the compiler. `length_be` is
+the field, the repair of Listing J4.3. `length_le` is the other
+reading of the same eight bytes, the integer Listing J4.3's test
+rejects. `word0` is the message word. `word0_le` is the wrong word
 for J5. `byte_length_field` is the integer 3 written in the same
 eight-byte shape. The tests demand 24 for the bit length and for
 the field, and they demand the big-endian message word. They do
 not demand that 3 equal 24.
 
-**Listing J4.3 — `length_field.or`**
+**Listing J4.4 — `length_field.or`**
 
 ```orange
 edition 2026;
@@ -704,13 +778,11 @@ test "FIPS 180-4 3.1 first message word" ... ok
 ```
 
 The status of `test` is 0. Standard error is empty. The second
-test matches the length field to ℓ. It does not match the
-little-endian reading to ℓ, and it does not match the byte length
-to ℓ. A reader who changes `as big` to `as little` on `length_be`
-gets the failure the previous section already practiced, with left
-`1729382256910270464` and right `24`. This lesson does not fence
-that second failure. The arithmetic is Proposition J4.4, and the
-endianness failure already has a witness.
+test matches the length field to ℓ. It is the repair of Listing
+J4.3: `as big` where that listing wrote `as little`. It does not
+match the little-endian reading to ℓ, and it does not match the
+byte length to ℓ. The little-endian failure is the fenced report
+above, left `1729382256910270464` and right `24`, status 1.
 
 What J5 may take from this page is narrow. It may take the first
 message word to be `0x61626380`. It may take the length field to
@@ -798,7 +870,7 @@ Say whether a corpus test of that word can catch a swapped order,
 and why the bytes `65 78 70 61` can.
 
 **Exercise J4.8 — What the passes leave out.** Listing J4.1 passes
-three tests and Listing J4.3 passes three tests. Name two
+three tests and Listing J4.4 passes three tests. Name two
 functions those passes do not establish, and say why a Match is
 not called verified.
 
@@ -837,7 +909,11 @@ section does not print. Proposition J4.3 is that repair.
 `00 00 00 00 00 00 00 03`. Under the same convention it denotes 3.
 Assumption J4.6 says 3 is not 24. Proposition J4.4 is the same
 split, and it adds the little-endian reading of the true field,
-`1729382256910270464`, which is also not 24.
+`1729382256910270464`, which is also not 24. Listing J4.3 loads
+those bytes `as little` and demands 24. The report prints left
+`1729382256910270464` and right `24`, and the status is 1.
+Replacing `as little` with `as big` repairs it. The expected
+integer stays 24.
 
 **J4.5.** The first message word is `0x61626380`. The eight length
 bytes are `00 00 00 00 00 00 00 18`. Proposition J4.5 is the word.
@@ -931,13 +1007,19 @@ Source: <https://www.rfc-editor.org/rfc/rfc7748.txt>
 `spec`, `Int`, `Word[8]` bytes written as `hex"..."`, `Word[32]`,
 `Word[32]^4`, `*`, `==`, `test`, `as little`, and `as big`. The
 compiler this tree builds implements `as little` and `as big`.
-No form in the listings is marked Proposed. `docs/ORDER_2026.md`
-specifies those conversions for the proposed S3n slice, under
-OEP-0017, which is in review. The document's own status line says
-the text is proposed and not accepted. A listing reports the
-binary. It does not accept OEP-0017. A passing test is a Match on
-the inputs it writes. It is not a constant-time claim, not a
-performance claim, and not a transcription of FIPS 180-4 §6.2.2.
+No form in the listings is marked Proposed. On main, the OEP
+index gives OEP-0017 the status Review, and
+`docs/governance/oeps/OEP-0017-orange-2026-byte-order.md` records
+`status: Review`. That file says the proposal is in Review. It
+requires OEP-0016, which is also in review, and it accepts no
+D-004 candidate. `docs/ORDER_2026.md` on main opens with the
+status line “proposed S3n semantics under OEP-0017, in owner
+review; not accepted.” The root README on main calls the same
+conversions “Working; specification in review.” A listing reports
+the binary. It does not accept OEP-0017. A passing test is a
+Match on the inputs it writes. It is not a constant-time claim,
+not a performance claim, and not a transcription of FIPS 180-4
+§6.2.2.
 This record's tag is [C5].
 
 ## Evidence boundary
@@ -947,8 +1029,10 @@ line. The assumptions in that section bound them. The boundary map
 in §J4.2 is the ChaCha constant bytes the standards lesson left
 unpacked, read against FIPS 180-4 §3.1, RFC 8439 §2.3, and RFC 7748
 §5. Listing J4.1 reads one group both ways. Listing J4.2 is the
-wrong-endianness witness. Listing J4.3 checks the length field and
-the first message word. Eight exercises have worked answers.
+wrong-endianness witness for the constant word. Listing J4.3 is
+the wrong-endianness witness for the length field. Listing J4.4
+checks the length field and the first message word. Eight
+exercises have worked answers.
 Exercise J4.5 is the self-check that sets up J5's message word and
 length field. The integer ledger is recomputed by
 `tools/test_book_foundations.py`. The Orange listings are the

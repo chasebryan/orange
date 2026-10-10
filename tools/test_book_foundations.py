@@ -1824,7 +1824,7 @@ class J4ByteOrder(unittest.TestCase):
         sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
         self.assertEqual(
             [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
-            ['orders', 'wrong_order', 'length_field'],
+            ['orders', 'wrong_order', 'wrong_length', 'length_field'],
         )
         orders = sources[0]
         self.assertIn('hex"65787061" as little Word[32]', orders)
@@ -1853,6 +1853,26 @@ class J4ByteOrder(unittest.TestCase):
         self.assertNotIn('as little', wrong)
         self.assertIn('0x65787061', self.text)
         self.assertIn('Replacing `as big` with `as little`', self.text)
+
+    def test_length_order_predicts_the_wrong_value_before_the_report(self):
+        prediction = 'The prediction is left `1729382256910270464` and right `24`.'
+        report = 'test "FIPS 180-4 5.1.1 length field is the bit length" ... FAILED'
+        self.assertIn(prediction, self.text)
+        self.assertIn(report, self.text)
+        self.assertLess(self.text.index(prediction), self.text.index(report))
+        self.assertIn('    left:  1729382256910270464', self.text)
+        self.assertIn('    right: 24', self.text)
+        self.assertIn('1 test: 0 passed, 1 failed', self.text)
+        self.assertIn('The status of `test` is 1.', self.text)
+        wrong = next(
+            source for source in re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+            if '\nmodule wrong_length {' in source
+        )
+        self.assertIn('hex"0000000000000018" as little Int', wrong)
+        self.assertIn('length() == 24', wrong)
+        self.assertNotIn('as big', wrong)
+        self.assertIn('Replacing `as little` with `as big`', self.text)
+        self.assertNotIn('does not fence', self.text)
 
     def test_length_field_is_checked_apart_from_byte_order(self):
         self.assertIn('FIPS 180-4 §5.1.1', self.text)

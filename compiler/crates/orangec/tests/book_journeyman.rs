@@ -4,7 +4,9 @@
 //!
 //! `orders` reads one four-byte group both ways. `wrong_order` is the
 //! big-endian load of those bytes compared with the RFC 8439 §2.3 word.
-//! `length_field` checks the FIPS 180-4 §5.1.1 length and the first message word.
+//! `wrong_length` is the little-endian load of the FIPS 180-4 §5.1.1
+//! length bytes compared with the bit length 24. `length_field` checks
+//! that field and the first message word.
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
@@ -104,7 +106,11 @@ fn assert_stdout(name: &str, arguments: &[&str], source: &str, body: &str, statu
 fn j4_listings_read_both_orders_and_fail_the_swapped_word() {
     let sources = j4_sources();
     let names: Vec<_> = sources.iter().copied().map(module_name).collect();
-    assert_eq!(names, vec!["orders", "wrong_order", "length_field"]);
+    assert_eq!(
+        names,
+        vec!["orders", "wrong_order", "wrong_length", "length_field"]
+    );
+    assert!(J4.contains("The prediction is left `1729382256910270464` and right `24`."));
     assert!(!J4.contains("\n## Chapter "));
     assert!(!J4.contains("this chapter"));
     assert!(!J4.contains("S3u"));
@@ -127,7 +133,10 @@ fn j4_listings_read_both_orders_and_fail_the_swapped_word() {
         "orders eval",
         &["eval", "-"],
         orders,
-        one_text(|text| text.starts_with("orders::first_little:"), "orders eval"),
+        one_text(
+            |text| text.starts_with("orders::first_little:"),
+            "orders eval",
+        ),
         0,
     );
     assert_stdout(
@@ -167,6 +176,38 @@ fn j4_listings_read_both_orders_and_fail_the_swapped_word() {
                     && text.contains("1 test: 0 passed, 1 failed")
             },
             "wrong_order test",
+        ),
+        1,
+    );
+
+    let wrong_length = j4_source("wrong_length");
+    assert!(wrong_length.contains("hex\"0000000000000018\" as little Int"));
+    assert!(wrong_length.contains("length() == 24"));
+    assert!(!wrong_length.contains("as big"));
+    assert_silent_check("wrong_length", wrong_length);
+    assert_stdout(
+        "wrong_length eval",
+        &["eval", "-"],
+        wrong_length,
+        one_text(
+            |text| text.starts_with("wrong_length::length:"),
+            "wrong_length eval",
+        ),
+        0,
+    );
+    assert_stdout(
+        "wrong_length test",
+        &["test", "-"],
+        wrong_length,
+        one_text(
+            |text| {
+                text.starts_with(
+                    "test \"FIPS 180-4 5.1.1 length field is the bit length\" ... FAILED",
+                ) && text.contains("left:  1729382256910270464")
+                    && text.contains("right: 24")
+                    && text.contains("1 test: 0 passed, 1 failed")
+            },
+            "wrong_length test",
         ),
         1,
     );

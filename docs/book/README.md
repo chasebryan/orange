@@ -266,7 +266,10 @@ Orange is the working language, not decoration around prose.
   with `as little` and with `as big`. A wrong-endianness load fails a
   corpus test, and the reader predicts the computed word before the
   report. The 64-bit length field of FIPS 180-4 §5.1.1, the bit length
-  24 rather than the byte length 3, is checked in Orange. A self-check
+  24 rather than the byte length 3, is checked in Orange. A
+  little-endian load of those bytes fails a second corpus test; the
+  reader predicts `1729382256910270464` before the report, and the
+  repair is `as big`. A self-check
   asks for the first message word and the length bytes J5 will take,
   and does not build the schedule. The six outcomes in §J4.1 are the
   finish line. The locked label is J4. It is not a manuscript chapter
@@ -499,10 +502,11 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j3 --locke
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 The Rust integration test `compiler/crates/orangec/tests/book_journeyman.rs`
-reads the three Orange listings in J4. It checks silent `check`, the
-printed `eval` lines, the passing tests, and the one failing test
-whose report prints `left` `0x65787061` and `right` `0x61707865` with
-status 1 and empty standard error. A passing test in that file is a
+reads the four Orange listings in J4. It checks silent `check`, the
+printed `eval` lines, the passing tests, and the two failing tests.
+One report prints `left` `0x65787061` and `right` `0x61707865`. The
+other prints `left` `1729382256910270464` and `right` `24`. Each
+failing test has status 1 and empty standard error. A passing test in that file is a
 Match of the `Bool` the listing writes. It does not establish a
 cryptographic security claim, it does not transcribe FIPS 180-4
 §6.2.2, and it does not rerun the ChaCha20 block function. Run it
