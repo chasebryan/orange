@@ -496,14 +496,15 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         site->ok = 1;
         return;
     }
-    if (target->rank >= 2 && site->wrote_axis) {
+    /* Four dimensions, matching Rust MAX_ARRAY_DIMENSIONS. A fifth axis is ORC0203. */
+    if (target->rank >= 4 && site->wrote_axis) {
         char message[160];
         copy_ident(name, sizeof name, c, site->ident_start, site->ident_end);
-        snprintf(message, sizeof message, "`%s` already has two array dimensions", name);
-        add_diag(c, "ORC0203", site->start, site->end, message, "arrays have at most two dimensions",
-                 "a row holds scalars; a matrix holds rows of the same type", 2);
+        snprintf(message, sizeof message, "`%s` already has 4 array dimensions", name);
+        add_diag(c, "ORC0203", site->start, site->end, message, "arrays have at most 4 dimensions",
+                 "a row holds scalars, and each `^LENGTH` after a named array type adds a dimension of its rows", 2);
         if (site->length_end > site->length_start) {
-            diag_add_secondary(c, site->length_start, site->length_end, "this length would add a third dimension");
+            diag_add_secondary(c, site->length_start, site->length_end, "this length would add a fifth dimension");
         }
         site->ok = 0;
         site->reported = 1;

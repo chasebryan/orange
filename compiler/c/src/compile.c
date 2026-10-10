@@ -3185,7 +3185,7 @@ static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
         char label[64];
         found_token_label(peek_kind(c), label, sizeof label);
         add_diag(c, "ORC0101", peek_token(c).start, peek_token(c).end, "expected `=` after the updated index", label,
-                 "an update is written `x with [i] = value`", 1);
+                 "an update is written `x with [i] = value`, or `x with [i][j] = value` for an element of a row", 1);
         leave_nest(c);
         return 0;
     }
