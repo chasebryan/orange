@@ -659,6 +659,9 @@ Where:
 - $\mathbb{V}_{\text{Array}} = \biguplus_{\tau, n} \mathbb{V}_\tau^n$ ($1 \le n \le N_{\text{axis}}$; $N_{\text{axis}}$ is the per-axis length cap, §102)
 - $\mathbb{V}_{\text{Tuple}} = \biguplus_{k \in [2, 16]} (\mathbb{V}_{\tau_0} \times \dots \times \mathbb{V}_{\tau_{k-1}})$
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="20-mathematical-integers-mathbbz-and-the-int-type"></a>
+
 ### §20. Mathematical Integers ($\mathbb{Z}$) and the `Int` Type
 
 1. The `Int` type models the algebraic ring of mathematical integers:
@@ -671,6 +674,9 @@ Where:
 4. **Absence of Coercion:** An `Int` cannot be passed where a `Word[W]` or
    `Mod[m]` is required without an explicit `as` cast. The cast reduces; it
    does not assert that the value already lies in the destination (§28).
+
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="21-word-rings-algebraic-foundations-of-mathbbz2wmathbbz-w-in-8-16-32-64"></a>
 
 ### §21. Word Rings: Algebraic Foundations of $\mathbb{Z}/2^W\mathbb{Z}$ ($W \in \{8, 16, 32, 64\}$)
 
@@ -691,6 +697,9 @@ Where:
 5. **Literal Enclosure:**
    A literal $v$ checked as `Word[W]` MUST satisfy $0 \le v \le 2^W - 1$.
    $v < 0$ emits `ORC0206`; $v \ge 2^W$ emits `ORC0207`.
+
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="22-residue-fields-and-modular-arithmetic-mathbbzmmathbbz-for-2-le-m-le-2521-1"></a>
 
 ### §22. Residue Fields and Modular Arithmetic ($\mathbb{Z}/m\mathbb{Z}$ for $2 \le m \le 2^{521}-1$)
 
@@ -797,6 +806,9 @@ module m {
 context is `Bool`, because `&&` requires `Bool`, so `x < 0 : Bool` and
 `0 < x : Bool`. `&&` is defined for that expected type, so the body has type
 `Bool`, the declared result.
+
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="24-fixed-length-array-spaces-tn"></a>
 
 ### §24. Fixed-Length Array Spaces ($T^n$)
 
@@ -967,6 +979,9 @@ arguments spelled as repeated powers, stay rejected. No command, option, token,
 or reserved word is added. Every S3t source keeps its types, values, output
 bytes, and evaluation steps.
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="26-heterogeneous-product-types-tuples-t_0-dots-t_k-1-for-2-le-k-le-16"></a>
+
 ### §26. Heterogeneous Product Types: Tuples ($(T_0, \dots, T_{k-1})$ for $2 \le k \le 16$)
 
 1. A tuple type $(T_0, \dots, T_{k-1})$ represents the heterogeneous product:
@@ -1083,6 +1098,9 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{TotalBits}(\tau_{\text{s
    the lengths 1 through 63. Each instance is type-checked on its own.
 4. Calling with an invalid size parameter count emits `ORC0239`.
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="31-finite-type-parameter-domains-k-in-t_1-dots-t_m"></a>
+
 ### §31. Finite Type Parameter Domains ($[K \in \{T_1, \dots, T_m\}]$)
 
 1. A specification function may declare finite type parameters:
@@ -1098,6 +1116,9 @@ $$\frac{\Gamma \vdash e : \tau_{\text{src}} \quad \text{TotalBits}(\tau_{\text{s
 ---
 
 ## Part IV: Static Semantics (Typing Rules & Judgments)
+
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="32-typing-contexts-signature-sigma-size-theta-type-delta-and-variable-gamma-environments"></a>
 
 ### §32. Typing Contexts: Signature ($\Sigma$), Size ($\Theta$), Type ($\Delta$), and Variable ($\Gamma$) Environments
 
@@ -6815,6 +6836,9 @@ Computes two rounds of SHA-256 compression over vector registers in hardware:
 through slice S3u does not implement information-flow labels or the policies named
 below.
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="67-the-information-flow-lattice-textpublic-sqsubseteq-textsecret"></a>
+
 ### §67. The Information Flow Lattice ($\text{public} \sqsubseteq \text{secret}$)
 
 **Status: Proposed.** No OEP in this checkout implements the lattice, and
@@ -7046,6 +7070,9 @@ where $q$ is the number of encryption queries and $L$ is block length.
 **Status: Proposed.** This part is not the Current `spec` stratum. The
 `orangec` 0.0.1 binary in this tree reports slice S3u and does not implement
 `proof` or `orange-check`.
+
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="76-propositions-as-types-and-the-textprop-universe"></a>
 
 ### §76. Propositions as Types and the $\text{Prop}$ Universe
 
