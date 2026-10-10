@@ -50,8 +50,7 @@ message schedule, and one compression round from the August 2015
 text, then run the transcription with `orangec check`, `orangec
 eval`, and `orangec test` on the compiler this tree builds. You will
 also feed the compiler three programs it rejects, and one program it
-accepts whose test fails. The compiler's version line is `orangec
-0.0.1 (Orange edition 2026; implemented slice S3u)`. Every listing
+accepts whose test fails. The compiler's version line is `orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. Every listing
 is written for that slice. A form this slice does not implement is
 shown by the diagnostic the compiler prints. This lesson does not
 invent a syntax for it.
@@ -1522,8 +1521,7 @@ A conversion is not indexed in the same expression. There is no
 bit-string type and no assignment. A `for` bound in these listings
 is a literal, and the end is exclusive. A length parameter in a
 static range is implemented on this slice and is not used. The
-version line these commands print is `orangec 0.0.1 (Orange edition
-2026; implemented slice S3u)`.
+version line these commands print is `orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`.
 This record's tag is [C6].
 
 The test form is the one N12 recorded as [T6]. `orangec check`

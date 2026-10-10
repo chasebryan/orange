@@ -173,6 +173,7 @@ further exercises, numbered N10.1 onward. N11 adds sixteen further
 exercises, numbered N11.1 onward. N12 adds twelve further exercises,
 numbered N12.1 onward. N13 adds ten further exercises, numbered N13.1
 onward. N14 adds eight further exercises, numbered N14.1 onward.
+J5 adds eight further exercises, numbered J5.1 onward.
 
 ### Remaining teaching sequence
 
@@ -248,8 +249,7 @@ constructions, then investigate representation, composition and implementation
 hazards. Establish algorithm prerequisites before presenting the algorithm.
 Orange is the working language, not decoration around prose.
 
-1. **SHA-256 as FIPS 180-4 Writes It.** Drafted as
-   [J5](JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#j5-sha-256-as-fips-180-4-writes-it).
+1. **J5.** [SHA-256 as FIPS 180-4 Writes It](JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#j5-sha-256-as-fips-180-4-writes-it).
    Padding, the message schedule, and one compression round, in the order
    FIPS PUB 180-4 §6.2 uses them, then both known-answer digests and the
    intermediate hash after the first block of the longer message. The six
