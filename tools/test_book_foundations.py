@@ -1506,9 +1506,12 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertEqual(records['S14'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
         self.assertEqual(records['T10'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
         self.assertEqual(records['C4'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
-        self.assertNotIn('S15', records)
-        self.assertNotIn('T11', records)
-        self.assertNotIn('C5', records)
+        self.assertEqual(records['S15'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['T11'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['C5'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertNotIn('S16', records)
+        self.assertNotIn('T12', records)
+        self.assertNotIn('C6', records)
 
 
 class J3CorpusAsAcceptanceTest(unittest.TestCase):
@@ -1726,9 +1729,250 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
             'Corpus surface.',
         ))
         self.assertEqual(records['S13'][0], 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md')
-        self.assertNotIn('S15', records)
-        self.assertNotIn('T11', records)
-        self.assertNotIn('C5', records)
+        self.assertEqual(records['S15'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['T11'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['C5'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertNotIn('S16', records)
+        self.assertNotIn('T12', records)
+        self.assertNotIn('C6', records)
+
+
+class J4ByteOrder(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j4_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J4\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J4\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J4.{n}' for n in range(1, 9)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('this chapter', self.text)
+        self.assertNotRegex(self.text, r'§J[23]\.')
+        self.assertNotRegex(self.text, r'Listing J[23]\.')
+        self.assertRegex(self.text, r'(?m)^## J4: Byte Order and Format Boundaries$')
+        for number in range(1, 7):
+            self.assertRegex(self.text, rf'(?m)^### J4\.{number} ')
+        self.assertNotRegex(self.text, r'(?m)^### J4\.(?:[7-9]|1\d) ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'We agree that the difference between sending eggs with the little- or the big-end '
+            'first is trivial, but we insist that everyone must do it in the same way, to avoid '
+            'anarchy. Since the difference is trivial we may choose either way, but a decision '
+            'must be made.'
+        ])
+        self.assertIn('https://www.ietf.org/rfc/ien/ien137.html', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc7748.txt', self.text)
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.180-4', self.text)
+        self.assertIn('**J4.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#j4-byte-order-and-format-boundaries',
+            self.index,
+        )
+        self.assertIn(
+            'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#worked-answers',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j4-byte-order-and-format-boundaries', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J4.', self.text)
+        self.assertIn('The locked label is J4.', self.index)
+        self.assertIn('**[S15] Danny Cohen.**', self.text)
+        self.assertIn('**[T11] Retrieved file.**', self.text)
+        self.assertIn('**[C5] Order surface.**', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+        self.assertIn('performance claim', self.text)
+        self.assertIn('implemented slice S3t', self.text)
+        self.assertNotIn('S3u', self.text)
+        self.assertNotIn('J4S', self.text)
+        self.assertNotIn('J4T', self.text)
+        self.assertNotIn('J4C', self.text)
+
+    def test_boundary_map_names_each_decision_and_cites_three_conventions(self):
+        for station in ('Standard hex', 'Bytes', 'Words', 'Orange value'):
+            self.assertIn(f'| {station} |', self.text)
+        self.assertIn('FIPS PUB 180-4', self.text)
+        self.assertIn('August 2015', self.text)
+        self.assertIn('§3.1', self.text)
+        self.assertIn('RFC 8439', self.text)
+        self.assertIn('June 2018', self.text)
+        self.assertIn('§2.3', self.text)
+        self.assertIn('RFC 7748', self.text)
+        self.assertIn('January 2016', self.text)
+        self.assertIn('§5', self.text)
+        self.assertIn('little-endian', self.text)
+        self.assertIn('big-endian', self.text)
+        self.assertIn('65 78 70 61', self.text)
+        self.assertIn('0x61707865', self.text)
+        self.assertIn('0x65787061', self.text)
+        self.assertIn('expand 32-byte k', self.text)
+
+    def test_one_listing_reads_the_same_bytes_both_ways(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            ['orders', 'wrong_order', 'wrong_length', 'length_field'],
+        )
+        orders = sources[0]
+        self.assertIn('hex"65787061" as little Word[32]', orders)
+        self.assertIn('hex"65787061" as big Word[32]', orders)
+        self.assertIn('"expand 32-byte k" as little Word[32]^4', orders)
+        self.assertIn('first_little() == 0x61707865', orders)
+        self.assertIn('first_big() == 0x65787061', orders)
+        self.assertNotIn('**Proposed**', self.text)
+        self.assertIn('as little', self.text)
+        self.assertIn('as big', self.text)
+        self.assertIn('No form in the listings is marked Proposed.', self.text)
+
+    def test_drift_predicts_the_wrong_endian_value_before_the_report(self):
+        prediction = 'The prediction is left `0x65787061` and right `0x61707865`.'
+        report = 'test "RFC 8439 2.3 first constant word" ... FAILED'
+        self.assertIn(prediction, self.text)
+        self.assertLess(self.text.index(prediction), self.text.index(report))
+        self.assertIn('    left:  0x65787061', self.text)
+        self.assertIn('    right: 0x61707865', self.text)
+        wrong = next(
+            source for source in re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+            if '\nmodule wrong_order {' in source
+        )
+        self.assertIn('as big Word[32]', wrong)
+        self.assertIn('first() == 0x61707865', wrong)
+        self.assertNotIn('as little', wrong)
+        self.assertIn('0x65787061', self.text)
+        self.assertIn('Replacing `as big` with `as little`', self.text)
+
+    def test_length_order_predicts_the_wrong_value_before_the_report(self):
+        prediction = 'The prediction is left `1729382256910270464` and right `24`.'
+        report = 'test "FIPS 180-4 5.1.1 length field is the bit length" ... FAILED'
+        self.assertIn(prediction, self.text)
+        self.assertIn(report, self.text)
+        self.assertLess(self.text.index(prediction), self.text.index(report))
+        self.assertIn('    left:  1729382256910270464', self.text)
+        self.assertIn('    right: 24', self.text)
+        self.assertIn('1 test: 0 passed, 1 failed', self.text)
+        self.assertIn('The status of `test` is 1.', self.text)
+        wrong = next(
+            source for source in re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+            if '\nmodule wrong_length {' in source
+        )
+        self.assertIn('hex"0000000000000018" as little Int', wrong)
+        self.assertIn('length() == 24', wrong)
+        self.assertNotIn('as big', wrong)
+        self.assertIn('Replacing `as little` with `as big`', self.text)
+        self.assertNotIn('does not fence', self.text)
+
+    def test_length_field_is_checked_apart_from_byte_order(self):
+        self.assertIn('FIPS 180-4 §5.1.1', self.text)
+        self.assertIn('64-bit', self.text)
+        length = next(
+            source for source in re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+            if '\nmodule length_field {' in source
+        )
+        self.assertIn('hex"0000000000000018" as big Int', length)
+        self.assertIn('length_be() == 24', length)
+        self.assertIn('bits() == 24', length)
+        self.assertIn('hex"0000000000000003" as big Int', length)
+        self.assertIn('length_le: Int = 1729382256910270464', self.text)
+        self.assertIn('byte_length_field: Int = 3', self.text)
+        self.assertIn('00 00 00 00 00 00 00 18', self.text)
+
+    def test_self_check_sets_up_the_message_word_without_doing_j5(self):
+        self.assertIn('Exercise J4.5 — The self-check J5 will need.', self.text)
+        self.assertIn('0x61626380', self.text)
+        self.assertIn('0x80636261', self.text)
+        self.assertIn('word0() == 0x61626380', self.text)
+        self.assertIn('Do not write a message schedule.', self.text)
+        self.assertIn('has failed the self-check.', self.text)
+        for forbidden in (
+            '0x428a2f98',
+            'spec compress(',
+            'spec schedule(',
+            'small_sigma0',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('does not accept OEP-0017', self.text)
+
+    def test_j4_ledger_matches_the_place_arithmetic(self):
+        block = re.search(r'^```text\nj4-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        little = 0x65 + 0x78 * 256 + 0x70 * 65536 + 0x61 * 16777216
+        big = 0x65 * 16777216 + 0x78 * 65536 + 0x70 * 256 + 0x61
+        word0 = 0x61 * 16777216 + 0x62 * 65536 + 0x63 * 256 + 0x80
+        word0_le = 0x80 * 16777216 + 0x63 * 65536 + 0x62 * 256 + 0x61
+        expected = {
+            'little-first': little,
+            'big-first': big,
+            'place-256': 256,
+            'place-65536': 65536,
+            'place-16777216': 16777216,
+            'repeated-0b': 0x0b * (1 + 256 + 65536 + 16777216),
+            'abc-bits': 3 * 8,
+            'abc-bytes': 3,
+            'length-le': 24 * 2 ** 56,
+            'word0': word0,
+            'word0-le': word0_le,
+            'zero-bits': 448 - (24 + 1),
+            'length-start': 448,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['little-first'], 0x61707865)
+        self.assertEqual(expected['big-first'], 0x65787061)
+        self.assertEqual(expected['word0'], 0x61626380)
+        self.assertEqual(expected['word0-le'], 0x80636261)
+        self.assertNotEqual(expected['little-first'], expected['big-first'])
+        self.assertNotEqual(expected['abc-bits'], expected['abc-bytes'])
+        self.assertNotEqual(expected['length-le'], expected['abc-bits'])
+
+    def test_j4_tags_are_the_next_free_numbers(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        lesson = 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md'
+        self.assertEqual(records['S15'], (lesson, 'Danny Cohen.'))
+        self.assertEqual(records['T11'], (lesson, 'Retrieved file.'))
+        self.assertEqual(records['C5'], (lesson, 'Order surface.'))
+        self.assertEqual(records['S14'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['T10'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['C4'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        j4_tags = {tag for tag, (name, _) in records.items() if name == lesson}
+        self.assertEqual(j4_tags, {'S15', 'T11', 'C5'})
+        self.assertNotIn('S16', records)
+        self.assertNotIn('T12', records)
+        self.assertNotIn('C6', records)
+        citation = re.compile(r'\[([STC]\d+)\]')
+        for tag in citation.findall(self.text):
+            self.assertIn(tag, records, f'J4 cites undefined [{tag}]')
+
 
 
 def math_gcd(left: int, right: int) -> int:
