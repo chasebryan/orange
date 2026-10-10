@@ -36,7 +36,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - `Mod[m]` is the residue ring of a constant modulus from 2 through 2^521 - 1. The constant is built from integer literals with `+`, `-`, `*`, `<<`, and parentheses, evaluated once, and published into the modulus table. `+`, `-`, `*`, and prefix `-` reduce to the least residue. `/` multiplies by an inverse and is 0 when there is none.
 - A cross-module `Mod` call compares those modulus values, not each file's private table index, and retags the value at the module boundary.
 - A typed `spec` may have parameters, `let` bindings, and one result expression. A binding whose type was already rejected does not also check its initializer. A rejected result type (`Float`, a later `type` name, or `Mod[1]`) does not also check the body.
-- A fixed-length array `T^n` holds n values of one of those scalars, with n a decimal integer from 1 through 256.
+- A fixed-length array `T^n` holds n values of one of those scalars, with n a decimal integer from 1 through 256. A named array type may add an axis with `^LENGTH`, through 4. A fifth axis is ORC0203. The message names the type, as in `` `Hyper` already has 4 array dimensions ``. The label is `arrays have at most 4 dimensions`. The length span says `this length would add a fifth dimension`. The note is `a row holds scalars, and each `^LENGTH` after a named array type adds a dimension of its rows`.
 - A tuple type `(T, U)` holds 2 through 16 scalars or arrays. `(a, b)` builds one from left to right, `.k` selects an element, and a `let` or `with` pattern names each element. `let(x)` is a call, not a pattern.
 - A pattern name that repeats the loop index is a duplicate name. A pattern name used outside the loop is not in scope. A tuple inside a tuple, and an array of tuples, are rejected even when the nested type is a `type` alias. Order on an array or a tuple is rejected. `==` and `!=` of a written-out array or tuple with no type of its own is rejected.
 - `p.01`, `p.0.1`, and `x[0].1` are each one syntax error at the offending token.
@@ -46,7 +46,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - A loop bound or index literal that does not fit the 16,384-bit budget is an oversized literal. A bound or index that fits and is still out of range is a range error.
 - A second index of a scalar is a type error, reported once. A loop step that fails after its opening brace does not also reject the function close.
 - A rejected `as` target is reported, and the operand is still checked.
-- `x with [i] = v` replaces one element, and `[v; n]` repeats a value.
+- `x with [i] = v` replaces one element, and `[v; n]` repeats a value. A missing `=` after that index is ORC0101. Its note is an update is written `` `x with [i] = value` ``, or `` `x with [i][j] = value` `` for an element of a row.
 - A byte string `"..."` or `hex"..."` is the array `Word[8]^n` of its bytes, with n from 1 through 256. Each character is printable ASCII, from a space through `~`, or an escape. A hex string writes those bytes as pairs of hex digits, and a space may separate bytes. The quote follows `hex` with no space.
 - A hex string that is never closed is a lexical error. A character that is not a hex digit or a space, or a digit with no partner, is a lexical error at that first bad character. `hex "00"`, with a space before the quote, is a syntax error.
 - A non-printable or non-ASCII byte string is rejected. An empty `""` is rejected.
@@ -87,8 +87,8 @@ checked and run only when called.
 An array literal lists every element. A fill states the length in decimal or
 as a parenthesized size. An index follows a name, a call, or an accumulator.
 Operators and conversions apply to elements. A loop bound is an integer
-literal or a size, with `0 <= a < b <= 65536`. Arrays of arrays, empty
-arrays, and a loop bound that is neither a literal nor a size are rejected.
+literal or a size, with `0 <= a < b <= 65536`. Empty arrays, and a loop
+bound that is neither a literal nor a size, are rejected.
 
 Later slices are outside this frontend. Byte order, type parameters, tests,
 lengths above 256, and computed shift amounts are rejected rather than

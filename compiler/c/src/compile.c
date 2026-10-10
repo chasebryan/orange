@@ -23,7 +23,13 @@
    and prefix - reduce to the least residue. / multiplies by an inverse
    and is 0 when there is none. A fixed-length array T^n holds n values
    of one scalar, with n a decimal
-   integer from 1 through 256. Expressions are literals, names, calls,
+   integer from 1 through 256. A named array type may add an axis with
+   `^LENGTH`, through 4. A fifth axis is ORC0203. The message names the
+   type, as in "`Hyper` already has 4 array dimensions". The label is
+   "arrays have at most 4 dimensions". The length span says "this length
+   would add a fifth dimension". The note is "a row holds scalars, and
+   each `^LENGTH` after a named array type adds a dimension of its
+   rows". Expressions are literals, names, calls,
    parentheses, array literals, indices, exact integer arithmetic,
    Euclidean / and %, word ring arithmetic, bitwise operators, shifts,
    rotations, comparisons, !, &&, ||, and as conversions. A loop
@@ -42,7 +48,10 @@
    any other unsupported type, and the operand is still checked. A loop
    step that fails after its opening brace is recovered without an extra
    ORC0104 on the function close. `x with
-   [i] = v` replaces one element, and `[v; n]` repeats a value. `if c { a }
+   [i] = v` replaces one element, and `[v; n]` repeats a value. A missing
+   `=` after that index is ORC0101. Its note is "an update is written
+   `x with [i] = value`, or `x with [i][j] = value` for an element of a
+   row". `if c { a }
    else { b }` chooses one value; an else-if chain is one conditional, and
    only the chosen branch is evaluated. A loop's step and each branch of
    a conditional may begin with `let` bindings. A step's bindings run
@@ -396,8 +405,7 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* 0 scalar, 1 a row, 2 a matrix, 3 and 4 further declared axes.
-       A use of rank 2 or more is ORC0203. A fifth axis is rejected on the declaration. */
+    /* 0 is a scalar. 1 through 4 count array axes. A fifth axis is ORC0203. */
     int rank;
     uint32_t inner_len;
     const char *role;
