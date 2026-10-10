@@ -1,0 +1,8 @@
+// S3s rejection: an axis written with a size on a rank-2 type is ORC0203,
+// and the note names the first instance.
+edition 2026;
+module axis {
+  type Row = Word[8]^1;
+  type Grid = Row^1;
+  spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+}

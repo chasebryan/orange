@@ -169,7 +169,7 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* 0 scalar, 1 one array axis, 2 a matrix. Rank 2 is a name, not a value. */
+    /* 0 scalar, 1 one array axis, 2 a matrix of rows. A third axis is ORC0203. */
     int rank;
     uint32_t inner_len;
     const char *role;
@@ -492,6 +492,10 @@ typedef struct Diag {
     uint8_t has_sec;
     uint8_t has_note2;
     uint8_t has_note3;
+    /* Set when `resolve_site` raised this diagnostic for a sized function.
+       `name_sized_diags` names the first failing instance, whichever code it is. */
+    uint8_t needs_instance;
+    uint32_t site_func;
 } Diag;
 
 typedef struct Pack Pack;
@@ -510,6 +514,9 @@ typedef struct Value {
     Big big;
     uint16_t mod_index;
     uint8_t is_tuple;
+    /* 2 when `elems` holds rows. `inner` is each row's length. A row leaves both zero. */
+    uint8_t rank;
+    uint32_t inner;
 } Value;
 
 /* Bindings of the step or branch currently being checked or evaluated. */
@@ -533,6 +540,9 @@ typedef struct TupleElem {
     uint32_t length;
     uint16_t mod_index;
     int ok;
+    /* 2 when this element is a matrix. `inner` is the row length. */
+    int rank;
+    uint32_t inner;
 } TupleElem;
 
 typedef struct UseDecl {
@@ -701,6 +711,10 @@ typedef struct Compiler {
     size_t stamp_cap;
     /* While set, listed types resolve. The ordinary pass leaves them for admit. */
     int admit_listed;
+    /* While set, diagnostics from `resolve_site` belong to `tag_func` and
+       wait for `name_sized_diags` to name the first failing instance. */
+    int tagging;
+    uint32_t tag_func;
     /* Set while a test whose body is `left == right` is evaluated, so the
        two operands can be printed if the claim fails. */
     int capture_eq;

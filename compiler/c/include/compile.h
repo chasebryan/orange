@@ -295,7 +295,8 @@ void copy_ident(char *dest, size_t cap, const Compiler *c, uint32_t start, uint3
     span_copy(dest, cap, c->text, start, end);
 }
 
-static int append_telem(Compiler *c, TypeKind kind, uint32_t length, uint16_t mod_index, int ok, uint32_t *index) {
+static int append_telem(Compiler *c, TypeKind kind, uint32_t length, uint16_t mod_index, int ok, int rank,
+                        uint32_t inner, uint32_t *index) {
     TupleElem *elem;
     if (!ensure_cap((void **)&c->telems, &c->telem_cap, c->ntelems + 1, sizeof(TupleElem), MAX_EXPRS)) {
         resource_diag(c, "ORC0209", 0, 0, "tuple type storage allocation failed");
@@ -307,6 +308,8 @@ static int append_telem(Compiler *c, TypeKind kind, uint32_t length, uint16_t mo
     elem->length = length;
     elem->mod_index = mod_index;
     elem->ok = ok;
+    elem->rank = rank;
+    elem->inner = inner;
     *index = c->ntelems++;
     return 1;
 }
@@ -325,7 +328,7 @@ static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, 
         if (src.kind == TY_MOD && !adopt_modulus(c, owner, src.mod_index, &mod)) {
             return 0;
         }
-        if (!append_telem(c, src.kind, src.length, mod, src.ok, &at)) {
+        if (!append_telem(c, src.kind, src.length, mod, src.ok, src.rank, src.inner, &at)) {
             return 0;
         }
         if (index == 0) {
@@ -336,37 +339,44 @@ static int adopt_tuple_shape(Compiler *c, const Compiler *owner, uint32_t tup0, 
     return 1;
 }
 
-/* `type Mat = Row^2` defines a matrix. Every other rank-2 site uses one. */
-static int matrix_defined_here(const Compiler *c, const TypeSite *site, const TypeSite *target) {
-    uint32_t at;
-    uint32_t index;
-    if (c->sites == NULL || site < c->sites || site >= c->sites + c->nsites || !site->wrote_axis || target->rank >= 2) {
-        return 0;
+/* Rank 2 is a matrix. Both axes are positive and their product is at most
+   65536 scalars. A third axis is rejected earlier, as ORC0203. */
+int matrix_shape_ok(Compiler *c, TypeSite *site, int report) {
+    uint64_t cells;
+    if (site->rank < 2 || site->length == 0 || site->inner_len == 0) {
+        return 1;
     }
-    at = (uint32_t)(site - c->sites);
-    for (index = 0; index < c->ntypes; index++) {
-        if (c->types[index].site == at) {
-            return 1;
+    cells = (uint64_t)site->length * (uint64_t)site->inner_len;
+    if (cells <= MAX_ARRAY_LENGTH) {
+        return 1;
+    }
+    site->ok = 0;
+    if (report && !site->reported) {
+        char message[192];
+        snprintf(message, sizeof message, "an array shape has %llu scalar elements, exceeding %u",
+                 (unsigned long long)cells, MAX_ARRAY_LENGTH);
+        add_diag(c, "ORC0221", site->start, site->end, message, "array shape exceeds the scalar element limit",
+                 "both axes are positive and their product is at most 65536", 2);
+        if (site->length_end > site->length_start) {
+            diag_add_secondary(c, site->length_start, site->length_end, "outer axis length");
         }
+        site->reported = 1;
     }
     return 0;
 }
 
-/* A parameter, result, binding, or accumulator is checked with its body.
-   A clean body is rejected later; a body error stays the diagnostic Rust prints. */
-static int matrix_checked_with_body(const TypeSite *site) {
-    const char *role = site->role;
-    if (role == NULL) {
+static int site_owner_sized(const Compiler *c, const TypeSite *site) {
+    if (site->owner_func >= c->nfuncs) {
         return 0;
     }
-    return strcmp(role, "parameter type") == 0 || strcmp(role, "result type") == 0 ||
-           strcmp(role, "binding type") == 0 || strcmp(role, "accumulator type") == 0;
+    return c->funcs[site->owner_func].nsizes > 0;
 }
 
 void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_limit) {
     uint32_t found = 0;
     TypeSite *target;
     char name[64];
+    int tagging = 0;
     if (site->resolved || c->resource) {
         return;
     }
@@ -374,6 +384,13 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         return;
     }
     site->resolved = 1;
+    /* Tag every diagnostic this resolution raises. `name_sized_diags` names
+       the first failing instance once, for every code, not per error. */
+    if (!c->tagging && !c->admit_listed && site_owner_sized(c, site)) {
+        c->tagging = 1;
+        c->tag_func = site->owner_func;
+        tagging = 1;
+    }
     if (site->is_tuple) {
         uint16_t index;
         int ok = 1;
@@ -406,15 +423,15 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         if (!ok) {
             site->ok = 0;
             site->reported = unreported ? 0 : 1;
-            return;
+            goto resolve_out;
         }
         for (index = 0; index < site->elem_n; index++) {
             TypeSite *elem = &c->sites[site->elem0 + index];
             uint32_t at = 0;
             uint32_t length = elem->rank <= 0 ? 0u : elem->length;
-            if (!append_telem(c, elem->kind, length, elem->mod_index, elem->ok, &at)) {
+            if (!append_telem(c, elem->kind, length, elem->mod_index, elem->ok, elem->rank, elem->inner_len, &at)) {
                 site->ok = 0;
-                return;
+                goto resolve_out;
             }
             if (index == 0) {
                 start = at;
@@ -423,22 +440,22 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->tup0 = start;
         site->tup_n = site->elem_n;
         site->ok = 1;
-        return;
+        goto resolve_out;
     }
     if (site->length_bad) {
         site->ok = 0;
-        return;
+        goto resolve_out;
     }
     if (site->has_mod) {
         if (site->mod_index == 0) {
             site->ok = 0;
             site->reported = 1;
-            return;
+            goto resolve_out;
         }
         site->kind = TY_MOD;
         site->ok = 1;
         site->rank = site->wrote_axis ? 1 : 0;
-        return;
+        goto resolve_out;
     }
     if (site->bare_mod) {
         add_diag(c, "ORC0232", site->ident_start, site->ident_end, "`Mod` requires a modulus", "missing modulus",
@@ -446,7 +463,7 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->ok = 0;
         site->reported = 1;
         site->kind = TY_MOD;
-        return;
+        goto resolve_out;
     }
     if (!site->named) {
         if (site->ok) {
@@ -468,10 +485,10 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
                      "types are resolved contextually and never inferred by spelling similarity", 2);
             site->reported = 1;
         }
-        return;
+        goto resolve_out;
     }
     if (tp_bind_use(c, site)) {
-        return;
+        goto resolve_out;
     }
     if (!find_installed_type(c, site->ident_start, site->ident_end, from_decl ? earlier_limit : c->ntypes, &found)) {
         int later = 0;
@@ -499,13 +516,13 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         add_diag(c, "ORC0203", site->start, site->end, message, ADMITTED_TYPE_LABEL, note, 2);
         site->ok = 0;
         site->reported = 1;
-        return;
+        goto resolve_out;
     }
     target = &c->sites[c->types[found].site];
     if (!target->ok) {
         site->ok = 0;
         site->reported = 1;
-        return;
+        goto resolve_out;
     }
     if (target->kind == TY_TUPLE) {
         char message[160];
@@ -520,7 +537,7 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
             }
             site->ok = 0;
             site->reported = 1;
-            return;
+            goto resolve_out;
         }
         if (site->tuple_elem) {
             snprintf(message, sizeof message, "`%s` is a tuple type, so this is a tuple of tuples", name);
@@ -528,7 +545,7 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
                      "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of them", 2);
             site->ok = 0;
             site->reported = 1;
-            return;
+            goto resolve_out;
         }
         site->kind = TY_TUPLE;
         site->is_tuple = 1;
@@ -537,7 +554,7 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->rank = 0;
         site->length = 0;
         site->ok = 1;
-        return;
+        goto resolve_out;
     }
     if (target->rank >= 2 && site->wrote_axis) {
         char message[160];
@@ -550,7 +567,7 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         }
         site->ok = 0;
         site->reported = 1;
-        return;
+        goto resolve_out;
     }
     site->kind = target->kind;
     site->mod_index = target->mod_index;
@@ -565,16 +582,13 @@ void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t earlier_l
         site->inner_len = target->inner_len;
     }
     site->ok = 1;
-    /* Rank-2 use guard. A defining `type` declaration is exempt. Signature and
-       binding sites stay ok so an ill-typed body still reports Rust's error;
-       reject_clean_matrices covers the ones whose bodies check. */
-    if (site->rank >= 2 && !matrix_defined_here(c, site, target) && !matrix_checked_with_body(site)) {
-        uint16_t saved_mod = c->expect_mod;
-        c->expect_mod = site->mod_index;
-        report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
-        c->expect_mod = saved_mod;
-        site->ok = 0;
-        site->reported = 1;
+    /* Rank 2 is admitted. The product of the two axes is the scalar total. */
+    if (!matrix_shape_ok(c, site, 1)) {
+        goto resolve_out;
+    }
+resolve_out:
+    if (tagging) {
+        c->tagging = 0;
     }
 }
 
@@ -614,7 +628,8 @@ static void seal_patterns(Compiler *c, Local *locals, uint32_t count) {
         for (pat = 0; pat < head->pat_len; pat++) {
             Local *name = &locals[index + pat];
             uint32_t at = 0;
-            if (!append_telem(c, name->type, name->length, name->mod_index, name->type_ok, &at)) {
+            if (!append_telem(c, name->type, name->length, name->mod_index, name->type_ok, name->rank, name->inner,
+                              &at)) {
                 return;
             }
             if (pat == 0) {
@@ -851,7 +866,8 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
             if (!elem.ok) {
                 all_ok = 0;
             }
-            if (rebuild && !append_telem(c, elem.kind, elem.length, elem.mod_index, elem.ok, &at)) {
+            if (rebuild && !append_telem(c, elem.kind, elem.length, elem.mod_index, elem.ok, elem.rank, elem.inner,
+                                         &at)) {
                 return 0;
             }
             if (index == 0) {
@@ -1288,13 +1304,9 @@ static void name_sized_diags(Compiler *c, const Func *func, uint32_t inst, uint3
         if (strcmp(diag->code, "ORC0208") == 0 || strcmp(diag->code, "ORC0209") == 0) {
             continue;
         }
-        if (diag->note[0] == '\0') {
-            copy_text(diag->note, sizeof diag->note, note);
-        } else if (!diag->has_note2) {
-            copy_text(diag->note2, sizeof diag->note2, note);
-            diag->has_note2 = 1;
-        }
+        attach_instance_note(diag, note);
     }
+    stamp_resolve_instance(c, (uint32_t)(func - c->funcs), note);
 }
 
 static void report_call_cycle(Compiler *c, const uint32_t *stack, uint32_t top, uint32_t callee, uint32_t start,
@@ -1348,58 +1360,6 @@ static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) 
         }
     }
     return 0;
-}
-
-static void emit_matrix_site(Compiler *c, TypeSite *site) {
-    uint16_t saved_mod;
-    if (site->reported || site->rank < 2) {
-        return;
-    }
-    saved_mod = c->expect_mod;
-    c->expect_mod = site->mod_index;
-    report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
-    c->expect_mod = saved_mod;
-    site->reported = 1;
-}
-
-/* Rank-2 use guard for a function whose body checked. Removing this accepts
-   `id` and `pass`, which Rust evaluates and this slice must not. */
-static void reject_clean_matrices(Compiler *c, Func *func, uint32_t func_index) {
-    uint16_t slot;
-    uint32_t index;
-    if (func->result_rank >= 2 && func->result_site < c->nsites) {
-        emit_matrix_site(c, &c->sites[func->result_site]);
-    }
-    for (slot = 0; slot < func->nparams; slot++) {
-        Param *param = &c->params[func->param0 + slot];
-        if (param->rank >= 2 && param->site < c->nsites) {
-            emit_matrix_site(c, &c->sites[param->site]);
-        }
-    }
-    for (slot = 0; slot < func->nlocals; slot++) {
-        Local *local = &c->locals[func->local0 + slot];
-        if (local->rank >= 2 && local->site < c->nsites) {
-            emit_matrix_site(c, &c->sites[local->site]);
-        }
-    }
-    for (index = 0; index < c->nblock_locals; index++) {
-        Local *local = &c->block_locals[index];
-        if (local->site >= c->nsites || c->sites[local->site].owner_func != func_index) {
-            continue;
-        }
-        if (local->rank >= 2) {
-            emit_matrix_site(c, &c->sites[local->site]);
-        }
-    }
-    for (index = 0; index < c->nloops; index++) {
-        LoopDesc *loop = &c->loops[index];
-        if (loop->site >= c->nsites || c->sites[loop->site].owner_func != func_index) {
-            continue;
-        }
-        if (loop->acc_rank >= 2) {
-            emit_matrix_site(c, &c->sites[loop->site]);
-        }
-    }
 }
 
 static void analyze(Compiler *c) {
@@ -1639,10 +1599,7 @@ static void analyze(Compiler *c) {
                              func->result_inner, index, func->nlocals);
             }
         }
-        if (c->ndiags == diags_before) {
-            reject_clean_matrices(c, func, index);
-        }
-        if (c->ndiags > diags_before) {
+        if (c->ndiags > diags_before || pending_resolve_instance(c, index)) {
             name_sized_diags(c, func, c->cur_inst, diags_before);
             func->signature_ok = 0;
             break;
@@ -2122,11 +2079,24 @@ static uint32_t array_stride(Compiler *c, TypeKind type, uint16_t mod_index) {
     return pack_stride_of(type, bits);
 }
 
+/* A value whose elements are rows is a matrix. A row's own rank stays zero. */
+static void note_rows(Value *out, const Value *row) {
+    if (row != NULL && row->length > 0 && !row->is_tuple && row->rank < 2) {
+        out->rank = 2;
+        out->inner = row->length;
+        if (out->mod_index == 0) {
+            out->mod_index = row->mod_index;
+        }
+    }
+}
+
 static void transfer_array(Value *out, Value *base) {
     out->type = base->type;
     out->length = base->length;
     out->mod_index = base->mod_index;
     out->is_tuple = 0;
+    out->rank = base->rank;
+    out->inner = base->inner;
     out->pack = base->pack;
     out->elems = base->elems;
     out->word = 0;
@@ -2134,6 +2104,8 @@ static void transfer_array(Value *out, Value *base) {
     base->pack = NULL;
     base->elems = NULL;
     base->length = 0;
+    base->rank = 0;
+    base->inner = 0;
 }
 
 static int elem_word(const Value *array, uint32_t index, uint64_t *word) {
@@ -3209,12 +3181,20 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 }
             }
             {
+                uint8_t rank = left.rank;
+                uint32_t inner = left.inner;
                 TypeKind element = left.type;
                 value_clear(&left);
                 value_clear(&right);
                 out->type = element;
                 out->length = total;
                 out->elems = items;
+                if (rank >= 2) {
+                    out->rank = 2;
+                    out->inner = inner;
+                } else {
+                    note_rows(out, &items[0]);
+                }
             }
             return 1;
         }
@@ -3714,6 +3694,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         out->type = expr->ty;
         out->length = expr->argc;
         out->elems = items;
+        note_rows(out, &items[0]);
         return 1;
     }
     case EX_INDEX: {
@@ -3927,6 +3908,7 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
         out->type = element_type;
         out->length = count;
         out->elems = items;
+        note_rows(out, &items[0]);
         return 1;
     }
     case EX_LOOP: {
@@ -4262,6 +4244,8 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
             return 0;
         }
         if (!updating) {
+            uint8_t rank = base.rank;
+            uint32_t inner = base.inner;
             for (slot = 0; slot < length; slot++) {
                 if (!value_clone(c, &items[slot], &base.elems[start_at + slot], expr->start, expr->end)) {
                     value_list_clear(items, length);
@@ -4270,7 +4254,11 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 }
             }
             out->type = base.type;
+            out->rank = rank;
+            out->inner = inner;
         } else {
+            uint8_t rank = base.rank;
+            uint32_t inner = base.inner;
             for (slot = 0; slot < length; slot++) {
                 const Value *source;
                 if (slot >= start_at && slot < end_at) {
@@ -4286,6 +4274,8 @@ static int eval_expr_in(Compiler *c, uint32_t index, Value *params, Value *local
                 }
             }
             out->type = base.type;
+            out->rank = rank;
+            out->inner = inner;
         }
         value_clear(&base);
         value_clear(&replacement);
@@ -4464,7 +4454,29 @@ static int compare_diag(const void *left_ptr, const void *right_ptr) {
     if (order != 0) {
         return order;
     }
-    return strcmp(left->note2, right->note2);
+    order = strcmp(left->note2, right->note2);
+    if (order != 0) {
+        return order;
+    }
+    order = strcmp(left->note3, right->note3);
+    if (order != 0) {
+        return order;
+    }
+    /* One secondary span. Rust orders a diagnostic with none before one with
+       a span, then by that span's start, end, and label. */
+    if (left->has_sec != right->has_sec) {
+        return left->has_sec < right->has_sec ? -1 : 1;
+    }
+    if (left->has_sec) {
+        if (left->sec_start != right->sec_start) {
+            return left->sec_start < right->sec_start ? -1 : 1;
+        }
+        if (left->sec_end != right->sec_end) {
+            return left->sec_end < right->sec_end ? -1 : 1;
+        }
+        return strcmp(left->sec_label, right->sec_label);
+    }
+    return 0;
 }
 
 static void line_col(const char *text, size_t length, uint32_t offset, uint32_t *line, uint32_t *column) {
@@ -4916,7 +4928,17 @@ static int format_tuple_type(Compiler *c, char *buffer, size_t cap, uint32_t tup
             memcpy(buffer + used, ", ", 2);
             used += 2;
         }
-        if (!format_type(c, part, sizeof part, elem->kind, elem->length, elem->mod_index)) {
+        if (elem->rank >= 2) {
+            char row[128];
+            int wrote;
+            if (!format_type(c, row, sizeof row, elem->kind, elem->inner, elem->mod_index)) {
+                return 0;
+            }
+            wrote = snprintf(part, sizeof part, "(%s)^%u", row, elem->length);
+            if (wrote < 0 || (size_t)wrote >= sizeof part) {
+                return 0;
+            }
+        } else if (!format_type(c, part, sizeof part, elem->kind, elem->length, elem->mod_index)) {
             return 0;
         }
         part_len = strlen(part);
@@ -5027,6 +5049,22 @@ static void note_stat(TextBuf *stats, const Compiler *c, const Func *func, const
     }
 }
 
+static int format_result_type(Compiler *c, char *buffer, size_t cap, const Func *func) {
+    if (func->result == TY_TUPLE) {
+        return format_tuple_type(c, buffer, cap, func->tup0, func->tup_n);
+    }
+    if (func->result_rank >= 2) {
+        char row[160];
+        int wrote;
+        if (!format_type(c, row, sizeof row, func->result, func->result_inner, func->result_mod)) {
+            return 0;
+        }
+        wrote = snprintf(buffer, cap, "(%s)^%u", row, func->result_len);
+        return wrote > 0 && (size_t)wrote < cap;
+    }
+    return format_type(c, buffer, cap, func->result, func->result_len, func->result_mod);
+}
+
 static int evaluate_source(Compiler *c, FILE *out) {
     TextBuf program = {0};
     TextBuf stats = {0};
@@ -5111,10 +5149,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
                     result.type = TY_MOD;
                     result.mod_index = func->result_mod;
                 }
-                if (func->result == TY_TUPLE
-                        ? !format_tuple_type(c, type_text, sizeof type_text, func->tup0, func->tup_n)
-                        : !format_type(c, type_text, sizeof type_text, func->result, func->result_len,
-                                       func->result_mod)) {
+                if (!format_result_type(c, type_text, sizeof type_text, func)) {
                     c->failed = 1;
                     add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a type",
                              "resource limit reached", NULL, 2);
@@ -5154,13 +5189,6 @@ static int evaluate_source(Compiler *c, FILE *out) {
             }
             continue;
         }
-        if (func->result_rank >= 2) {
-            c->failed = 1;
-            report_matrix(c, func->body != UINT32_MAX ? c->exprs[func->body].start : func->name_start,
-                          func->body != UINT32_MAX ? c->exprs[func->body].end : func->name_end, func->result,
-                          func->result_len, func->result_inner);
-            break;
-        }
         memset(&result, 0, sizeof result);
         c->cur_func = index;
         c->cur_inst = UINT32_MAX;
@@ -5193,9 +5221,7 @@ static int evaluate_source(Compiler *c, FILE *out) {
             result.type = TY_MOD;
             result.mod_index = func->result_mod;
         }
-        if (func->result == TY_TUPLE
-                ? !format_tuple_type(c, type_text, sizeof type_text, func->tup0, func->tup_n)
-                : !format_type(c, type_text, sizeof type_text, func->result, func->result_len, func->result_mod)) {
+            if (!format_result_type(c, type_text, sizeof type_text, func)) {
             c->failed = 1;
             add_diag(c, "ORC0301", func->name_start, func->name_end, "evaluation could not format a type",
                      "resource limit reached", NULL, 2);
@@ -5502,6 +5528,9 @@ static int link_program(Program *program) {
         uint16_t target;
         if (next >= mod->nuses) {
             state[node] = 2;
+            /* Dependency postorder: a module follows every module it uses.
+               Analysis walks `order`. Diagnostics do not; they render in
+               `mods` insertion order. */
             if (program->norder < MAX_MODULES) {
                 program->order[program->norder++] = node;
             }
@@ -5711,12 +5740,16 @@ static int load_used_modules(Program *program, const char *root_path, FILE *err)
     }
 }
 
-static void render_program_diags(Program *program, FILE *err, int dependency_order) {
+/* Rust `render_diagnostics` orders by source insertion index, then primary
+   span, severity, code, message, label, notes, and secondary spans. The root
+   is inserted first. Each used module follows in the order a `use` first
+   names it, which is `mods[]`. Within one module, `compare_diag` is the rest
+   of that key. */
+static void render_program_diags(Program *program, FILE *err) {
     int index;
     int started = 0;
-    int count = dependency_order ? program->norder : program->nmods;
-    for (index = 0; index < count; index++) {
-        Compiler *mod = dependency_order ? program->mods[program->order[index]] : program->mods[index];
+    for (index = 0; index < program->nmods; index++) {
+        Compiler *mod = program->mods[index];
         if (mod->ndiags > 0) {
             if (started) {
                 fputc('\n', err);
@@ -5908,7 +5941,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         return 1;
     }
     if (!link_program(program)) {
-        render_program_diags(program, err, 0);
+        render_program_diags(program, err);
         program_free(program);
         return 1;
     }
@@ -5921,7 +5954,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
         }
     }
     if (status != 0) {
-        render_program_diags(program, err, 1);
+        render_program_diags(program, err);
         program_free(program);
         return 1;
     }
@@ -5943,7 +5976,7 @@ static int compile_text(char *text, size_t length, const char *filename, int com
                 fputs("internal error: evaluation failed without a diagnostic\n", err);
             }
             if (seen) {
-                render_program_diags(program, err, 0);
+                render_program_diags(program, err);
             }
         }
     } else {
@@ -6112,7 +6145,7 @@ int orange_main(int argc, char **argv) {
             return 0;
         }
         if (strcmp(argv[index], "-V") == 0 || strcmp(argv[index], "--version") == 0) {
-            fputs("orangec (standalone C) slice S3r\n", stdout);
+            fputs("orangec (standalone C) slice S3s\n", stdout);
             return 0;
         }
         if (strcmp(argv[index], "--self-test") == 0) {

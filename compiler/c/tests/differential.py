@@ -80,6 +80,17 @@ VALID = [
     "s3r/valid-sha3.or",
     "s3r/valid-shift-probes.or",
     "s3r/valid-zetas.or",
+    "s3p/rank2-id.or",
+    "s3p/rank2-index.or",
+    "s3p/rank2-listed.or",
+    "s3p/rank2-nested.or",
+    "s3p/rank2-update.or",
+    "s3p/rank2-uses.or",
+    "s3s/valid-domains.or",
+    "s3s/valid-matrices.or",
+    "s3s/valid-parameters.or",
+    "s3s/valid-quadratic-pairs.or",
+    "s3s/valid-rows.or",
 ]
 # Pepin's test does not finish in the default 1048576 steps. Rust's
 # conformance run uses this budget and prints --stats.
@@ -199,163 +210,19 @@ INVALID = [
     "s3r/invalid-shift-probes.or",
     "s3r/invalid-word-width-array.or",
     "s3r/invalid-word-width-tuple.or",
-]
-
-# Rust evaluates these matrices. This slice rejects the value and pins C's
-# diagnostic so it cannot drift. The reason is printed and is not a step-budget
-# skip: step_budget.py's SKIPS stays empty.
-RANK2_REASON = "rank-2 arrays: nested-array slice"
-RANK2 = [
-    (
-        "s3p/rank2-id.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:14
-  |
-6 |   spec id(a: Mat) -> Mat {{ a }}
-  |              ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:22
-  |
-6 |   spec id(a: Mat) -> Mat {{ a }}
-  |                      ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:7:16
-  |
-7 |   spec pass(a: Mat) -> Int {{ 0 }}
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-index.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:29
-  |
-6 |   spec row(a: Mat) -> Row {{ a[0] }}
-  |                             ^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-listed.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:21
-  |
-6 |   spec f[K in {{Row, Mat}}](x: K) -> K {{ x }}
-  |                     ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-nested.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:26
-  |
-6 |   spec nested() -> Mat {{ [[1, 2], [3, 4]] }}
-  |                          ^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-update.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:5:34
-  |
-5 |   spec cell(x: Row^3) -> Row^3 {{ x with [1] = (x[1] with [2] = 9) }}
-  |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:7:20
-  |
-7 |     let x: Row^3 = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^3)^3` is a matrix, which this compiler does not evaluate
- --> {path}:8:5
-  |
-8 |     x with [1] = (x[1] with [2] = 9)
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
-    (
-        "s3p/rank2-uses.or",
-        """\
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:6:16
-  |
-6 |   type Alias = Mat;
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:7:16
-  |
-7 |   type Pair = (Mat, Int);
-  |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:9:18
-  |
-9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
-  |                  ^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:9:28
-  |
-9 |   spec inline(x: Row^2) -> Row^2 {{ x }}
-  |                            ^^^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:10:16
-   |
-10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
-   |                ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:10:37
-   |
-10 |   spec kept(a: Mat) -> Int {{ let x: Mat = a; 0 }}
-   |                                     ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:18
-   |
-11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                  ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:39
-   |
-11 |   spec walked(a: Mat) -> Int {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                                       ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-
-error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
- --> {path}:11:67
-   |
-11 | ... nt {{ let n: Mat = for i in 0..1 with s: Mat = a {{ s }}; 0 }}
-   |                                             ^^^ rank-2 arrays: nested-array slice
-  = note: a row holds scalars; a matrix holds rows of the same type
-""",
-    ),
+    "s3s/invalid-conversions.or",
+    "s3s/invalid-dimensions.or",
+    "s3s/invalid-domains.or",
+    "s3s/invalid-indices.or",
+    "s3s/invalid-plain-as.or",
+    "s3s/invalid-instance-axis.or",
+    "s3s/invalid-instance-length.or",
+    "s3s/invalid-instance-matrix.or",
+    "s3s/invalid-instance-width.or",
+    "s3s/invalid-module-alias.or",
+    "s3s/invalid-module-both.or",
+    "s3s/invalid-ragged.or",
+    "s3s/invalid-types.or",
 ]
 
 
@@ -849,45 +716,6 @@ def residue_modules(rust_compiler: Path, c_compiler: Path) -> int:
     return failures
 
 
-def rank2_pins(rust_compiler: Path, c_compiler: Path) -> int:
-    """Skip Rust's matrix evaluation and pin this slice's diagnostic."""
-    failures = 0
-    print(f"skip {RANK2_REASON}")
-    if not RANK2_REASON.strip():
-        print("FAIL rank-2 skip reason is empty")
-        return 1
-    for relative, pin in RANK2:
-        path = str(FIXTURES / relative)
-        expected = pin.format(path=path)
-        rust_check = run(rust_compiler, ["check", path])
-        rust_eval = run(rust_compiler, ["eval", path])
-        c_check = run(c_compiler, ["check", path])
-        c_eval = run(c_compiler, ["eval", path])
-        if (
-            rust_check.returncode != 0
-            or rust_eval.returncode != 0
-            or c_check.returncode == 0
-            or c_eval.returncode == 0
-            or c_check.stderr != expected
-            or c_eval.stderr != expected
-            or c_eval.stdout != ""
-        ):
-            failures += 1
-            print(f"FAIL rank2 {relative}")
-            print(f"  rust check {rust_check.returncode} eval {rust_eval.returncode}")
-            print(f"  c check {c_check.returncode} eval {c_eval.returncode}")
-            if c_check.stderr != expected:
-                print("  c check stderr:", c_check.stderr)
-                print("  pinned:", expected)
-            if c_eval.stderr != expected:
-                print("  c eval stderr:", c_eval.stderr)
-            if c_eval.stdout:
-                print("  c eval stdout:", c_eval.stdout)
-        else:
-            print(f"ok   rank2 {relative}")
-    return failures
-
-
 def main() -> int:
     c_compiler = C_COMPILER
     rust_compiler = RUST
@@ -977,8 +805,6 @@ def main() -> int:
         else:
             print(f"ok   check {relative}")
 
-    failures += rank2_pins(rust_compiler, c_compiler)
-
     for relative, expect in (
         ("s3q/valid-rfc8439-tests.or", 0),
         ("s3q/failing-tests.or", 1),
@@ -987,6 +813,11 @@ def main() -> int:
         ("s3r/valid-zetas.or", 0),
         ("s3r/valid-amounts.or", 0),
         ("s3r/valid-shift-probes.or", 0),
+        ("s3s/valid-domains.or", 0),
+        ("s3s/valid-matrices.or", 0),
+        ("s3s/valid-parameters.or", 0),
+        ("s3s/valid-quadratic-pairs.or", 0),
+        ("s3s/valid-rows.or", 0),
     ):
         path = str(FIXTURES / relative)
         rust = run(rust_compiler, ["test", path])
@@ -1034,6 +865,8 @@ def main() -> int:
     failures += residue_modules(rust_compiler, c_compiler)
     failures += alias_targets(rust_compiler, c_compiler)
     failures += alias_uses(rust_compiler, c_compiler)
+    failures += matrix_text(rust_compiler, c_compiler)
+    failures += ranks_3_4(c_compiler)
 
     if failures:
         print(f"{failures} failure(s)")
@@ -1325,6 +1158,324 @@ def _alias_must_cover(codes: list[str], source: str) -> bool:
     if found & _ALIAS_TYPE_CODES:
         return True
     return "ORC0221" in found and _ALIAS_LENGTH.search(source) is not None
+
+
+# Matrix byte order and `with [i]`.
+#
+# `as big` / `as little` on a matrix operand underlines `as` and names the
+# operand. An alias of an alias spells the same matrix. A Word[8] operand
+# still packs. `with [i]` reports the index range, and an `Int` index reports
+# that it has no bound. Each program is C's full text against Rust.
+_MATRIX_TYPES = """edition 2026;
+module order {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+"""
+MATRIX_TEXT = (
+    ("as big", _MATRIX_TYPES + "  spec f(x: Mat) -> Mat { x as big Mat }\n}\n", "check"),
+    ("as little", _MATRIX_TYPES + "  spec f(x: Mat) -> Mat { x as little Mat }\n}\n", "check"),
+    (
+        "alias of alias",
+        _MATRIX_TYPES + "  type M2 = Mat;\n  type M3 = M2;\n  spec f(x: M3) -> M3 { x as big M3 }\n}\n",
+        "check",
+    ),
+    (
+        "Word[8] operand",
+        "edition 2026;\nmodule order {\n  spec f(x: Word[8]) -> Int { x as big Int }\n}\n",
+        "eval",
+    ),
+    (
+        "with [i] Word[8]",
+        _MATRIX_TYPES + "  spec f(a: Mat, i: Word[8]) -> Mat { a with [i] = [9, 9] }\n}\n",
+        "check",
+    ),
+    (
+        "with [i] Int",
+        _MATRIX_TYPES + "  spec f(a: Mat, i: Int) -> Mat { a with [i] = [9, 9] }\n}\n",
+        "check",
+    ),
+)
+
+
+def matrix_text(rust_compiler: Path, c_compiler: Path) -> int:
+    """Full text of a matrix byte order and of `with [i]`."""
+    failures = 0
+    for name, source, command in MATRIX_TEXT:
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(source)
+                path = handle.name
+            rust = run(rust_compiler, [command, path])
+            c_result = run(c_compiler, [command, path])
+            if (
+                rust.returncode != c_result.returncode
+                or rust.stdout != c_result.stdout
+                or rust.stderr != c_result.stderr
+            ):
+                failures += 1
+                print(f"FAIL matrix text {name}")
+                print(f"  rust {rust.returncode}")
+                print(rust.stderr)
+                print(f"  c {c_result.returncode}")
+                print(c_result.stderr)
+            else:
+                print(f"ok   matrix text {name}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
+
+
+# ranks 3–4 (Rust S3u)
+#
+# Main's Rust admits four array dimensions. This branch still stops at two,
+# so these six programs are the gap. Each pin is C's exact ORC0203 text and
+# main's result at d794b43. The check fails if C's text changes, if that text
+# matches main, or if C accepts a program main rejects. The rank-3/4 slice
+# (Rust S3t/S3u) empties RANKS_3_4; do not refresh a pin to follow a new
+# acceptance.
+RANKS_3_4 = (
+    {
+        "name": 'rank-3 Cube = Grid^1',
+        "reason": 'Grid is rank 2. Cube = Grid^1 adds a third dimension. Main accepts the program. C rejects Grid^1 with ORC0203.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module types {
+  type Row = Word[8]^256;
+  type Grid = Row^256;
+  type Cube = Grid^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Grid^1;
+  |               ^^^^^^ arrays have at most two dimensions
+ ::: FILE:5:20
+  |
+5 |   type Cube = Grid^1;
+  |                    - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Cube = Mat^2',
+        "reason": 'Mat is rank 2. Cube = Mat^2 is a rank-3 parameter of id. Main accepts the program. C rejects Mat^2 with ORC0203.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module cube {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  spec id(x: Cube) -> Cube { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Mat^n',
+        "reason": 'box[n in 1..3](x: Mat^n) instantiates a third dimension. Main accepts it. C rejects both Mat^n occurrences and names box[1].',
+        "main_exit": 0,
+        "source": """// S3s rejection: `Mat^n` stays rank 3, ORC0203, and names `box[1]`.
+edition 2026;
+module matrix {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:6:26
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                          ^^^^^ arrays have at most two dimensions
+ ::: FILE:6:30
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                              - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+
+error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:6:36
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                                    ^^^^^ arrays have at most two dimensions
+ ::: FILE:6:40
+  |
+6 |   spec box[n in 1..3](x: Mat^n) -> Mat^n { x }
+  |                                        - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-3 Grid^n',
+        "reason": 'box[n in 1..3](x: Grid^n) builds a third axis from a size. Main accepts it. C rejects both Grid^n occurrences and names box[1].',
+        "main_exit": 0,
+        "source": """// S3s rejection: an axis written with a size on a rank-2 type is ORC0203,
+// and the note names the first instance.
+edition 2026;
+module axis {
+  type Row = Word[8]^1;
+  type Grid = Row^1;
+  spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:7:26
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                          ^^^^^^ arrays have at most two dimensions
+ ::: FILE:7:31
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                               - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+
+error[ORC0203]: `Grid` already has two array dimensions
+ --> FILE:7:37
+  |
+7 |   spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                                     ^^^^^^ arrays have at most two dimensions
+ ::: FILE:7:42
+  |
+7 | ...  spec box[n in 1..3](x: Grid^n) -> Grid^n { x }
+  |                                             - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-4 Hyper = Cube^1',
+        "reason": 'Hyper = Cube^1 is rank 4. Main accepts the program. C rejects the rank-3 prefix Cube = Mat^2, so it does not accept Hyper.',
+        "main_exit": 0,
+        "source": """edition 2026;
+module hyper {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  type Hyper = Cube^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """""",
+    },
+    {
+        "name": 'rank-5 Five = Hyper^1',
+        "reason": 'Five = Hyper^1 is rank 5. Main rejects Hyper^1 because Hyper already has 4 dimensions. C rejects the rank-3 prefix and does not accept Five. The texts differ.',
+        "main_exit": 1,
+        "source": """edition 2026;
+module five {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+  type Cube = Mat^2;
+  type Hyper = Cube^1;
+  type Five = Hyper^1;
+}
+""",
+        "c_stderr": """error[ORC0203]: `Mat` already has two array dimensions
+ --> FILE:5:15
+  |
+5 |   type Cube = Mat^2;
+  |               ^^^^^ arrays have at most two dimensions
+ ::: FILE:5:19
+  |
+5 |   type Cube = Mat^2;
+  |                   - this length would add a third dimension
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+        "main_stderr": """error[ORC0203]: `Hyper` already has 4 array dimensions
+ --> FILE:7:15
+  |
+7 |   type Five = Hyper^1;
+  |               ^^^^^^^ arrays have at most 4 dimensions
+ ::: FILE:7:21
+  |
+7 |   type Five = Hyper^1;
+  |                     - this length would add a fifth dimension
+  = note: a row holds scalars, and each `^LENGTH` after a named array type adds a dimension of its rows
+""",
+    },
+)
+
+
+def ranks_3_4(c_compiler: Path) -> int:
+    """ranks 3–4 (Rust S3u).
+
+    Empty RANKS_3_4 when the C frontend accepts ranks 3 and 4 and rejects
+    rank 5 with main's four-dimension diagnostic. Until then each pinned
+    program must keep today's ORC0203 text.
+    """
+    if not RANKS_3_4:
+        print("ok   ranks 3–4 (Rust S3u): empty")
+        return 0
+    failures = 0
+    for case in RANKS_3_4:
+        name = case["name"]
+        c_pin = case["c_stderr"]
+        main_pin = case["main_stderr"]
+        if c_pin == main_pin or not c_pin.strip():
+            failures += 1
+            print(f"FAIL ranks 3–4 (Rust S3u) {name}: C pin matches main")
+            continue
+        if case["main_exit"] != 0 and not main_pin.strip():
+            failures += 1
+            print(f"FAIL ranks 3–4 (Rust S3u) {name}: main rejection is not pinned")
+            continue
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(case["source"])
+                path = handle.name
+            c_result = run(c_compiler, ["check", path])
+            c_err = c_result.stderr.replace(path, "FILE")
+            if c_result.returncode == 0:
+                failures += 1
+                if case["main_exit"] != 0:
+                    print(f"FAIL ranks 3–4 (Rust S3u) {name}: C accepted what main rejects")
+                else:
+                    print(f"FAIL ranks 3–4 (Rust S3u) {name}: C accepted a pinned gap")
+            elif c_err == main_pin:
+                failures += 1
+                print(f"FAIL ranks 3–4 (Rust S3u) {name}: C matches main")
+            elif c_err != c_pin:
+                failures += 1
+                print(f"FAIL ranks 3–4 (Rust S3u) {name}: C output changed")
+                print("  pinned:", c_pin)
+                print("  c:     ", c_err)
+            else:
+                print(f"ok   ranks 3–4 (Rust S3u) {name}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
 
 
 def alias_uses(rust_compiler: Path, c_compiler: Path) -> int:

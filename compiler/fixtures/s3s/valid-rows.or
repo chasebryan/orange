@@ -1,0 +1,13 @@
+// A sized function may return the matrix it is given. `n` is the outer axis.
+edition 2026;
+module rows {
+  type Row = Word[8]^2;
+
+  spec box[n in 1..3](x: Row^n) -> Row^n { x }
+
+  spec once() -> Row^1 { box[1]([[1, 2]]) }
+  spec twice() -> Row^2 { box[2]([[1, 2], [3, 4]]) }
+
+  test "one row comes back unchanged" { once() == [[1, 2]] }
+  test "two rows come back unchanged" { twice() == [[1, 2], [3, 4]] }
+}

@@ -1,0 +1,5 @@
+edition 2026;
+module both {
+  use bothlib;
+  spec f() -> Word[7] { 0 }
+}

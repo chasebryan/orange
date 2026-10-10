@@ -1,0 +1,6 @@
+// S3s rejection: a bad word width resolved inside a generic instance names
+// the first instance that fails.
+edition 2026;
+module width {
+  spec box[n in 1..3](x: Word[1]^n) -> Word[1]^n { x }
+}
