@@ -9908,15 +9908,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         uint32_t leaf = index;
         int silent = 0;
         int state;
-        if (expr->conv_site < c->nsites && c->sites[expr->conv_site].rank >= 2 && expr->conv_order != 0) {
-            TypeSite *site = &c->sites[expr->conv_site];
-            char shown[128];
-            char target[96];
-            spell_matrix(c, target, sizeof target, site->kind, site->length, site->inner_len, site->mod_index);
-            snprintf(shown, sizeof shown, "`%s`", target);
-            report_order_unpacking(c, expr, shown);
-            return 1;
-        }
+        /* A byte order classifies the operand, not the target. A matrix is
+           not words, so `as` reports the operand the way Rust's order check
+           does. A rank-1 word operand still goes through check_packing. */
         if (expr->conv_order != 0) {
             return check_packing(c, index, expected, expected_len, func_index, locals_in_scope);
         }
@@ -10160,14 +10154,26 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
     }
     case EX_UPDATE: {
         if (c->expect_rank >= 2) {
-            if (!check_ranked(c, expr->left, expected, expected_len, c->expect_mod, c->expect_rank, c->expect_inner,
-                              func_index, locals_in_scope) ||
-                !check_index_expr(c, expr->right, expected, expected_len, c->expect_rank, c->expect_inner, func_index,
-                                  locals_in_scope)) {
+            int rank = c->expect_rank;
+            uint32_t inner = c->expect_inner;
+            int index_ok;
+            /* The index is a scalar. Leaving expect_rank at 2 makes
+               check_index_expr require `(T)^0` and report ORC0214. The range
+               still uses this matrix's outer length. */
+            if (!check_ranked(c, expr->left, expected, expected_len, c->expect_mod, rank, inner, func_index,
+                              locals_in_scope)) {
                 return 0;
             }
-            return check_ranked(c, expr->callee, expected, c->expect_inner, c->expect_mod, 1, 0, func_index,
-                                locals_in_scope);
+            c->expect_rank = 0;
+            c->expect_inner = 0;
+            index_ok = check_index_expr(c, expr->right, expected, expected_len, rank, inner, func_index,
+                                        locals_in_scope);
+            c->expect_rank = rank;
+            c->expect_inner = inner;
+            if (!index_ok) {
+                return 0;
+            }
+            return check_ranked(c, expr->callee, expected, inner, c->expect_mod, 1, 0, func_index, locals_in_scope);
         }
         TypeKind leaf_type = TY_NONE;
         uint32_t leaf_len = 0;

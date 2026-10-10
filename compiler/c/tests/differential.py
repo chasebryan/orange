@@ -865,6 +865,7 @@ def main() -> int:
     failures += residue_modules(rust_compiler, c_compiler)
     failures += alias_targets(rust_compiler, c_compiler)
     failures += alias_uses(rust_compiler, c_compiler)
+    failures += matrix_text(rust_compiler, c_compiler)
     failures += ranks_3_4(c_compiler)
 
     if failures:
@@ -1157,6 +1158,73 @@ def _alias_must_cover(codes: list[str], source: str) -> bool:
     if found & _ALIAS_TYPE_CODES:
         return True
     return "ORC0221" in found and _ALIAS_LENGTH.search(source) is not None
+
+
+# Matrix byte order and `with [i]`.
+#
+# `as big` / `as little` on a matrix operand underlines `as` and names the
+# operand. An alias of an alias spells the same matrix. A Word[8] operand
+# still packs. `with [i]` reports the index range, and an `Int` index reports
+# that it has no bound. Each program is C's full text against Rust.
+_MATRIX_TYPES = """edition 2026;
+module order {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+"""
+MATRIX_TEXT = (
+    ("as big", _MATRIX_TYPES + "  spec f(x: Mat) -> Mat { x as big Mat }\n}\n", "check"),
+    ("as little", _MATRIX_TYPES + "  spec f(x: Mat) -> Mat { x as little Mat }\n}\n", "check"),
+    (
+        "alias of alias",
+        _MATRIX_TYPES + "  type M2 = Mat;\n  type M3 = M2;\n  spec f(x: M3) -> M3 { x as big M3 }\n}\n",
+        "check",
+    ),
+    (
+        "Word[8] operand",
+        "edition 2026;\nmodule order {\n  spec f(x: Word[8]) -> Int { x as big Int }\n}\n",
+        "eval",
+    ),
+    (
+        "with [i] Word[8]",
+        _MATRIX_TYPES + "  spec f(a: Mat, i: Word[8]) -> Mat { a with [i] = [9, 9] }\n}\n",
+        "check",
+    ),
+    (
+        "with [i] Int",
+        _MATRIX_TYPES + "  spec f(a: Mat, i: Int) -> Mat { a with [i] = [9, 9] }\n}\n",
+        "check",
+    ),
+)
+
+
+def matrix_text(rust_compiler: Path, c_compiler: Path) -> int:
+    """Full text of a matrix byte order and of `with [i]`."""
+    failures = 0
+    for name, source, command in MATRIX_TEXT:
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(source)
+                path = handle.name
+            rust = run(rust_compiler, [command, path])
+            c_result = run(c_compiler, [command, path])
+            if (
+                rust.returncode != c_result.returncode
+                or rust.stdout != c_result.stdout
+                or rust.stderr != c_result.stderr
+            ):
+                failures += 1
+                print(f"FAIL matrix text {name}")
+                print(f"  rust {rust.returncode}")
+                print(rust.stderr)
+                print(f"  c {c_result.returncode}")
+                print(c_result.stderr)
+            else:
+                print(f"ok   matrix text {name}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
 
 
 # ranks 3–4 (Rust S3u)
