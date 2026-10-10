@@ -36,7 +36,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - `Mod[m]` is the residue ring of a constant modulus from 2 through 2^521 - 1. The constant is built from integer literals with `+`, `-`, `*`, `<<`, and parentheses, evaluated once, and published into the modulus table. `+`, `-`, `*`, and prefix `-` reduce to the least residue. `/` multiplies by an inverse and is 0 when there is none.
 - A cross-module `Mod` call compares those modulus values, not each file's private table index, and retags the value at the module boundary.
 - A typed `spec` may have parameters, `let` bindings, and one result expression. A binding whose type was already rejected does not also check its initializer. A rejected result type (`Float`, a later `type` name, or `Mod[1]`) does not also check the body.
-- A fixed-length array `T^n` holds n values of one of those scalars, with n a decimal integer from 1 through 256. Declarations of 1 to 4 axes are type-checked, with ORC0203 on a fifth; values with more than one axis aren't supported yet.
+- A fixed-length array `T^n` holds n values of one of those scalars, with n a decimal integer from 1 through 256. Declarations of 1 to 4 axes are type-checked, with ORC0203 on a fifth; values with more than one axis aren't supported yet. Any use of such a type (a parameter, a result, an alias use, a tuple element, and so on) is ORC0203. The message is `` a value of type `%s` is a matrix, which this compiler does not evaluate ``. The label is `rank-2 arrays: nested-array slice`.
 - A tuple type `(T, U)` holds 2 through 16 scalars or arrays. `(a, b)` builds one from left to right, `.k` selects an element, and a `let` or `with` pattern names each element. `let(x)` is a call, not a pattern.
 - A pattern name that repeats the loop index is a duplicate name. A pattern name used outside the loop is not in scope. A tuple inside a tuple, and an array of tuples, are rejected even when the nested type is a `type` alias. Order on an array or a tuple is rejected. `==` and `!=` of a written-out array or tuple with no type of its own is rejected.
 - `p.01`, `p.0.1`, and `x[0].1` are each one syntax error at the offending token.
@@ -89,8 +89,12 @@ as a parenthesized size. An index follows a name, a call, or an accumulator.
 Operators and conversions apply to elements. A loop bound is an integer
 literal or a size, with `0 <= a < b <= 65536`. Declarations of 1 to 4
 axes are type-checked, with ORC0203 on a fifth; values with more than
-one axis aren't supported yet. Empty arrays, and a loop bound that is
-neither a literal nor a size, are rejected.
+one axis aren't supported yet. Any use of such a type (a parameter, a
+result, an alias use, a tuple element, and so on) is ORC0203. The
+message is `` a value of type `%s` is a matrix, which this compiler does
+not evaluate ``. The label is `rank-2 arrays: nested-array slice`. Empty
+arrays, and a loop bound that is neither a literal nor a size, are
+rejected.
 
 Later slices are outside this frontend. Byte order, type parameters, tests,
 lengths above 256, and computed shift amounts are rejected rather than

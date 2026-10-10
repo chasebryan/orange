@@ -25,7 +25,11 @@
    of one scalar, with n a decimal
    integer from 1 through 256. Declarations of 1 to 4 axes are
    type-checked, with ORC0203 on a fifth; values with more than one
-   axis aren't supported yet. Expressions are literals, names, calls,
+   axis aren't supported yet. Any use of such a type (a parameter, a
+   result, an alias use, a tuple element, and so on) is ORC0203. The
+   message is "a value of type `%s` is a matrix, which this compiler
+   does not evaluate". The label is "rank-2 arrays: nested-array slice".
+   Expressions are literals, names, calls,
    parentheses, array literals, indices, exact integer arithmetic,
    Euclidean / and %, word ring arithmetic, bitwise operators, shifts,
    rotations, comparisons, !, &&, ||, and as conversions. A loop
@@ -403,7 +407,11 @@ typedef struct TypeSite {
     int wrote_axis;
     /* Rank counts declared axes 1 through 4 for the type check only.
        Declarations of 1 to 4 axes are type-checked, with ORC0203 on a
-       fifth; values with more than one axis aren't supported yet. */
+       fifth; values with more than one axis aren't supported yet. Any use
+       of such a type (a parameter, a result, an alias use, a tuple element,
+       and so on) is ORC0203. The message is "a value of type `%s` is a
+       matrix, which this compiler does not evaluate". The label is
+       "rank-2 arrays: nested-array slice". */
     int rank;
     uint32_t inner_len;
     const char *role;
