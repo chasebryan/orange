@@ -23,13 +23,9 @@
    and prefix - reduce to the least residue. / multiplies by an inverse
    and is 0 when there is none. A fixed-length array T^n holds n values
    of one scalar, with n a decimal
-   integer from 1 through 256. A named array type may add an axis with
-   `^LENGTH`, through 4. A fifth axis is ORC0203. The message names the
-   type, as in "`Hyper` already has 4 array dimensions". The label is
-   "arrays have at most 4 dimensions". The length span says "this length
-   would add a fifth dimension". The note is "a row holds scalars, and
-   each `^LENGTH` after a named array type adds a dimension of its
-   rows". Expressions are literals, names, calls,
+   integer from 1 through 256. Declarations of 1 to 4 axes are
+   type-checked, with ORC0203 on a fifth; values with more than one
+   axis aren't supported yet. Expressions are literals, names, calls,
    parentheses, array literals, indices, exact integer arithmetic,
    Euclidean / and %, word ring arithmetic, bitwise operators, shifts,
    rotations, comparisons, !, &&, ||, and as conversions. A loop
@@ -405,7 +401,9 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* 0 is a scalar. 1 through 4 count array axes. A fifth axis is ORC0203. */
+    /* Rank counts declared axes 1 through 4 for the type check only.
+       Declarations of 1 to 4 axes are type-checked, with ORC0203 on a
+       fifth; values with more than one axis aren't supported yet. */
     int rank;
     uint32_t inner_len;
     const char *role;
