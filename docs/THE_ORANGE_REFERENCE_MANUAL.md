@@ -7572,7 +7572,7 @@ in `compiler/crates/orangec/src/main.rs`.
 | `ORC1013` | Sealed-file format |
 | `ORC1014` | A chunk that is not authentic |
 | `ORC1015` | Randomness |
-| `ORC1016` | A `--spec` or `--function` name that selects nothing or is ambiguous, a replay function whose result is not `Bool`, or an analysis whose selector or shape the command cannot take |
+| `ORC1016` | A `--spec` or `--function` name that selects nothing or is ambiguous, a `--instance` on `replay` or `analyze` that selects nothing, a replay function whose result is not `Bool`, or an analysis whose selector or shape the command cannot take |
 | `ORC1017` | An analysis whose function, bits, table, or layer the search cannot accept |
 
 Usage errors have no `ORC` code: a bad `--steps`, `--steps` on `check`, an unknown option, and `analyze --rounds 0` print `orangec: …` and exit 2.
