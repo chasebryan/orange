@@ -24,6 +24,24 @@ static void report_modulus_large(Compiler *c, uint32_t start, uint32_t end) {
 }
 
 static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok);
+static void report_matrix(Compiler *c, uint32_t start, uint32_t end, TypeKind type, uint32_t outer, uint32_t inner);
+
+/* `type Mat = Row^2` defines an axis. A later `type Cube = Mat^2` does too,
+   through four axes. An alias, a parameter, or any other site uses the type. */
+static int axis_defined_here(const Compiler *c, const TypeSite *site) {
+    uint32_t at;
+    uint32_t index;
+    if (c->sites == NULL || site < c->sites || site >= c->sites + c->nsites || !site->wrote_axis) {
+        return 0;
+    }
+    at = (uint32_t)(site - c->sites);
+    for (index = 0; index < c->ntypes; index++) {
+        if (c->types[index].site == at) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok) {
     const Expr *expr = &c->exprs[index];
@@ -523,6 +541,16 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         site->inner_len = target->inner_len;
     }
     site->ok = 1;
+    /* Rank-2 use guard. Defining `type` declarations of up to four axes stay
+       accepted. Every other rank-2-or-higher site is ORC0203. */
+    if (site->rank >= 2 && !axis_defined_here(c, site)) {
+        uint16_t saved_mod = c->expect_mod;
+        c->expect_mod = site->mod_index;
+        report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+        c->expect_mod = saved_mod;
+        site->ok = 0;
+        site->reported = 1;
+    }
 }
 
 static void publish_site(const Compiler *c, uint32_t site_index, TypeKind *kind, uint32_t *length, int *ok,
@@ -3788,6 +3816,34 @@ static int format_tuple_type(Compiler *c, char *buffer, size_t cap, uint32_t tup
     buffer[used++] = ')';
     buffer[used] = '\0';
     return 1;
+}
+
+static void spell_matrix(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t outer, uint32_t inner,
+                         uint16_t mod) {
+    char row[128];
+    char built[160];
+    int wrote;
+    if (inner == 0 || !format_type(c, row, sizeof row, type, inner, type == TY_MOD ? mod : 0)) {
+        copy_text(buffer, cap, "?");
+        return;
+    }
+    wrote = snprintf(built, sizeof built, "(%s)^%u", row, outer);
+    if (wrote < 0 || (size_t)wrote >= sizeof built) {
+        copy_text(buffer, cap, "?");
+        return;
+    }
+    copy_text(buffer, cap, built);
+}
+
+/* A matrix value is recognized and rejected. Nested arrays are evaluated by a
+   later slice; this one must not print them as a single row. */
+static void report_matrix(Compiler *c, uint32_t start, uint32_t end, TypeKind type, uint32_t outer, uint32_t inner) {
+    char message[384];
+    char shown[96];
+    spell_matrix(c, shown, sizeof shown, type, outer, inner, c->expect_mod);
+    snprintf(message, sizeof message, "a value of type `%s` is a matrix, which this compiler does not evaluate", shown);
+    add_diag(c, "ORC0203", start, end, message, "rank-2 arrays: nested-array slice",
+             "a row holds scalars; a matrix holds rows of the same type", 2);
 }
 
 static int format_type(Compiler *c, char *buffer, size_t cap, TypeKind type, uint32_t length, uint16_t mod_index) {

@@ -741,6 +741,7 @@ def main() -> int:
     failures += logical_operators(rust_compiler, c_compiler)
     failures += residue_modules(rust_compiler, c_compiler)
     failures += alias_targets(rust_compiler, c_compiler)
+    failures += rank2_values(rust_compiler, c_compiler)
     failures += alias_uses(rust_compiler, c_compiler)
 
     if failures:
@@ -1033,6 +1034,143 @@ def _alias_must_cover(codes: list[str], source: str) -> bool:
     if found & _ALIAS_TYPE_CODES:
         return True
     return "ORC0221" in found and _ALIAS_LENGTH.search(source) is not None
+
+
+# rank-2 values (C S3s)
+#
+# Main's Rust evaluates a matrix. This slice rejects every rank-2 use with
+# ORC0203 and still accepts an unused declaration of up to four axes. Each pin
+# is C's exact check and eval text. The check fails if that text changes or
+# starts matching Rust. Do not refresh a pin to follow a new acceptance.
+_RANK2_HEADER = """edition 2026;
+module rank2 {
+  type Row = Word[8]^2;
+  type Mat = Row^2;
+"""
+RANK2_VALUES = (
+    {
+        "name": "flat",
+        "source": _RANK2_HEADER + "  spec flat() -> Mat { [0x01, 0x02] }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:18
+  |
+5 |   spec flat() -> Mat { [0x01, 0x02] }
+  |                  ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "id",
+        "source": _RANK2_HEADER + "  spec id(a: Mat) -> Mat { a }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:14
+  |
+5 |   spec id(a: Mat) -> Mat { a }
+  |              ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:22
+  |
+5 |   spec id(a: Mat) -> Mat { a }
+  |                      ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "pass",
+        "source": _RANK2_HEADER + "  spec pass(a: Mat) -> Int { 0 }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:16
+  |
+5 |   spec pass(a: Mat) -> Int { 0 }
+  |                ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "m",
+        "source": _RANK2_HEADER + "  spec m() -> Mat { [[0x01, 0x02], [0x03, 0x04]] }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:15
+  |
+5 |   spec m() -> Mat { [[0x01, 0x02], [0x03, 0x04]] }
+  |               ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "row",
+        "source": _RANK2_HEADER + "  spec row(a: Mat) -> Row { a[0] }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:15
+  |
+5 |   spec row(a: Mat) -> Row { a[0] }
+  |               ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "first",
+        "source": _RANK2_HEADER
+        + "  spec m() -> Mat { [[0x01, 0x02], [0x03, 0x04]] }\n  spec first() -> Row { m()[0] }\n}\n",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:15
+  |
+5 |   spec m() -> Mat { [[0x01, 0x02], [0x03, 0x04]] }
+  |               ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+)
+
+
+def rank2_values(rust_compiler: Path, c_compiler: Path) -> int:
+    """rank-2 values (C S3s).
+
+    Empty the list only when C's text for these uses matches Rust. Until then
+    each pin must stay C's exact ORC0203 output.
+    """
+    failures = 0
+    if not RANK2_VALUES:
+        print("ok   rank-2 values (C S3s): empty")
+        return 0
+    for case in RANK2_VALUES:
+        name = case["name"]
+        pinned = case["c_stderr"]
+        if not pinned.strip():
+            failures += 1
+            print(f"FAIL rank-2 values (C S3s) {name}: pin is empty")
+            continue
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".or", delete=False, encoding="utf-8") as handle:
+                handle.write(case["source"])
+                path = handle.name
+            rust = run(rust_compiler, ["check", path])
+            checked = run(c_compiler, ["check", path])
+            evaluated = run(c_compiler, ["eval", path])
+            rust_err = rust.stderr.replace(path, "FILE")
+            check_err = checked.stderr.replace(path, "FILE")
+            eval_err = evaluated.stderr.replace(path, "FILE")
+            if check_err == rust_err or eval_err == rust_err:
+                failures += 1
+                print(f"FAIL rank-2 values (C S3s) {name}: C matches Rust")
+            elif checked.returncode == 0 or evaluated.returncode == 0:
+                failures += 1
+                print(f"FAIL rank-2 values (C S3s) {name}: C accepted a rank-2 use")
+            elif check_err != pinned or eval_err != pinned:
+                failures += 1
+                print(f"FAIL rank-2 values (C S3s) {name}: C output changed")
+                print("  pinned:", pinned)
+                print("  check: ", check_err)
+                print("  eval:  ", eval_err)
+            else:
+                print(f"ok   rank-2 values (C S3s) {name}")
+        finally:
+            if path is not None:
+                Path(path).unlink(missing_ok=True)
+    return failures
 
 
 def alias_uses(rust_compiler: Path, c_compiler: Path) -> int:

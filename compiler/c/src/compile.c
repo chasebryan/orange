@@ -220,7 +220,8 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* 0 scalar, 1 one array axis, 2 a matrix. Rank 2 is a name, not a value. */
+    /* 0 scalar, 1 a row, 2 a matrix, 3 and 4 further declared axes.
+       A use of rank 2 or more is ORC0203. A fifth axis is rejected on the declaration. */
     int rank;
     uint32_t inner_len;
     const char *role;
