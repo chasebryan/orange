@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.168",
+  "policy_version": "0.2.169",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -154,6 +154,12 @@
       "sha256": "b007f7db0dbb1be0f8b8d56e9027e496c3690ed268d38d9e7bd6e48c9ffe2f32",
       "role": "D-011 v0.1 epoch export: gzip JSON lines written by tools/d011_suite.py export",
       "provenance": "Written on 2026-09-30 by the D-011 epoch run it names"
+    },
+    {
+      "path": "docs/images/orange-reference-manual-cover.png",
+      "sha256": "32a3c0e852f557d4eba40b0a086ecf18a2e01d98ee73534718ad03ffcd7ae4ad",
+      "role": "Owner-selected Orange Reference Manual front cover",
+      "provenance": "Owner-requested OpenAI image generation on 2026-10-05; byte-for-byte import of selected image-edit-target-f202d359dc48165d.png; no independent provenance verification claimed"
     }
   ],
   "required_paths": [
@@ -529,6 +535,7 @@
     "docs/AMOUNTS_2026.md",
     "docs/NESTED_ARRAYS_2026.md",
     "docs/THE_ORANGE_BOOK.md",
+    "docs/THE_ORANGE_REFERENCE_MANUAL.md",
     "docs/TUPLES_2026.md",
     "docs/TYPE_PARAMETERS_2026.md",
     "docs/USER_JOURNEYS.md",
@@ -552,6 +559,7 @@
     "docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md",
     "docs/governance/oeps/README.md",
     "docs/images/README.md",
+    "docs/images/orange-reference-manual-cover.png",
     "docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg",
     "docs/operations/CI_DEPENDENCIES.md",
     "docs/operations/GITHUB_CONTROLS.md",

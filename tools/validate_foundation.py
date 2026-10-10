@@ -1713,6 +1713,20 @@ FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
 RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 
 
+MINIMUM_REQUIRED_PATHS |= {
+    "docs/THE_ORANGE_REFERENCE_MANUAL.md",
+    "docs/images/orange-reference-manual-cover.png",
+}
+GATE0_ALLOWED_BINARY_ARTIFACTS += [
+    {
+        "path": "docs/images/orange-reference-manual-cover.png",
+        "sha256": "32a3c0e852f557d4eba40b0a086ecf18a2e01d98ee73534718ad03ffcd7ae4ad",
+        "role": "Owner-selected Orange Reference Manual front cover",
+        "provenance": "Owner-requested OpenAI image generation on 2026-10-05; byte-for-byte import of selected image-edit-target-f202d359dc48165d.png; no independent provenance verification claimed"
+    }
+]
+
+
 class DuplicateKeyError(ValueError):
     pass
 
