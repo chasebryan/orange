@@ -9930,19 +9930,31 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
             }
         } else if (expr->conv_len != 0) {
             char message[384];
-            char target[96];
+            char target[160];
+            char plain[96];
             char note_buf[384];
+            const char *shown = target;
             const char *note = "convert each element, such as `x[0] as Int`";
-            spell_type(c, target, sizeof target, expr->conv_ty, expr->conv_len, expr->conv_mod, 0, 0);
-            snprintf(message, sizeof message, "`as` does not convert to the array type `%s`", target);
-            if (expr->conv_ty == TY_W8 || expr->conv_ty == TY_W16 || expr->conv_ty == TY_W32 ||
-                expr->conv_ty == TY_W64) {
-                snprintf(note_buf, sizeof note_buf,
-                         "name a byte order to write words as `%s`, as in `as big %s`, or build the array from its "
-                         "elements",
-                         target, target);
-                note = note_buf;
+            int matrix = expr->conv_site < c->nsites && c->sites[expr->conv_site].rank >= 2;
+            if (matrix) {
+                TypeSite *site = &c->sites[expr->conv_site];
+                /* A matrix target is `(Row^n)`, not the outer axis alone.
+                   Plain `as` does not flatten it, so the note stays the
+                   element conversion, including for a word matrix. */
+                spell_matrix(c, target, sizeof target, site->kind, site->length, site->inner_len, site->mod_index);
+            } else {
+                spell_type(c, plain, sizeof plain, expr->conv_ty, expr->conv_len, expr->conv_mod, 0, 0);
+                shown = plain;
+                if (expr->conv_ty == TY_W8 || expr->conv_ty == TY_W16 || expr->conv_ty == TY_W32 ||
+                    expr->conv_ty == TY_W64) {
+                    snprintf(note_buf, sizeof note_buf,
+                             "name a byte order to write words as `%s`, as in `as big %s`, or build the array from its "
+                             "elements",
+                             plain, plain);
+                    note = note_buf;
+                }
             }
+            snprintf(message, sizeof message, "`as` does not convert to the array type `%s`", shown);
             add_diag(c, "ORC0215", expr->name_start, expr->name_end, message,
                      "`as` gives one `Int`, word, or residue value", note, 2);
             return 1;

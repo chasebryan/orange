@@ -214,6 +214,7 @@ INVALID = [
     "s3s/invalid-dimensions.or",
     "s3s/invalid-domains.or",
     "s3s/invalid-indices.or",
+    "s3s/invalid-plain-as.or",
     "s3s/invalid-instance-axis.or",
     "s3s/invalid-instance-length.or",
     "s3s/invalid-instance-matrix.or",

@@ -448,14 +448,14 @@ static void release_elems(Value *value) {
     }
 }
 
-static int expect_visits(Compiler *c, const Value *left, const Value *right, const char *label) {
+static int expect_visits_n(Compiler *c, const Value *left, const Value *right, const char *label, uint64_t expected) {
     uint64_t before = orange_eq_elements;
     int equal = 1;
     c->failed = 0;
     c->step_hit = 0;
-    if (!orange_values_equal(c, left, right, &equal) || equal != 0 || orange_eq_elements != before + EQ_AUDIT_N) {
-        fprintf(stderr, "equality audit: %s visited %llu elements, expected %d (equal=%d)\n", label,
-                (unsigned long long)(orange_eq_elements - before), EQ_AUDIT_N, equal);
+    if (!orange_values_equal(c, left, right, &equal) || equal != 0 || orange_eq_elements != before + expected) {
+        fprintf(stderr, "equality audit: %s visited %llu elements, expected %llu (equal=%d)\n", label,
+                (unsigned long long)(orange_eq_elements - before), (unsigned long long)expected, equal);
         return 0;
     }
     return 1;
@@ -588,28 +588,94 @@ static int make_int_tuple(Compiler *c, Value *out, uint32_t differ_at, int diffe
     return 1;
 }
 
-static int make_word_matrix(Value *out, int differ) {
-    uint32_t row;
-    memset(out, 0, sizeof *out);
-    out->type = TY_W8;
-    out->length = 2;
-    out->rank = 2;
-    out->inner = EQ_AUDIT_N / 2;
-    out->elems = calloc(2, sizeof(Value));
-    if (out->elems == NULL) {
-        return 0;
+enum { MATRIX_ROWS = 2, MATRIX_COLS = EQ_AUDIT_N / 2, MATRIX_VISITS = MATRIX_ROWS * MATRIX_COLS };
+
+/* One cell differs. `row`/`col` select it. `!differ` builds an equal matrix.
+   Packed rows cover words, `Bool`, and a small modulus. `Int` rows are big
+   integers, the same shape `valid-domains.or` evaluates. */
+static int make_matrix_row(Compiler *c, Value *line, TypeKind type, int col, int differ) {
+    uint32_t index;
+    memset(line, 0, sizeof *line);
+    line->type = type;
+    line->length = MATRIX_COLS;
+    line->rank = 1;
+    if (type == TY_INT) {
+        uint32_t low[3] = {1u, 0u, 1u};
+        uint32_t high[3] = {1u, 0u, 2u};
+        line->elems = calloc(MATRIX_COLS, sizeof(Value));
+        if (line->elems == NULL) {
+            return 0;
+        }
+        for (index = 0; index < MATRIX_COLS; index++) {
+            const uint32_t *limbs = (differ && (int)index == col) ? high : low;
+            line->elems[index].type = TY_INT;
+            if (!big_from_limbs(&c->arena, limbs, 3, 0, &line->elems[index].big)) {
+                return 0;
+            }
+        }
+        return 1;
     }
-    for (row = 0; row < 2; row++) {
-        Value *line = &out->elems[row];
-        line->type = TY_W8;
-        line->length = EQ_AUDIT_N / 2;
-        line->pack = pack_new(TY_W8, line->length, 1, 0);
+    if (type == TY_MOD) {
+        uint32_t stride = pack_stride_of(TY_MOD, 3);
+        line->mod_index = 1;
+        line->pack = pack_new(TY_MOD, MATRIX_COLS, stride, 1);
+        if (line->pack == NULL) {
+            return 0;
+        }
+        pack_fill(line->pack, 3);
+        if (differ) {
+            pack_set(line->pack, (uint32_t)col, 4);
+        }
+        return 1;
+    }
+    {
+        uint32_t stride = type == TY_BOOL ? 1u : pack_stride_of(type, 0);
+        line->pack = pack_new(type, MATRIX_COLS, stride, 0);
         if (line->pack == NULL) {
             return 0;
         }
         pack_fill(line->pack, 0);
-        if (differ && row == 1) {
-            pack_set(line->pack, line->length - 1, 1);
+        if (differ) {
+            pack_set(line->pack, (uint32_t)col, 1);
+        }
+    }
+    return 1;
+}
+
+static int make_matrix(Compiler *c, Value *out, TypeKind type, int row, int col, int differ) {
+    uint32_t index;
+    memset(out, 0, sizeof *out);
+    out->type = type;
+    out->length = MATRIX_ROWS;
+    out->rank = 2;
+    out->inner = MATRIX_COLS;
+    out->elems = calloc(MATRIX_ROWS, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < MATRIX_ROWS; index++) {
+        if (!make_matrix_row(c, &out->elems[index], type, col, differ && (int)index == row)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Two matrices. The difference is one scalar, so a break in the tuple loop,
+   the row loop, or a row's scalar loop each drops a visit. */
+static int make_matrix_tuple(Compiler *c, Value *out, int slot, int row, int col, int differ) {
+    uint32_t index;
+    memset(out, 0, sizeof *out);
+    out->type = TY_TUPLE;
+    out->is_tuple = 1;
+    out->length = 2;
+    out->elems = calloc(2, sizeof(Value));
+    if (out->elems == NULL) {
+        return 0;
+    }
+    for (index = 0; index < 2; index++) {
+        if (!make_matrix(c, &out->elems[index], TY_W8, row, col, differ && (int)index == slot)) {
+            return 0;
         }
     }
     return 1;
@@ -632,18 +698,19 @@ int orange_eq_audit(void) {
         ok = 0;
     }
     c->nmoduli = 2;
-#define AUDIT_CASE(build_left, build_right, label)                                                                     \
+#define AUDIT_N(build_left, build_right, label, expected)                                                              \
     do {                                                                                                               \
         if (ok) {                                                                                                      \
             memset(&left, 0, sizeof left);                                                                             \
             memset(&right, 0, sizeof right);                                                                           \
-            if (!(build_left) || !(build_right) || !expect_visits(c, &left, &right, (label))) {                        \
+            if (!(build_left) || !(build_right) || !expect_visits_n(c, &left, &right, (label), (expected))) {          \
                 ok = 0;                                                                                                \
             }                                                                                                          \
             release_elems(&left);                                                                                      \
             release_elems(&right);                                                                                     \
         }                                                                                                              \
     } while (0)
+#define AUDIT_CASE(build_left, build_right, label) AUDIT_N(build_left, build_right, label, EQ_AUDIT_N)
     AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, 0, 1), "word array compared_first");
     AUDIT_CASE(make_word_array(&left, 0, 0), make_word_array(&right, EQ_AUDIT_N - 1, 1), "word array compared_last");
     AUDIT_CASE(make_bool_array(&left, 0, 0), make_bool_array(&right, 0, 1), "bool array compared_first");
@@ -660,9 +727,35 @@ int orange_eq_audit(void) {
     AUDIT_CASE(make_int_array(c, &left, 0, 0), make_int_array(c, &right, EQ_AUDIT_N - 1, 1), "bigint array compared_last");
     AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, 0, 1), "bigint tuple compared_first");
     AUDIT_CASE(make_int_tuple(c, &left, 0, 0), make_int_tuple(c, &right, EQ_AUDIT_N - 1, 1), "bigint tuple compared_last");
-    /* Two rows of four words. The only difference is the last element of the last row. */
-    AUDIT_CASE(make_word_matrix(&left, 0), make_word_matrix(&right, 1), "word matrix compared_last_row");
+    /* Two rows of four scalars. One case differs at row 0 element 0, the other
+       at the last row's last element. Both require every scalar visit, so a
+       break in the row loop or in a row's element loop fails. */
+#define MATRIX_PAIR(type, row, col, label)                                                                             \
+    AUDIT_N(make_matrix(c, &left, (type), (row), (col), 0), make_matrix(c, &right, (type), (row), (col), 1), (label),  \
+            MATRIX_VISITS)
+    MATRIX_PAIR(TY_W8, 0, 0, "word[8] matrix first element");
+    MATRIX_PAIR(TY_W8, MATRIX_ROWS - 1, MATRIX_COLS - 1, "word[8] matrix last element");
+    MATRIX_PAIR(TY_W16, 0, 0, "word[16] matrix first element");
+    MATRIX_PAIR(TY_W16, MATRIX_ROWS - 1, MATRIX_COLS - 1, "word[16] matrix last element");
+    MATRIX_PAIR(TY_W32, 0, 0, "word[32] matrix first element");
+    MATRIX_PAIR(TY_W32, MATRIX_ROWS - 1, MATRIX_COLS - 1, "word[32] matrix last element");
+    MATRIX_PAIR(TY_W64, 0, 0, "word[64] matrix first element");
+    MATRIX_PAIR(TY_W64, MATRIX_ROWS - 1, MATRIX_COLS - 1, "word[64] matrix last element");
+    MATRIX_PAIR(TY_INT, 0, 0, "int matrix first element");
+    MATRIX_PAIR(TY_INT, MATRIX_ROWS - 1, MATRIX_COLS - 1, "int matrix last element");
+    MATRIX_PAIR(TY_MOD, 0, 0, "mod matrix first element");
+    MATRIX_PAIR(TY_MOD, MATRIX_ROWS - 1, MATRIX_COLS - 1, "mod matrix last element");
+    MATRIX_PAIR(TY_BOOL, 0, 0, "bool matrix first element");
+    MATRIX_PAIR(TY_BOOL, MATRIX_ROWS - 1, MATRIX_COLS - 1, "bool matrix last element");
+#undef MATRIX_PAIR
+    /* The tuple is another nesting level around those rows. */
+    AUDIT_N(make_matrix_tuple(c, &left, 0, 0, 0, 0), make_matrix_tuple(c, &right, 0, 0, 0, 1),
+            "tuple of matrices first element", 2u + 2u * MATRIX_VISITS);
+    AUDIT_N(make_matrix_tuple(c, &left, 1, MATRIX_ROWS - 1, MATRIX_COLS - 1, 0),
+            make_matrix_tuple(c, &right, 1, MATRIX_ROWS - 1, MATRIX_COLS - 1, 1),
+            "tuple of matrices last element", 2u + 2u * MATRIX_VISITS);
 #undef AUDIT_CASE
+#undef AUDIT_N
     free(c->moduli);
     arena_dispose(&c->arena);
     free(c);

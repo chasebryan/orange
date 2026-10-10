@@ -575,6 +575,7 @@ compiler/fixtures/s3s/invalid-instance-axis.or
 compiler/fixtures/s3s/invalid-instance-length.or
 compiler/fixtures/s3s/invalid-instance-matrix.or
 compiler/fixtures/s3s/invalid-instance-width.or
+compiler/fixtures/s3s/invalid-plain-as.or
 compiler/fixtures/s3s/invalid-ragged.or
 compiler/fixtures/s3s/invalid-types.or
 compiler/fixtures/s3s/valid-domains.or

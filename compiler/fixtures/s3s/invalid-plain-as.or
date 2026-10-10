@@ -1,0 +1,10 @@
+edition 2026;
+module plain_as {
+  type Row = Word[8]^2;
+  type Wide = Word[8]^3;
+  type Mat = Row^2;
+  type WideMat = Wide^2;
+  spec from_rows(x: Row^2) -> Mat { x as Mat }
+  spec from_literal() -> Mat { [1, 2, 3, 4] as Mat }
+  spec from_wide(x: Wide^2) -> WideMat { x as WideMat }
+}
