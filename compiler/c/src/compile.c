@@ -1938,6 +1938,8 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     site->length_expr = type->length_expr;
     site->owner_func = c->parsing_func != NULL ? c->nfuncs : UINT32_MAX;
     site->wrote_axis = type->has_size_expr || (type->length > 0 && !type->length_bad);
+    /* A ground type has at most one axis. A named type stays 0 until
+       resolve_site copies the target's rank. */
     if (!type->named && !type->bare_mod) {
         site->rank = site->wrote_axis ? 1 : 0;
     }
@@ -9909,7 +9911,8 @@ static void report_alias_target(Compiler *c, TypeSite *site) {
             return;
         }
         site->length = length;
-        site->rank = 1;
+        /* Rank was taken from the resolved target. A length expression
+           does not lower it. */
     }
 }
 

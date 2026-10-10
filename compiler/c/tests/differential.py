@@ -1039,9 +1039,11 @@ def _alias_must_cover(codes: list[str], source: str) -> bool:
 # rank-2 values (C S3s)
 #
 # Main's Rust evaluates a matrix. This slice rejects every rank-2 use with
-# ORC0203 and still accepts an unused declaration of up to four axes. Each pin
-# is C's exact check and eval text. The check fails if that text changes or
-# starts matching Rust. Do not refresh a pin to follow a new acceptance.
+# ORC0203 and still accepts an unused declaration of up to four axes. A length
+# written as `^(2)`, `^(1 + 1)`, or a size parameter keeps the target's rank,
+# so those uses stay on this list. Each pin is C's exact check and eval text.
+# The check fails if that text changes or starts matching Rust. Do not refresh
+# a pin to follow a new acceptance.
 _RANK2_HEADER = """edition 2026;
 module rank2 {
   type Row = Word[8]^2;
@@ -1119,6 +1121,91 @@ error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler
   |
 5 |   spec m() -> Mat { [[0x01, 0x02], [0x03, 0x04]] }
   |               ^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "Row^(2)",
+        "source": """edition 2026;
+module rank2 {
+  type Row = Word[8]^2;
+  type Wide = Row^(2);
+  spec flat() -> Wide { [0x01, 0x02] }
+  spec m() -> Wide { [[0x01, 0x02], [0x03, 0x04]] }
+}
+""",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:18
+  |
+5 |   spec flat() -> Wide { [0x01, 0x02] }
+  |                  ^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+
+error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:6:15
+  |
+6 |   spec m() -> Wide { [[0x01, 0x02], [0x03, 0x04]] }
+  |               ^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "Row^(1 + 1)",
+        "source": """edition 2026;
+module rank2 {
+  type Row = Word[8]^2;
+  type Wide = Row^(1 + 1);
+  spec flat() -> Wide { [0x01, 0x02] }
+}
+""",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:18
+  |
+5 |   spec flat() -> Wide { [0x01, 0x02] }
+  |                  ^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+""",
+    },
+    {
+        "name": "Row^n",
+        "source": """edition 2026;
+module rank2 {
+  type Row = Word[8]^2;
+  spec box[n in 1..3](x: Row^n) -> Row^n { x }
+}
+""",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^1` is a matrix, which this compiler does not evaluate
+ --> FILE:4:26
+  |
+4 |   spec box[n in 1..3](x: Row^n) -> Row^n { x }
+  |                          ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+
+error[ORC0203]: a value of type `(Word[8]^2)^1` is a matrix, which this compiler does not evaluate
+ --> FILE:4:36
+  |
+4 |   spec box[n in 1..3](x: Row^n) -> Row^n { x }
+  |                                    ^^^^^ rank-2 arrays: nested-array slice
+  = note: a row holds scalars; a matrix holds rows of the same type
+  = note: in the instance `box[1]`, the first of `box` in error: a sized function is checked once for each value of its sizes
+""",
+    },
+    {
+        "name": "alias Wide",
+        "source": """edition 2026;
+module rank2 {
+  type Row = Word[8]^2;
+  type Wide = Row^(2);
+  type W2 = Wide;
+  spec flat() -> W2 { [0x01, 0x02] }
+}
+""",
+        "c_stderr": """error[ORC0203]: a value of type `(Word[8]^2)^2` is a matrix, which this compiler does not evaluate
+ --> FILE:5:13
+  |
+5 |   type W2 = Wide;
+  |             ^^^^ rank-2 arrays: nested-array slice
   = note: a row holds scalars; a matrix holds rows of the same type
 """,
     },

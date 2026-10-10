@@ -43,6 +43,21 @@ static int axis_defined_here(const Compiler *c, const TypeSite *site) {
     return 0;
 }
 
+/* Rank-2 use. `site->rank` is the rank resolve_site took from the resolved
+   target. A length expression must not have stored a lower rank. */
+static void reject_matrix_use(Compiler *c, TypeSite *site) {
+    uint16_t saved_mod;
+    if (site->reported || site->rank < 2 || axis_defined_here(c, site)) {
+        return;
+    }
+    saved_mod = c->expect_mod;
+    c->expect_mod = site->mod_index;
+    report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
+    c->expect_mod = saved_mod;
+    site->ok = 0;
+    site->reported = 1;
+}
+
 static int modulus_const(Compiler *c, uint32_t index, Big *out, int *ok) {
     const Expr *expr = &c->exprs[index];
     *ok = 0;
@@ -530,6 +545,8 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
     }
     site->kind = target->kind;
     site->mod_index = target->mod_index;
+    /* Rank comes from the resolved target. Writing an axis adds one. No later
+       path may store a smaller rank. */
     if (site->wrote_axis) {
         site->rank = target->rank + 1;
         if (target->rank >= 1) {
@@ -541,15 +558,17 @@ static void resolve_site(Compiler *c, TypeSite *site, int from_decl, uint32_t ea
         site->inner_len = target->inner_len;
     }
     site->ok = 1;
-    /* Rank-2 use guard. Defining `type` declarations of up to four axes stay
-       accepted. Every other rank-2-or-higher site is ORC0203. */
-    if (site->rank >= 2 && !axis_defined_here(c, site)) {
-        uint16_t saved_mod = c->expect_mod;
-        c->expect_mod = site->mod_index;
-        report_matrix(c, site->start, site->end, site->kind, site->length, site->inner_len);
-        c->expect_mod = saved_mod;
-        site->ok = 0;
-        site->reported = 1;
+    /* A constant length such as `^(2)` or `^(1 + 1)` is known here. A size
+       parameter is not in scope yet; apply_site fills that length and rejects
+       the use. Defining declarations of up to four axes stay accepted. */
+    if (site->has_size_expr && site->length == 0) {
+        uint32_t length = 0;
+        if (size_length(c, site->length_expr, 0, &length)) {
+            site->length = length;
+        }
+    }
+    if (!(site->has_size_expr && site->length == 0)) {
+        reject_matrix_use(c, site);
     }
 }
 
@@ -823,9 +842,17 @@ static int apply_site(Compiler *c, uint32_t site_index, int report, Applied *out
             return 1;
         }
         site->length = length;
-        site->rank = 1;
+        /* Rank stays the rank resolve_site took from the target. */
         out->length = length;
         out->ok = 1;
+    }
+    if (report) {
+        reject_matrix_use(c, site);
+        if (!site->ok) {
+            out->ok = 0;
+            out->reported = site->reported;
+            out->length = site->rank <= 0 ? 0u : site->length;
+        }
     }
     return 1;
 }
@@ -1263,6 +1290,35 @@ static int cycle_span_reported(const Compiler *c, uint32_t start, uint32_t end) 
     return 0;
 }
 
+/* A conversion target is not a signature site, so live_apply does not see it.
+   A size-parameter length is filled here, then a rank taken from the target
+   rejects the use. Rank-1 targets keep the length published in prepare_types. */
+static void seal_conversion_ranks(Compiler *c, uint32_t func_index) {
+    uint32_t index;
+    for (index = 0; index < c->nexprs; index++) {
+        Expr *expr = &c->exprs[index];
+        TypeSite *site;
+        uint32_t length = 0;
+        if (expr->kind != EX_CONV || expr->conv_site >= c->nsites) {
+            continue;
+        }
+        site = &c->sites[expr->conv_site];
+        if (site->owner_func != func_index || !site->has_size_expr || site->reported || !site->ok || site->rank < 2) {
+            continue;
+        }
+        if (!size_length(c, site->length_expr, 1, &length)) {
+            site->ok = 0;
+            site->reported = 1;
+            expr->conv_ok = 0;
+            continue;
+        }
+        site->length = length;
+        reject_matrix_use(c, site);
+        expr->conv_ok = site->ok;
+        expr->conv_len = site->length;
+    }
+}
+
 static void analyze(Compiler *c) {
     uint32_t index;
     prepare_types(c);
@@ -1324,6 +1380,7 @@ static void analyze(Compiler *c) {
             c->cur_inst = UINT32_MAX;
             c->ncur = 0;
         }
+        seal_conversion_ranks(c, index);
         func->signature_ok = func->result_ok;
         for (param_index = 0; param_index < func->nparams; param_index++) {
             Param *param = &c->params[func->param0 + param_index];
