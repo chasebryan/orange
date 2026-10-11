@@ -100,7 +100,8 @@ def load_manifest(root: Path = ROOT) -> dict:
                 raise ValueError(f"{identity} anchor {anchor} is not a heading in {source}")
     lesson_files = {
         relative(path, root)
-        for path in (root / "docs" / "book").glob("NOVICE*.md")
+        for pattern in ("NOVICE*.md", "JOURNEYMAN*.md")
+        for path in (root / "docs" / "book").glob(pattern)
     }
     if lesson_files != drafted_files:
         missing = sorted(lesson_files - drafted_files)

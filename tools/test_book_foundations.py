@@ -1363,6 +1363,169 @@ class N14ReadyForStandards(unittest.TestCase):
         self.assertNotIn('C3', records)
 
 
+class J2StandardsAsVersionedInputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j2_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J2\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J2\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J2.{n}' for n in range(1, 11)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('Chapter 11', self.text)
+        self.assertNotIn('this chapter', self.text)
+        self.assertRegex(self.text, r'(?m)^## J2: Standards as Versioned Inputs$')
+        for number in range(1, 7):
+            self.assertRegex(self.text, rf'(?m)^### J2\.{number} ')
+        self.assertNotRegex(self.text, r'(?m)^### J2\.(?:[7-9]|1\d) ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'RFC 7539, the predecessor of this document, was meant to serve as a '
+            'stable reference and an implementation guide.'
+        ])
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('**J2.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md#j2-standards-as-versioned-inputs',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j2-standards-as-versioned-inputs', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J2.', self.text)
+        self.assertIn('The locked label is J2.', self.index)
+        self.assertIn('**[S13] Yoav Nir and Adam Langley.**', self.text)
+        self.assertIn('**[T9] Retrieved files.**', self.text)
+        self.assertIn('**[C3] Pin surface.**', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+        self.assertIn('implemented slice S3u', self.text)
+        self.assertNotIn('S3t', self.text)
+        self.assertIn(
+            'first sentence of the Abstract\'s second paragraph',
+            self.text,
+        )
+        self.assertIn(
+            'It was a product of the Crypto Forum Research Group (CFRG).',
+            self.text,
+        )
+        self.assertIn('December 2005', self.text)
+        self.assertIn('FIPS 180-2', self.text)
+        self.assertIn('BA7816BF', self.text)
+        self.assertIn('no `Obsoletes` line and no `Updates` line', self.text)
+        self.assertIn('Network Working Group', self.text)
+        self.assertIn('RSA Security', self.text)
+        self.assertRegex(
+            self.text,
+            r'That subsection sets the initial hash\s+value H\(0\) from §5\.3\.3\.',
+        )
+        self.assertNotIn('spec pack(', self.text)
+
+    def test_j2_listings_do_not_transcribe_sha256_compression(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            [
+                'byte_limit',
+                'wrong_edition',
+            ],
+        )
+        for forbidden in (
+            'small_sigma0',
+            'small_sigma1',
+            'big_sigma0',
+            'big_sigma1',
+            '0x428a2f98',
+            'spec schedule(',
+            'spec compress(',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('Section 6.2.1 is', self.text)
+        self.assertNotIn('Its preprocessing points back', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+
+    def test_j2_ledger_matches_the_printed_arithmetic(self):
+        block = re.search(r'^```text\nj2-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        blocks = 2 ** 32 - 1
+        p_max = blocks * 64
+        p_max_old = 247877906880
+        expected = {
+            'blocks': blocks,
+            'block-bytes': 64,
+            'p-max': p_max,
+            'p-max-old': p_max_old,
+            'p-gap': p_max - p_max_old,
+            'tag-octets': 16,
+            'c-max': p_max + 16,
+            'c-max-old': p_max_old + 16,
+            'length-7539': 4,
+            'length-8439': 8,
+            'iv-word': 0x6A09E667,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['iv-word'], 1779033703)
+        self.assertEqual(expected['p-gap'], 27 * 10 ** 9)
+        self.assertLess(expected['iv-word'], 2 ** 32)
+
+    def test_j2_rfc4231_header_is_the_three_line_form(self):
+        header = (
+            'Network Working Group                                         M. Nystrom\n'
+            'Request for Comments: 4231                                  RSA Security\n'
+            'Category: Standards Track                                  December 2005'
+        )
+        self.assertIn(header, self.text)
+
+    def test_j2_tags_are_unique_across_book_lessons(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S13'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Yoav Nir and Adam Langley.',
+        ))
+        self.assertEqual(records['T9'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C3'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Pin surface.',
+        ))
+        self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertNotIn('S14', records)
+        self.assertNotIn('T10', records)
+        self.assertNotIn('C4', records)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
@@ -1405,7 +1568,12 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * len(drafted),
+            ['novice'] * (len(drafted) - 1) + ['journeyman'],
+        )
+        self.assertEqual(drafted[-1]['id'], 'j2')
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -1427,7 +1595,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | None |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')

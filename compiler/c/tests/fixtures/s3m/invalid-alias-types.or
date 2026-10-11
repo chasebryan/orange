@@ -1,0 +1,35 @@
+// An alias target is checked once at the declaration, used or not. The
+// diagnostic is the width, the length, or the size expression, on that token.
+// A type-parameter list is not in this slice; a size parameter is the generic
+// form it checks. A size name in an alias is not a size parameter.
+edition 2026;
+module alias_types {
+  type Unused = Word[1];
+  type Once = Word[1];
+  type Twice = Word[1];
+  type Width = Word[1];
+  type Alias = Width;
+  type Element = Word[1];
+  type Param = Word[7];
+  type Row = Word[1]^5;
+  type Sized = Word[1];
+  type Nested = (Word[1], Int);
+  type Both = Word[1]^0;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type InTuple = (Word[8]^n, Int);
+
+  spec unbound() -> Unbound { [0] }
+  spec once() -> Once { 1 }
+  spec first() -> Twice { 1 }
+  spec second(x: Twice) -> Twice { x }
+  spec through() -> Alias { 1 }
+  spec paired() -> (Element, Int) { (1, 0) }
+  spec argument(x: Param) -> Int { 0 }
+  spec box[n in 1..3](x: Sized^n) -> Int { 0 }
+}
