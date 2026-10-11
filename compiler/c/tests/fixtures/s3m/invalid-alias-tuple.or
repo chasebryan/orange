@@ -1,0 +1,31 @@
+edition 2026;
+module alias_forms {
+  // Used inside `(T, Int)`. The tuple use adds no diagnostic.
+  type W1 = Word[1];
+  type W7 = Word[7];
+  type Row5 = Word[1]^5;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Bare = Word;
+  type Both = Word[1]^0;
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type Nested = (Word[1], Int);
+
+  spec pair_W1() -> (W1, Int) { (0, 0) }
+  spec pair_W7() -> (W7, Int) { (0, 0) }
+  spec pair_Row5() -> (Row5, Int) { (0, 0) }
+  spec pair_Zero() -> (Zero, Int) { (0, 0) }
+  spec pair_Huge() -> (Huge, Int) { (0, 0) }
+  spec pair_Flags() -> (Flags, Int) { (0, 0) }
+  spec pair_BadMod() -> (BadMod, Int) { (0, 0) }
+  spec pair_OneMod() -> (OneMod, Int) { (0, 0) }
+  spec pair_Bare() -> (Bare, Int) { (0, 0) }
+  spec pair_Both() -> (Both, Int) { (0, 0) }
+  spec pair_Unbound() -> (Unbound, Int) { (0, 0) }
+  spec pair_Scaled() -> (Scaled, Int) { (0, 0) }
+  spec pair_Nested() -> (Nested, Int) { (0, 0) }
+}
