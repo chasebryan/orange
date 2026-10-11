@@ -13,10 +13,12 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_URL = "https://github.com/chasebryan/orange"
 MANIFEST_PATH = ROOT / "docs" / "book" / "manifest.json"
 PART_TITLES = {
     "novice": "Part 1, The Novice",
@@ -26,7 +28,19 @@ PART_TITLES = {
 }
 PART_ORDER = ("novice", "journeyman", "master", "original")
 STATUSES = {"draft", "planned", "original"}
-HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+QUOTE_RE = re.compile(r"^ {0,3}>")
+THEMATIC_BREAK_RE = re.compile(
+    r"^ {0,3}(?:(?:\* *\* *\*[ *]*)|(?:- *- *-[- ]*)|(?:_ *_ *_[ _]*))\s*$"
+)
+HTML_BLOCK_RE = re.compile(
+    r"^ {0,3}<(?:!--|\?|!DOCTYPE|/?(?:address|article|aside|base|basefont|blockquote|body|"
+    r"caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
+    r"footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|"
+    r"menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|"
+    r"tfoot|th|thead|title|tr|track|ul)\b)",
+    re.IGNORECASE,
+)
 FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
@@ -195,7 +209,8 @@ def strip_inline_code(line: str) -> str:
     return "".join(pieces)
 
 
-def include_target(root: Path, source: Path, raw_path: str) -> Path | None:
+def link_target(root: Path, source: Path, raw_path: str) -> Path | None:
+    """Resolve a relative link to a file or directory inside ``root``."""
     root = root.resolve()
     name = raw_path.strip()
     if not name or name.startswith(("/", "\\")) or "\\" in name:
@@ -207,8 +222,15 @@ def include_target(root: Path, source: Path, raw_path: str) -> Path | None:
         return None
     if os.path.commonpath((os.fspath(candidate), os.fspath(root))) != os.fspath(root):
         return None
-    if candidate.is_file():
+    if candidate.is_file() or candidate.is_dir():
         return candidate
+    return None
+
+
+def include_target(root: Path, source: Path, raw_path: str) -> Path | None:
+    target = link_target(root, source, raw_path)
+    if target is not None and target.is_file():
+        return target
     return None
 
 
@@ -256,12 +278,12 @@ def relative_link_problem(
         if fragment not in own_anchors:
             return f"missing anchor {url}"
         return None
-    target = include_target(root, source, path)
+    target = link_target(root, source, path)
     if target is None:
         return f"missing target {url}"
     if not fragment:
         return None
-    if target.suffix.lower() != ".md":
+    if target.is_dir() or target.suffix.lower() != ".md":
         return f"missing anchor {url}"
     if fragment not in heading_anchors(target.read_text(encoding="utf-8")):
         return f"missing anchor {url}"
@@ -338,6 +360,7 @@ def render(root: Path = ROOT) -> Path:
         encoding="utf-8",
     )
     pages: dict[str, str] = {}
+    manuscript = set(sources)
     for source in sources:
         text = texts[source]
         destination = html_path(source)
@@ -346,7 +369,12 @@ def render(root: Path = ROOT) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         banner = page_banner(manifest, source)
         target.write_text(
-            page(title_of(text, source), body(text, source), banner, index_href(destination)),
+            page(
+                title_of(text, source),
+                body(text, source, root, manuscript),
+                banner,
+                index_href(destination),
+            ),
             encoding="utf-8",
         )
     within_output(output, "index.html").write_text(
@@ -401,7 +429,7 @@ def written_href_problem(
     if href.startswith(("https://", "http://", "mailto:")):
         return None
     if href.startswith(("//", "/")) or "\\" in href:
-        return f"unresolved relative link {href}"
+        return f"local href does not resolve to a file in the artifact: {href}"
     path, _, fragment = href.partition("#")
     if not path:
         return fragment_problem(root, page_path, output, by_destination, fragment, href)
@@ -409,27 +437,20 @@ def written_href_problem(
         resolved = (page_path.parent / path).resolve()
         relative = resolved.relative_to(output)
     except ValueError:
-        return f"unresolved relative link {href}"
+        return f"local href does not resolve to a file in the artifact: {href}"
     if os.path.commonpath((os.fspath(resolved), os.fspath(output))) != os.fspath(output):
-        return f"unresolved relative link {href}"
+        return f"local href does not resolve to a file in the artifact: {href}"
+    if not resolved.is_file():
+        return f"local href does not resolve to a file in the artifact: {href}"
     relative_path = relative.as_posix()
-    if relative_path not in by_destination and relative_path != "index.html":
-        source = repo_file_for_href(root, relative)
-        if source is None:
-            return f"missing target {href}"
-        if fragment and (
-            source.suffix.lower() != ".md"
-            or fragment not in heading_anchors(source.read_text(encoding="utf-8"))
-        ):
-            return f"missing anchor {href}"
-        return None
-    if not resolved.is_file() or not resolved.read_text(encoding="utf-8").strip():
-        return f"missing written page {href}"
     if not fragment:
         return None
     if relative_path == "index.html":
         return None if fragment in html_ids(resolved.read_text(encoding="utf-8")) else f"missing anchor {href}"
-    source_path = root / by_destination[relative_path]
+    source_name = by_destination.get(relative_path)
+    if source_name is None:
+        return f"missing anchor {href}"
+    source_path = root / source_name
     if fragment not in heading_anchors(source_path.read_text(encoding="utf-8")):
         return f"missing anchor {href}"
     return None
@@ -455,17 +476,6 @@ def fragment_problem(
         return f"missing anchor {href}"
     if fragment not in heading_anchors((root / source).read_text(encoding="utf-8")):
         return f"missing anchor {href}"
-    return None
-
-
-def repo_file_for_href(root: Path, relative: Path) -> Path | None:
-    if relative.suffix.lower() == ".html":
-        markdown = (root / relative).with_suffix(".md")
-        if markdown.is_file():
-            return markdown
-    candidate = root / relative
-    if candidate.is_file():
-        return candidate
     return None
 
 
@@ -578,7 +588,7 @@ blockquote {{ border-left: 3px solid #e6c48a; margin-left: 0; padding-left: 1rem
 """
 
 
-def body(text: str, source: str) -> str:
+def body(text: str, source: str, root: Path = ROOT, manuscript: set[str] | None = None) -> str:
     lines = text.splitlines()
     blocks: list[str] = []
     paragraph: list[str] = []
@@ -587,7 +597,7 @@ def body(text: str, source: str) -> str:
 
     def flush() -> None:
         if paragraph:
-            blocks.append(f"<p>{inline(' '.join(paragraph), source)}</p>")
+            blocks.append(f"<p>{inline(' '.join(paragraph), source, root, manuscript)}</p>")
             paragraph.clear()
 
     while index < len(lines):
@@ -627,29 +637,43 @@ def body(text: str, source: str) -> str:
             ident = anchor if count == 0 else f"{anchor}-{count}"
             blocks.append(
                 f'<h{level} id="{html.escape(ident, quote=True)}">'
-                f"{inline(title, source)}</h{level}>"
+                f"{inline(title, source, root, manuscript)}</h{level}>"
             )
             index += 1
             continue
         if is_table_start(lines, index):
             flush()
             rows, index = table_rows(lines, index)
-            blocks.append(render_table(rows, source))
+            blocks.append(render_table(rows, source, root, manuscript))
             continue
-        if re.match(r"^ {0,3}[-*+][ \t]+", line) or re.match(r"^ {0,3}\d+[.)][ \t]+", line):
+        ordered_start = _ordered_start(line)
+        if re.match(r"^ {0,3}[-*+][ \t]+", line) or ordered_start is not None:
+            # CommonMark: an ordered list interrupts a paragraph only when it starts at 1.
+            if ordered_start is not None and paragraph and not _ordered_list_interrupts(ordered_start):
+                paragraph.append(line.strip())
+                index += 1
+                continue
             flush()
-            items, index, ordered = list_items(lines, index)
-            tag = "ol" if ordered else "ul"
-            rendered = "".join(f"<li>{inline(item, source)}</li>" for item in items)
-            blocks.append(f"<{tag}>{rendered}</{tag}>")
+            items, index, ordered, start = list_items(
+                lines, index, source, root, manuscript, heading_counts
+            )
+            if ordered:
+                open_tag = "ol" if start == 1 else f'ol start="{start}"'
+                close_tag = "ol"
+            else:
+                open_tag = close_tag = "ul"
+            rendered = "".join(f"<li>{item}</li>" for item in items)
+            blocks.append(f"<{open_tag}>{rendered}</{close_tag}>")
             continue
-        if line.startswith(">"):
+        if QUOTE_RE.match(line):
             flush()
             quoted: list[str] = []
-            while index < len(lines) and lines[index].startswith(">"):
-                quoted.append(re.sub(r"^>\s?", "", lines[index]))
+            while index < len(lines) and QUOTE_RE.match(lines[index]):
+                quoted.append(re.sub(r"^>\s?", "", re.sub(r"^ {0,3}", "", lines[index])))
                 index += 1
-            blocks.append(f"<blockquote><p>{inline(' '.join(quoted), source)}</p></blockquote>")
+            blocks.append(
+                f"<blockquote><p>{inline(' '.join(quoted), source, root, manuscript)}</p></blockquote>"
+            )
             continue
         if not line.strip():
             flush()
@@ -671,33 +695,425 @@ def table_rows(lines: list[str], index: int) -> tuple[list[list[str]], int]:
     rows: list[list[str]] = []
     while index < len(lines) and lines[index].lstrip().startswith("|"):
         if not re.match(r"^\s*\|?\s*:?-{3,}", lines[index]):
-            cells = [cell.strip() for cell in lines[index].strip().strip("|").split("|")]
-            rows.append(cells)
+            rows.append(split_table_cells(lines[index]))
         index += 1
     return rows, index
 
 
-def render_table(rows: list[list[str]], source: str) -> str:
+def split_table_cells(line: str) -> list[str]:
+    """Split a row on pipes that are outside code spans and unescaped.
+
+    A pipe is escaped only when an odd number of backslashes precedes it,
+    the same rule as ``_ends_with_unescaped_pipe``. The escaping backslash
+    is dropped and the pipe stays in the cell. A pipe inside an inline code
+    span is part of that span, not a column boundary.
+    """
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if _ends_with_unescaped_pipe(text):
+        text = text[:-1]
+    cells: list[str] = []
+    buf: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "`":
+            end = index + 1
+            while end < len(text) and text[end] == "`":
+                end += 1
+            ticks = text[index:end]
+            close = text.find(ticks, end)
+            if close < 0:
+                buf.append(text[index])
+                index += 1
+                continue
+            content = text[end:close].replace("\\|", "|")
+            buf.append(f"{ticks}{content}{ticks}")
+            index = close + len(ticks)
+            continue
+        if text[index] == "|":
+            slashes = 0
+            probe = len(buf) - 1
+            while probe >= 0 and buf[probe] == "\\":
+                slashes += 1
+                probe -= 1
+            if slashes % 2 == 1:
+                buf.pop()
+                buf.append("|")
+                index += 1
+                continue
+            cells.append("".join(buf).strip())
+            buf = []
+            index += 1
+            continue
+        buf.append(text[index])
+        index += 1
+    cells.append("".join(buf).strip())
+    return cells
+
+
+def _ends_with_unescaped_pipe(text: str) -> bool:
+    if not text.endswith("|"):
+        return False
+    slashes = 0
+    index = len(text) - 2
+    while index >= 0 and text[index] == "\\":
+        slashes += 1
+        index -= 1
+    return slashes % 2 == 0
+
+
+def render_table(
+    rows: list[list[str]],
+    source: str,
+    root: Path = ROOT,
+    manuscript: set[str] | None = None,
+) -> str:
     if not rows:
         return ""
-    head = "".join(f"<th>{inline(cell, source)}</th>" for cell in rows[0])
+    head = "".join(f"<th>{inline(cell, source, root, manuscript)}</th>" for cell in rows[0])
     body_rows = []
     for row in rows[1:]:
-        body_rows.append("<tr>" + "".join(f"<td>{inline(cell, source)}</td>" for cell in row) + "</tr>")
+        body_rows.append(
+            "<tr>" + "".join(f"<td>{inline(cell, source, root, manuscript)}</td>" for cell in row) + "</tr>"
+        )
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
 
 
-def list_items(lines: list[str], index: int) -> tuple[list[str], int, bool]:
-    ordered = bool(re.match(r"^ {0,3}\d+[.)][ \t]+", lines[index]))
+def _ordered_start(line: str) -> int | None:
+    """Return the marker number, or None when the line is not an ordered marker."""
+    match = re.match(r"^ {0,3}(\d+)[.)][ \t]+", line)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _ordered_list_interrupts(start: int) -> bool:
+    """An ordered list may interrupt a paragraph only when it starts at 1."""
+    return start == 1
+
+
+def list_items(
+    lines: list[str],
+    index: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[list[str], int, bool, int]:
+    start_number = _ordered_start(lines[index])
+    ordered = start_number is not None
+    start = 1 if start_number is None else start_number
     pattern = r"^ {0,3}\d+[.)][ \t]+" if ordered else r"^ {0,3}[-*+][ \t]+"
     items: list[str] = []
-    while index < len(lines) and re.match(pattern, lines[index]):
-        items.append(re.sub(pattern, "", lines[index]).strip())
+    while index < len(lines):
+        if not re.match(pattern, lines[index]):
+            if lines[index].strip():
+                break
+            nxt = _next_nonblank(lines, index + 1)
+            if nxt is None or not re.match(pattern, lines[nxt]):
+                break
+            index = nxt
+            continue
+        content_column = _content_column(lines[index])
+        rest = re.sub(pattern, "", lines[index]).strip()
+        pieces: list[tuple[str, str]] = [("text", rest)] if rest else []
         index += 1
-    return items, index, ordered
+        while index < len(lines):
+            action = _continuation_action(lines, index, content_column)
+            if action == "text":
+                pieces.append(("text", lines[index].strip()))
+                index += 1
+                continue
+            if action == "block":
+                block_html, index = _read_item_block(
+                    lines, index, content_column, source, root, manuscript, heading_counts
+                )
+                pieces.append(("html", block_html))
+                continue
+            if action == "blank":
+                nxt = _next_nonblank(lines, index + 1)
+                if nxt is not None and _continuation_action(lines, nxt, content_column) in {"text", "block"}:
+                    index += 1
+                    continue
+                break
+            break
+        items.append(_render_item_html(pieces, source, root, manuscript))
+    return items, index, ordered, start
 
 
-def inline(text: str, source: str) -> str:
+def _content_column(line: str) -> int:
+    """Column where this item's block content begins."""
+    match = re.match(r"^( {0,3})([-*+]|\d+[.)])([ \t]+)", line)
+    if match is None:
+        return 0
+    indent, marker, pad = match.group(1), match.group(2), match.group(3)
+    column = len(indent) + len(marker)
+    pad_columns = 0
+    for char in pad:
+        if char == "\t":
+            pad_columns += 4 - ((column + pad_columns) % 4)
+        else:
+            pad_columns += 1
+    if pad_columns > 4:
+        return column + 1
+    return column + pad_columns
+
+
+def _leading_spaces(line: str) -> int:
+    count = 0
+    for char in line:
+        if char != " ":
+            break
+        count += 1
+    return count
+
+
+def _dedent_spaces(line: str, columns: int) -> str:
+    return line[min(_leading_spaces(line), columns):]
+
+
+def _block_kind(lines: list[str], index: int, columns: int) -> str | None:
+    """A fence, heading, quote, table, rule, or HTML block at this container.
+
+    ``columns`` is the list item's content indent. Zero asks whether the raw
+    line would open one of those blocks in the document.
+    """
+    if index >= len(lines):
+        return None
+    raw = lines[index]
+    if columns and _leading_spaces(raw) < columns:
+        return None
+    line = _dedent_spaces(raw, columns)
+    fence = FENCE_RE.match(line)
+    if fence and not (fence.group(1)[0] == "`" and "`" in fence.group(2)):
+        return "fence"
+    if HEADING_RE.match(line):
+        return "heading"
+    if QUOTE_RE.match(line):
+        return "quote"
+    if _dedented_table_start(lines, index, columns):
+        return "table"
+    if THEMATIC_BREAK_RE.match(line):
+        return "rule"
+    if HTML_BLOCK_RE.match(line):
+        return "html"
+    return None
+
+
+def _dedented_table_start(lines: list[str], index: int, columns: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    if columns and _leading_spaces(lines[index]) < columns:
+        return False
+    following = lines[index + 1]
+    if columns and following.strip() and _leading_spaces(following) < columns:
+        return False
+    pair = [_dedent_spaces(lines[index], columns), _dedent_spaces(following, columns)]
+    return is_table_start(pair, 0)
+
+
+def _continuation_action(lines: list[str], index: int, content_column: int) -> str:
+    """How a line after a list marker relates to the current item.
+
+    Plain indented text stays in the item. A block at or past the content
+    column is a child block. A block indented less than that ends the list.
+    """
+    line = lines[index]
+    if not line.strip():
+        return "blank"
+    indent = _leading_spaces(line)
+    if indent >= content_column and _block_kind(lines, index, content_column):
+        return "block"
+    if indent < content_column and _block_kind(lines, index, 0):
+        return "stop"
+    if _is_list_continuation(line):
+        return "text"
+    return "stop"
+
+
+def _is_list_continuation(line: str) -> bool:
+    """An indented plain-text line that stays in the current item, not a new marker."""
+    if not line or line[0] not in " \t" or not line.strip():
+        return False
+    if re.match(r"^ {0,3}([-*+]|\d+[.)])[ \t]+", line):
+        return False
+    return True
+
+
+def _render_item_html(
+    pieces: list[tuple[str, str]],
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> str:
+    rendered: list[str] = []
+    text: list[str] = []
+
+    def flush() -> None:
+        if text:
+            rendered.append(inline(" ".join(text), source, root, manuscript))
+            text.clear()
+
+    for kind, value in pieces:
+        if kind == "text":
+            if value:
+                text.append(value)
+            continue
+        flush()
+        rendered.append(value)
+    flush()
+    return "".join(rendered)
+
+
+def _read_item_block(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[str, int]:
+    kind = _block_kind(lines, index, columns)
+    if kind == "fence":
+        return _read_indented_fence(lines, index, columns, source)
+    if kind == "heading":
+        return _read_indented_heading(lines, index, columns, source, root, manuscript, heading_counts)
+    if kind == "quote":
+        return _read_indented_quote(lines, index, columns, source, root, manuscript)
+    if kind == "table":
+        return _read_indented_table(lines, index, columns, source, root, manuscript)
+    if kind == "rule":
+        return "<hr>", index + 1
+    return _read_indented_html(lines, index, columns, source, root, manuscript)
+
+
+def _read_indented_fence(lines: list[str], index: int, columns: int, source: str) -> tuple[str, int]:
+    opening = _dedent_spaces(lines[index], columns)
+    fence = FENCE_RE.match(opening)
+    if fence is None:
+        raise ValueError(f"{source}: expected a code fence")
+    marker, length = fence.group(1)[0], len(fence.group(1))
+    code: list[str] = []
+    index += 1
+    closed = False
+    while index < len(lines):
+        if _leading_spaces(lines[index]) < columns and lines[index].strip():
+            break
+        current = _dedent_spaces(lines[index], columns)
+        close = FENCE_RE.match(current)
+        if (
+            close
+            and close.group(1)[0] == marker
+            and len(close.group(1)) >= length
+            and not close.group(2).strip()
+        ):
+            closed = True
+            break
+        code.append(current)
+        index += 1
+    if not closed:
+        raise ValueError(f"{source}: unclosed code fence")
+    return f"<pre><code>{html.escape(chr(10).join(code))}</code></pre>", index + 1
+
+
+def _read_indented_heading(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+    heading_counts: dict[str, int],
+) -> tuple[str, int]:
+    heading = HEADING_RE.match(_dedent_spaces(lines[index], columns))
+    if heading is None:
+        raise ValueError(f"{source}: expected a heading")
+    level = len(heading.group(1))
+    title = heading.group(2).strip()
+    anchor = heading_anchor(title)
+    count = heading_counts.get(anchor, 0)
+    heading_counts[anchor] = count + 1
+    ident = anchor if count == 0 else f"{anchor}-{count}"
+    html_heading = (
+        f'<h{level} id="{html.escape(ident, quote=True)}">'
+        f"{inline(title, source, root, manuscript)}</h{level}>"
+    )
+    return html_heading, index + 1
+
+
+def _read_indented_quote(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    quoted: list[str] = []
+    while index < len(lines):
+        raw = lines[index]
+        if columns and raw.strip() and _leading_spaces(raw) < columns:
+            break
+        line = _dedent_spaces(raw, columns)
+        if not QUOTE_RE.match(line):
+            break
+        quoted.append(re.sub(r"^>\s?", "", re.sub(r"^ {0,3}", "", line)))
+        index += 1
+    body_html = inline(" ".join(quoted), source, root, manuscript)
+    return f"<blockquote><p>{body_html}</p></blockquote>", index
+
+
+def _read_indented_table(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    dedented: list[str] = []
+    while index < len(lines):
+        raw = lines[index]
+        if columns and raw.strip() and _leading_spaces(raw) < columns:
+            break
+        line = _dedent_spaces(raw, columns)
+        if not line.lstrip().startswith("|"):
+            break
+        dedented.append(line)
+        index += 1
+    rows, _consumed = table_rows(dedented, 0)
+    return render_table(rows, source, root, manuscript), index
+
+
+def _read_indented_html(
+    lines: list[str],
+    index: int,
+    columns: int,
+    source: str,
+    root: Path,
+    manuscript: set[str] | None,
+) -> tuple[str, int]:
+    chunk: list[str] = []
+    while index < len(lines) and lines[index].strip():
+        raw = lines[index]
+        if columns and _leading_spaces(raw) < columns:
+            break
+        chunk.append(_dedent_spaces(raw, columns).strip())
+        index += 1
+    return f"<p>{inline(' '.join(chunk), source, root, manuscript)}</p>", index
+
+
+def _next_nonblank(lines: list[str], index: int) -> int | None:
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    if index >= len(lines):
+        return None
+    return index
+
+
+def inline(text: str, source: str, root: Path = ROOT, manuscript: set[str] | None = None) -> str:
     pieces: list[str] = []
     cursor = 0
     pattern = re.compile(
@@ -714,7 +1130,7 @@ def inline(text: str, source: str) -> str:
         elif match.group(4) is not None:
             pieces.append(image(match.group(3), match.group(4)))
         elif match.group(6) is not None:
-            pieces.append(link(match.group(5), match.group(6), source))
+            pieces.append(link(match.group(5), match.group(6), source, root, manuscript))
         elif match.group(7) is not None:
             pieces.append(f"<strong>{html.escape(match.group(7))}</strong>")
         else:
@@ -724,7 +1140,18 @@ def inline(text: str, source: str) -> str:
     return "".join(pieces)
 
 
-def safe_url(url: str, source: str) -> str | None:
+def safe_url(
+    url: str,
+    source: str,
+    root: Path = ROOT,
+    manuscript: set[str] | None = None,
+) -> str | None:
+    """Rewrite a link for the standalone book.
+
+    ``.md`` targets that are in ``manuscript_files()`` become sibling ``.html``
+    pages. Every other repository file or directory is pinned to the rendered
+    commit on GitHub (``blob`` for a file, ``tree`` for a directory).
+    """
     if url.startswith(("https://", "http://", "mailto:")):
         return url
     if url.startswith("#"):
@@ -732,18 +1159,82 @@ def safe_url(url: str, source: str) -> str | None:
     if url.startswith(("//", "/")) or "\\" in url:
         return None
     path, _, fragment = url.partition("#")
-    if include_target(ROOT, ROOT / source, path) is None:
+    root = root.resolve()
+    target = link_target(root, root / source, path)
+    if target is None:
         return None
-    if path.endswith(".md"):
+    suffix = f"#{fragment}" if fragment else ""
+    repo_path = target.relative_to(root).as_posix()
+    if target.is_file() and path.endswith(".md") and repo_path in _manuscript_paths(root, manuscript):
         rewritten = str(Path(path).with_suffix(".html")).replace("\\", "/")
-        if fragment:
-            rewritten += f"#{fragment}"
-        return rewritten
-    return url
+        return f"{rewritten}{suffix}"
+    kind = "tree" if target.is_dir() else "blob"
+    if target.is_dir():
+        repo_path = repo_path.rstrip("/")
+    commit = rendered_commit(root)
+    return f"{REPOSITORY_URL}/{kind}/{commit}/{repo_path}{suffix}"
 
 
-def link(label: str, url: str, source: str) -> str:
-    target = safe_url(url, source)
+def _manuscript_paths(root: Path, manuscript: set[str] | None) -> set[str]:
+    if manuscript is not None:
+        return manuscript
+    return set(manuscript_files(load_manifest(root)))
+
+
+_commit_cache: dict[tuple[str, str], str] = {}
+
+
+def rendered_commit(root: Path) -> str:
+    """Return the commit this render is pinned to.
+
+    ``GITHUB_SHA`` wins when it is set. Otherwise ``git rev-parse HEAD`` is
+    run in ``root``. Fail when neither yields a 40-character commit.
+    """
+    env_sha = os.environ.get("GITHUB_SHA", "").strip()
+    key = (os.fspath(root.resolve()), env_sha)
+    cached = _commit_cache.get(key)
+    if cached is not None:
+        return cached
+    sha = env_sha
+    if not sha:
+        try:
+            completed = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as error:
+            raise ValueError(
+                "rendered commit is unavailable: set GITHUB_SHA or run inside a git checkout "
+                f"({error})"
+            ) from error
+        if completed.returncode != 0 or not completed.stdout.strip():
+            detail = completed.stderr.strip() or "git rev-parse HEAD failed"
+            raise ValueError(
+                "rendered commit is unavailable: set GITHUB_SHA or run inside a git checkout "
+                f"({detail})"
+            )
+        sha = completed.stdout.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+        raise ValueError(
+            "rendered commit is unavailable: GITHUB_SHA or git rev-parse HEAD "
+            f"must be a 40-character commit ({sha!r})"
+        )
+    pinned = sha.lower()
+    _commit_cache[key] = pinned
+    return pinned
+
+
+def link(
+    label: str,
+    url: str,
+    source: str,
+    root: Path = ROOT,
+    manuscript: set[str] | None = None,
+) -> str:
+    target = safe_url(url, source, root, manuscript)
     if target is None:
         return html.escape(label)
     return f'<a href="{html.escape(target, quote=True)}">{html.escape(label)}</a>'
