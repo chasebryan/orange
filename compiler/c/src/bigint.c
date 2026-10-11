@@ -1,8 +1,17 @@
+/* Limb storage and exact arithmetic for Int.
+   The arena is a single bump allocator. Published Big values point into it
+   and are not freed one by one. Digit parsing folds each digit in a fixed
+   scratch of 512 limbs and copies the finished magnitude into the arena
+   once. Operations that would pass ORANGE_MAX_BITS return 0 and leave the
+   caller to reject the value. */
+
 #include "bigint.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* --- Arena ---------------------------------------------------------------- */
 
 int arena_init(Arena *arena, size_t cap) {
     arena->base = NULL;
@@ -41,6 +50,8 @@ void *arena_alloc(Arena *arena, size_t size, size_t align) {
     return arena->base + base;
 }
 
+/* --- Magnitudes ------------------------------------------------------------ */
+
 Big big_zero(void) {
     Big value;
     value.limbs = NULL;
@@ -49,6 +60,7 @@ Big big_zero(void) {
     return value;
 }
 
+/* Drop leading zero limbs. An empty magnitude is zero and is not negative. */
 static Big big_publish(uint32_t *limbs, uint32_t nlimbs, int negative) {
     Big value;
     while (nlimbs > 0 && limbs[nlimbs - 1] == 0) {
@@ -79,6 +91,7 @@ uint32_t big_limbs(const Big *value) {
     return value->nlimbs;
 }
 
+/* 1 when the magnitude is inside the 16384-bit budget. */
 static int fits_bits(const Big *value) {
     return big_bits(value) <= ORANGE_MAX_BITS;
 }
@@ -110,12 +123,17 @@ int big_from_u64(Arena *arena, uint64_t value, Big *out) {
     return 1;
 }
 
-/* 16,384 bits is 512 limbs. A digit is folded in place, and only the
-   finished magnitude is copied into the arena. */
+/* --- Parsing digits -------------------------------------------------------- */
+
+/* 16,384 bits is 512 limbs. Each digit updates this scratch in place.
+   big_from_digits copies the finished magnitude into the arena once, so a
+   16,384-bit literal does not allocate a limb buffer per digit. */
 enum { ORANGE_MAX_LIMBS = ORANGE_MAX_BITS / 32u };
 
 _Static_assert(ORANGE_MAX_BITS % 32u == 0, "the bit limit is a whole number of limbs");
 
+/* limbs = limbs * base + digit. Returns 0 when the next limb would pass
+   the 16,384-bit budget. */
 static int accumulate_digit(uint32_t *limbs, uint32_t *nlimbs, uint32_t base, uint32_t digit) {
     uint64_t carry = digit;
     uint32_t index;
@@ -153,6 +171,9 @@ static int digit_value(char character, int base) {
     return value;
 }
 
+/* Read a decimal, hex (`0x`), or binary (`0b`) spelling. Underscores are
+   skipped. Zero publishes no limbs. A magnitude past 16,384 bits returns 0
+   without leaving a partial value in the arena. */
 int big_from_digits(Arena *arena, const char *text, size_t length, int negative, Big *out) {
     uint32_t scratch[ORANGE_MAX_LIMBS];
     uint32_t nlimbs = 0;
@@ -197,6 +218,9 @@ int big_from_digits(Arena *arena, const char *text, size_t length, int negative,
     return fits_bits(out);
 }
 
+/* --- Arithmetic ------------------------------------------------------------ */
+
+/* Magnitude comparison: -1, 0, or 1. Signs are ignored. */
 static int cmp_mag(const Big *left, const Big *right) {
     uint32_t index;
     if (left->nlimbs != right->nlimbs) {
@@ -212,6 +236,7 @@ static int cmp_mag(const Big *left, const Big *right) {
     return 0;
 }
 
+/* Sum of magnitudes. `negative` is the sign stored on the sum. */
 static int add_mag(Arena *arena, const Big *left, const Big *right, int negative, Big *out) {
     uint32_t count = left->nlimbs > right->nlimbs ? left->nlimbs : right->nlimbs;
     uint32_t *limbs = alloc_limbs(arena, count + 1);
@@ -236,6 +261,7 @@ static int add_mag(Arena *arena, const Big *left, const Big *right, int negative
     return fits_bits(out);
 }
 
+/* left minus right, with left's magnitude at least right's. */
 static int sub_mag(Arena *arena, const Big *left, const Big *right, int negative, Big *out) {
     uint32_t *limbs;
     uint32_t index;
@@ -275,6 +301,7 @@ int big_add(Arena *arena, const Big *left, const Big *right, Big *out) {
     return sub_mag(arena, right, left, right->negative, out);
 }
 
+/* Shift left by `amount` bits. A result past 16,384 significant bits returns 0. */
 int big_shl(Arena *arena, const Big *value, uint32_t amount, Big *out) {
     uint32_t limb_shift;
     uint32_t bit_shift;
@@ -443,6 +470,8 @@ static int mag_divmod(const uint32_t *dividend, uint32_t dividend_count, const u
     return 1;
 }
 
+/* Euclidean division. A negative dividend adjusts the quotient so the
+   remainder stays non-negative. A zero divisor returns 0. */
 int big_div_euclid(Arena *arena, const Big *dividend, const Big *divisor, Big *quot, Big *rem) {
     uint32_t quot_limbs[ORANGE_MAX_LIMBS];
     uint32_t rem_limbs[ORANGE_MAX_LIMBS];
@@ -501,6 +530,7 @@ int big_div_euclid(Arena *arena, const Big *dividend, const Big *divisor, Big *q
     }
 }
 
+/* Signed comparison: -1, 0, or 1. Two zeros compare equal. */
 int big_cmp(const Big *left, const Big *right) {
     int magnitude;
     if (left->negative != right->negative) {
@@ -578,6 +608,9 @@ int big_mod_pow2(const Big *value, uint32_t width, uint64_t *out) {
     return 1;
 }
 
+/* --- Decimal spelling ------------------------------------------------------ */
+
+/* Groups of nine decimal digits, most significant group first. */
 int big_format(const Big *value, char *buffer, size_t capacity) {
     uint32_t *scratch;
     uint32_t count;
@@ -662,6 +695,16 @@ int big_format(const Big *value, char *buffer, size_t capacity) {
     free(groups);
     return 1;
 }
+
+/* --- Self-test ------------------------------------------------------------- */
+
+/* Fixed known values:
+   2 squared seven times is 2^128;
+   that value times 2^127, minus 19, is 2^255 - 19;
+   1 - (2^64 + 1) is -2^64;
+   -1 modulo 2^8 is 255;
+   (2^64 - 1) squared is the square of the all-ones word.
+   limit_literal_self_test then checks the 16,384-bit boundary. */
 
 static int limit_literal_self_test(Arena *arena);
 
