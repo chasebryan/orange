@@ -305,6 +305,20 @@ compiler/.gitignore
 compiler/Cargo.lock
 compiler/Cargo.toml
 compiler/README.md
+compiler/c/Makefile
+compiler/c/README.md
+compiler/c/include/bigint.h
+compiler/c/include/compile.h
+compiler/c/src/bigint.c
+compiler/c/src/compile.c
+compiler/c/src/main.c
+compiler/c/tests/differential.py
+compiler/c/tests/fixtures/s3m/invalid-alias-once.or
+compiler/c/tests/fixtures/s3m/invalid-alias-through.or
+compiler/c/tests/fixtures/s3m/invalid-alias-tuple.or
+compiler/c/tests/fixtures/s3m/invalid-alias-twice.or
+compiler/c/tests/fixtures/s3m/invalid-alias-types.or
+compiler/c/tests/fixtures/s3m/invalid-alias-unused.or
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/cryptanalysis.rs
@@ -383,6 +397,7 @@ compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
+compiler/crates/orangec/tests/book_j2.rs
 compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
@@ -642,6 +657,7 @@ docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
 docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md
@@ -1711,6 +1727,20 @@ MARKDOWN_CONTINUED_TITLE_RE = re.compile(
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
 RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
+
+
+MINIMUM_REQUIRED_PATHS |= {
+    "docs/THE_ORANGE_REFERENCE_MANUAL.md",
+    "docs/images/orange-reference-manual-cover.png",
+}
+GATE0_ALLOWED_BINARY_ARTIFACTS += [
+    {
+        "path": "docs/images/orange-reference-manual-cover.png",
+        "sha256": "32a3c0e852f557d4eba40b0a086ecf18a2e01d98ee73534718ad03ffcd7ae4ad",
+        "role": "Owner-selected Orange Reference Manual front cover",
+        "provenance": "Owner-requested OpenAI image generation on 2026-10-05; byte-for-byte import of selected image-edit-target-f202d359dc48165d.png; no independent provenance verification claimed"
+    }
+]
 
 
 class DuplicateKeyError(ValueError):

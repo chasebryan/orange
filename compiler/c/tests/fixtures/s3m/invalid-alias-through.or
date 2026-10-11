@@ -1,0 +1,44 @@
+edition 2026;
+module alias_forms {
+  // Through an alias of the alias. The second name adds no diagnostic.
+  type W1 = Word[1];
+  type UW1 = W1;
+  type W7 = Word[7];
+  type UW7 = W7;
+  type Row5 = Word[1]^5;
+  type URow5 = Row5;
+  type Zero = Word[8]^0;
+  type UZero = Zero;
+  type Huge = Word[8]^65537;
+  type UHuge = Huge;
+  type Flags = Bool^0;
+  type UFlags = Flags;
+  type BadMod = Mod[0];
+  type UBadMod = BadMod;
+  type OneMod = Mod[1];
+  type UOneMod = OneMod;
+  type Bare = Word;
+  type UBare = Bare;
+  type Both = Word[1]^0;
+  type UBoth = Both;
+  type Unbound = Word[8]^k;
+  type UUnbound = Unbound;
+  type Scaled = Word[8]^(2 * n);
+  type UScaled = Scaled;
+  type Nested = (Word[1], Int);
+  type UNested = Nested;
+
+  spec through_W1() -> UW1 { 0 }
+  spec through_W7() -> UW7 { 0 }
+  spec through_Row5() -> URow5 { 0 }
+  spec through_Zero() -> UZero { 0 }
+  spec through_Huge() -> UHuge { 0 }
+  spec through_Flags() -> UFlags { 0 }
+  spec through_BadMod() -> UBadMod { 0 }
+  spec through_OneMod() -> UOneMod { 0 }
+  spec through_Bare() -> UBare { 0 }
+  spec through_Both() -> UBoth { 0 }
+  spec through_Unbound() -> UUnbound { 0 }
+  spec through_Scaled() -> UScaled { 0 }
+  spec through_Nested() -> UNested { 0 }
+}
