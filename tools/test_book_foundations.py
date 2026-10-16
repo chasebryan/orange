@@ -1578,8 +1578,32 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
         self.assertIn('**[C4] Corpus surface.**', self.text)
         self.assertIn('A Match is not called verified.', self.text)
         self.assertIn('constant-time claim', self.text)
-        self.assertIn('implemented slice S3t', self.text)
-        self.assertNotIn('S3u', self.text)
+        self.assertIn('implemented slice S3u', self.text)
+        self.assertNotIn('S3t', self.text)
+        self.assertNotIn('section heading', self.text)
+        self.assertNotRegex(self.text, r'heading (says|there|talks|states|is about)')
+        self.assertIn('The first sentence\nof the section says the key is shorter', self.text)
+        self.assertIn('The first sentence of the section\nsays the case uses a', self.text)
+        self.assertIn('The first sentence of the section says larger than 128', self.text)
+        self.assertIn('131 is\n  the parenthetical on the key.', self.text)
+        self.assertIn('70 is this lesson\'s sum.', self.text)
+        self.assertIn('§4.2 is the case\n§J2.3 keeps.', self.text)
+        self.assertIn('§4.3 is the case N13 runs.', self.text)
+        self.assertIn('§4.4 is the byte read for\nthis lesson', self.text)
+        self.assertIn('the RFC 4231 §4.2 case §J2.3 keeps', self.index)
+        self.assertIn('the §4.3 case N13 runs', self.index)
+        self.assertIn('the §4.4 byte read for this lesson', self.index)
+        self.assertNotIn('cases §J2.3 already names', self.index)
+        flat = self.text.replace('\n', ' ')
+        self.assertIn(
+            "The RFC 2104 §2 row is the definition's zero-fill example, not "
+            'the second vector source.',
+            flat,
+        )
+        self.assertIn(
+            'The vector sources remain RFC 4231 and FIPS 180-4 §5.1.1.',
+            flat,
+        )
         self.assertIn('Listing J2.1', self.text)
         self.assertIn('Listing J2.2', self.text)
         self.assertIn('§J2.3', self.text)
@@ -1677,7 +1701,7 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
             'spec compress(',
             'spec schedule(',
             '0x428a2f98',
-            'S3u',
+            'S3t',
         ):
             self.assertNotIn(forbidden, self.text)
 

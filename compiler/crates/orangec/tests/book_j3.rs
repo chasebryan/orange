@@ -116,8 +116,8 @@ fn j3_listings_accept_a_corpus_and_separate_wrong_functions() {
     );
     assert!(!J3.contains("\n## Chapter "));
     assert!(!J3.contains("Chapter 12"));
-    assert!(!J3.contains("S3u"));
-    assert!(J3.contains("implemented slice S3t"));
+    assert!(!J3.contains("S3t"));
+    assert!(J3.contains("implemented slice S3u"));
     for forbidden in [
         "spec compress(",
         "spec schedule(",

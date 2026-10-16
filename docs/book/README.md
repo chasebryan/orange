@@ -266,7 +266,8 @@ Orange is the working language, not decoration around prose.
   function or its message schedule.
 - **J3.** [The Corpus as Acceptance Test](JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md#j3-the-corpus-as-acceptance-test):
   a corpus is a finite set of pinned vectors, run as Orange tests.
-  The reader builds one from the RFC 4231 cases §J2.3 already names
+  The reader builds one from the RFC 4231 §4.2 case §J2.3 keeps,
+  the §4.3 case N13 runs, and the §4.4 byte read for this lesson,
   and from the FIPS 180-4 “abc” bit length, runs it with `orangec test`,
   and says what those tests cover and what they leave out. One
   mislabelled vector fails and is repaired. Two wrong implementations

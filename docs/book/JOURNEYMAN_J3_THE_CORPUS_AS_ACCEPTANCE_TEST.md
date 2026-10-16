@@ -59,7 +59,7 @@ that names each test. You will then change one expected byte to a
 byte from a different vector and read the failure. You will then
 run two other files that pass three of the tests and fail a fourth,
 with two different computed bytes. The compiler's version line is
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. Every
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3u)`. Every
 listing is written for that compiler. A form this compiler does not
 implement is marked Proposed, and this lesson does not use one.
 
@@ -267,14 +267,18 @@ operation does not produce a 32-byte digest.
 
 That is six vectors and three sources. The finish line asks for
 three vectors and two sources. C1, C2, and C5 already meet it.
-C3, C4, and C6 are here because the coverage argument needs the
-zero fill, the index where the key ends, and a byte with the high
-bit set. Dropping them would still be a corpus. It would be a
-thinner one, which is what §J3.6 uses on purpose.
+The RFC 2104 §2 row is the definition's zero-fill example, not
+the second vector source. The vector sources remain RFC 4231 and
+FIPS 180-4 §5.1.1. C3, C4, and C6 are here because the coverage
+argument needs the zero fill, the index where the key ends, and a
+byte with the high bit set. Dropping them would still be a
+corpus. It would be a thinner one, which is what §J3.6 uses on
+purpose.
 
-The inputs are read off the pages as follows. The pages are the
-ones N13 named, plus §4.4 of the same RFC 4231 file, read again
-for this lesson on 2026-10-09. [T10]
+The inputs are read off the pages as follows. §4.2 is the case
+§J2.3 keeps. §4.3 is the case N13 runs. §4.4 is the byte read for
+this lesson, from the same RFC 4231 file, on 2026-10-09. [T10]
+The other pages are the ones N13 named.
 
 RFC 4231 §4.2 prints the test case 1 key as hex `0b` repeated, with
 the parenthetical `(20 bytes)`. Sixteen bytes on the first hex line
@@ -287,9 +291,10 @@ as twenty bytes `0b`.
 
 RFC 4231 §4.3 prints the test case 2 key as `4a656665`, with the
 note `("Jefe")`. Eight hex digits are four bytes. The first two
-digits are `4a`, so the first byte is `0x4a`. The section heading
-says the key is shorter than the HMAC output. The key is 4 bytes
-and the SHA-256 tag is 32 bytes. C2 uses the first key byte only.
+digits are `4a`, so the first byte is `0x4a`. The first sentence
+of the section says the key is shorter than the HMAC output. The
+key is 4 bytes and the SHA-256 tag is 32 bytes. C2 uses the first
+key byte only.
 
 RFC 2104 §2, as N13 recorded it, completes a key shorter than B
 with zero bytes. The §4.2 key has length 20 and B is 64, so the
@@ -316,20 +321,22 @@ does not make that choice either. The bit length is what §5.1.1
 of the August 2015 text states. It is not a claim that RFC 4231
 names the 2015 edition.
 
-RFC 4231 §4.4 is test case 3. The heading says the case uses a
-combined length of key and data larger than 64 bytes, and it names
-64 as the block size of SHA-224 and SHA-256. The key hex is twenty
-bytes of `aa`: 32 hex digits on the first line and 8 on the second.
+RFC 4231 §4.4 is test case 3. The first sentence of the section
+says the case uses a combined length of key and data larger than
+64 bytes, and it names 64 as the block size of SHA-224 and
+SHA-256. The key hex is twenty bytes of `aa`: 32 hex digits on
+the first line and 8 on the second.
 `32 / 2 + 8 / 2 = 20`. The plain-text file prints `Key` and then
 the hex, without an equals sign on that line. The other test cases
 print `Key =`. This lesson does not insert the missing sign. The
 parenthetical `(20 bytes)` and the hex digits are the record. The
 data field is fifty bytes of `dd`: three lines of 16 bytes and a
 final line of 2. `16 * 3 + 2 = 50`. The combined length is
-`20 + 50 = 70`, and `70` is greater than `64`, which is what the
-heading asserts. C6 uses the key byte `0xaa` only. It does not
-use the data, and it does not check the sum 70. The HMAC-SHA-256
-tag printed in §4.4 is not an expected value in this corpus.
+`20 + 50 = 70`. The first sentence of the section says larger than
+64 bytes. 70 is this lesson's sum. C6 uses the key byte `0xaa`
+only. It does not use the data, and it does not check the sum 70.
+The HMAC-SHA-256 tag printed in §4.4 is not an expected value in
+this corpus.
 
 The integers the proofs use are collected here so a later edit can
 be checked against the arithmetic rather than against a memory of
@@ -460,8 +467,9 @@ inputs that actually occur.
 
 The lengths that occur are these. C2's key byte comes from a key
 of length 4, which is shorter than the 32-byte SHA-256 tag, as the
-§4.3 heading says, and shorter than the 64-byte block. C1's key
-byte comes from a key of length 20, still shorter than the block.
+first sentence of §4.3 says, and shorter than the 64-byte block.
+C1's key byte comes from a key of length 20, still shorter than
+the block.
 C3 is the zero byte those 20 bytes leave behind. C5 is a message
 length of 3 bytes, recorded as 24 bits. No test uses a key of
 length 64, which would leave no zero fill. No test uses a key of
@@ -482,10 +490,10 @@ seven test cases, as the December 2005 file prints them, do not
 include a data field of length 0. This corpus does not add one.
 
 The byte with the high bit set is C6, `0xaa`. Proposition J3.3
-records that bit. §4.4's heading is about a combined length of 70,
-which is larger than 64. C6 does not add 20 and 50. A reader who
-treats the passing C6 line as a check of that heading has used the
-title and skipped the `Bool`. The `Bool` is one XOR.
+records that bit. The first sentence of §4.4 says larger than 64
+bytes. 70 is this lesson's sum. C6 does not add 20 and 50. A
+reader who treats the passing C6 line as a check of that sentence
+has used the title and skipped the `Bool`. The `Bool` is one XOR.
 
 What the corpus leaves out, stated so it can be demanded later:
 
@@ -499,8 +507,9 @@ What the corpus leaves out, stated so it can be demanded later:
 - FIPS 180-4 §6.2.2, the compression function and the message
   schedule. That derivation is J5.
 - A key longer than the block. RFC 4231 §4.7 prints 131 bytes of
-  `aa`. The heading there compares 131 with 128, the block size it
-  names for SHA-384 and SHA-512. For SHA-256 the block is 64, and
+  `aa`. The first sentence of the section says larger than 128
+  bytes, the block size it names for SHA-384 and SHA-512. 131 is
+  the parenthetical on the key. For SHA-256 the block is 64, and
   131 exceeds 64 as well. Assumption J3.7 says the required step
   is to hash the key. No test hashes a key.
 - An empty message, a key of length 64, and a key of length 65.
@@ -902,9 +911,9 @@ titled `RFC 4231 4.7 test case 6 key`, has the body
 first test is C1? What is the length of the key §4.7 prints, and
 what step does that length require?
 
-**Exercise J3.7 — Seventy.** Compute the combined length §4.4's
-heading talks about, from a key of 20 bytes and data of 50 bytes.
-Say what C6's `Bool` covers.
+**Exercise J3.7 — Seventy.** Compute the combined length the first
+sentence of §4.4 talks about, from a key of 20 bytes and data of
+50 bytes. Say what C6's `Bool` covers.
 
 **Exercise J3.8 — Twenty-four.** What does the passing C5 test
 establish? Where does the digest of “abc” live, relative to this
@@ -974,11 +983,12 @@ length is greater than 64, so RFC 2104 §2 requires the key to be
 hashed before it is used as the HMAC key. The duplicate test does
 not hash a key.
 
-**J3.7.** `20 + 50 = 70`, and `70` is greater than `64`. That is
-the comparison the §4.4 heading states. C6's `Bool` is
-`inner(0xaa) == 0x9c`. It covers one key byte under the inner pad.
-It does not add the lengths, it does not read the data bytes, and
-it does not compare the HMAC-SHA-256 tag §4.4 prints.
+**J3.7.** `20 + 50 = 70`, and `70` is greater than `64`. The first
+sentence of §4.4 says larger than 64 bytes. 70 is this lesson's
+sum. C6's `Bool` is `inner(0xaa) == 0x9c`. It covers one key byte
+under the inner pad. It does not add the lengths, it does not
+read the data bytes, and it does not compare the HMAC-SHA-256 tag
+§4.4 prints.
 
 **J3.8.** C5 establishes that `abc_bits` denotes 24, which is
 `3 * 8`, the bit length FIPS 180-4 §5.1.1 assigns to the message
