@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2 | J3 and J4 (Block A), J5, and the connecting studies below |
+| Part 2, The Journeyman | J2, J3 | J4 (Block A), J5, and the connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2 is drafted in this tree and unreviewed. The other
+unreviewed. J2 and J3 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index

@@ -170,11 +170,12 @@
     {
       "part": "journeyman",
       "id": "j3",
-      "title": "J3",
-      "status": "planned",
-      "review_state": "unwritten",
-      "path": null,
-      "summary": "N14 names J3 as one lesson of Block A. This tree does not contain it."
+      "title": "J3. The Corpus as Acceptance Test",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md",
+      "anchor": "j3-the-corpus-as-acceptance-test",
+      "summary": "Draft. Owner review is pending. The locked label is J3."
     },
     {
       "part": "journeyman",

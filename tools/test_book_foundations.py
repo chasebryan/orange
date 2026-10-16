@@ -1815,12 +1815,16 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * (len(drafted) - 1) + ['journeyman'],
+            ['novice'] * (len(drafted) - 2) + ['journeyman', 'journeyman'],
         )
-        self.assertEqual(drafted[-1]['id'], 'j2')
+        self.assertEqual([chapter['id'] for chapter in drafted[-2:]], ['j2', 'j3'])
+        self.assertEqual(
+            drafted[-2]['path'],
+            'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+        )
         self.assertEqual(
             drafted[-1]['path'],
-            'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -1842,7 +1846,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | J2 |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2, J3 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
