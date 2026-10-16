@@ -1,0 +1,44 @@
+edition 2026;
+module alias_forms {
+  // Used twice. Still one diagnostic per target.
+  type W1 = Word[1];
+  type W7 = Word[7];
+  type Row5 = Word[1]^5;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Bare = Word;
+  type Both = Word[1]^0;
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type Nested = (Word[1], Int);
+
+  spec first_W1() -> W1 { 0 }
+  spec second_W1(x: W1) -> W1 { x }
+  spec first_W7() -> W7 { 0 }
+  spec second_W7(x: W7) -> W7 { x }
+  spec first_Row5() -> Row5 { 0 }
+  spec second_Row5(x: Row5) -> Row5 { x }
+  spec first_Zero() -> Zero { 0 }
+  spec second_Zero(x: Zero) -> Zero { x }
+  spec first_Huge() -> Huge { 0 }
+  spec second_Huge(x: Huge) -> Huge { x }
+  spec first_Flags() -> Flags { 0 }
+  spec second_Flags(x: Flags) -> Flags { x }
+  spec first_BadMod() -> BadMod { 0 }
+  spec second_BadMod(x: BadMod) -> BadMod { x }
+  spec first_OneMod() -> OneMod { 0 }
+  spec second_OneMod(x: OneMod) -> OneMod { x }
+  spec first_Bare() -> Bare { 0 }
+  spec second_Bare(x: Bare) -> Bare { x }
+  spec first_Both() -> Both { 0 }
+  spec second_Both(x: Both) -> Both { x }
+  spec first_Unbound() -> Unbound { 0 }
+  spec second_Unbound(x: Unbound) -> Unbound { x }
+  spec first_Scaled() -> Scaled { 0 }
+  spec second_Scaled(x: Scaled) -> Scaled { x }
+  spec first_Nested() -> Nested { 0 }
+  spec second_Nested(x: Nested) -> Nested { x }
+}

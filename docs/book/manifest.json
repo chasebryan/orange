@@ -160,11 +160,12 @@
     {
       "part": "journeyman",
       "id": "j2",
-      "title": "J2",
-      "status": "planned",
-      "review_state": "unwritten",
-      "path": null,
-      "summary": "N14 names J2 as one lesson of Block A. This tree does not contain it."
+      "title": "J2. Standards as Versioned Inputs",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md",
+      "anchor": "j2-standards-as-versioned-inputs",
+      "summary": "Draft. Owner review is pending. The locked label is J2."
     },
     {
       "part": "journeyman",

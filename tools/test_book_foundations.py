@@ -15,6 +15,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MANUSCRIPT = ROOT / 'docs' / 'book' / 'NOVICE_OPENING.md'
 INDEX = ROOT / 'docs' / 'book' / 'README.md'
+# Obviously fake. check-compiler copies the tree with no .git and no GITHUB_SHA.
+TEST_RENDER_SHA = '0' * 39 + '1'
 
 
 def xor_bits(left: str, right: str) -> str:
@@ -1361,6 +1363,169 @@ class N14ReadyForStandards(unittest.TestCase):
         self.assertNotIn('C3', records)
 
 
+class J2StandardsAsVersionedInputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j2_exercises_label_anchor_and_epigraph(self):
+        exercises = re.findall(r'^\*\*Exercise (J2\.\d+) —', self.text, re.M)
+        answers = re.findall(r'^\*\*(J2\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J2.{n}' for n in range(1, 11)])
+        self.assertEqual(sorted(exercises), sorted(answers))
+        self.assertNotRegex(self.text, r'(?m)^#+ .*Chapter\b')
+        self.assertNotIn('Chapter 11', self.text)
+        self.assertNotIn('this chapter', self.text)
+        self.assertRegex(self.text, r'(?m)^## J2: Standards as Versioned Inputs$')
+        for number in range(1, 7):
+            self.assertRegex(self.text, rf'(?m)^### J2\.{number} ')
+        self.assertNotRegex(self.text, r'(?m)^### J2\.(?:[7-9]|1\d) ')
+        quotes = re.findall(r'^> “(.+)”$', self.text, re.M)
+        self.assertEqual(quotes, [
+            'RFC 7539, the predecessor of this document, was meant to serve as a '
+            'stable reference and an implementation guide.'
+        ])
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('**J2.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md#j2-standards-as-versioned-inputs',
+            self.index,
+        )
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j2-standards-as-versioned-inputs', anchors)
+        self.assertIn('worked-answers', anchors)
+        for fragment in re.findall(
+            r'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS\.md#([^)\s]+)',
+            self.index,
+        ):
+            self.assertIn(fragment, anchors)
+        self.assertIn('The locked label is J2.', self.text)
+        self.assertIn('The locked label is J2.', self.index)
+        self.assertIn('**[S13] Yoav Nir and Adam Langley.**', self.text)
+        self.assertIn('**[T9] Retrieved files.**', self.text)
+        self.assertIn('**[C3] Pin surface.**', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+        self.assertIn('constant-time claim', self.text)
+        self.assertIn('implemented slice S3u', self.text)
+        self.assertNotIn('S3t', self.text)
+        self.assertIn(
+            'first sentence of the Abstract\'s second paragraph',
+            self.text,
+        )
+        self.assertIn(
+            'It was a product of the Crypto Forum Research Group (CFRG).',
+            self.text,
+        )
+        self.assertIn('December 2005', self.text)
+        self.assertIn('FIPS 180-2', self.text)
+        self.assertIn('BA7816BF', self.text)
+        self.assertIn('no `Obsoletes` line and no `Updates` line', self.text)
+        self.assertIn('Network Working Group', self.text)
+        self.assertIn('RSA Security', self.text)
+        self.assertRegex(
+            self.text,
+            r'That subsection sets the initial hash\s+value H\(0\) from §5\.3\.3\.',
+        )
+        self.assertNotIn('spec pack(', self.text)
+
+    def test_j2_listings_do_not_transcribe_sha256_compression(self):
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            [
+                'byte_limit',
+                'wrong_edition',
+            ],
+        )
+        for forbidden in (
+            'small_sigma0',
+            'small_sigma1',
+            'big_sigma0',
+            'big_sigma1',
+            '0x428a2f98',
+            'spec schedule(',
+            'spec compress(',
+            'spec round(',
+        ):
+            self.assertNotIn(forbidden, self.text)
+        self.assertIn('FIPS 180-4 §6.2.2', self.text)
+        self.assertIn('Section 6.2.1 is', self.text)
+        self.assertNotIn('Its preprocessing points back', self.text)
+        self.assertIn('A Match is not called verified.', self.text)
+
+    def test_j2_ledger_matches_the_printed_arithmetic(self):
+        block = re.search(r'^```text\nj2-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        blocks = 2 ** 32 - 1
+        p_max = blocks * 64
+        p_max_old = 247877906880
+        expected = {
+            'blocks': blocks,
+            'block-bytes': 64,
+            'p-max': p_max,
+            'p-max-old': p_max_old,
+            'p-gap': p_max - p_max_old,
+            'tag-octets': 16,
+            'c-max': p_max + 16,
+            'c-max-old': p_max_old + 16,
+            'length-7539': 4,
+            'length-8439': 8,
+            'iv-word': 0x6A09E667,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['iv-word'], 1779033703)
+        self.assertEqual(expected['p-gap'], 27 * 10 ** 9)
+        self.assertLess(expected['iv-word'], 2 ** 32)
+
+    def test_j2_rfc4231_header_is_the_three_line_form(self):
+        header = (
+            'Network Working Group                                         M. Nystrom\n'
+            'Request for Comments: 4231                                  RSA Security\n'
+            'Category: Standards Track                                  December 2005'
+        )
+        self.assertIn(header, self.text)
+
+    def test_j2_tags_are_unique_across_book_lessons(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        self.assertEqual(records['S13'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Yoav Nir and Adam Langley.',
+        ))
+        self.assertEqual(records['T9'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C3'], (
+            'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
+            'Pin surface.',
+        ))
+        self.assertEqual(records['S12'][0], 'NOVICE_N14_READY_FOR_STANDARDS.md')
+        self.assertNotIn('S14', records)
+        self.assertNotIn('T10', records)
+        self.assertNotIn('C4', records)
+
+
 def math_gcd(left: int, right: int) -> int:
     while right:
         left, right = right, left % right
@@ -1403,7 +1568,12 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * len(drafted),
+            ['novice'] * (len(drafted) - 1) + ['journeyman'],
+        )
+        self.assertEqual(drafted[-1]['id'], 'j2')
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -1425,7 +1595,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | None |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
@@ -1433,6 +1603,7 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertNotIn('S3t', text)
 
     def test_rendered_book_shows_planned_chapters_without_pages(self):
+        import os
         import shutil
         sys_path = str(ROOT / 'tools')
         if sys_path not in __import__('sys').path:
@@ -1440,6 +1611,8 @@ class ManuscriptManifest(unittest.TestCase):
         from render_book import render
 
         output = ROOT / 'build' / 'book'
+        previous = os.environ.get('GITHUB_SHA')
+        os.environ['GITHUB_SHA'] = TEST_RENDER_SHA
         try:
             self.assertEqual(render(ROOT), output.resolve())
             index = (output / 'index.html').read_text(encoding='utf-8')
@@ -1466,7 +1639,19 @@ class ManuscriptManifest(unittest.TestCase):
             index_text = (output / 'index.html').read_text(encoding='utf-8')
             self.assertTrue(index_text.strip())
             self.assertNotRegex(index_text, r'<article>\s*</article>')
+            pages = '\n'.join(
+                path.read_text(encoding='utf-8') for path in output.rglob('*.html')
+            )
+            self.assertEqual(_github_shas(pages), {TEST_RENDER_SHA})
+            self.assertIn(
+                f'https://github.com/chasebryan/orange/blob/{TEST_RENDER_SHA}/docs/book/README.md',
+                pages,
+            )
         finally:
+            if previous is None:
+                os.environ.pop('GITHUB_SHA', None)
+            else:
+                os.environ['GITHUB_SHA'] = previous
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
 
     def test_malformed_chapters_fail(self):
@@ -1552,9 +1737,13 @@ class ManuscriptManifest(unittest.TestCase):
         from render_book import remove_rendered_book
 
         def render_cli(root: Path) -> subprocess.CompletedProcess[str]:
+            import os
+
             tools = root / 'tools'
             tools.mkdir()
             shutil.copy(script, tools / 'render_book.py')
+            env = os.environ.copy()
+            env['GITHUB_SHA'] = TEST_RENDER_SHA
             return subprocess.run(
                 [
                     sys.executable, '-S', '-P', '-B', '-X', 'utf8',
@@ -1564,6 +1753,7 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
 
         def tree_names(directory: Path) -> list[str]:
@@ -1661,6 +1851,8 @@ class ManuscriptManifest(unittest.TestCase):
         import tempfile
 
         def run_case(chapter: str) -> subprocess.CompletedProcess[str]:
+            import os
+
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 book = root / 'docs' / 'book'
@@ -1700,6 +1892,8 @@ class ManuscriptManifest(unittest.TestCase):
                 tools = root / 'tools'
                 tools.mkdir()
                 shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+                env = os.environ.copy()
+                env['GITHUB_SHA'] = TEST_RENDER_SHA
                 return subprocess.run(
                     [
                         sys.executable, '-S', '-P', '-B', '-X', 'utf8',
@@ -1709,6 +1903,7 @@ class ManuscriptManifest(unittest.TestCase):
                     check=False,
                     capture_output=True,
                     text=True,
+                    env=env,
                 )
 
         malformed = run_case('---\ntitle: draft\n---\n# Chapter\n')
@@ -1722,12 +1917,15 @@ class ManuscriptManifest(unittest.TestCase):
         self.assertIn('hollow', hollow.stderr)
 
     def test_renderer_cli_writes_the_index(self):
+        import os
         import shutil
         import subprocess
         import sys
 
         output = ROOT / 'build' / 'book'
         script = str(ROOT / 'tools' / 'render_book.py')
+        env = os.environ.copy()
+        env['GITHUB_SHA'] = TEST_RENDER_SHA
         try:
             rejected = subprocess.run(
                 [sys.executable, script, '/tmp/elsewhere'],
@@ -1735,6 +1933,7 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             self.assertEqual(rejected.returncode, 2, rejected.stderr)
             self.assertFalse(output.exists())
@@ -1744,13 +1943,517 @@ class ManuscriptManifest(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                env=env,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             index = (output / 'index.html').read_text(encoding='utf-8')
             self.assertIn('Living, in-progress manuscript', index)
             self.assertIn('planned', index)
+            pages = '\n'.join(
+                path.read_text(encoding='utf-8') for path in output.rglob('*.html')
+            )
+            self.assertEqual(_github_shas(pages), {TEST_RENDER_SHA})
+            self.assertIn(
+                f'https://github.com/chasebryan/orange/blob/{TEST_RENDER_SHA}/docs/book/README.md',
+                pages,
+            )
         finally:
             shutil.rmtree(ROOT / 'build', ignore_errors=True)
+
+    def test_table_escaped_pipes_keep_four_cells(self):
+        import tempfile
+
+        opening = (
+            '# Operators\n\n'
+            '| Expression | On `Int` | On `Word[n]` | On `Mod[m]` |\n'
+            '| --- | --- | --- | --- |\n'
+            '| `a & b`, `a \\| b`, `a ^ b` | Not defined | Bitwise and, or, exclusive or | Not defined |\n'
+            '| `a % b` | Euclidean remainder, 0 ≤ `a % b` < \\|b\\| | Unsigned remainder | Not defined |\n'
+            '| see `a|b` here | left | right | end |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            rows = re.findall(r'<tr>(.*?)</tr>', page, re.S)
+            self.assertEqual(len(rows), 4, page)
+            for row in rows:
+                cells = re.findall(r'<t[dh]>', row)
+                self.assertEqual(len(cells), 4, row)
+            self.assertIn('<code>a | b</code>', page)
+            self.assertIn('|b|', page)
+            self.assertIn('<code>a|b</code>', page)
+            self.assertNotIn('\\|', page)
+
+    def test_n14_outcomes_render_as_one_ordered_list(self):
+        import tempfile
+
+        source = (ROOT / 'docs' / 'book' / 'NOVICE_N14_READY_FOR_STANDARDS.md').read_text(encoding='utf-8')
+        excerpt = '\n'.join(source.splitlines()[52:65])
+        self.assertTrue(excerpt.startswith('1. You can walk one Orange program'))
+        self.assertIn('are not ready for J2', excerpt)
+        opening = '# Ready for standards\n\n' + excerpt + '\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S)
+            self.assertIsNotNone(article)
+            body = article.group(1)
+            lists = re.findall(r'<ol>.*?</ol>', body, re.S)
+            self.assertEqual(len(lists), 1, body)
+            items = re.findall(r'<li>.*?</li>', lists[0], re.S)
+            self.assertEqual(len(items), 5)
+            self.assertNotIn('<p>', lists[0])
+            self.assertNotRegex(body, r'</ol>\s*<p>')
+            self.assertNotRegex(body, r'</p>\s*<ol>')
+            self.assertIn('actually contains.', lists[0])
+            self.assertIn('arithmetic beside the Orange name.', lists[0])
+            self.assertIn('verified.', lists[0])
+            self.assertIn('non-claims.', lists[0])
+            self.assertIn('are not ready for J2', lists[0])
+
+    def test_non_manuscript_links_pin_to_the_rendered_commit(self):
+        import os
+        import tempfile
+
+        sha = TEST_RENDER_SHA
+        opening = '# Opening\n\nA sentence.\n'
+        original = (
+            '# The Orange Book\n\n'
+            '[notes](NOTES.md#section)\n\n'
+            '[directory](book/)\n\n'
+            '[readme](book/README.md)\n\n'
+            '[status](book/README.md#manuscript-status)\n\n'
+            '[chapter](book/NOVICE_OPENING.md#opening)\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\n## Section\n\nA note.\n', encoding='utf-8')
+            (root / 'docs' / 'book' / 'README.md').write_text(
+                '# Book index\n\n## Manuscript status\n\nRead me.\n',
+                encoding='utf-8',
+            )
+            env = os.environ.copy()
+            env['GITHUB_SHA'] = sha
+            completed = _run_render(root, env)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html').read_text(encoding='utf-8')
+            base = f'https://github.com/chasebryan/orange'
+            self.assertIn(f'{base}/blob/{sha}/docs/NOTES.md#section', page)
+            self.assertIn(f'{base}/tree/{sha}/docs/book"', page)
+            self.assertIn(f'{base}/blob/{sha}/docs/book/README.md"', page)
+            self.assertIn(f'{base}/blob/{sha}/docs/book/README.md#manuscript-status', page)
+            self.assertIn('href="book/NOVICE_OPENING.html#opening"', page)
+            self.assertNotIn(f'{base}/blob/{sha}/docs/book/NOVICE_OPENING.md', page)
+            self.assertNotIn('README.html', page)
+            self.assertNotIn('NOTES.html', page)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(
+                root,
+                opening,
+                '# The Orange Book\n\n[notes](NOTES.md)\n',
+            )
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\nA note.\n', encoding='utf-8')
+            env = os.environ.copy()
+            env.pop('GITHUB_SHA', None)
+            env.pop('GIT_DIR', None)
+            env.pop('GIT_WORK_TREE', None)
+            completed = _run_render(root, env)
+            self.assertNotEqual(completed.returncode, 0, completed.stdout)
+            self.assertIn('rendered commit is unavailable', completed.stderr)
+
+    def test_dangling_local_href_fails_the_render(self):
+        import tempfile
+
+        opening = '# Opening\n\nA sentence.\n'
+        original = '# The Orange Book\n\n[alias](book/alias.md)\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            alias = root / 'docs' / 'book' / 'alias.md'
+            alias.symlink_to('NOVICE_OPENING.md')
+            completed = _run_render(root)
+            self.assertNotEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn('local href does not resolve to a file in the artifact', completed.stderr)
+            self.assertIn('book/alias.html', completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html').read_text(encoding='utf-8')
+            self.assertIn('href="book/alias.html"', page)
+
+    def test_wrapped_number_stays_in_the_paragraph(self):
+        import tempfile
+
+        opening = '# Shift\n\nshift by 11 and\n54. Exclusive or\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>shift by 11 and 54. Exclusive or</p>', page)
+            self.assertNotIn('<ol', page)
+
+    def test_ordered_list_after_blank_line_keeps_its_start(self):
+        import tempfile
+
+        opening = '# Count\n\nA paragraph.\n\n3. alpha\n4. beta\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>A paragraph.</p>', page)
+            self.assertIn('<ol start="3"><li>alpha</li><li>beta</li></ol>', page)
+
+    def test_ordered_list_starting_at_one_interrupts_a_paragraph(self):
+        import tempfile
+
+        opening = '# Count\n\nA paragraph\n1. item\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<p>A paragraph</p>', page)
+            self.assertIn('<ol><li>item</li></ol>', page)
+            self.assertNotIn('1. item', page)
+
+    def test_invalid_github_sha_does_not_fall_back_to_git(self):
+        import os
+        import subprocess
+        import tempfile
+
+        opening = '# Opening\n\nA sentence.\n'
+        original = '# The Orange Book\n\n[notes](NOTES.md)\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, original)
+            (root / 'docs' / 'NOTES.md').write_text('# Notes\n\nA note.\n', encoding='utf-8')
+            git_env = os.environ.copy()
+            git_env.pop('GIT_DIR', None)
+            git_env.pop('GIT_WORK_TREE', None)
+            git_env['GIT_CONFIG_GLOBAL'] = '/dev/null'
+            git_env['GIT_CONFIG_NOSYSTEM'] = '1'
+            git_env['GIT_AUTHOR_NAME'] = 'Test'
+            git_env['GIT_AUTHOR_EMAIL'] = 'test@example.com'
+            git_env['GIT_COMMITTER_NAME'] = 'Test'
+            git_env['GIT_COMMITTER_EMAIL'] = 'test@example.com'
+            for command in (
+                ['git', 'init'],
+                ['git', 'add', '.'],
+                ['git', 'commit', '-m', 'pin'],
+            ):
+                completed = subprocess.run(
+                    command, cwd=root, check=False, capture_output=True, text=True, env=git_env,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            head = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=git_env,
+            )
+            self.assertEqual(head.returncode, 0, head.stderr)
+            real_sha = head.stdout.strip()
+            self.assertRegex(real_sha, r'^[0-9a-f]{40}$')
+            for bad in ('not-a-commit', '0' * 39, 'g' * 40):
+                with self.subTest(sha=bad):
+                    env = git_env.copy()
+                    env['GITHUB_SHA'] = bad
+                    completed = _run_render(root, env)
+                    self.assertNotEqual(completed.returncode, 0, completed.stdout)
+                    self.assertIn(bad, completed.stderr)
+                    self.assertIn('40-character commit', completed.stderr)
+                    self.assertNotIn(real_sha, completed.stderr)
+                    page = root / 'build' / 'book' / 'docs' / 'THE_ORANGE_BOOK.html'
+                    if page.is_file():
+                        self.assertNotIn(real_sha, page.read_text(encoding='utf-8'))
+
+    def test_table_pipe_escape_uses_backslash_parity(self):
+        import tempfile
+
+        # 0, 1, 2, and 3 backslashes before the pipe between a and b.
+        opening = (
+            '# Pipes\n\n'
+            '| a | b |\n'
+            '| --- | --- |\n'
+            '| a | b |\n'
+            '| a \\| b |\n'
+            '| a \\\\| b |\n'
+            '| a \\\\\\| b |\n'
+            '| `a|b` |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            rows = re.findall(r'<tr>(.*?)</tr>', page, re.S)
+            self.assertEqual(len(rows), 6, page)
+            counts = [len(re.findall(r'<t[dh]>', row)) for row in rows]
+            self.assertEqual(counts, [2, 2, 1, 2, 1, 1], rows)
+            self.assertIn('<td>a | b</td>', rows[2])
+            self.assertIn('<td>a \\\\</td>', rows[3])
+            self.assertIn('<td>b</td>', rows[3])
+            self.assertIn('<td>a \\\\| b</td>', rows[4])
+            self.assertIn('<code>a|b</code>', rows[5])
+            self.assertEqual(len(re.findall(r'<td>', rows[5])), 1)
+
+    def test_indented_fence_after_a_list_item_renders_pre(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   ```\n'
+            '   code\n'
+            '   ```\n'
+            '\n'
+            '1.  later\n'
+            '   ```\n'
+            '   after\n'
+            '   ```\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<pre><code>code</code></pre></li>', article)
+            self.assertRegex(article, r'</ol>\s*<pre><code>\s*after</code></pre>')
+            self.assertIn('<li>later</li>', article)
+            self.assertNotIn('<li>later<pre>', article)
+
+    def test_indented_heading_after_a_list_item_is_a_heading(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   ## Inside\n'
+            '\n'
+            '1.  later\n'
+            '   ## Outside\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<h2 id="inside">Inside</h2></li>', article)
+            self.assertRegex(article, r'</ol>\s*<h2 id="outside">Outside</h2>')
+            self.assertNotIn('<li>later<h2', article)
+
+    def test_indented_blockquote_after_a_list_item_is_a_blockquote(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   > spoken\n'
+            '\n'
+            '1.  later\n'
+            '   > aside\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<blockquote><p>spoken</p></blockquote></li>', article)
+            self.assertRegex(article, r'</ol>\s*<blockquote><p>aside</p></blockquote>')
+            self.assertNotIn('<li>later<blockquote>', article)
+
+    def test_indented_table_after_a_list_item_is_a_table(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   | a | b |\n'
+            '   | --- | --- |\n'
+            '   | 1 | 2 |\n'
+            '\n'
+            '1.  later\n'
+            '   | c | d |\n'
+            '   | --- | --- |\n'
+            '   | 3 | 4 |\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            article = re.search(r'<article>(.*)</article>', page, re.S).group(1)
+            self.assertIn('<li>item<table>', article)
+            self.assertIn('<td>1</td>', article)
+            self.assertRegex(article, r'</ol>\s*<table>')
+            self.assertNotIn('<li>later<table>', article)
+            self.assertIn('<td>3</td>', article)
+
+    def test_inline_markup_scan_matches_delimiter_rules(self):
+        import time
+
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import inline
+
+        source = 'docs/book/NOVICE_OPENING.md'
+        cases = {
+            '`code`': '<code>code</code>',
+            '``code``': '<code>code</code>',
+            '`code': '`code',
+            '``code`': '<code></code>code`',
+            '```': '<code></code>`',
+            '````': '<code></code>',
+            '```code`': '<code></code><code>code</code>',
+            '***a***': '*<strong>a</strong>*',
+            '*a**': '*a**',
+            '**a*': '**a*',
+            '*a* **b**': '<em>a</em> <strong>b</strong>',
+            '`*a*`': '<code>*a*</code>',
+            '*`a`*': '<em>`a`</em>',
+            'a < b & c': 'a &lt; b &amp; c',
+            '[lab](https://example.com/x)': '<a href="https://example.com/x">lab</a>',
+            '[](https://example.com/x)': '[](https://example.com/x)',
+            '[lab](not a url)': '[lab](not a url)',
+            '![alt](https://example.com/a.png)':
+                '<img alt="alt" src="https://example.com/a.png">',
+            '![](https://example.com/a.png)':
+                '<img alt="" src="https://example.com/a.png">',
+            '![alt](not a url) *em*': '![alt](not a url) <em>em</em>',
+            '[*em*](https://example.com)': '<a href="https://example.com">*em*</a>',
+            '[nope](bad url) *em* `c`': '[nope](bad url) <em>em</em> <code>c</code>',
+            '`[a](b)`': '<code>[a](b)</code>',
+            '[[text](https://example.com)': '<a href="https://example.com">[text</a>',
+            'use `a|b` here': 'use <code>a|b</code> here',
+            '\\*a\\*': '\\<em>a\\</em>',
+            '**bo\nld**': '<strong>bo\nld</strong>',
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(inline(text, source), expected)
+
+        unfinished = (
+            '![](!' * 20000,
+            '[!](!' * 20000,
+            '![\\' * 20000,
+            '[\\' * 20000,
+            ('[a](' + 'x' * 20) * 5000 + ' ',
+        )
+        for text in unfinished:
+            self.assertEqual(inline(text, source), text)
+        self.assertEqual(inline('`' * 40000, source), '<code></code>')
+        started = time.monotonic()
+        for text in unfinished:
+            inline(text, source)
+        inline('`' * 40000, source)
+        inline('*a' * 20000, source)
+        self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_plain_indented_line_continues_the_list_item(self):
+        import tempfile
+
+        opening = (
+            '# List\n\n'
+            '1. item\n'
+            '   keeps going\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_min_manuscript(root, opening, '# The Orange Book\n\nA sentence.\n')
+            completed = _run_render(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            page = (root / 'build' / 'book' / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
+            self.assertIn('<li>item keeps going</li>', page)
+            self.assertNotIn('<pre>', page)
+
+
+def _write_min_manuscript(root: Path, opening: str, original: str) -> None:
+    import json
+
+    book = root / 'docs' / 'book'
+    book.mkdir(parents=True)
+    (root / 'docs' / 'THE_ORANGE_BOOK.md').write_text(original, encoding='utf-8')
+    (book / 'NOVICE_OPENING.md').write_text(opening, encoding='utf-8')
+    manifest = {
+        'kind': 'orange-book-manuscript-manifest',
+        'version': 1,
+        'status': 'in-progress',
+        'review': 'Draft.',
+        'chapters': [
+            {
+                'part': 'novice',
+                'id': 'opening',
+                'title': 'Opening',
+                'status': 'draft',
+                'review_state': 'unreviewed',
+                'path': 'docs/book/NOVICE_OPENING.md',
+            },
+            {
+                'part': 'original',
+                'id': 'original',
+                'title': 'The Orange Book',
+                'status': 'original',
+                'path': 'docs/THE_ORANGE_BOOK.md',
+            },
+        ],
+    }
+    (book / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+
+def _github_shas(text: str) -> set[str]:
+    return set(re.findall(
+        r'https://github.com/chasebryan/orange/(?:blob|tree)/([0-9a-f]{40})',
+        text,
+    ))
+
+
+def _run_render(root: Path, env: dict | None = None):
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    tools = root / 'tools'
+    tools.mkdir(exist_ok=True)
+    shutil.copy(ROOT / 'tools' / 'render_book.py', tools / 'render_book.py')
+    if env is None:
+        run_env = os.environ.copy()
+        run_env['GITHUB_SHA'] = TEST_RENDER_SHA
+    else:
+        run_env = env
+    return subprocess.run(
+        [
+            sys.executable, '-S', '-P', '-B', '-X', 'utf8',
+            '-W', 'error::ResourceWarning', 'tools/render_book.py',
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=run_env,
+    )
 
 
 def rotate_byte(value: int, amount: int) -> int:

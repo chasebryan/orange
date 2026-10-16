@@ -305,6 +305,20 @@ compiler/.gitignore
 compiler/Cargo.lock
 compiler/Cargo.toml
 compiler/README.md
+compiler/c/Makefile
+compiler/c/README.md
+compiler/c/include/bigint.h
+compiler/c/include/compile.h
+compiler/c/src/bigint.c
+compiler/c/src/compile.c
+compiler/c/src/main.c
+compiler/c/tests/differential.py
+compiler/c/tests/fixtures/s3m/invalid-alias-once.or
+compiler/c/tests/fixtures/s3m/invalid-alias-through.or
+compiler/c/tests/fixtures/s3m/invalid-alias-tuple.or
+compiler/c/tests/fixtures/s3m/invalid-alias-twice.or
+compiler/c/tests/fixtures/s3m/invalid-alias-types.or
+compiler/c/tests/fixtures/s3m/invalid-alias-unused.or
 compiler/crates/orange-compiler/Cargo.toml
 compiler/crates/orange-compiler/src/core.rs
 compiler/crates/orange-compiler/src/cryptanalysis.rs
@@ -383,6 +397,7 @@ compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/algorithms.rs
+compiler/crates/orangec/tests/book_j2.rs
 compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
@@ -642,6 +657,7 @@ docs/governance/oeps/OEP-0025-orange-2026-array-dimensions.md
 docs/TUPLES_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
+docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
 docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md

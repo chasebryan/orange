@@ -1,0 +1,31 @@
+edition 2026;
+module alias_forms {
+  // Used once. The use adds no second diagnostic.
+  type W1 = Word[1];
+  type W7 = Word[7];
+  type Row5 = Word[1]^5;
+  type Zero = Word[8]^0;
+  type Huge = Word[8]^65537;
+  type Flags = Bool^0;
+  type BadMod = Mod[0];
+  type OneMod = Mod[1];
+  type Bare = Word;
+  type Both = Word[1]^0;
+  type Unbound = Word[8]^k;
+  type Scaled = Word[8]^(2 * n);
+  type Nested = (Word[1], Int);
+
+  spec once_W1() -> W1 { 0 }
+  spec once_W7() -> W7 { 0 }
+  spec once_Row5() -> Row5 { 0 }
+  spec once_Zero() -> Zero { 0 }
+  spec once_Huge() -> Huge { 0 }
+  spec once_Flags() -> Flags { 0 }
+  spec once_BadMod() -> BadMod { 0 }
+  spec once_OneMod() -> OneMod { 0 }
+  spec once_Bare() -> Bare { 0 }
+  spec once_Both() -> Both { 0 }
+  spec once_Unbound() -> Unbound { 0 }
+  spec once_Scaled() -> Scaled { 0 }
+  spec once_Nested() -> Nested { 0 }
+}

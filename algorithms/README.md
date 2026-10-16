@@ -286,7 +286,8 @@ RFC 7748 section 5.2, and the remaining ACVP cases of ML-KEM-512. The
 rewritten entries no longer split one algorithm across files to fit the
 budget; where an algorithm is reused, a module serves. X25519, which was not
 rewritten, still holds one vector per file, because one X25519 evaluation
-costs about 568,000 of the 1,048,576 steps of a source and two do not fit.
+costs about 565,000 of the 1,048,576 steps of a source as of S3u, and two do
+not fit.
 
 **An array holds 1 through 65,536 elements.** A message of up to that length
 fits one array ([`LENGTHS_2026.md`](../docs/LENGTHS_2026.md)), so the
