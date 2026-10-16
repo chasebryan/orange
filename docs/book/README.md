@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2, J3 | J4 (Block A), J5, and the connecting studies below |
+| Part 2, The Journeyman | J2, J3, J4 | J5, and the connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2 and J3 are drafted in this tree and unreviewed. The other
+unreviewed. J2, J3, and J4 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
@@ -279,6 +279,23 @@ Orange is the working language, not decoration around prose.
   *The Corpus as Acceptance Test*. The manuscript chapter keeps that
   number. This lesson does not transcribe the SHA-256 compression
   function or its message schedule, and it does not pack bytes into a word.
+- **J4.** [Byte Order and Format Boundaries](JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#j4-byte-order-and-format-boundaries):
+  where byte order is decided, from the hex a standard prints, through
+  the bytes, through the word, to the Orange value. The fixture is the
+  ChaCha constant bytes J2 keeps unpacked. One listing reads those bytes
+  with `as little` and with `as big`. A wrong-endianness load fails a
+  corpus test, and the reader predicts the computed word before the
+  report. The 64-bit length field of FIPS 180-4 §5.1.1, the bit length
+  24 rather than the byte length 3, is checked in Orange. A
+  little-endian load of those bytes fails a second corpus test; the
+  reader predicts `1729382256910270464` before the report, and the
+  repair is `as big`. A self-check
+  asks for the first message word and the length bytes J5 will take,
+  and does not build the schedule. The six outcomes in §J4.1 are the
+  finish line. The locked label is J4. It is not a manuscript chapter
+  numeral. The manuscript chapter *From Core to Native Bytes* keeps
+  that title and that number.
+  [Worked answers](JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#worked-answers).
 
 ### Existing manuscript integrated here
 
@@ -429,7 +446,8 @@ answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
 integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
-J3 integer ledger, and document structure. Python test
+J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, and
+document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -501,6 +519,21 @@ not pack bytes into a word. Run it in a build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j3 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j4.rs`
+reads the four Orange listings in J4. It checks silent `check`, the
+printed `eval` lines, the passing tests, and the two failing tests.
+One report prints `left` `0x65787061` and `right` `0x61707865`. The
+other prints `left` `1729382256910270464` and `right` `24`. Each
+failing test has status 1 and empty standard error. A passing test in that file is a
+Match of the `Bool` the listing writes. It does not establish a
+cryptographic security claim, it does not transcribe FIPS 180-4
+§6.2.2, and it does not rerun the ChaCha20 block function. Run it
+in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j4 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -518,6 +551,7 @@ AI-assisted with Grok 4.7 in Cursor, 2026-10-05, at the owner's
 direction. Lesson J2 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
 at the owner's direction. Lesson J3, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-09, at the owner's
-direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, J2, and J3 review are
+direction. Lesson J4, including its Orange listings, is AI-assisted
+with Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, and J4 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

@@ -180,11 +180,12 @@
     {
       "part": "journeyman",
       "id": "j4",
-      "title": "J4",
-      "status": "planned",
-      "review_state": "unwritten",
-      "path": null,
-      "summary": "N14 names J4 as one lesson of Block A. This tree does not contain it."
+      "title": "J4. Byte Order and Format Boundaries",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md",
+      "anchor": "j4-byte-order-and-format-boundaries",
+      "summary": "Draft. Owner review is pending. The locked label is J4."
     },
     {
       "part": "journeyman",
