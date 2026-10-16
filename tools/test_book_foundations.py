@@ -1612,12 +1612,34 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
         self.assertIn('August 2015', self.text)
 
     def test_j3_corpus_records_three_vectors_from_two_sources(self):
-        self.assertIn('| C1 | RFC 4231 | December 2005 | §4.2 |', self.text)
-        self.assertIn('| C2 | RFC 4231 | December 2005 | §4.3 |', self.text)
-        self.assertIn('| C5 | FIPS PUB 180-4 | August 2015 | §5.1.1 |', self.text)
-        self.assertIn('| C6 | RFC 4231 | December 2005 | §4.4 |', self.text)
+        self.assertIn('| `case1_key_byte` | RFC 4231 | December 2005 | §4.2 |', self.text)
+        self.assertIn('| `jefe_key_byte` | RFC 4231 | December 2005 | §4.3 |', self.text)
+        self.assertIn(
+            '| `zero_fill_byte` | RFC 2104 | February 1997 | §2, step (1) |',
+            self.text,
+        )
+        self.assertIn(
+            '| `key_block_boundary` | RFC 4231 | December 2005 | §4.2 |',
+            self.text,
+        )
+        self.assertIn(
+            '| `abc_len_bits` | FIPS PUB 180-4 | August 2015 | §5.1.1 |',
+            self.text,
+        )
+        self.assertIn(
+            '| `high_bit_key_byte` | RFC 4231 | December 2005 | §4.4 |',
+            self.text,
+        )
         self.assertIn('What it covers', self.text)
-        self.assertGreaterEqual(self.text.count('| C'), 6)
+        for name in (
+            'case1_key_byte',
+            'jefe_key_byte',
+            'zero_fill_byte',
+            'key_block_boundary',
+            'abc_len_bits',
+            'high_bit_key_byte',
+        ):
+            self.assertEqual(self.text.count(f'| `{name}` |'), 1)
         self.assertIn('RFC 2104', self.text)
         self.assertIn('February 1997', self.text)
 

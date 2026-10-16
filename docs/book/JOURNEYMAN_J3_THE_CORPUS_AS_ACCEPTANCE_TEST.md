@@ -258,18 +258,20 @@ operation does not produce a 32-byte digest.
 
 | Id | Source | Edition | Section | Vector id | What it covers |
 | --- | --- | --- | --- | --- | --- |
-| C1 | RFC 4231 | December 2005 | §4.2 | HMAC-SHA-256 test case 1, the key byte | `0x0b`, the byte repeated in that 20-byte key, under the inner pad |
-| C2 | RFC 4231 | December 2005 | §4.3 | HMAC-SHA-256 test case 2, the first key byte | `0x4a`, the first byte of the key printed `4a656665` |
-| C3 | RFC 2104 | February 1997 | §2, step (1) | Zero fill past the RFC 4231 §4.2 key | `0x00`, a byte of the block the 20-byte key does not occupy |
-| C4 | RFC 4231 | December 2005 | §4.2 | The same key, index 19 and index 20 | The last key byte and the first fill byte inside one 64-byte block |
-| C5 | FIPS PUB 180-4 | August 2015 | §5.1.1 | The one-block sample “abc”, bit length | The integer 24 |
-| C6 | RFC 4231 | December 2005 | §4.4 | HMAC-SHA-256 test case 3, the key byte | `0xaa`, a key byte whose high bit is 1 |
+| `case1_key_byte` | RFC 4231 | December 2005 | §4.2 | HMAC-SHA-256 test case 1, the key byte | `0x0b`, the byte repeated in that 20-byte key, under the inner pad |
+| `jefe_key_byte` | RFC 4231 | December 2005 | §4.3 | HMAC-SHA-256 test case 2, the first key byte | `0x4a`, the first byte of the key printed `4a656665` |
+| `zero_fill_byte` | RFC 2104 | February 1997 | §2, step (1) | Zero fill past the RFC 4231 §4.2 key | `0x00`, a byte of the block the 20-byte key does not occupy |
+| `key_block_boundary` | RFC 4231 | December 2005 | §4.2 | The same key, index 19 and index 20 | The last key byte and the first fill byte inside one 64-byte block |
+| `abc_len_bits` | FIPS PUB 180-4 | August 2015 | §5.1.1 | The one-block sample “abc”, bit length | The integer 24 |
+| `high_bit_key_byte` | RFC 4231 | December 2005 | §4.4 | HMAC-SHA-256 test case 3, the key byte | `0xaa`, a key byte whose high bit is 1 |
 
 That is six vectors and three sources. The finish line asks for
-three vectors and two sources. C1, C2, and C5 already meet it.
+three vectors and two sources. `case1_key_byte`, `jefe_key_byte`,
+and `abc_len_bits` already meet it.
 The RFC 2104 §2 row is the definition's zero-fill example, not
 the second vector source. The vector sources remain RFC 4231 and
-FIPS 180-4 §5.1.1. C3, C4, and C6 are here because the coverage
+FIPS 180-4 §5.1.1. `zero_fill_byte`, `key_block_boundary`, and
+`high_bit_key_byte` are here because the coverage
 argument needs the zero fill, the index where the key ends, and a
 byte with the high bit set. Dropping them would still be a
 corpus. It would be a thinner one, which is what §J3.6 uses on
@@ -283,43 +285,45 @@ The other pages are the ones N13 named.
 RFC 4231 §4.2 prints the test case 1 key as hex `0b` repeated, with
 the parenthetical `(20 bytes)`. Sixteen bytes on the first hex line
 and four on the second are 20. The data line is a different field.
-C1 uses the key byte only. §J2.3 records this same case, test case
-1 of §4.2, December 2005, and points at the HMAC-SHA-256 tag N13
-compares. §J2.3 does not rebuild the pads. C1 does not compare the
-tag either. It compares the inner pad of the key byte §J2.3 names
-as twenty bytes `0b`.
+`case1_key_byte` uses the key byte only. §J2.3 records this same
+case, test case 1 of §4.2, December 2005, and points at the
+HMAC-SHA-256 tag N13 compares. §J2.3 does not rebuild the pads.
+`case1_key_byte` does not compare the tag either. It compares the
+inner pad of the key byte §J2.3 names as twenty bytes `0b`.
 
 RFC 4231 §4.3 prints the test case 2 key as `4a656665`, with the
 note `("Jefe")`. Eight hex digits are four bytes. The first two
 digits are `4a`, so the first byte is `0x4a`. The first sentence
 of the section says the key is shorter than the HMAC output. The
-key is 4 bytes and the SHA-256 tag is 32 bytes. C2 uses the first
-key byte only.
+key is 4 bytes and the SHA-256 tag is 32 bytes. `jefe_key_byte`
+uses the first key byte only.
 
 RFC 2104 §2, as N13 recorded it, completes a key shorter than B
 with zero bytes. The §4.2 key has length 20 and B is 64, so the
 bytes at indices 20 through 63 are `0x00` before the pad XOR.
-C3 feeds `inner` the byte `0x00`. That is one of those positions,
-not a scan of all 44 of them. `64 - 20 = 44`.
+`zero_fill_byte` feeds `inner` the byte `0x00`. That is one of
+those positions, not a scan of all 44 of them. `64 - 20 = 44`.
 
-C4 builds the 20-byte key and reads index 19 and index 20. The
-loop `0..20` writes indices 0 through 19. Index 19 receives
-`0x0b`. Index 20 is outside that loop, so it stays the fill
-`0x00`. Proposition J3.1 then gives `inner` at those two indices.
+`key_block_boundary` builds the 20-byte key and reads index 19
+and index 20. The loop `0..20` writes indices 0 through 19. Index
+19 receives `0x0b`. Index 20 is outside that loop, so it stays
+the fill `0x00`. Proposition J3.1 then gives `inner` at those two
+indices.
 
 FIPS 180-4 §5.1.1, August 2015, is the padding section N13 cited
-for “abc”. C5 compares `3 * 8` with 24. It does not compare a
-digest. §J2.3 states the same split: §5.1.1 of the August 2015
-text gives the bit length `8 × 3 = 24` and does not print the
-digest, and a card that cites §5.1.1 as the source of the digest
-has named the wrong section. C5 checks the bit length. It does not
-check the digest. RFC 4231's normative reference for the hash is
-FIPS 180-2, August 2002, with Change Notice 1 dated February 2004.
-§J2.3 records that reference, and it records that a passing Match
-of the digest does not choose August 2015 over August 2002. C5
-does not make that choice either. The bit length is what §5.1.1
-of the August 2015 text states. It is not a claim that RFC 4231
-names the 2015 edition.
+for “abc”. `abc_len_bits` compares `3 * 8` with 24. It does not
+compare a digest. §J2.3 states the same split: §5.1.1 of the
+August 2015 text gives the bit length `8 × 3 = 24` and does not
+print the digest, and a card that cites §5.1.1 as the source of
+the digest has named the wrong section. `abc_len_bits` checks the
+bit length. It does not check the digest. RFC 4231's normative
+reference for the hash is FIPS 180-2, August 2002, with Change
+Notice 1 dated February 2004. §J2.3 records that reference, and
+it records that a passing Match of the digest does not choose
+August 2015 over August 2002. `abc_len_bits` does not make that
+choice either. The bit length is what §5.1.1 of the August 2015
+text states. It is not a claim that RFC 4231 names the 2015
+edition.
 
 RFC 4231 §4.4 is test case 3. The first sentence of the section
 says the case uses a combined length of key and data larger than
@@ -333,8 +337,9 @@ parenthetical `(20 bytes)` and the hex digits are the record. The
 data field is fifty bytes of `dd`: three lines of 16 bytes and a
 final line of 2. `16 * 3 + 2 = 50`. The combined length is
 `20 + 50 = 70`. The first sentence of the section says larger than
-64 bytes. 70 is this lesson's sum. C6 uses the key byte `0xaa`
-only. It does not use the data, and it does not check the sum 70.
+64 bytes. 70 is this lesson's sum. `high_bit_key_byte` uses the
+key byte `0xaa` only. It does not use the data, and it does not
+check the sum 70.
 The HMAC-SHA-256 tag printed in §4.4 is not an expected value in
 this corpus.
 
@@ -368,8 +373,10 @@ untested-full = 252
 `inner-aa` is `0x9c`. `flip-aa` is `0x9d`. `spec-01` is `0x37`.
 `high-half` is the number of bytes whose high bit is 1, which is
 128, half of 256. `full-bytes` is the number of distinct inputs
-C1, C2, C3, and C6 pass to `inner`: `0x0b`, `0x4a`, `0x00`, and
-`0xaa`. C4 repeats `0x0b` and `0x00`. C5 does not call `inner`.
+`case1_key_byte`, `jefe_key_byte`, `zero_fill_byte`, and
+`high_bit_key_byte` pass to `inner`: `0x0b`, `0x4a`, `0x00`, and
+`0xaa`. `key_block_boundary` repeats `0x0b` and `0x00`.
+`abc_len_bits` does not call `inner`.
 
 ### J3.3 Running it under orangec test
 
@@ -378,8 +385,10 @@ Listing J3.1 is the corpus. `inner` is the definition.
 names for three of the bytes, so `eval` can print them.
 `abc_bits` is Proposition J3.5. `case1_key` is the §4.2 key block,
 the same shape N14 used for twenty bytes of `0x0b`. The six tests
-are C1 through C6. Each expected byte is the proposition named
-above, except C5, whose expected integer is 24.
+are `case1_key_byte`, `jefe_key_byte`, `zero_fill_byte`,
+`key_block_boundary`, `abc_len_bits`, and `high_bit_key_byte`.
+Each expected byte is the proposition named above, except
+`abc_len_bits`, whose expected integer is 24.
 
 **Listing J3.1 — `corpus.or`**
 
@@ -465,34 +474,36 @@ write.
 Read the six tests against the five fields, and write down the
 inputs that actually occur.
 
-The lengths that occur are these. C2's key byte comes from a key
-of length 4, which is shorter than the 32-byte SHA-256 tag, as the
-first sentence of §4.3 says, and shorter than the 64-byte block.
-C1's key byte comes from a key of length 20, still shorter than
-the block.
-C3 is the zero byte those 20 bytes leave behind. C5 is a message
-length of 3 bytes, recorded as 24 bits. No test uses a key of
-length 64, which would leave no zero fill. No test uses a key of
-length 65 or of length 131.
+The lengths that occur are these. The key byte in `jefe_key_byte`
+comes from a key of length 4, which is shorter than the 32-byte
+SHA-256 tag, as the first sentence of §4.3 says, and shorter than
+the 64-byte block. The key byte in `case1_key_byte` comes from a
+key of length 20, still shorter than the block.
+`zero_fill_byte` is the zero byte those 20 bytes leave behind.
+`abc_len_bits` is a message length of 3 bytes, recorded as 24
+bits. No test uses a key of length 64, which would leave no zero
+fill. No test uses a key of length 65 or of length 131.
 
-The block boundary that occurs is C4. Index 19 is the last byte
-the 20-byte key writes. Index 20 is the first byte it does not
-write. That boundary sits inside one 64-byte block. It is not the
-boundary FIPS 180-4 §5.1.1 draws when a message crosses from one
-hash block into the next, and it is not the boundary at 55 bytes
-that N13 recorded as the limit of its `hash`. C4 does not mention
-either of those.
+The block boundary that occurs is `key_block_boundary`. Index 19
+is the last byte the 20-byte key writes. Index 20 is the first
+byte it does not write. That boundary sits inside one 64-byte
+block. It is not the boundary FIPS 180-4 §5.1.1 draws when a
+message crosses from one hash block into the next, and it is not
+the boundary at 55 bytes that N13 recorded as the limit of its
+`hash`. `key_block_boundary` does not mention either of those.
 
-The zero fill that occurs is C3, one byte `0x00`, and the second
-index of C4. Assumption J3.6 stands: this is empty key material
-inside the block. It is not an empty HMAC message. RFC 4231's
-seven test cases, as the December 2005 file prints them, do not
-include a data field of length 0. This corpus does not add one.
+The zero fill that occurs is `zero_fill_byte`, one byte `0x00`,
+and the second index of `key_block_boundary`. Assumption J3.6
+stands: this is empty key material inside the block. It is not an
+empty HMAC message. RFC 4231's seven test cases, as the December
+2005 file prints them, do not include a data field of length 0.
+This corpus does not add one.
 
-The byte with the high bit set is C6, `0xaa`. Proposition J3.3
-records that bit. The first sentence of §4.4 says larger than 64
-bytes. 70 is this lesson's sum. C6 does not add 20 and 50. A
-reader who treats the passing C6 line as a check of that sentence
+The byte with the high bit set is `high_bit_key_byte`, `0xaa`.
+Proposition J3.3 records that bit. The first sentence of §4.4
+says larger than 64 bytes. 70 is this lesson's sum.
+`high_bit_key_byte` does not add 20 and 50. A reader who treats
+the passing `high_bit_key_byte` line as a check of that sentence
 has used the title and skipped the `Bool`. The `Bool` is one XOR.
 
 What the corpus leaves out, stated so it can be demanded later:
@@ -501,9 +512,9 @@ What the corpus leaves out, stated so it can be demanded later:
   N13 pinned the first two. This corpus does not recompute them
   and does not compare them.
 - The SHA-256 digest of “abc”. N13 pinned it to NIST's examples
-  file. C5 checks the bit length in FIPS 180-4 §5.1.1. The digest
-  is a different value, from a different file, of a function this
-  page does not contain.
+  file. `abc_len_bits` checks the bit length in FIPS 180-4
+  §5.1.1. The digest is a different value, from a different file,
+  of a function this page does not contain.
 - FIPS 180-4 §6.2.2, the compression function and the message
   schedule. That derivation is J5.
 - A key longer than the block. RFC 4231 §4.7 prints 131 bytes of
@@ -514,10 +525,11 @@ What the corpus leaves out, stated so it can be demanded later:
   is to hash the key. No test hashes a key.
 - An empty message, a key of length 64, and a key of length 65.
 - The other bytes of the key “Jefe”, which are `0x65`, `0x66`, and
-  `0x65`. C2 names the first byte only.
+  `0x65`. `jefe_key_byte` names the first byte only.
 - Byte order. No listing builds a `Word[32]`.
 - Constant time. Nothing in the report speaks about it.
-- The 252 byte values `inner` can take that C1, C2, C3, and C6 do
+- The 252 byte values `inner` can take that `case1_key_byte`,
+  `jefe_key_byte`, `zero_fill_byte`, and `high_bit_key_byte` do
   not name.
 
 A report of six passes counts six `Bool`s. Assumption J3.4 still
@@ -620,8 +632,9 @@ tag from a standard.
 Listing J3.3 computes `inner` as Listing J3.1 does. The test title
 names RFC 4231 §4.3, test case 2, the key byte J. The input is
 `0x4a`, which is that byte. The expected byte is `0x3d`.
-Proposition J3.1 says `0x3d` is `0x0b XOR 0x36`, the result C1
-pins for test case 1. The title and the expected byte name
+Proposition J3.1 says `0x3d` is `0x0b XOR 0x36`, the result
+`case1_key_byte` pins for test case 1. The title and the expected
+byte name
 different vectors of the same edition. The input names the vector
 in the title. The expected byte was copied from the other vector.
 This is the shape of Listing J2.2 in §J2.5, applied to a vector
@@ -698,11 +711,12 @@ tag, it is not the other three key bytes, and it is not test
 case 3. A pass after a repair establishes the repaired `Bool`.
 
 A different defect would have passed. Suppose the file contained
-Listing J3.1's C1 test twice, and the second copy carried the title
-`RFC 4231 4.7 test case 6 key`. Both `Bool`s would be true, because
-both compare `inner(0x0b)` with `0x3d`. The compiler would print
-two `ok` lines. §4.7's key is 131 bytes of `aa`, and Assumption
-J3.7 says that key is hashed before use. The duplicate does not
+Listing J3.1's `case1_key_byte` test twice, and the second copy
+carried the title `RFC 4231 4.7 test case 6 key`. Both `Bool`s
+would be true, because both compare `inner(0x0b)` with `0x3d`.
+The compiler would print two `ok` lines. §4.7's key is 131 bytes
+of `aa`, and Assumption J3.7 says that key is hashed before use.
+The duplicate does not
 hash it. The title would be false while the `Bool` is true. The
 compiler rejects a disagreement between two bytes. It does not
 reject a disagreement between a title and a section you did not
@@ -713,8 +727,9 @@ Both are corpus defects. Only one of them fails `orangec test`.
 
 ### J3.6 Two wrong implementations that agree
 
-The thin corpus is C1, C2, and C3: the bytes `0x0b`, `0x4a`, and
-`0x00`. It omits C6. Proposition J3.3 says each of those three
+The thin corpus is `case1_key_byte`, `jefe_key_byte`, and
+`zero_fill_byte`: the bytes `0x0b`, `0x4a`, and `0x00`. It omits
+`high_bit_key_byte`. Proposition J3.3 says each of those three
 bytes has high bit 0, and `0xaa` has high bit 1. Any function
 that agrees with `k XOR 0x36` on the low half of the domain will
 pass the thin corpus. The thin corpus cannot see the high half.
@@ -725,11 +740,12 @@ byte. Listing J3.5 computes `k XOR 0x36`, then XORs an extra
 `0x01` when the high bit of `k` is set. On the thin corpus the
 high bit is clear, so the extra XOR does not run.
 
-Both files include a fourth test, C6, whose expected byte is
-`0x9c`. That test is the distinguishing vector. Its provenance is
-the C6 row of the table in §J3.2: RFC 4231, December 2005, §4.4,
-HMAC-SHA-256 test case 3, the key byte `0xaa`, covered as one
-byte under the inner pad and not as the combined length 70.
+Both files include a fourth test, `high_bit_key_byte`, whose
+expected byte is `0x9c`. That test is the distinguishing vector.
+Its provenance is the `high_bit_key_byte` row of the table in
+§J3.2: RFC 4231, December 2005, §4.4, HMAC-SHA-256 test case 3,
+the key byte `0xaa`, covered as one byte under the inner pad and
+not as the combined length 70.
 
 **Listing J3.4 — `wrong_table.or`**
 
@@ -817,7 +833,8 @@ test "RFC 4231 4.4 test case 3 key byte" ... FAILED
 The status of each `test` is 1. Standard error is empty. There is
 no `ORC` code. In both reports the first three tests are `ok` and
 the fourth is `FAILED`. The right-hand byte of the failure is
-`0x9c` in both files, the byte Proposition J3.3 assigns to C6.
+`0x9c` in both files, the byte Proposition J3.3 assigns to
+`high_bit_key_byte`.
 The left-hand bytes differ: `0x00` for the table, `0x9d` for the
 flip.
 
@@ -844,11 +861,11 @@ the low bit. The two left values differ from each other because
 `0x00` is not `0x9d`. □
 
 The thin corpus is three passing tests. Both files pass it. The
-files are not the specification, and they are not each other. C6
-is what separates them, and what separates each of them from
-`k XOR 0x36`. A prose sentence that such files could be written
-is not this demonstration. The demonstration is the two listings,
-the three `ok` lines, and the two `left` values.
+files are not the specification, and they are not each other.
+`high_bit_key_byte` is what separates them, and what separates
+each of them from `k XOR 0x36`. A prose sentence that such files
+could be written is not this demonstration. The demonstration is
+the two listings, the three `ok` lines, and the two `left` values.
 
 One further agreement is accidental, and the thin corpus does not
 see it either. Listing J3.4 returns `0x00` on the final branch.
@@ -864,8 +881,9 @@ Listing J3.5 is right on every byte whose high bit is 0, all
 128 of them, and wrong on every byte whose high bit is 1, the
 other 128. The thin corpus is drawn entirely from the first
 half. Any other corpus drawn entirely from that half would
-accept Listing J3.5 as well. C6 is one byte of the second half.
-It is enough, because one disagreement is enough.
+accept Listing J3.5 as well. `high_bit_key_byte` is one byte of
+the second half. It is enough, because one disagreement is
+enough.
 
 Put §J3.4 beside this section. Listing J3.2 passes the six-vector
 corpus and fails at `0x01`, a byte you chose because it was
@@ -887,7 +905,7 @@ J3.2. Each answer is in the next section. A guess without the
 arithmetic is not an answer.
 
 **Exercise J3.1 — Five fields.** Write the five fields of vector
-C2. Use Assumption J3.3 and the table in §J3.2.
+`jefe_key_byte`. Use Assumption J3.3 and the table in §J3.2.
 
 **Exercise J3.2 — The byte J.** Compute `0x4a XOR 0x36` by the bit
 table. Then add 74 and 54, and say which of the two results
@@ -908,28 +926,29 @@ and what one change repairs the test?
 **Exercise J3.6 — A title the compiler accepts.** A second test,
 titled `RFC 4231 4.7 test case 6 key`, has the body
 `inner(0x0b) == 0x3d`. Does `orangec test` fail that file if the
-first test is C1? What is the length of the key §4.7 prints, and
-what step does that length require?
+first test is `case1_key_byte`? What is the length of the key
+§4.7 prints, and what step does that length require?
 
 **Exercise J3.7 — Seventy.** Compute the combined length the first
 sentence of §4.4 talks about, from a key of 20 bytes and data of
-50 bytes. Say what C6's `Bool` covers.
+50 bytes. Say what the `Bool` in `high_bit_key_byte` covers.
 
-**Exercise J3.8 — Twenty-four.** What does the passing C5 test
-establish? Where does the digest of “abc” live, relative to this
-corpus?
+**Exercise J3.8 — Twenty-four.** What does the passing
+`abc_len_bits` test establish? Where does the digest of “abc”
+live, relative to this corpus?
 
-**Exercise J3.9 — Two left values.** On C6, Listing J3.4 prints
-left `0x00` and Listing J3.5 prints left `0x9d`. Show that
-`0x9c XOR 0x01 = 0x9d`, and that neither left value equals the
-right-hand `0x9c`.
+**Exercise J3.9 — Two left values.** On `high_bit_key_byte`,
+Listing J3.4 prints left `0x00` and Listing J3.5 prints left
+`0x9d`. Show that `0x9c XOR 0x01 = 0x9d`, and that neither left
+value equals the right-hand `0x9c`.
 
 **Exercise J3.10 — How many bytes are unnamed.** How many values
 of a byte does the thin corpus not name? How many does the set
 `{0x00, 0x0b, 0x4a, 0xaa}` not name?
 
-**Exercise J3.11 — The zero byte.** Say what C3 covers, and say
-why a passing C3 line is not a test of HMAC on an empty message.
+**Exercise J3.11 — The zero byte.** Say what `zero_fill_byte`
+covers, and say why a passing `zero_fill_byte` line is not a
+test of HMAC on an empty message.
 
 **Exercise J3.12 — Six passes.** Listing J3.2's test report matches
 Listing J3.1. `off` denotes `0x00`. Compute `0x01 XOR 0x36`. What
@@ -973,7 +992,8 @@ J3.1 and J3.2. The thin corpus contains `0x00`, `0x0b`, and
 case 2's first key byte `0x4a`. Right `0x3d` is Proposition J3.1,
 the inner pad of test case 1's key byte `0x0b`. The repair
 replaces `0x3d` with `0x7c` in the test. `inner` stays
-`k XOR 0x36`. The repaired test is C2 in Listing J3.1.
+`k XOR 0x36`. The repaired test is `jefe_key_byte` in Listing
+J3.1.
 
 **J3.6.** The file would pass. Both tests compare `inner(0x0b)`
 with `0x3d`, and Proposition J3.1 says that comparison is true.
@@ -985,17 +1005,18 @@ not hash a key.
 
 **J3.7.** `20 + 50 = 70`, and `70` is greater than `64`. The first
 sentence of §4.4 says larger than 64 bytes. 70 is this lesson's
-sum. C6's `Bool` is `inner(0xaa) == 0x9c`. It covers one key byte
-under the inner pad. It does not add the lengths, it does not
-read the data bytes, and it does not compare the HMAC-SHA-256 tag
-§4.4 prints.
+sum. The `Bool` in `high_bit_key_byte` is `inner(0xaa) == 0x9c`.
+It covers one key byte under the inner pad. It does not add the
+lengths, it does not read the data bytes, and it does not compare
+the HMAC-SHA-256 tag §4.4 prints.
 
-**J3.8.** C5 establishes that `abc_bits` denotes 24, which is
-`3 * 8`, the bit length FIPS 180-4 §5.1.1 assigns to the message
-“abc” in the August 2015 text §J2.3 cites for §5.1.1. The digest of that
-message is the value N13 copied from NIST's examples file. That
-file is not §5.1.1, and the digest is not an expected value in
-this corpus. A passing C5 line does not compare it.
+**J3.8.** `abc_len_bits` establishes that `abc_bits` denotes 24,
+which is `3 * 8`, the bit length FIPS 180-4 §5.1.1 assigns to the
+message “abc” in the August 2015 text §J2.3 cites for §5.1.1. The
+digest of that message is the value N13 copied from NIST's
+examples file. That file is not §5.1.1, and the digest is not an
+expected value in this corpus. A passing `abc_len_bits` line does
+not compare it.
 
 **J3.9.** The bits of the extra XOR are
 
@@ -1013,15 +1034,17 @@ left values also differ from each other.
 
 **J3.10.** A byte has 256 values. The thin corpus names 3, so it
 leaves `256 - 3 = 253` unnamed. The four-byte set names 4, so it
-leaves `256 - 4 = 252` unnamed. C4 does not add a fifth byte.
-C5 does not name a byte of `inner` at all.
+leaves `256 - 4 = 252` unnamed. `key_block_boundary` does not add
+a fifth byte. `abc_len_bits` does not name a byte of `inner` at
+all.
 
-**J3.11.** C3 covers `inner(0x00)`, which is the inner pad of a
-zero byte in the key block, the fill RFC 2104 §2 writes past a key
-shorter than B. The §4.2 key occupies 20 bytes of a 64-byte block,
-so 44 bytes of that block are this fill. C3 checks one of them.
-An empty message is a data string of length 0. C3 does not pass a
-data string to HMAC. HMAC is not the function under test.
+**J3.11.** `zero_fill_byte` covers `inner(0x00)`, which is the
+inner pad of a zero byte in the key block, the fill RFC 2104 §2
+writes past a key shorter than B. The §4.2 key occupies 20 bytes
+of a 64-byte block, so 44 bytes of that block are this fill.
+`zero_fill_byte` checks one of them. An empty message is a data
+string of length 0. `zero_fill_byte` does not pass a data string
+to HMAC. HMAC is not the function under test.
 
 **J3.12.** `0x01 XOR 0x36` is
 

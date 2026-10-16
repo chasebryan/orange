@@ -159,7 +159,10 @@ fn j3_listings_accept_a_corpus_and_separate_wrong_functions() {
         "wrong_rest eval",
         &["eval", "-"],
         wrong_rest,
-        one_text(|text| text.starts_with("wrong_rest::off:"), "wrong_rest eval"),
+        one_text(
+            |text| text.starts_with("wrong_rest::off:"),
+            "wrong_rest eval",
+        ),
         0,
     );
     assert_stdout(
