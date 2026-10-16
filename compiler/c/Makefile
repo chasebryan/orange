@@ -1,5 +1,9 @@
 # Standalone C frontend. Output stays under out/, which the repository ignore
 # rules already exclude.
+#
+# `make test` builds with address and undefined sanitizers, runs the
+# exact-integer self-test, and compares check, eval, and lex with the Rust
+# orangec through tests/differential.py.
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -Werror -O2
 CPPFLAGS ?= -Iinclude

@@ -1,3 +1,146 @@
+/* Standalone C frontend for one Orange 2026 program.
+   This file owns lexing, parsing, checking, reference evaluation, and the
+   CLI behind orange_main. Exact integer magnitudes live in bigint.c.
+   src/main.c only forwards the process arguments.
+
+   Slice boundary: S3a through S3m. The admitted source is edition 2026.
+   A program is a root module plus every module it reaches through use.
+   check and eval read module m of `use m;` from m.or beside the root.
+   lex reads only the file it is given. A module names each used module
+   once, before its functions, and calls that module's functions as
+   m::f(...). The module graph is acyclic and is checked before any
+   module. Each module is then checked on its own, after the modules it
+   uses. A typed spec may have parameters, let bindings, and one result
+   expression. The scalar types are Int, Bool, Word[8], Word[16],
+   Word[32], Word[64], and Mod[m]. A module may name a type with `type`
+   after its use declarations and before its functions. A bad alias
+   target is reported once, at that declaration: ORC0204 for a Word
+   width other than 8, 16, 32, or 64, and ORC0221 for a bad array length.
+   A use of the alias does not report that target again. Mod[m] is the
+   residue ring of a constant modulus from 2 through 2^521 - 1. The
+   constant is built from integer literals with +, -, *, <<, and
+   parentheses, evaluated once, and stored in the modulus table. +, -, *,
+   and prefix - reduce to the least residue. / multiplies by an inverse
+   and is 0 when there is none. A fixed-length array T^n holds n values
+   of one scalar, with n a decimal
+   integer from 1 through 256. Declarations of 1 to 4 axes are
+   type-checked, with ORC0203 on a fifth; values with more than one
+   axis aren't supported yet. Any use of such a type (a parameter, a
+   result, an alias use, a tuple element, and so on) is ORC0203. The
+   message is "a value of type `%s` is a matrix, which this compiler
+   does not evaluate". The label is "rank-2 arrays: nested-array slice".
+   Expressions are literals, names, calls,
+   parentheses, array literals, indices, exact integer arithmetic,
+   Euclidean / and %, word ring arithmetic, bitwise operators, shifts,
+   rotations, comparisons, !, &&, ||, and as conversions. A loop
+   `for i in a..b with s: T = start { step }` folds step from the literal
+   bound a up to b. An index is proved in range before evaluation. A word
+   index ranges over its type, narrowed by bitwise operators, a literal
+   shift, arithmetic, conversions, and conditionals where the result
+   cannot wrap. An Int index is built from integer literals, loop indices,
+   words and residues converted with `as Int`, arithmetic, and
+   conditionals. A loop bound or index literal that does not fit the
+   16,384-bit budget is
+   ORC0205, the same code as any other oversized literal. A bound or index
+   that decodes and is still out of range is ORC0225 or ORC0223. A second
+   index of a scalar is ORC0224, reported once, and is not a syntax error.
+   A rejected `as` target is ORC0204 for a bad word width or ORC0203 for
+   any other unsupported type, and the operand is still checked. A loop
+   step that fails after its opening brace is recovered without an extra
+   ORC0104 on the function close. `x with
+   [i] = v` replaces one element, and `[v; n]` repeats a value. A missing
+   `=` after that index is ORC0101. Its note is "an update is written
+   `x with [i] = value`, or `x with [i][j] = value` for an element of a
+   row". `if c { a }
+   else { b }` chooses one value; an else-if chain is one conditional, and
+   only the chosen branch is evaluated. A loop's step and each branch of
+   a conditional may begin with `let` bindings. A step's bindings run
+   afresh at every step, a branch's only when that branch is chosen, and
+   each name is in scope only inside its step or branch. Those bindings
+   do not give the enclosing `if` a type of its own, so an untyped `if`
+   reports ORC0220 only. A cross-module `Mod` call compares modulus
+   values, not each file's private table index, and retags the value at
+   the module boundary; a mismatch is ORC0214. A rejected result type
+   (`Float`, a later `type` name, or `Mod[1]`) does not also check the
+   body. A rejected `!`, `&&`, or `||` is ORC0215 only. A tuple type `(T, U)`
+   holds 2 through 16 scalars or arrays. `(a, b)` builds one from left
+   to right, `.k` selects an element, and a `let` or `with` pattern
+   names each element. `let(x)` is a call, not a pattern. A pattern name
+   that repeats the loop index is ORC0219; a pattern name used outside
+   the loop is ORC0211. `p.01`, `p.0.1`, and `x[0].1` are each one
+   ORC0101. A tuple inside a tuple, and an array of tuples, are rejected
+   even through a `type` alias. Order on an array or a tuple is ORC0215.
+   `==` and `!=` of a written-out array or tuple with no type of its own
+   is ORC0227.
+   A byte string "..." or hex"..." is the array Word[8]^n of its bytes,
+   with n from 1 through 256. Characters are printable ASCII, from a
+   space through `~`, or an escape; a non-printable or non-ASCII byte is
+   ORC0235. An empty "" is ORC0221. A hex string is pairs of hex digits,
+   and a space may separate bytes. A lexical error is ORC0009 at the
+   first bad character. An unterminated hex string is ORC0003. hex "00"
+   with a space before the quote is ORC0101. ++ joins two arrays of one
+   element type, and a join longer than 256 bytes is ORC0222. A slice
+   `x[a..b]` holds the b - a elements from index a, and
+   `x with [a..b] = v` replaces that run. At least one bound is written.
+   Bounds are integer literals and loop indices with +, -, and * by a
+   constant, proved in range before evaluation. A runtime bound, such as
+   the parameter in `data`, or a non-linear bound, such as `i * i` in
+   `squared`, is ORC0226. A length that changes from step to step is
+   ORC0236. A last step that leaves the array is ORC0223.
+   A function may take at most 4 size parameters, `spec f[n in a..b]`,
+   as in `mac[len in 1..256]`. n takes each value from a up to, but not
+   including, b, with a < b and both bounds at most 65536. The function
+   is checked once for each combination, at most 256 instances, and the
+   first size changes slowest. An empty range, a bound past 65536, and
+   a product past the cap (`many` has 361) are ORC0238, and the body is
+   not checked. Instances of one function are checked from the first
+   value upward. The first diagnostic ends that walk, and it names that
+   instance, as in `last[1]` or `none[0]`. A sized length outside 1
+   through 256 is ORC0221, and its note says 1 through 65536. A size is an
+   Int constant in that instance, built from integer literals and the
+   function's size parameters with +, -, *, /, %, and parentheses. / and
+   % are Euclidean, the same rules as for Int, so `blocks[1]` is 3.
+   Anything else in a size is ORC0237. A computed length or bound is
+   parenthesized:
+   `^n + 1`, `[0; 2 * n]`, and `0..n - 1` are ORC0101. A call writes one
+   size per parameter, `f[2](x)` or `sha256::sha256[n](...)`, or writes
+   none and fits the one instance whose array lengths match. An
+   out-of-range size is ORC0238. The wrong number of sizes, including a
+   size on a function that has none, is ORC0239. No matching instance is
+   ORC0238, and more than one match is ORC0239. Instances may call one
+   another. A cycle among them is ORC0217 and prints the chain, as in
+   `swap[1] -> swap[2] -> swap[1]`.
+   `for`, `in`, `with`, `if`, and `else` are names outside those
+   positions. `true` and `false` are Bool values where no parameter or
+   binding of that spelling is in scope. Empty spec and impl
+   declarations parse and have no value.
+
+   Evaluation owns each array in the Value that holds it and releases the
+   element block when that value dies. The whole program shares one step
+   budget. Printing grows a buffer to the spelling of the value. Failing
+   to retain an array or its spelling reports ORC0301 and prints no value
+   lines. A module-cycle message is kept inside its buffer.
+
+   Token spellings match compiler/crates/orange-compiler/src/lexer.rs, so
+   lex output can be compared with the Rust frontend. `let` and `as` stay
+   identifiers there, and they stay identifiers here.
+
+   Fail closed. Byte order, type parameters, tests, lengths above 256,
+   and computed shift amounts are rejected rather than given a new
+   meaning. The lexer still produces the Rust token
+   names for those forms. The parser or the checker rejects them. This
+   file does not implement S3n or any later slice.
+
+   Layout:
+     limits, token kinds, and the Rust token-name table
+     syntax nodes, functions, diagnostics, Compiler, and Program
+     diagnostic recording and table growth
+     lexer
+     parser
+     checker
+     reference evaluator
+     diagnostic text, commands, and CLI */
+
 #include "compile.h"
 
 #include "bigint.h"
@@ -9,6 +152,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Resource limits. Exhausting one of them yields a single resource
+   diagnostic and no value lines. The numbers match the README. */
 #define MAX_SOURCE_BYTES (16u * 1024u * 1024u)
 #define MAX_TOKENS 262144u
 #define MAX_EXPRS 262144u
@@ -36,6 +181,11 @@
 #define MAX_SIZES 4
 #define MAX_INSTANCES 256
 
+/* --- Tokens ---------------------------------------------------------------- */
+
+/* Kind order is the index into TOKEN_NAMES. The strings are the Rust
+   lexer's display names, including keywords and punctuation this slice
+   does not accept as expressions. */
 typedef enum TokenKind {
     TK_EOF,
     TK_IDENT,
@@ -144,8 +294,43 @@ static const char *TOKEN_NAMES[] = {
     "QUESTION",
 };
 
+_Static_assert(sizeof TOKEN_NAMES / sizeof TOKEN_NAMES[0] == (size_t)TK_QUESTION + 1,
+               "TOKEN_NAMES must stay aligned with TokenKind");
+
+/* --- Syntax and semantics -------------------------------------------------- */
+
+/* Admitted types. TY_NONE is an absent or rejected type, not a value.
+   TY_BOOL is Bool. TY_MOD is a residue ring Mod[m]; the modulus lives in
+   the modulus table. TY_TUPLE is a fixed tuple of 2 through 16 scalars
+   or arrays. */
 typedef enum TypeKind { TY_NONE = 0, TY_INT, TY_BOOL, TY_W8, TY_W16, TY_W32, TY_W64, TY_MOD, TY_TUPLE } TypeKind;
 
+/* Flat expression node. Fields belong to the kind that uses them:
+     EX_LIT    negative, lit_start, lit_end
+     EX_NAME   name_start, name_end, then name_res, name_index, name_ty, name_len
+     EX_CALL   name_* is the function. left and right are the module span of
+               a qualified call, or left is UINT32_MAX for a local call.
+               arg0, argc, and callee are filled by the checker. name_index
+               is the callee's module.
+     EX_UNARY  op, left, op_start, op_end
+     EX_BINARY op, left, right, op_start, op_end
+     EX_SHIFT  op, left, right (the amount), op_start, op_end
+     EX_CONV   left, conv_ty, conv_ok, name_* holds the target type span
+     EX_GROUP  left
+     EX_ARRAY  arg0, argc (the elements, in the shared argument table)
+     EX_INDEX  left (the array), lit_start, lit_end (a literal index)
+     EX_SELECT left (the array), right (an index expression)
+     EX_UPDATE left (the array), right (the index), callee (the new element)
+     EX_FILL   left (the repeated element), lit_start, lit_end (the length)
+     EX_LOOP   arg0 (the LoopDesc)
+     EX_LOOP_INDEX and EX_ACCUM  arg0 (the enclosing LoopDesc)
+     EX_COND   arg0, argc (the condition/value arms), right (the else value).
+               Each arm and the else may open with block bindings.
+     EX_TUPLE  arg0, argc (the elements, evaluated left to right)
+     EX_PROJECT left (the tuple), proj_pos (the decimal position `.k`)
+   ty is the scalar the checker expects. ty_len is 0 for a scalar and the
+   array length otherwise. height is the syntax height used by the 256
+   limit. Child indexes are UINT32_MAX when absent. */
 typedef enum ExprKind {
     EX_NONE = 0,
     EX_LIT,
@@ -220,8 +405,14 @@ typedef struct TypeSite {
     int resolved;
     /* The spelling itself carries `^n`. Resolution turns that into rank. */
     int wrote_axis;
-    /* 0 scalar, 1 a row, 2 a matrix, 3 and 4 further declared axes.
-       A use of rank 2 or more is ORC0203. A fifth axis is rejected on the declaration. */
+    /* Rank always follows the resolved target type. It counts declared
+       axes and is never lowered per site. Declarations of 1 to 4 axes
+       are type-checked, with ORC0203 on a fifth; values with more than
+       one axis aren't supported yet. Any use
+       of such a type (a parameter, a result, an alias use, a tuple element,
+       and so on) is ORC0203. The message is "a value of type `%s` is a
+       matrix, which this compiler does not evaluate". The label is
+       "rank-2 arrays: nested-array slice". */
     int rank;
     uint32_t inner_len;
     const char *role;
@@ -508,6 +699,8 @@ typedef struct Diag {
     uint8_t has_note2;
 } Diag;
 
+/* A scalar has length 0 and a null element pointer. An array owns the
+   block at elems and runs for `length` slots. value_clear releases it. */
 typedef struct Value {
     TypeKind type;
     uint32_t length;
@@ -543,6 +736,7 @@ typedef struct TupleElem {
     int ok;
 } TupleElem;
 
+/* One `use name;` in a module. The name is the stem of the sibling file. */
 typedef struct UseDecl {
     uint32_t span_start;
     uint32_t span_end;
@@ -550,6 +744,9 @@ typedef struct UseDecl {
     uint32_t name_end;
 } UseDecl;
 
+/* One module. Tables grow with ensure_cap. The arena holds Int limbs for
+   this module and is discarded with the Compiler. `program` is the graph
+   this module belongs to. `requested` is the stem it was loaded as. */
 typedef struct Compiler {
     char *text;
     size_t length;
@@ -657,6 +854,10 @@ typedef struct Compiler {
     uint32_t cur_inst;
 } Compiler;
 
+/* The root is mods[0]. order is the check order: a module after the
+   modules it uses. use_target is the program index named by each use, or
+   UINT16_MAX when unresolved. Index 0 is the root, so an unresolved use
+   must not default to 0. */
 struct Program {
     Compiler *mods[MAX_PROGRAM_SLOTS];
     int nmods;
@@ -667,6 +868,10 @@ struct Program {
     uint16_t use_target[MAX_PROGRAM_SLOTS][MAX_USES];
     int graph_error;
 };
+
+/* --- Parser cursor --------------------------------------------------------- */
+
+/* The cursor stops on TK_EOF. Spans are byte offsets into c->text. */
 
 static TokenKind peek_kind(const Compiler *c) {
     return c->tokens[c->at].kind;
@@ -723,11 +928,20 @@ static void copy_text(char *dest, size_t cap, const char *src) {
     dest[length] = '\0';
 }
 
+/* --- Diagnostics ----------------------------------------------------------- */
+
+/* Phase argument of add_diag. Call sites pass these values as literals.
+   Each phase stops after MAX_ORDINARY_DIAGS and then emits one limit code. */
+enum { PHASE_LEX = 0, PHASE_PARSE = 1, PHASE_SEMA = 2 };
+
+/* Records one diagnostic. phase selects the counter and the overflow code:
+   PHASE_LEX is ORC0007, PHASE_PARSE is ORC0105, PHASE_SEMA is ORC0208.
+   A phase that is neither lex nor parse is counted as semantic analysis. */
 static void add_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message,
                      const char *label, const char *note, int phase) {
-    uint32_t *count = phase == 0 ? &c->lex_diags : phase == 1 ? &c->parse_diags : &c->sema_diags;
-    int *limited = phase == 0 ? &c->lex_limited : phase == 1 ? &c->parse_limited : &c->sema_limited;
-    const char *limit_code = phase == 0 ? "ORC0007" : phase == 1 ? "ORC0105" : "ORC0208";
+    uint32_t *count = phase == PHASE_LEX ? &c->lex_diags : phase == PHASE_PARSE ? &c->parse_diags : &c->sema_diags;
+    int *limited = phase == PHASE_LEX ? &c->lex_limited : phase == PHASE_PARSE ? &c->parse_limited : &c->sema_limited;
+    const char *limit_code = phase == PHASE_LEX ? "ORC0007" : phase == PHASE_PARSE ? "ORC0105" : "ORC0208";
     Diag *diag;
     if (*count >= MAX_ORDINARY_DIAGS) {
         if (!*limited && c->ndiags < MAX_ORDINARY_DIAGS + 4) {
@@ -772,6 +986,8 @@ static void diag_add_secondary(Compiler *c, uint32_t start, uint32_t end, const 
     copy_text(diag->sec_label, sizeof diag->sec_label, label == NULL ? "" : label);
 }
 
+/* One resource diagnostic for the whole compilation. Later resource
+   failures are ignored. The diagnostic is counted in the parse phase. */
 static void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_t end, const char *message) {
     if (c->resource) {
         return;
@@ -781,6 +997,8 @@ static void resource_diag(Compiler *c, const char *code, uint32_t start, uint32_
              "the source was not accepted", 1);
 }
 
+/* Grow a heap table to at least `need` elements, doubling until `max`.
+   Returns 0 when `need` exceeds `max` or the allocation fails. */
 static int ensure_cap(void **ptr, size_t *cap, size_t need, size_t elem, size_t max) {
     size_t next;
     void *grown;
@@ -850,6 +1068,10 @@ static int push_token(Compiler *c, TokenKind kind, uint32_t start, uint32_t end)
     return 1;
 }
 
+/* --- Lexer ----------------------------------------------------------------- */
+
+/* Well-formed UTF-8, rejecting overlong forms and surrogates. Identifiers
+   themselves are ASCII; this check is the source-file gate. */
 static int utf8_ok(const unsigned char *text, size_t length) {
     size_t index = 0;
     while (index < length) {
@@ -964,6 +1186,7 @@ static int integer_well_formed(const char *text, uint32_t start, uint32_t end) {
     return saw && !previous_sep;
 }
 
+/* Reserved words from the Rust lexer. `let` and `as` are not keywords. */
 static TokenKind keyword_kind(const char *text, uint32_t start, uint32_t end) {
     if (end - start == 7 && memcmp(text + start, "edition", 7) == 0) {
         return TK_EDITION;
@@ -994,6 +1217,14 @@ static int starts_with(const Compiler *c, size_t cursor, const char *word) {
     return cursor + length <= c->length && memcmp(c->text + cursor, word, length) == 0;
 }
 
+/* Scan c->text into c->tokens, including a final TK_EOF.
+   Block comments nest. A line comment ends at the line break.
+   Integer well-formedness is checked here; the magnitude limit is not.
+   A hex string is hex"..." with the quote immediately after hex. An
+   unterminated hex string is ORC0003. A bad character, or a hex digit
+   with no partner, is ORC0009 at that character. Ordinary "..." strings
+   are tokens here; printable ASCII and escapes are checked later. An
+   unrecognized byte is ORC0001 and is skipped. */
 static void lex_source(Compiler *c) {
     size_t cursor = 0;
     while (cursor < c->length && !c->resource) {
@@ -1040,6 +1271,8 @@ static void lex_source(Compiler *c) {
             }
             if (cursor - start == 3 && memcmp(c->text + start, "hex", 3) == 0 && cursor < c->length &&
                 c->text[cursor] == '"') {
+                /* First payload byte. The token span is the whole hex"..."
+                   form, so this index is not stored on the token. */
                 size_t body = cursor + 1;
                 int terminated = 0;
                 int pending = 0;
@@ -1287,6 +1520,16 @@ static void lex_source(Compiler *c) {
     }
 }
 
+/* --- Parser ---------------------------------------------------------------- */
+
+/* Recursive descent over the token cursor. A return of 0 means no node
+   was produced: a resource limit, or an operand that could not be parsed.
+   A return of 1 means the construct was consumed; a diagnostic may already
+   have been recorded. parse_source itself always returns 1.
+   Operator groups do not mix without parentheses. Shifts and `as` take
+   one right-hand operand and do not chain. */
+
+/* Nesting counts the parse stack. Height is stored on each node. */
 static int enter_nest(Compiler *c, uint32_t start, uint32_t end) {
     if (c->nesting >= MAX_NESTING) {
         resource_diag(c, "ORC0106", start, end,
@@ -1362,10 +1605,18 @@ static int is_binary_kind(TokenKind kind) {
            kind == TK_PLUSPLUS;
 }
 
+/* A following operator, conversion, or `with [` must be parenthesized
+   when it does not belong to the expression already started. */
 static int trailing_joiner(const Compiler *c) {
     return is_binary_kind(peek_kind(c)) || is_as(c) || is_with_update(c);
 }
 
+/* Operator groups that must not be mixed without parentheses:
+   1 arithmetic (+, -, *), 2 &, 3 |, 4 ^, 5 shifts and rotations,
+   6 comparisons, 7 &&, 8 ||, 9 Euclidean / and %, 10 concatenation (++).
+   In group 1, `*` folds inside `+` and `-`. Groups 2 through 4, 7, 8,
+   and 10 chain only with the same operator. Groups 5, 6, and 9 take one
+   right-hand operand and do not chain. */
 static int group_of(TokenKind kind) {
     if (kind == TK_PLUS || kind == TK_MINUS || kind == TK_STAR) {
         return 1;
@@ -1400,6 +1651,8 @@ static int group_of(TokenKind kind) {
     return 0;
 }
 
+/* After an ungrouped operator, move to the next separator so one
+   expression reports that fault once. */
 static void skip_expr_tail(Compiler *c) {
     int paren = 0;
     int bracket = 0;
@@ -1428,7 +1681,8 @@ static void skip_expr_tail(Compiler *c) {
 }
 
 /* Consume `depth` braces that this parse has already opened, so the caller's
-   function-body skip still sees the function's own closing brace. */
+   function-body skip still sees the function's own closing brace. A loop
+   step that fails after `{` uses this so that close is not an extra ORC0104. */
 static void skip_open_braces(Compiler *c, int depth) {
     while (peek_kind(c) != TK_EOF && depth > 0) {
         TokenKind kind = peek_kind(c);
@@ -1441,6 +1695,8 @@ static void skip_open_braces(Compiler *c, int depth) {
     }
 }
 
+/* Skip to the closing brace of a function that cannot be parsed.
+   inside_body is 1 when the opening brace has already been consumed. */
 static void skip_function_body(Compiler *c, int inside_body) {
     int brace = inside_body ? 1 : 0;
     int seen = inside_body;
@@ -1462,6 +1718,7 @@ static void skip_function_body(Compiler *c, int inside_body) {
 static int parse_prefixed(Compiler *c, uint32_t *out);
 static int parse_expr(Compiler *c, uint32_t *out);
 
+/* Decimal length from 1 through MAX_ARRAY_LENGTH. A leading zero is rejected. */
 static int canonical_array_length(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
     uint64_t acc = 0;
     uint32_t index;
@@ -1604,6 +1861,14 @@ static int parse_call_sizes(Compiler *c, uint32_t *size0, uint8_t *nsize, int *c
     }
 }
 
+/* Int, Word[8|16|32|64], Mod[m], a name, and, when allow_array is set, one T^n.
+   A length after ^ is a decimal integer or a parenthesized size.
+   `^n + 1` is ORC0101. A name that is not an admitted type still
+   consumes the type syntax and returns with ok == 0. A bad alias target
+   is reported once, at the declaration. A bad type written on a
+   signature is reported when that signature is checked. A broken type
+   returns 0. A second caret is rejected
+   here. as_element rejects a tuple written inside another tuple. */
 static int parse_type_body(Compiler *c, DeclaredType *type, int allow_array, int as_element) {
     Token name = peek_token(c);
     int admit_length = 0;
@@ -1891,6 +2156,7 @@ static int parse_type(Compiler *c, DeclaredType *type, int allow_array) {
     return parse_type_body(c, type, allow_array, 0);
 }
 
+/* Copy a parsed type into the parameter, binding, or result fields. */
 static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length, int *ok, int *length_bad,
                            uint32_t *start, uint32_t *end, uint32_t *length_start, uint32_t *length_end) {
     *kind = type->kind;
@@ -1903,6 +2169,7 @@ static void store_declared(DeclaredType *type, TypeKind *kind, uint32_t *length,
     *length_end = type->length_end;
 }
 
+/* Remember one parsed type until prepare_types resolves names and moduli. */
 static int push_site(Compiler *c, const DeclaredType *type, const char *role, uint32_t *site_out) {
     TypeSite *site;
     if (c->nsites >= MAX_TYPE_SITES) {
@@ -1947,6 +2214,10 @@ static int push_site(Compiler *c, const DeclaredType *type, const char *role, ui
     return 1;
 }
 
+/* Report a scalar type the parser stored with ok == 0. A Word form is
+   ORC0204. Anything else is ORC0203. `type` is unused because the span
+   decides the code. reject_declared uses ORC0221 when the length itself
+   is bad. An alias's bad target is reported once, at the declaration. */
 static void reject_type(Compiler *c, TypeKind type, int ok, uint32_t start, uint32_t end) {
     if (ok) {
         return;
@@ -2072,6 +2343,7 @@ static int ungrouped(Compiler *c, Token token, Token previous) {
     return 1;
 }
 
+/* Build EX_INDEX for a literal index, or EX_SELECT for an index expression. */
 static int finish_index_node(Compiler *c, uint32_t base, uint32_t end, ExprKind kind, uint32_t child, uint32_t lit_start,
                              uint32_t lit_end, uint32_t *out) {
     int height = height_of(c, base);
@@ -2157,6 +2429,9 @@ static int finish_slice_expr(Compiler *c, uint32_t base, uint32_t start_expr, ui
     return note_height(c, *out);
 }
 
+/* One bracket suffix. A lone integer literal is EX_INDEX. Any other
+   index expression is EX_SELECT. `a..b`, with either bound omitted but
+   not both, is EX_SLICE. A following `[` is parsed by parse_index. */
 static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
     Token open;
     Token index;
@@ -2232,7 +2507,8 @@ static int parse_one_index(Compiler *c, uint32_t base, uint32_t *out) {
 }
 
 /* A second `[` is another index, not a syntax error. Indexing the resulting
-   scalar is ORC0224. Arrays of arrays stay outside this slice. */
+   scalar is ORC0224. A slice is taken once: a following `[` or `.` is
+   ORC0101. Arrays of arrays stay outside this slice. */
 static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
     if (peek_kind(c) != TK_LBRACKET) {
         *out = base;
@@ -2267,6 +2543,8 @@ static int parse_index(Compiler *c, uint32_t base, uint32_t *out) {
     }
 }
 
+/* A position is a decimal integer without a leading zero. `p.01` is one
+   ORC0101 at the digits and is not read as position 1. */
 static int canonical_position(const char *text, uint32_t start, uint32_t end, uint32_t *value) {
     uint64_t acc = 0;
     uint32_t index;
@@ -2312,8 +2590,8 @@ static int finish_project(Compiler *c, uint32_t base, uint32_t pos, uint32_t pos
     return note_height(c, *out);
 }
 
-/* `.k` follows a name or a call, then at most one index. A second `.` or a
-   `.` after an index is one syntax error and is not parsed further. */
+/* `.k` follows a name or a call, then at most one index. `p.0.1` and
+   `x[0].1` are each one ORC0101 at the extra token and are not parsed further. */
 static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
     if (peek_kind(c) == TK_DOT) {
         Token dot = peek_token(c);
@@ -2373,6 +2651,9 @@ static int parse_suffix(Compiler *c, uint32_t base, uint32_t *out) {
     return 1;
 }
 
+/* `[e0, e1, ...]` or a fill `[element; length]`. The list is not empty
+   and holds at most MAX_ARRAY_ELEMENTS expressions. Elements share the
+   argument table. A fill stores the element and the length literal. */
 static int parse_array(Compiler *c, Token open, uint32_t *out) {
     uint32_t local_elems[MAX_ARRAY_ELEMENTS];
     uint32_t count = 0;
@@ -2777,6 +3058,9 @@ static int parse_block_lets(Compiler *c, const char *note, uint32_t *bind0, uint
     return 1;
 }
 
+/* `for i in a..b with s: T = start { step }`. Bounds are integer
+   literals. The index and accumulator are in scope only in the step.
+   The step may open with `let` bindings that are also in scope only there. */
 static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     Token index;
     Token bound_a;
@@ -3046,6 +3330,7 @@ static int parse_loop(Compiler *c, Token for_token, uint32_t *out) {
     return note_height(c, *out);
 }
 
+/* `base with [index] = value`. The new element is stored in callee. */
 static int parse_update(Compiler *c, uint32_t base, uint32_t *out) {
     Token with_token = peek_token(c);
     uint32_t index = UINT32_MAX;
@@ -3321,6 +3606,8 @@ static int starts_conditional(const Compiler *c) {
     return 0;
 }
 
+/* `if c { a } else { b }`, including an else-if chain stored as one
+   EX_COND. Both branches are parsed; only the chosen branch is evaluated. */
 static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
     CondArm *local = NULL;
     uint32_t count = 0;
@@ -3504,6 +3791,13 @@ static int parse_conditional(Compiler *c, Token if_token, uint32_t *out) {
     return note_height(c, *out);
 }
 
+/* Operand: literal, name, call, parenthesized expression, array literal,
+   fill, loop, conditional, byte string, hex string, unary minus, or
+   bitwise complement. A name, call, or accumulator may then take one
+   index or slice, and an array may take one `with [` update. A minus
+   immediately before an integer is that literal's sign, matching the
+   S3a body rule. `for` starts a loop only when the next token is an
+   identifier. `if` starts a conditional only in that same position. */
 static int parse_prefixed(Compiler *c, uint32_t *out) {
     Token token = peek_token(c);
     if (c->resource) {
@@ -3963,6 +4257,11 @@ static int parse_prefixed(Compiler *c, uint32_t *out) {
     return 0;
 }
 
+/* One expression. `as`, shifts, comparisons, and Euclidean `/` and `%`
+   take one right-hand operand and do not chain. In group 1, products fold
+   first and then `+` and `-` associate to the left. `&`, `|`, `^`, `&&`,
+   `||`, and `++` associate to the left only with the same operator. A
+   following operator from another group is rejected. */
 static int parse_expr(Compiler *c, uint32_t *out) {
     uint32_t left;
     Token first_op;
@@ -4261,6 +4560,9 @@ static int parse_binding(Compiler *c, Func *func) {
     return 1;
 }
 
+/* Result type, optional let bindings, and the result expression.
+   inside_params_done is unused; callers pass 1 after the parameter
+   list has already been closed. */
 static int parse_typed_tail(Compiler *c, Func *func, int inside_params_done) {
     uint32_t result_start = 0;
     uint32_t result_end = 0;
@@ -4414,6 +4716,9 @@ static int parse_size_params(Compiler *c, Func *func) {
     }
 }
 
+/* spec or impl. An impl and a parameterless spec with a brace body are
+   empty in this slice. A spec with parameters, or a parameterless spec
+   with an arrow, is typed. */
 static int parse_function(Compiler *c) {
     Token kind = peek_token(c);
     Token name;
@@ -4551,6 +4856,8 @@ static int parse_function(Compiler *c) {
     return parse_typed_tail(c, func, 1);
 }
 
+/* `use name;` before any function. The name is recorded; the sibling
+   file is loaded later. More than 64 uses is a resource diagnostic. */
 static int parse_use(Compiler *c) {
     Token use_token = peek_token(c);
     Token name;
@@ -4580,6 +4887,9 @@ static int parse_use(Compiler *c) {
     return 1;
 }
 
+/* `type Name = T;` after `use` and before functions. The name is installed
+   when prepare_types accepts it. More than 64 declarations is a resource
+   diagnostic. */
 static int parse_type_decl(Compiler *c) {
     Token name;
     DeclaredType declared;
@@ -4627,6 +4937,11 @@ static int parse_type_decl(Compiler *c) {
     return 1;
 }
 
+/* edition 2026; module name { use declarations, then type declarations,
+   then spec and impl functions }. A `use` after a `type` or a function,
+   or a `type` after a function, is rejected. Always returns 1. Syntax
+   errors and resource failures are recorded on the Compiler; they do not
+   change this return value. */
 static int parse_source(Compiler *c) {
     Token token = peek_token(c);
     Token year;
@@ -4742,6 +5057,48 @@ static int parse_source(Compiler *c) {
     return 1;
 }
 
+/* --- Checker --------------------------------------------------------------- */
+
+/* Names, local and qualified calls, operators, comparisons, Euclidean division, conditionals,
+   conversions, arrays, indices, loops, updates, fills, and the call graph.
+   check_expr returns 0 when analysis must stop
+   (resource limit or the semantic diagnostic cap) and 1 when the node was
+   visited, including when a type error was reported. find_leaf returns 1
+   when a typed leaf was found, 0 when the leaf is an untyped literal, and
+   -1 when the leaf is missing or already rejected. *length is 0 for a
+   scalar. *silent suppresses a second diagnostic. base_type reads the
+   type of a name, call, accumulator, or loop without walking through
+   operators. A word index ranges over its type. An Int index is built
+   from integer literals, loop indices, words converted with `as Int`,
+   arithmetic, and conditionals, and is proved in range before evaluation.
+   A literal that does not fit the bit budget is ORC0205, not a range
+   error. A step or a branch may open with `let` bindings that stay in
+   that block. A cross-module residue compares the modulus values.
+   A rejected `!`, `&&`, or `||` is ORC0215 and does not typecheck its
+   operands. A rejected result type does not typecheck the body.
+   A bad alias target is reported once, at the declaration: ORC0204 for
+   a Word width and ORC0221 for an array length. A use does not report
+   that target again.
+   A tuple is 2 through 16 scalars or arrays. `.k` selects one element.
+   A pattern name that repeats the loop index is ORC0219, and a pattern
+   name used outside the loop is ORC0211. Order on an array or a tuple
+   is ORC0215. `==` and `!=` of a written-out array or tuple with no type
+   of its own is ORC0227. A byte string is Word[8]^n. ++ joins arrays. A slice's
+   bounds are an affine form of integer literals and loop indices, with
+   one fixed positive length, proved inside the array before evaluation.
+   A runtime or non-linear bound is ORC0226, a varying length is ORC0236,
+   and an out-of-range step is ORC0223. A non-printable or non-ASCII byte
+   is ORC0235, an empty string is ORC0221, and a join past 256 bytes is
+   ORC0222. A sized function is instantiated for each value in range, at
+   most 256 instances. Instances are checked from the first value, and
+   the first diagnostic ends that walk and names that instance, as in
+   `last[1]` or `none[0]`. A sized length outside 1 through 256 is
+   ORC0221, and its note says 1 through 65536. Size `/` and `%` are
+   Euclidean. A call resolves one instance: an out-of-range or unmatched
+   size is ORC0238, and a wrong count or an ambiguous fit is ORC0239. A
+   cycle among instances is ORC0217 and prints the chain, as in
+   `swap[1] -> swap[2] -> swap[1]`. */
+
 static const char *type_spelling(TypeKind type) {
     switch (type) {
     case TY_INT: return "Int";
@@ -4804,6 +5161,9 @@ static int signature_is_usable(const Compiler *c, uint32_t func_index) {
     return 1;
 }
 
+/* The unique typed spec with this name in `mod`. The name bytes come from
+   `text`, which may be another module's source. An empty spec or an impl
+   sets the out-flags and does not count as that function. */
 static int find_function_in(const Compiler *mod, const char *text, uint32_t start, uint32_t end, uint32_t *index,
                            int *empty_spec, int *impl) {
     uint32_t cursor;
@@ -4831,6 +5191,7 @@ static int find_function_in(const Compiler *mod, const char *text, uint32_t star
     return 0;
 }
 
+/* A local call looks up the function in this module. */
 static int find_function(const Compiler *c, uint32_t start, uint32_t end, uint32_t *index, int *empty_spec, int *impl) {
     return find_function_in(c, c->text, start, end, index, empty_spec, impl);
 }
@@ -4863,6 +5224,8 @@ typedef struct Callee {
     int qualified;
 } Callee;
 
+/* A bare call stays in this module. `m::f` requires a `use m` whose
+   target module declares f. A self-qualified name is not a use. */
 static void resolve_callee(Compiler *c, const Expr *expr, Callee *out) {
     memset(out, 0, sizeof *out);
     out->func = UINT32_MAX;
@@ -4905,6 +5268,8 @@ static void resolve_callee(Compiler *c, const Expr *expr, Callee *out) {
 
 static int size_slot_of(const Compiler *c, uint32_t func_index, uint32_t start, uint32_t end, uint8_t *slot);
 
+/* Parameters, then bindings already closed by `;`, then a later binding
+   of the same spelling (NAME_EARLY). Duplicates are skipped. */
 static void resolve_name(Compiler *c, uint32_t func_index, uint32_t locals_in_scope, uint32_t start, uint32_t end,
                          NameRes *res, uint16_t *slot, TypeKind *type, uint32_t *length, int *type_ok,
                          uint32_t *abs_index) {
@@ -5110,8 +5475,9 @@ static void check_literal(Compiler *c, const Expr *expr, TypeKind expected, uint
 static const Big *modulus_at(const Compiler *c, uint16_t index);
 static int intern_modulus(Compiler *c, const Big *value, uint16_t *out);
 
-/* A modulus index belongs to one module's table. Copy a foreign modulus into
-   this module so later comparisons use one table. */
+/* Each module keeps its own modulus table, so equal indexes can name
+   different rings. Copy the foreign modulus value into this table and
+   compare the values. A mismatch is ORC0214. */
 static int adopt_modulus(Compiler *c, const Compiler *owner, uint16_t foreign, uint16_t *local) {
     const Big *value;
     if (owner == NULL || owner == c) {
@@ -6475,8 +6841,8 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
         return 1;
     }
     case EX_CONV:
-        /* An invalid target is still a leaf. Callers check this node so the
-           width or unsupported type is reported; silencing it dropped that
+        /* An invalid target is still a leaf. Callers check this node so
+           ORC0204 or ORC0203 is reported; silencing it dropped that
            diagnostic when the conversion was itself an operand. */
         if (!expr->conv_ok) {
             return -1;
@@ -6519,6 +6885,9 @@ static int find_leaf(Compiler *c, uint32_t index, uint32_t func_index, uint32_t 
     case EX_SLICE_UP:
         return find_leaf(c, expr->left, func_index, locals_in_scope, type, length, leaf, silent);
     default:
+        /* A conditional is not a typed leaf. Bindings inside a branch do
+           not type the enclosing `if`, so converting that `if` reports
+           ORC0220 only. */
         return 0;
     }
 }
@@ -7621,6 +7990,9 @@ static int remember_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t
     return 1;
 }
 
+/* Check one step or branch. Names are visible only after their own `;`
+   and only inside this block. A rejected binding type does not also
+   typecheck that binding's initializer. */
 static int check_block(Compiler *c, uint32_t bind0, uint16_t nbinds, uint32_t value, TypeKind expected,
                        uint32_t expected_len, uint16_t expected_mod, uint32_t func_index, uint32_t locals_in_scope) {
     BlockFrame *frame;
@@ -8876,6 +9248,11 @@ static int operand_passes_branch(const Compiler *c, uint32_t index) {
     return expr->else_nbinds > 0;
 }
 
+/* Visit one expression at `expected` with array length `expected_len`.
+   A scalar uses length 0. Returns 0 only to stop the walk. Loops, fills,
+   updates, indices, slices, concatenation, byte strings, comparisons,
+   division, conditionals, and conversions are checked here too. A
+   chained index of a scalar is ORC0224 once. */
 static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t expected_len, uint32_t func_index,
                       uint32_t locals_in_scope) {
     Expr *expr;
@@ -9543,8 +9920,9 @@ static int check_expr(Compiler *c, uint32_t index, TypeKind expected, uint32_t e
         int silent = 0;
         int state;
         /* A rejected target is not a type, so it is not also a mismatch with
-           `expected`. The operand is still checked: Rust reports both the
-           target and whatever the operand itself has wrong. */
+           `expected`. reject_type reports ORC0204 for a bad word width and
+           ORC0203 for any other unsupported type. The operand is still
+           checked: both the target and the operand's own diagnostic are kept. */
         if (!expr->conv_ok) {
             int already = expr->conv_site < c->nsites && c->sites[expr->conv_site].reported;
             if (!already) {
@@ -9911,8 +10289,8 @@ static void report_alias_target(Compiler *c, TypeSite *site) {
             return;
         }
         site->length = length;
-        /* Rank was taken from the resolved target. A length expression
-           does not lower it. */
+        /* Sets only the length and leaves rank alone. Rank was taken
+           from the resolved target. A length expression does not lower it. */
     }
 }
 
