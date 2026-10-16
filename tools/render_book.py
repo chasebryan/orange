@@ -1113,30 +1113,176 @@ def _next_nonblank(lines: list[str], index: int) -> int | None:
     return index
 
 
+def _inline_code_span(text: str, index: int) -> tuple[str, int] | None:
+    """Match one backtick span, or None when the run cannot close.
+
+    This is the linear form of ``(`+)([^`]*)\\1``. The next backtick run is
+    the only possible closer, because the body cannot contain a backtick.
+    When that run is shorter than the opener, an empty span takes the longest
+    even prefix of the opener instead.
+    """
+    length = len(text)
+    opening = index + 1
+    while opening < length and text[opening] == "`":
+        opening += 1
+    opener = opening - index
+    cursor = opening
+    while cursor < length and text[cursor] != "`":
+        cursor += 1
+    closing = cursor
+    while closing < length and text[closing] == "`":
+        closing += 1
+    closer = closing - cursor
+    if closer >= opener:
+        return text[opening:cursor], cursor + opener
+    if opener >= 2:
+        return "", index + (opener // 2) * 2
+    return None
+
+
+def _inline_url_end(text: str, closer: int, reject_url_before: int) -> tuple[int | None, int]:
+    """Return the index after ``](url)``, and how far a failed URL scan applies.
+
+    The URL is one or more characters other than ``)`` or whitespace, the same
+    set as ``[^)\\s]+``. A scan that reaches whitespace or the end shows that
+    every later URL starting in that span fails too. ``reject_url_before``
+    remembers that span. ``str.isspace`` matches Python's one-character ``\\s``.
+    """
+    length = len(text)
+    if closer + 1 >= length or text[closer + 1] != "(":
+        return None, reject_url_before
+    start = closer + 2
+    if (
+        start < reject_url_before
+        or start >= length
+        or text[start] == ")"
+        or text[start].isspace()
+    ):
+        return None, reject_url_before
+    end = start + 1
+    while end < length and text[end] != ")" and not text[end].isspace():
+        end += 1
+    if end >= length or text[end].isspace():
+        return None, max(reject_url_before, end if end < length else length)
+    return end + 1, reject_url_before
+
+
+def _inline_bracket(
+    text: str,
+    bracket: int,
+    allow_empty: bool,
+    reject_url_before: int,
+) -> tuple[tuple[str, str, int] | None, int, int]:
+    """Return ``(match, reject_url_before, plain_until)`` for a ``[label](url)``.
+
+    ``match`` is ``(label, url, end)``. A failed closer cannot start another
+    bracket target before ``plain_until``.
+    """
+    length = len(text)
+    closer = text.find("]", bracket + 1)
+    if closer < 0:
+        return None, reject_url_before, length
+    label = text[bracket + 1 : closer]
+    plain_until = closer + 1
+    if not allow_empty and label == "":
+        return None, reject_url_before, plain_until
+    end, reject_url_before = _inline_url_end(text, closer, reject_url_before)
+    if end is None:
+        return None, reject_url_before, plain_until
+    return (label, text[closer + 2 : end - 1], end), reject_url_before, plain_until
+
+
+def _inline_emphasis(text: str, index: int) -> tuple[str, str, int] | None:
+    """Match ``**strong**`` or ``*em*``, with strong tried first.
+
+    The body cannot contain ``*``. Emphasis does not start or end on ``**``.
+    """
+    length = len(text)
+    if index + 1 < length and text[index + 1] == "*":
+        if index + 2 < length and text[index + 2] != "*":
+            cursor = index + 3
+            while cursor < length and text[cursor] != "*":
+                cursor += 1
+            if cursor + 1 < length and text[cursor] == "*" and text[cursor + 1] == "*":
+                return "strong", text[index + 2 : cursor], cursor + 2
+        return None
+    if index > 0 and text[index - 1] == "*":
+        return None
+    if index + 1 >= length or text[index + 1] == "*":
+        return None
+    cursor = index + 2
+    while cursor < length and text[cursor] != "*":
+        cursor += 1
+    if cursor >= length or (cursor + 1 < length and text[cursor + 1] == "*"):
+        return None
+    return "em", text[index + 1 : cursor], cursor + 1
+
+
 def inline(text: str, source: str, root: Path = ROOT, manuscript: set[str] | None = None) -> str:
+    """Render inline code, images, links, strong, and emphasis in one pass.
+
+    Code is tried first, then images, then links, then strong, then emphasis.
+    A match consumes its span; nothing nests inside it. Unmatched text is
+    escaped. Bracket targets that fail share one URL scan, so a long run of
+    unfinished ``](`` markers stays linear in the length of ``text``.
+    """
     pieces: list[str] = []
-    cursor = 0
-    pattern = re.compile(
-        r"(`+)([^`]*)\1"
-        r"|!\[([^\]]*)\]\(([^)\s]+)\)"
-        r"|\[([^\]]+)\]\(([^)\s]+)\)"
-        r"|\*\*([^*]+)\*\*"
-        r"|(?<!\*)\*([^*]+)\*(?!\*)"
-    )
-    for match in pattern.finditer(text):
-        pieces.append(html.escape(text[cursor:match.start()]))
-        if match.group(2) is not None:
-            pieces.append(f"<code>{html.escape(match.group(2))}</code>")
-        elif match.group(4) is not None:
-            pieces.append(image(match.group(3), match.group(4)))
-        elif match.group(6) is not None:
-            pieces.append(link(match.group(5), match.group(6), source, root, manuscript))
-        elif match.group(7) is not None:
-            pieces.append(f"<strong>{html.escape(match.group(7))}</strong>")
-        else:
-            pieces.append(f"<em>{html.escape(match.group(8))}</em>")
-        cursor = match.end()
-    pieces.append(html.escape(text[cursor:]))
+    literal: list[str] = []
+    length = len(text)
+    index = 0
+    brackets_plain_until = 0
+    reject_url_before = 0
+
+    def flush() -> None:
+        if literal:
+            pieces.append(html.escape("".join(literal)))
+            literal.clear()
+
+    while index < length:
+        char = text[index]
+        if char == "`":
+            matched = _inline_code_span(text, index)
+            if matched is not None:
+                content, index = matched
+                flush()
+                pieces.append(f"<code>{html.escape(content)}</code>")
+                continue
+        elif (
+            char == "!"
+            and index + 1 < length
+            and text[index + 1] == "["
+            and index >= brackets_plain_until
+        ):
+            found, reject_url_before, barrier = _inline_bracket(
+                text, index + 1, True, reject_url_before
+            )
+            if found is not None:
+                alt, url, index = found
+                flush()
+                pieces.append(image(alt, url))
+                continue
+            brackets_plain_until = barrier
+        elif char == "[" and index >= brackets_plain_until:
+            found, reject_url_before, barrier = _inline_bracket(
+                text, index, False, reject_url_before
+            )
+            if found is not None:
+                label, url, index = found
+                flush()
+                pieces.append(link(label, url, source, root, manuscript))
+                continue
+            brackets_plain_until = barrier
+        elif char == "*":
+            matched = _inline_emphasis(text, index)
+            if matched is not None:
+                kind, content, index = matched
+                flush()
+                tag = "strong" if kind == "strong" else "em"
+                pieces.append(f"<{tag}>{html.escape(content)}</{tag}>")
+                continue
+        literal.append(char)
+        index += 1
+    flush()
     return "".join(pieces)
 
 

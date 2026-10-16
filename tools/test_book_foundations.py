@@ -2310,6 +2310,67 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertNotIn('<li>later<table>', article)
             self.assertIn('<td>3</td>', article)
 
+    def test_inline_markup_scan_matches_delimiter_rules(self):
+        import time
+
+        sys_path = str(ROOT / 'tools')
+        if sys_path not in __import__('sys').path:
+            __import__('sys').path.insert(0, sys_path)
+        from render_book import inline
+
+        source = 'docs/book/NOVICE_OPENING.md'
+        cases = {
+            '`code`': '<code>code</code>',
+            '``code``': '<code>code</code>',
+            '`code': '`code',
+            '``code`': '<code></code>code`',
+            '```': '<code></code>`',
+            '````': '<code></code>',
+            '```code`': '<code></code><code>code</code>',
+            '***a***': '*<strong>a</strong>*',
+            '*a**': '*a**',
+            '**a*': '**a*',
+            '*a* **b**': '<em>a</em> <strong>b</strong>',
+            '`*a*`': '<code>*a*</code>',
+            '*`a`*': '<em>`a`</em>',
+            'a < b & c': 'a &lt; b &amp; c',
+            '[lab](https://example.com/x)': '<a href="https://example.com/x">lab</a>',
+            '[](https://example.com/x)': '[](https://example.com/x)',
+            '[lab](not a url)': '[lab](not a url)',
+            '![alt](https://example.com/a.png)':
+                '<img alt="alt" src="https://example.com/a.png">',
+            '![](https://example.com/a.png)':
+                '<img alt="" src="https://example.com/a.png">',
+            '![alt](not a url) *em*': '![alt](not a url) <em>em</em>',
+            '[*em*](https://example.com)': '<a href="https://example.com">*em*</a>',
+            '[nope](bad url) *em* `c`': '[nope](bad url) <em>em</em> <code>c</code>',
+            '`[a](b)`': '<code>[a](b)</code>',
+            '[[text](https://example.com)': '<a href="https://example.com">[text</a>',
+            'use `a|b` here': 'use <code>a|b</code> here',
+            '\\*a\\*': '\\<em>a\\</em>',
+            '**bo\nld**': '<strong>bo\nld</strong>',
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(inline(text, source), expected)
+
+        unfinished = (
+            '![](!' * 20000,
+            '[!](!' * 20000,
+            '![\\' * 20000,
+            '[\\' * 20000,
+            ('[a](' + 'x' * 20) * 5000 + ' ',
+        )
+        for text in unfinished:
+            self.assertEqual(inline(text, source), text)
+        self.assertEqual(inline('`' * 40000, source), '<code></code>')
+        started = time.monotonic()
+        for text in unfinished:
+            inline(text, source)
+        inline('`' * 40000, source)
+        inline('*a' * 20000, source)
+        self.assertLess(time.monotonic() - started, 5.0)
+
     def test_plain_indented_line_continues_the_list_item(self):
         import tempfile
 
