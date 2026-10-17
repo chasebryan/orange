@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2, J3, J4 | J5, and the connecting studies below |
+| Part 2, The Journeyman | J2, J3, J4, J5 | The connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2, J3, and J4 are drafted in this tree and unreviewed. The other
+unreviewed. J2, J3, J4, and J5 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
@@ -174,6 +174,7 @@ further exercises, numbered N10.1 onward. N11 adds sixteen further
 exercises, numbered N11.1 onward. N12 adds twelve further exercises,
 numbered N12.1 onward. N13 adds ten further exercises, numbered N13.1
 onward. N14 adds eight further exercises, numbered N14.1 onward.
+J5 adds eight further exercises, numbered J5.1 onward.
 
 ### Remaining teaching sequence
 
@@ -296,6 +297,14 @@ Orange is the working language, not decoration around prose.
   numeral. The manuscript chapter *From Core to Native Bytes* keeps
   that title and that number.
   [Worked answers](JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md#worked-answers).
+- **J5.** [SHA-256 as FIPS 180-4 Writes It](JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#j5-sha-256-as-fips-180-4-writes-it):
+  padding, the message schedule, and one compression round, in the order
+  FIPS PUB 180-4 §6.2 uses them, then both known-answer digests and the
+  intermediate hash after the first block of the longer message. The six
+  outcomes in J5 are the finish line. The locked label is J5. It is not a
+  manuscript chapter numeral. J2, J3, and J4 are the preceding lessons in
+  this tree. This lesson does not repeat their proofs.
+  [Worked answers](JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#worked-answers).
 
 ### Existing manuscript integrated here
 
@@ -446,8 +455,8 @@ answers, the 16 lesson-N10 answers, the 16 lesson-N11 answers, the 12 lesson-N12
 answers and the N12 integer ledger, the 10 lesson-N13 answers and the N13
 integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
-J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, and
-document structure. Python test
+J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, the 8
+lesson-J5 answers and the J5 integer ledger, and document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -534,6 +543,24 @@ in a build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j4 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j5.rs`
+reads the twelve Orange listings in J5. It checks the five passing
+programs with `check`, `eval --spec`, and `test`, including the
+“abc” digest and the 448-bit two-block digest. It checks the
+`ORC0220`, `ORC0101`, and `ORC0001` diagnostics of the three rejected
+listings on `check`, `eval`, and `test`. It checks four failing
+tests, each with status 1 and empty standard error: `SHR 17` where
+the standard writes `ROTR 17` (`left` `0x00030000`, `right`
+`0x000f0000`), `as little` where the parse requires `as big` (`left`
+`0x80636261`, `right` `0x61626380`), one fewer zero byte in the pad
+(`left` `0x00001800`, `right` `0x00000018`), and `σ1` written with
+the rotations of `Σ1` (`left` `0x63000c00`, `right` `0x000f0000`).
+Run it in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j5 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -552,6 +579,9 @@ direction. Lesson J2 is AI-assisted with Grok 4.7 in Cursor, 2026-10-05,
 at the owner's direction. Lesson J3, including its Orange listings, is
 AI-assisted with Grok 4.7 in Cursor, 2026-10-09, at the owner's
 direction. Lesson J4, including its Orange listings, is AI-assisted
-with Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. The opening is owner-approved; continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, and J4 review are
+with Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. Lesson J5,
+including its Orange listings, is AI-assisted with Grok 4.7 in Cursor,
+2026-10-09, at the owner's direction. The opening is owner-approved;
+continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, and J5 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
