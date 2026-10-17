@@ -199,6 +199,16 @@
     },
     {
       "part": "journeyman",
+      "id": "j6",
+      "title": "J6. SHA-512 and the Rest of the SHA-2 Family",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md",
+      "anchor": "j6-sha-512-and-the-rest-of-the-sha-2-family",
+      "summary": "Draft. Owner review is pending. It derives SHA-512 padding, the schedule, one round, and the SHA-384 and SHA-512/t initial values from FIPS PUB 180-4, August 2015."
+    },
+    {
+      "part": "journeyman",
       "id": "journeyman-connecting-studies",
       "title": "Journeyman connecting studies",
       "status": "planned",
