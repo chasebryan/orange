@@ -1459,11 +1459,11 @@ computed boundary amounts; it does not discard the retained literal guard.
 **[T1] GNU Bash.** The installed Bash built-in help for `cd`, `pwd` and
 `echo`, together with an isolated local check of directory commands,
 quoted paths and `$?`, were consulted on 2026-10-05. The online reference
-manual could not be retrieved in this session and is linked for further
+manual could not be retrieved in this session and is cited for further
 study, not represented as inspected. The chapter uses a POSIX-style shell
 track and makes no claim of PowerShell command equivalence.
 
-<https://www.gnu.org/software/bash/manual/bash.html>
+GNU Bash Reference Manual, `www.gnu.org/software/bash/manual/bash.html`.
 
 **[T2] IETF RFC 3629.** “UTF-8, a transformation format of ISO 10646,”
 November 2003, especially §3. The introductory source uses the ASCII
