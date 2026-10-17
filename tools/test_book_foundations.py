@@ -1035,12 +1035,14 @@ class N12CompleteStudy(unittest.TestCase):
         self.assertIn('**N12.**', self.index)
 
     def test_novice_s_and_t_tags_have_one_referent(self):
-        """[S*] and [T*] source records are unique across the novice arc."""
+        """[S*] and [T*] source records are unique across the drafted lessons."""
         definition = re.compile(r'\*\*\[([ST]\d+)\] ([^*]+)\*\*')
         citation = re.compile(r'\[([ST]\d+)\]')
         records = {}
         texts = []
-        for path in sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md')):
+        lesson_paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        lesson_paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in lesson_paths:
             text = path.read_text(encoding='utf-8')
             texts.append((path.name, text))
             for match in definition.finditer(text):
@@ -1079,6 +1081,14 @@ class N12CompleteStudy(unittest.TestCase):
         self.assertIn('T6', n12_tags)
         self.assertNotIn('T1', n12_tags)
         self.assertNotIn('S9', n12_tags)
+        self.assertEqual(records['S16'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T12'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Retrieved files.',
+        ))
 
     def test_n12_ledger_matches_the_word_arithmetic(self):
         block = re.search(r'^```text\nn12-ledger\n(.*?)\n```', self.text, re.M | re.S)
@@ -1335,7 +1345,9 @@ class N14ReadyForStandards(unittest.TestCase):
     def test_n14_tags_are_the_next_free_numbers(self):
         definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
         records = {}
-        for path in sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md')):
+        lesson_paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        lesson_paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in lesson_paths:
             text = path.read_text(encoding='utf-8')
             for match in definition.finditer(text):
                 tag, referent = match.group(1), match.group(2).strip()
@@ -1358,9 +1370,180 @@ class N14ReadyForStandards(unittest.TestCase):
             'Gate surface.',
         ))
         self.assertEqual(records['C1'][0], 'NOVICE_PROBABILITY.md')
-        self.assertNotIn('S13', records)
-        self.assertNotIn('T9', records)
-        self.assertNotIn('C3', records)
+        self.assertEqual(records['S13'][0], 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md')
+        self.assertEqual(records['T9'][0], 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md')
+        self.assertEqual(records['C3'][0], 'JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md')
+        self.assertEqual(records['S14'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['T10'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['C4'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
+        self.assertEqual(records['S15'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['T11'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['C5'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
+        self.assertEqual(records['S16'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T12'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C6'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Compression surface.',
+        ))
+        self.assertNotIn('S17', records)
+        self.assertNotIn('T13', records)
+        self.assertNotIn('C7', records)
+
+
+class J5Sha256AsWritten(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j5_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (J5\.\d+)\.\*\*', self.text, re.M)
+        answers = re.findall(r'^\*\*(J5\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J5.{n}' for n in range(1, 9)])
+        self.assertEqual(answers, [f'J5.{n}' for n in range(1, 9)])
+        self.assertNotRegex(self.text, r'(?m)^#+ .*[Cc]hapter')
+        self.assertIn('It is not a manuscript', self.text)
+        self.assertRegex(self.text, r'(?m)^## J5: SHA-256 as FIPS 180-4 Writes It$')
+        for number in range(1, 12):
+            self.assertRegex(self.text, rf'(?m)^### J5\.{number} ')
+        self.assertIn(
+            'This standard specifies hash algorithms that can be used to generate digests of messages.',
+            self.text,
+        )
+        self.assertIn(
+            'The digests are used to detect whether messages have been changed since the digests were generated.',
+            self.text,
+        )
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.180-4', self.text)
+        self.assertIn(
+            'https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/SHA256.pdf',
+            self.text,
+        )
+        self.assertIn('**J5.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md#j5-sha-256-as-fips-180-4-writes-it',
+            self.index,
+        )
+        self.assertIn('SHA-256 as FIPS 180-4 Writes It', self.index)
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j5-sha-256-as-fips-180-4-writes-it', anchors)
+        self.assertIn('worked-answers', anchors)
+        self.assertIn('The locked label is J5.', self.text)
+        self.assertIn('The locked label is J5.', self.index)
+        folded_titles = re.sub(r'\s+', ' ', self.text)
+        self.assertIn('Standards as Versioned Inputs', folded_titles)
+        self.assertIn('The Corpus as Acceptance Test', folded_titles)
+        self.assertIn('Byte Order and Format Boundaries', folded_titles)
+        self.assertIn('Those three are Block A, and they are in this tree.', folded_titles)
+        self.assertIn('orangec 0.0.1 (Orange edition 2026; implemented slice S3u)', self.text)
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 12)
+        self.assertIn('module greek', sources[3])
+        self.assertIn('σ', sources[3])
+        lowered = self.text.lower()
+        self.assertNotIn('constant-time', lowered)
+        self.assertNotIn('constant time', lowered)
+        self.assertNotIn('production security', lowered)
+        self.assertNotIn('production-security', lowered)
+        folded = re.sub(r'\s+', ' ', self.text)
+        allowed = {
+            'Do not call that Match verified.': 2,
+            'A Match is not called verified.': 2,
+        }
+        remainder = folded
+        for phrase, count in allowed.items():
+            self.assertEqual(remainder.count(phrase), count)
+            remainder = remainder.replace(phrase, '')
+        self.assertNotIn('verified', remainder.lower())
+
+    def test_j5_ledger_recomputes_the_standard_arithmetic(self):
+        block = re.search(r'^```text\nj5-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        modulus = 2 ** 32
+        abc_bits = 8 * 3
+        abc_k = (447 - abc_bits) % 512
+        two_bits = 56 * 8
+        two_k = (447 - two_bits) % 512
+        h = 0x6a09e667
+        s = modulus + h
+        sqrt_shift = h * (2 ** 33)
+        sqrt_square = h * h
+        sqrt_gap = (2 ** 65) - ((2 ** 64) + sqrt_shift + sqrt_square)
+        sqrt_next = (2 * s + 1) - sqrt_gap
+        k = 0x428a2f98
+        c = modulus + k
+        cbrt_gap = (2 ** 97) - (c ** 3)
+        cbrt_next = ((c + 1) ** 3) - (2 ** 97)
+        w0 = 0x61626380
+        rotr17 = 0x18 << 15
+        rotr19 = 0x18 << 13
+        word = 0xffffffff
+        ch = (0x510e527f & 0x9b05688c) ^ ((~0x510e527f & word) & 0x1f83d9ab)
+        maj = (0x6a09e667 & 0xbb67ae85) ^ (0x6a09e667 & 0x3c6ef372) ^ (0xbb67ae85 & 0x3c6ef372)
+        t1_raw = 0x5be0cd19 + 0x3587272b + ch + k + w0
+        t2_raw = 0xce20b47e + maj
+        t1 = t1_raw - modulus
+        t2 = t2_raw - modulus
+        expected = {
+            'abc-bits': abc_bits,
+            'abc-k': abc_k,
+            'abc-zero-bytes': (abc_k - 7) // 8,
+            'abc-padded-bits': abc_bits + 1 + abc_k + 64,
+            'two-bits': two_bits,
+            'two-k': two_k,
+            'two-zero-bytes': (two_k - 7) // 8,
+            'two-padded-bits': two_bits + 1 + two_k + 64,
+            'h0': h,
+            'sqrt-shift': sqrt_shift,
+            'sqrt-square': sqrt_square,
+            'sqrt-gap': sqrt_gap,
+            'sqrt-next': sqrt_next,
+            'k0': k,
+            'cbrt-gap': cbrt_gap,
+            'cbrt-next': cbrt_next,
+            'w0': w0,
+            'rotr17': rotr17,
+            'rotr19': rotr19,
+            'w17': rotr17 ^ rotr19,
+            'wrong-w17': rotr19,
+            'little-word0': 0x61 | (0x62 << 8) | (0x63 << 16) | (0x80 << 24),
+            'short-length': 0x18 << 8,
+            'rotr6-18': 0x18 << 26,
+            'rotr11-18': 0x18 << 21,
+            'rotr25-18': 0x18 << 7,
+            'swapped-w17': (0x18 << 26) ^ (0x18 << 21) ^ (0x18 << 7),
+            't1-raw': t1_raw,
+            't1': t1,
+            't2-raw': t2_raw,
+            't2': t2,
+            'new-a': t1 + t2,
+            'new-e': 0xa54ff53a + t1,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(h, 1779033703)
+        self.assertEqual(s, 6074000999)
+        self.assertLess(s * s, 2 ** 65)
+        self.assertGreater((s + 1) * (s + 1), 2 ** 65)
+        self.assertLess(c ** 3, 2 ** 97)
+        self.assertGreater((c + 1) ** 3, 2 ** 97)
+        self.assertLess(expected['new-a'], modulus)
+        self.assertLess(expected['new-e'], modulus)
+        self.assertEqual(expected['t1'] % modulus, expected['t1'])
+        self.assertEqual(ch, 0x1f85c98c)
+        self.assertEqual(maj, 0x3a6fe667)
 
 
 class J2StandardsAsVersionedInputs(unittest.TestCase):
@@ -1527,9 +1710,21 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
         self.assertEqual(records['S15'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
         self.assertEqual(records['T11'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
         self.assertEqual(records['C5'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
-        self.assertNotIn('S16', records)
-        self.assertNotIn('T12', records)
-        self.assertNotIn('C6', records)
+        self.assertEqual(records['S16'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T12'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C6'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Compression surface.',
+        ))
+        self.assertNotIn('S17', records)
+        self.assertNotIn('T13', records)
+        self.assertNotIn('C7', records)
 
 
 class J3CorpusAsAcceptanceTest(unittest.TestCase):
@@ -1796,9 +1991,21 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
         self.assertEqual(records['S15'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
         self.assertEqual(records['T11'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
         self.assertEqual(records['C5'][0], 'JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md')
-        self.assertNotIn('S16', records)
-        self.assertNotIn('T12', records)
-        self.assertNotIn('C6', records)
+        self.assertEqual(records['S16'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T12'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C6'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Compression surface.',
+        ))
+        self.assertNotIn('S17', records)
+        self.assertNotIn('T13', records)
+        self.assertNotIn('C7', records)
 
 
 
@@ -2031,9 +2238,21 @@ class J4ByteOrder(unittest.TestCase):
         self.assertEqual(records['C4'][0], 'JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md')
         j4_tags = {tag for tag, (name, _) in records.items() if name == lesson}
         self.assertEqual(j4_tags, {'S15', 'T11', 'C5'})
-        self.assertNotIn('S16', records)
-        self.assertNotIn('T12', records)
-        self.assertNotIn('C6', records)
+        self.assertEqual(records['S16'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T12'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C6'], (
+            'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
+            'Compression surface.',
+        ))
+        self.assertNotIn('S17', records)
+        self.assertNotIn('T13', records)
+        self.assertNotIn('C7', records)
         citation = re.compile(r'\[([STC]\d+)\]')
         for tag in citation.findall(self.text):
             self.assertIn(tag, records, f'J4 cites undefined [{tag}]')
@@ -2081,20 +2300,24 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * (len(drafted) - 3) + ['journeyman', 'journeyman', 'journeyman'],
+            ['novice'] * (len(drafted) - 4) + ['journeyman'] * 4,
         )
-        self.assertEqual([chapter['id'] for chapter in drafted[-3:]], ['j2', 'j3', 'j4'])
+        self.assertEqual([chapter['id'] for chapter in drafted[-4:]], ['j2', 'j3', 'j4', 'j5'])
         self.assertEqual(
-            drafted[-3]['path'],
+            drafted[-4]['path'],
             'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
         )
         self.assertEqual(
-            drafted[-2]['path'],
+            drafted[-3]['path'],
             'docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
         )
         self.assertEqual(
-            drafted[-1]['path'],
+            drafted[-2]['path'],
             'docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md',
+        )
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -2116,7 +2339,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | J2, J3, J4 |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2, J3, J4, J5 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
@@ -2144,6 +2367,7 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertTrue((output / 'docs' / 'book' / 'NOVICE_OPENING.html').is_file())
             self.assertTrue((output / 'docs' / 'THE_ORANGE_BOOK.html').is_file())
             self.assertFalse((output / 'docs' / 'book' / 'J2.html').exists())
+            self.assertTrue((output / 'docs' / 'book' / 'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.html').is_file())
             opening = (output / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
             self.assertIn('Draft.', opening)
             self.assertNotIn('<script', opening.lower())
