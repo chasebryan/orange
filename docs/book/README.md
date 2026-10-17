@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2, J3, J4, J5, J6 | The connecting studies below |
+| Part 2, The Journeyman | J2, J3, J4, J5, J6, J7 | The connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2, J3, J4, J5, and J6 are drafted in this tree and unreviewed. The other
+unreviewed. J2, J3, J4, J5, J6, and J7 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
@@ -314,6 +314,14 @@ Orange is the working language, not decoration around prose.
   preceding lessons in this tree. This lesson does not repeat their proofs,
   and it does not build HMAC.
   [Worked answers](JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md#worked-answers).
+- **J7.** [Keccak-p and SHA-3](JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md#j7-keccak-p-and-sha-3):
+  the state, the five step mappings, and Keccak-f, in the order FIPS PUB 202
+  §3 uses them, then SHA3-256 of “abc” and of the empty message at the two
+  lane widths this slice lists. The six outcomes in J7 are the finish line.
+  The locked label is J7. It is not a manuscript chapter numeral. J2, J3, J4, J5, and J6 are the
+  preceding lessons in this tree. This lesson does not repeat their proofs,
+  and it does not build SHAKE or HMAC.
+  [Worked answers](JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md#worked-answers).
 
 ### Existing manuscript integrated here
 
@@ -466,7 +474,8 @@ integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
 J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, the 8
 lesson-J5 answers and the J5 integer ledger, the 8 lesson-J6 answers and the
-J6 integer ledger, and document structure. Python test
+J6 integer ledger, the 8 lesson-J7 answers and the J7 integer ledger, and
+document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -592,6 +601,26 @@ not build HMAC. Run it in a build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j6 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j7.rs`
+reads the seven Orange listings in J7. It checks silent `check` on
+the listings that are accepted, the printed `eval` lines, and the
+printed test reports. It checks the `ORC0101`, `ORC0214`, `ORC0204`,
+and `ORC0216` diagnostics of the rejected listings on `check`,
+`eval`, and `test`. It checks six failing tests in one Keccak module,
+with status 1 and empty standard error: the missing final pad bit
+(`left` `0xd9`), the omitted domain byte (`left` `0x4e`), the
+reversed domain byte (`left` `0xd1`), big-endian lanes (`left`
+`0x36`), the swapped lane index (first difference at index 1, `left`
+`0xb3`), and the rotation offset plus one (`left` `0x9b`). A passing
+test in that file is a Match of the `Bool` the listing writes. It
+does not establish a cryptographic security claim, it does not accept
+OEP-0017, OEP-0018, OEP-0020, OEP-0021, or OEP-0025, and it does not
+build SHAKE or HMAC. Run it in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j7 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -614,7 +643,9 @@ with Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. Lesson J5,
 including its Orange listings, is AI-assisted with Grok 4.7 in Cursor,
 2026-10-09, at the owner's direction. Lesson J6, including its Orange
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
+owner's direction. Lesson J7, including its Orange
+listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
 owner's direction. The opening is owner-approved;
-continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, and J6 review are
+continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, J6, and J7 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
