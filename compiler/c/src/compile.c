@@ -6129,7 +6129,8 @@ static void report_binding_dup(Compiler *c, uint32_t func_index, uint32_t local_
     uint32_t earlier_end = within_end;
     const char *label = within_end > within_start ? "the first name is here" : NULL;
     uint8_t slot = 0;
-    uint16_t index;
+    /* local_limit is uint32_t. A uint16_t counter would wrap before that bound. */
+    uint32_t index;
     int overridden = 0;
     span_copy(spelling, sizeof spelling, c->text, match_start, match_end);
     snprintf(message, sizeof message, "duplicate binding `%s`", spelling);

@@ -977,18 +977,25 @@ static void admit_sizes(Compiler *c, Func *func) {
             }
         }
     }
-    for (slot = 0; slot < func->nparams; slot++) {
-        Param *param = &c->params[func->param0 + slot];
-        uint8_t size_slot;
-        if (size_slot_of(c, (uint32_t)(func - c->funcs), param->name_start, param->name_end, &size_slot)) {
-            char name[64];
-            char message[160];
-            valid = 0;
-            span_copy(name, sizeof name, c->text, param->name_start, param->name_end);
-            snprintf(message, sizeof message, "duplicate parameter `%s`", name);
-            add_diag(c, "ORC0218", param->name_start, param->name_end, message, "this name is already a size parameter",
-                     "size parameters and parameters share one namespace, and each name is unique", 2);
-            diag_add_secondary(c, func->sz_name0[size_slot], func->sz_name1[size_slot], "the size parameter is here");
+    /* nparams is uint16_t. The size-slot counter above stays uint8_t, matching
+       nsizes, so this walk uses its own counter of the parameter count's width. */
+    {
+        uint16_t param_index;
+        for (param_index = 0; param_index < func->nparams; param_index++) {
+            Param *param = &c->params[func->param0 + param_index];
+            uint8_t size_slot;
+            if (size_slot_of(c, (uint32_t)(func - c->funcs), param->name_start, param->name_end, &size_slot)) {
+                char name[64];
+                char message[160];
+                valid = 0;
+                span_copy(name, sizeof name, c->text, param->name_start, param->name_end);
+                snprintf(message, sizeof message, "duplicate parameter `%s`", name);
+                add_diag(c, "ORC0218", param->name_start, param->name_end, message,
+                         "this name is already a size parameter",
+                         "size parameters and parameters share one namespace, and each name is unique", 2);
+                diag_add_secondary(c, func->sz_name0[size_slot], func->sz_name1[size_slot],
+                                   "the size parameter is here");
+            }
         }
     }
     if (valid && instances > MAX_INSTANCES) {
@@ -4483,8 +4490,24 @@ static void print_use_note(FILE *err, const char *name, const char *user) {
     fprintf(err, "  = note: `use %s;` in module `%s` reads the module `%s` from this file\n", name, user, name);
 }
 
+/* Same ASCII identifier the lexer accepts: a letter or `_`, then letters,
+   digits, or `_`. Rust reads `use NAME;` as that spelling, so `NAME.or`
+   stays in the root's directory. */
+static int module_name_is_identifier(const char *name) {
+    const unsigned char *bytes = (const unsigned char *)name;
+    if (!is_ident_start(bytes[0])) {
+        return 0;
+    }
+    for (bytes++; *bytes != '\0'; bytes++) {
+        if (!is_ident_continue(*bytes)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* `name.or` in the directory of the root. A root with no directory
-   uses the current directory. */
+   uses the current directory. `name` is an ASCII identifier. */
 static char *module_path(const char *root_path, const char *name) {
     const char *slash;
     size_t dir_len;
@@ -4639,6 +4662,13 @@ static int load_used_modules(Program *program, const char *root_path, FILE *err)
             }
             if (program->nmods - 1 >= MAX_MODULES) {
                 return 1;
+            }
+            /* The parser stores only identifiers. A name that is not one is
+               not opened, and is not reported as a failed allocation. */
+            if (!module_name_is_identifier(name)) {
+                fprintf(err, "error[ORC1001]: could not read source file `%s.or`\n", name);
+                print_use_note(err, name, user_name);
+                return 0;
             }
             path = module_path(root_path, name);
             if (path == NULL) {
