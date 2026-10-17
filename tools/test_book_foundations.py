@@ -1609,14 +1609,14 @@ class J6Sha512Family(unittest.TestCase):
         self.assertIn('**[T13] Retrieved files.**', self.text)
         self.assertIn('**[C7] Family surface.**', self.text)
         sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
-        self.assertEqual(len(sources), 20)
+        self.assertEqual(len(sources), 21)
         self.assertEqual(
             [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
             [
                 'pad', 'functions', 'schedule', 'round0', 'sha512', 'bad_sigma',
                 'carried', 'short_field', 'missing80', 'truncate', 'word128',
                 'rot64', 'rot_computed', 'wrap64', 'no_shift', 'wide_int',
-                'past_range', 'n_bound', 'too_many', 'budget',
+                'past_range', 'n_bound', 'too_many', 'budget', 'bare_length',
             ],
         )
         lowered = self.text.lower()

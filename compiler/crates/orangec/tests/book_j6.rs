@@ -5,8 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-const J6: &str =
-    include_str!("../../../../docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md");
+const J6: &str = include_str!("../../../../docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md");
 
 fn fences<'a>(text: &'a str, language: &str) -> Vec<&'a str> {
     let start = format!("```{language}\n");
@@ -87,7 +86,7 @@ fn block_equal(body: &str) -> String {
 }
 
 #[test]
-fn j6_listings_are_the_twenty_fenced_programs() {
+fn j6_listings_are_the_twenty_one_fenced_programs() {
     let names: Vec<_> = sources().into_iter().map(module_name).collect();
     assert_eq!(
         names,
@@ -112,6 +111,7 @@ fn j6_listings_are_the_twenty_fenced_programs() {
             "n_bound",
             "too_many",
             "budget",
+            "bare_length",
         ]
     );
     assert!(J6.contains("orangec 0.0.1 (Orange edition 2026; implemented slice S3u)"));
@@ -184,7 +184,10 @@ fn j6_printed_runs_match_the_compiler() {
             for command in ["eval", "test"] {
                 let output = run(source, &[command, "-"]);
                 assert_eq!(output.status.code(), Some(1), "{name}: {command}");
-                assert!(output.stdout.is_empty(), "{name}: {command} printed a value");
+                assert!(
+                    output.stdout.is_empty(),
+                    "{name}: {command} printed a value"
+                );
                 assert_eq!(output.stderr, check.stderr, "{name}: {command}");
             }
         }
@@ -238,15 +241,25 @@ fn j6_printed_runs_match_the_compiler() {
         "sha512 stats",
     );
 
-    let budget_pass = run(source("budget"), &["test", "--steps", "11595", "--stats", "-"]);
-    assert!(budget_pass.status.success(), "{}", String::from_utf8_lossy(&budget_pass.stderr));
+    let budget_pass = run(
+        source("budget"),
+        &["test", "--steps", "11595", "--stats", "-"],
+    );
+    assert!(
+        budget_pass.status.success(),
+        "{}",
+        String::from_utf8_lossy(&budget_pass.stderr)
+    );
     mark_stats(
         &blocks,
         &mut matched_stats,
         &String::from_utf8(budget_pass.stderr).expect("UTF-8 stats"),
         "budget 11595",
     );
-    let budget_fail = run(source("budget"), &["test", "--steps", "11594", "--stats", "-"]);
+    let budget_fail = run(
+        source("budget"),
+        &["test", "--steps", "11594", "--stats", "-"],
+    );
     assert_eq!(budget_fail.status.code(), Some(1));
     assert!(budget_fail.stdout.is_empty());
     let diagnostic = String::from_utf8(budget_fail.stderr).expect("UTF-8 diagnostic");
@@ -265,7 +278,11 @@ fn j6_printed_runs_match_the_compiler() {
         &["test", "--stats", sha2.to_str().expect("utf-8 path")],
         None,
     );
-    assert!(file_stats.status.success(), "{}", String::from_utf8_lossy(&file_stats.stderr));
+    assert!(
+        file_stats.status.success(),
+        "{}",
+        String::from_utf8_lossy(&file_stats.stderr)
+    );
     let file_stderr = String::from_utf8(file_stats.stderr).expect("UTF-8 stats");
     assert!(file_stderr.contains("NIST example: SHA-512 of abc\": 11595 steps"));
     assert!(file_stderr.contains("NIST example: SHA-512 of the two-block message\": 23145 steps"));
@@ -276,7 +293,8 @@ fn j6_printed_runs_match_the_compiler() {
         if block.starts_with("error[") {
             assert!(matched_errors[index], "unmatched diagnostic\n{block}");
         }
-        if block.starts_with("test \"") && (block.contains("... ok") || block.contains("... FAILED"))
+        if block.starts_with("test \"")
+            && (block.contains("... ok") || block.contains("... FAILED"))
         {
             assert!(matched_reports[index], "unmatched test report\n{block}");
         }

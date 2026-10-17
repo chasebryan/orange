@@ -154,7 +154,7 @@ standard.** Appendix A.2 of the August 2015 file says examples are
 available and prints a URL. It does not print a digest. The SHA-512
 block contents, the round row `t = 0`, the intermediate hash after
 the first of the two blocks, and the two SHA-512 digests cited below
-are the NIST SHA-512 examples file recorded in §J6.14. The file
+are the NIST SHA-512 examples file recorded in [T13]. The file
 retrieved on 2026-10-17 has SHA-256
 `84ce867c99bad5a7b05abc74bb1dfc9de8486f49a160653cc8b15272cc532115`.
 That file does not contain a row labelled `W[16]` or `W[17]`, and it
@@ -280,15 +280,16 @@ and Proposition J6.1 says there is only one. The least multiple of
 Subtract `len`. The same algebra at a block of `64·s` bytes and a
 length field of `8·s` bytes replaces 128 by `64·s` and 144 by
 `72·s`, which is the expression in the listing. This lesson calls
-it at `s = 2`. The declaration also admits `s = 1` and `s = 3`,
-because that is the range in `algorithms/sha2/sha2.or`. `s = 1` is
-the SHA-256 block, used in §J6.8 only to show a length error. `s = 3`
-is not a hash this lesson runs.
+it at `s = 2`. A size parameter written `n in a..b` takes each
+value from `a` up to, but not including, `b`. `s in 1..3` and
+`n in 1..3` therefore take `1` or `2`. `s = 1` is the SHA-256
+block, used in §J6.8 only to show a length error. `s = 3` is
+outside that range. `padding[0, 3]()` is rejected with `ORC0238`.
 
 The range `len in 0..113` is `0` through `112`. Together with
-`s in 1..3` that is `113 · 2 = 226` instances. A function on this
-slice has at most 256 instances. Listing J6.19 is the declaration
-that asks for 400.
+`s` equal to `1` or `2`, that is `113 · 2 = 226` instances. A
+function on this slice has at most 256 instances. Listing J6.19
+is the declaration that asks for 400.
 
 **Proposition J6.4.** For “abc”, `ℓ = 24`, `k = 871`, the zero
 bytes after `0x80` number 108, the pad is 125 bytes, and the padded
@@ -402,7 +403,6 @@ module pad {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec abc_w0 -
@@ -424,7 +424,6 @@ pad::two_w14: Word[64] = 0x8000000000000000
 pad::two_length: Word[64] = 0x0000000000000380
 ```
 
-
 **Test report:**
 
 ```text
@@ -435,7 +434,6 @@ test "FIPS 180-4 5.1.2 two-block length word" ... ok
 test "pad64len abc matches a 64-bit length in one block" ... ok
 5 tests: 5 passed, 0 failed
 ```
-
 
 The status of `test` is 0. Standard error is empty when `--stats`
 is absent. The five tests are the words Propositions J6.4 and J6.5
@@ -591,7 +589,6 @@ module functions {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec ch_round0 -
@@ -608,7 +605,6 @@ functions::ch_round0: Word[64] = 0x1f85c98c7b273d3b
 functions::rotr28: Word[64] = 0x3bcc9086a09e667f
 ```
 
-
 **Test report:**
 
 ```text
@@ -620,7 +616,6 @@ test "FIPS 180-4 eq 4.11, Sigma1 on H4" ... ok
 test "FIPS 180-4 3.2 ROTR 28 of H0" ... ok
 6 tests: 6 passed, 0 failed
 ```
-
 
 The status is 0. The first test is the 32-bit `Ch` J5 computed,
 `0x1f85c98c`, on the shared spec. The other five are the 64-bit
@@ -695,7 +690,6 @@ module schedule {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec w16 -
@@ -712,7 +706,6 @@ schedule::w16: Word[64] = 0x6162638000000000
 schedule::w17: Word[64] = 0x00030000000000c0
 ```
 
-
 **Test report:**
 
 ```text
@@ -720,7 +713,6 @@ test "FIPS 180-4 6.4.2 abc W16" ... ok
 test "FIPS 180-4 6.4.2 abc W17" ... ok
 2 tests: 2 passed, 0 failed
 ```
-
 
 The status is 0. Each of those two tests evaluates the schedule
 through `W17`. The step count on `--stats` is 3245 for each, which
@@ -826,7 +818,6 @@ module round0 {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec t1 -
@@ -845,7 +836,6 @@ round0::t2: Word[64] = 0x4334c1bea164f555
 round0::after: Word[64]^8 = [0xf6afceb8bcfcddf5, 0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0x58cb02347ab51f91, 0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b]
 ```
 
-
 **Test report:**
 
 ```text
@@ -854,7 +844,6 @@ test "FIPS 180-4 6.4.2 abc T2" ... ok
 test "examples file abc, t = 0" ... ok
 3 tests: 3 passed, 0 failed
 ```
-
 
 The status is 0. The eight words are the row the examples file
 prints at `t = 0`, in the order `a` through `h`.
@@ -891,7 +880,7 @@ This argument does not say that `C` is injective in its first
 argument. A function may send two different first arguments to the
 same output. The specification does not claim that, and this lesson
 does not prove it. What the specification does say is which value
-is fed in. What one block shows is in Listing J6.11: for the “abc”
+is fed in. What one block shows is in Listing J6.10: for the “abc”
 block, the first byte of the SHA-512 digest is `0xdd`, the first
 byte of the SHA-384 digest is `0xcb`, and the first byte of the
 SHA-512/256 digest is `0x53`. For this block, a different `H(0)`
@@ -1176,7 +1165,6 @@ module sha512 {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec h0 -
@@ -1197,7 +1185,6 @@ sha512::abc_digest: Word[8]^64 = [0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba
 sha512::two_h1: Word[64]^8 = [0x4319017a2b706e69, 0xcd4b05938bae5e89, 0x0186bf199f30aa95, 0x6ef8b71d2f810585, 0xd787d6764b20bda2, 0xa260144709736920, 0x00ec057f37d14b8e, 0x06add5b50e671c72]
 ```
 
-
 **Test report:**
 
 ```text
@@ -1215,7 +1202,6 @@ test "sha512_t_iv_224_section_5_3_6_1" ... ok
 test "sha512_256_abc_from_generated_iv" ... ok
 12 tests: 12 passed, 0 failed
 ```
-
 
 The status is 0. The stderr of `orangec test --stats -` on this
 listing, which is an evaluator-step count under Assumption J6.6, is:
@@ -1235,7 +1221,6 @@ test "sha512_t_iv_224_section_5_3_6_1": 11674 steps
 test "sha512_256_abc_from_generated_iv": 23231 steps
 total: 139990 of 1048576 steps
 ```
-
 
 These counts are not the counts of `algorithms/sha2/sha2.or`. The
 repository file's tests are different expressions, and they share
@@ -1261,7 +1246,6 @@ test "OpenSSL evpmd_sha.txt: SHA-512/256 of abc": 11592 steps
 test "OpenSSL evpmd_sha.txt: SHA-512/256 of the two-block message": 23142 steps
 total: 196481 of 1048576 steps
 ```
-
 
 The one-block SHA-512 test in that file uses 11595 steps. The
 two-block SHA-512 test uses 23145. The difference is 11550, which
@@ -1299,7 +1283,6 @@ module bad_sigma {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec left -
@@ -1316,7 +1299,6 @@ bad_sigma::left: Word[64] = 0xd4025efda375298a
 bad_sigma::right: Word[64] = 0x7703112333475567
 ```
 
-
 **Test report:**
 
 ```text
@@ -1325,7 +1307,6 @@ test "32-bit Sigma1 distances on a 64-bit word" ... FAILED
     right: 0x7703112333475567
 1 test: 0 passed, 1 failed
 ```
-
 
 The status of `test` is 1. Standard error is empty. `left` is the
 value the 32-bit distances computed. `right` is equation (4.11).
@@ -1359,7 +1340,6 @@ module carried {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -1376,7 +1356,6 @@ error[ORC0238]: no instance of `sha512` takes arguments of these lengths
   = note: `sha512` is defined for `n` in 1..3
   = note: a call that writes no sizes calls the one instance of its function whose array parameters have the lengths of its arguments; any other call writes its sizes in brackets, as in `absorb[2](p)`
 ```
-
 
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic and no value. The label says an array of length
@@ -1443,7 +1422,6 @@ module short_field {
 }
 ```
 
-
 The listing says `use sha2`. A listing read from standard input
 resolves that name in the process's current directory. The commands
 are run with current directory `algorithms/sha2`, where `sha2.or`
@@ -1465,7 +1443,6 @@ Check is silent.
 short_field::first: Word[8] = 0xfe
 ```
 
-
 **Test report:**
 
 ```text
@@ -1476,7 +1453,6 @@ test "112-byte message with a 64-bit length field" ... FAILED
     first difference at [0]
 2 tests: 1 passed, 1 failed
 ```
-
 
 The status of `test` is 1. Standard error is empty. The “abc” test
 passed. The 112-byte test failed at byte 0: `left` is `0xfe`,
@@ -1519,7 +1495,6 @@ module missing80 {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec first_bad -
@@ -1536,7 +1511,6 @@ missing80::first_bad: Word[8] = 0x00
 missing80::first_good: Word[8] = 0x80
 ```
 
-
 **Test report:**
 
 ```text
@@ -1546,7 +1520,6 @@ test "missing 0x80" ... FAILED
     first difference at [0]
 1 test: 0 passed, 1 failed
 ```
-
 
 The status of `test` is 1. Standard error is empty. The first
 difference is at index 0. The report prints both 125-byte arrays.
@@ -1596,7 +1569,6 @@ module truncate {
 }
 ```
 
-
 The commands are run with current directory `algorithms/sha2`, for
 the same reason as Listing J6.8.
 
@@ -1617,7 +1589,6 @@ truncate::first384: Word[8] = 0xdd
 truncate::first256: Word[8] = 0xdd
 ```
 
-
 **Test report:**
 
 ```text
@@ -1632,7 +1603,6 @@ test "SHA-512/256 truncation without its own IV" ... FAILED
 2 tests: 0 passed, 2 failed
 ```
 
-
 The status of `test` is 1. Standard error is empty. Both tests fail
 at byte 0. `left` is `0xdd` in both. This is one block. It is not
 a proof that every block separates the three initial values.
@@ -1640,7 +1610,10 @@ a proof that every block separates the three initial values.
 ### J6.12 What this slice does not denote
 
 The 128-bit length is a pair of 64-bit words, by Assumption J6.3.
-It is not a `Word[128]`.
+It is not a `Word[128]`. A bare integer literal is not that field
+either. `896 as big Word[8]^16` is rejected with `ORC0220`.
+Listing J6.21 is that program. J5 shows the same rejection for an
+eight-byte field.
 
 **Listing J6.11 — `word128.or`, intentionally rejected**
 
@@ -1650,7 +1623,6 @@ module word128 {
   spec w() -> Word[128] { 0 }
 }
 ```
-
 
 ```sh
 ./compiler/target/debug/orangec check -
@@ -1667,7 +1639,6 @@ error[ORC0204]: `Word` width must be exactly 8, 16, 32, or 64
   |                    ^^^ unsupported word width
   = note: word widths do not coerce, truncate, or wrap
 ```
-
 
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. The note says word widths do not coerce,
@@ -1686,7 +1657,6 @@ module rot64 {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -1702,7 +1672,6 @@ error[ORC0216]: `>>>` on `Word[64]` needs an amount from 0 through 63
   |                                             ^^ a literal amount is from 0 through 63
   = note: an amount written as one integer literal is from 0 through n - 1; any other amount is computed, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`
 ```
-
 
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. The note distinguishes a literal amount from a
@@ -1732,7 +1701,6 @@ module rot_computed {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec same -
@@ -1749,7 +1717,6 @@ rot_computed::same: Word[64] = 0x0123456789abcdef
 rot_computed::eight: Word[64] = 0xef0123456789abcd
 ```
 
-
 **Test report:**
 
 ```text
@@ -1757,7 +1724,6 @@ test "computed amount 64 is a turn by 0" ... ok
 test "computed amount 72 is a turn by 8" ... ok
 2 tests: 2 passed, 0 failed
 ```
-
 
 The status is 0. These two tests are the amount rule. They are not
 a round of SHA-512.
@@ -1781,7 +1747,6 @@ module wrap64 {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec add -
@@ -1798,7 +1763,6 @@ wrap64::add: Word[64] = 0x0000000000000001
 wrap64::mul: Word[64] = 0x0000000000000001
 ```
 
-
 **Test report:**
 
 ```text
@@ -1806,7 +1770,6 @@ test "sum past 2^64" ... ok
 test "product past 2^64" ... ok
 2 tests: 2 passed, 0 failed
 ```
-
 
 The status is 0. The printed words are `0x0000000000000001`. The
 tests compare them with the integer `1`.
@@ -1824,7 +1787,6 @@ module no_shift {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -1841,7 +1803,6 @@ error[ORC0215]: `<<` is not defined for `Int`
   = note: shifts and rotations apply only to `Word[n]` values
 ```
 
-
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. `2^310` in the next listing is 310
 multiplications by 2, starting from 1. The loop `for i in 0..310`
@@ -1851,10 +1812,11 @@ runs 310 times, because the end is exclusive.
 its residue modulo `2^{nk}`, in the chosen order. The proposal that
 specifies `as big`, OEP-0017, is not accepted by this lesson.
 `2^310 = 2^182 · 2^128`, so the residue modulo `2^128` is 0. Sixteen
-zero bytes are that residue. Listing J6.16 is what the binary
-printed. Using the form is not acceptance of the proposal.
+zero bytes are that residue. Listing J6.16 is observed, not
+documented: check is silent, and the binary printed sixteen zero
+bytes. Using the form is not acceptance of the proposal.
 
-**Listing J6.16 — `wide_int.or`**
+**Listing J6.16 — `wide_int.or`, observed, not documented**
 
 ```orange
 edition 2026;
@@ -1875,7 +1837,6 @@ module wide_int {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 ./compiler/target/debug/orangec eval --spec product -
@@ -1892,14 +1853,12 @@ wide_int::product: Int = 18446744073709551616
 wide_int::bytes: Word[8]^16 = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 ```
 
-
 **Test report:**
 
 ```text
 test "2^62 times 4" ... ok
 1 test: 1 passed, 0 failed
 ```
-
 
 The status is 0. The sixteen bytes are zero. The product is `2^64`,
 printed as an `Int`.
@@ -1927,7 +1886,6 @@ module past_range {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -1943,7 +1901,6 @@ error[ORC0238]: `padding` is defined for `len` in 0..113
    |                                             ^^^ this size is 128
   = note: a size parameter `n in a..b` takes each value from a up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances
 ```
-
 
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. The label says this size is 128. The note
@@ -1965,7 +1922,6 @@ module n_bound {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -1981,7 +1937,6 @@ error[ORC0238]: `sha512` is defined for `n` in 1..3
   |                                      ^ this size is 4
   = note: a size parameter `n in a..b` takes each value from a up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances
 ```
-
 
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. The label says this size is 4.
@@ -2000,7 +1955,6 @@ module too_many {
 }
 ```
 
-
 ```sh
 ./compiler/target/debug/orangec check -
 echo $?
@@ -2017,7 +1971,6 @@ error[ORC0238]: `padding` has 400 instances, but a function has at most 256
   = note: a size parameter `n in a..b` takes each value from a up to, but not including, b, with a < b <= 65536, and a function has at most 256 instances
 ```
 
-
 The status is 1. Standard output is empty. `eval` and `test` print
 the same diagnostic. The body is not the point. The caret is on the
 size parameters.
@@ -2032,9 +1985,19 @@ and the stats line says 11595 of 11595. At `--steps 11594` the run
 stops with `ORC0301`. No test outcome is reported.
 
 `orangec check --steps 10 algorithms/sha2/sha2.or` exits 2. Its
-first line is `orangec: option `--steps` applies only to eval, test, replay, and analyze`.
+first line is
+
+```text
+orangec: option `--steps` applies only to eval, test, replay, and analyze
+```
+
 `orangec test --steps 0 algorithms/sha2/sha2.or` exits 2. Its first
-line is `orangec: option `--steps` takes a number of steps from 1 through 1073741824`.
+line is
+
+```text
+orangec: option `--steps` takes a number of steps from 1 through 1073741824
+```
+
 The same first line is printed for 1073741825. Both messages
 continue with the usage text. This lesson does not copy that text.
 
@@ -2074,7 +2037,6 @@ module budget {
 }
 ```
 
-
 The commands are run with current directory `algorithms/sha2`.
 
 ```sh
@@ -2092,14 +2054,12 @@ test "sha512_abc_len_bits_24": 11595 steps
 total: 11595 of 11595 steps
 ```
 
-
 **Test report:**
 
 ```text
 test "sha512_abc_len_bits_24" ... ok
 1 test: 1 passed, 0 failed
 ```
-
 
 The status of that `test` is 0. Standard error is empty when
 `--stats` is absent. At 11594 steps the status is 1, standard
@@ -2116,9 +2076,47 @@ error[ORC0301]: reference evaluation step limit exceeded
   = note: `orangec test --steps N` sets the budget, up to 1073741824 steps
 ```
 
-
 No test report is printed. The note names the upper bound
 1073741824.
+
+The 16-byte length in Listing J6.3 is a `let` that types the
+integer, then `as big`. An integer literal has no type of its own,
+and `as` requires an operand that already has one. The prediction
+is `ORC0220`, the code J5 records for `24 as big Word[8]^8`. Here
+the width is 16 bytes and the literal is `896`, the bit length of
+the 112-byte message.
+
+**Listing J6.21 — `bare_length.or`, intentionally rejected**
+
+```orange
+edition 2026;
+module bare_length {
+  spec field() -> Word[8]^16 { 896 as big Word[8]^16 }
+}
+```
+
+```sh
+./compiler/target/debug/orangec check -
+echo $?
+```
+
+**Diagnostic:**
+
+```text
+error[ORC0220]: the operand of `as` has no type of its own
+ --> <stdin>:3:32
+  |
+3 |   spec field() -> Word[8]^16 { 896 as big Word[8]^16 }
+  |                                ^^^ a literal takes its type from where it is used
+  = note: write the literal where its type is required, or give it a type with a `let` binding
+```
+
+The status is 1. Standard output is empty. `eval` and `test` print
+the same diagnostic and no value. The locus is the literal `896`.
+The repair the note describes is the binding Listing J6.3 writes.
+`as big` is the form this binary accepts. The proposal that
+specifies it, OEP-0017, is not accepted by this lesson. Using the
+form is not acceptance of the proposal.
 
 ### J6.13 Exercises
 
@@ -2230,7 +2228,8 @@ A Match is not called verified.
 `as big` to sixteen bytes is sixteen zero bytes; check is silent,
 and the value is what the binary printed under the residue rule in
 `docs/ORDER_2026.md` §5, which this lesson does not accept as
-OEP-0017. The million-byte message was not run. The estimate is
+OEP-0017. That printing is observed, not documented. The
+million-byte message was not run. The estimate is
 `90240195` evaluator steps, from `11595 + 7812 · 11550`. HMAC is
 J14. This lesson does not build a key, a key block, or an outer
 hash.
@@ -2393,7 +2392,7 @@ publication-rights clearance.
 
 J6 adds eight exercises with worked answers. The integer ledger is
 recomputed by `tools/test_book_foundations.py`. The Orange listings
-are the twenty fenced programs in this file.
+are the twenty-one fenced programs in this file.
 `compiler/crates/orangec/tests/book_j6.rs` runs them. Those checks
 do not establish a cryptographic security claim, they do not prove
 Assumption J6.2 from a smaller theory of the compiler, and they do

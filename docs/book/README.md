@@ -572,11 +572,11 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j5 --locke
 ```
 
 The Rust integration test `compiler/crates/orangec/tests/book_j6.rs`
-reads the twenty Orange listings in J6. It checks silent `check` on
+reads the twenty-one Orange listings in J6. It checks silent `check` on
 the listings that are accepted, the printed `eval` lines, and the
 printed test reports. It checks the `ORC0238`, `ORC0204`, `ORC0216`,
-and `ORC0215` diagnostics of the rejected listings on `check`,
-`eval`, and `test`. It checks five failing tests, each with status 1
+`ORC0215`, and `ORC0220` diagnostics of the rejected listings on
+`check`, `eval`, and `test`. It checks five failing tests, each with status 1
 and empty standard error: the 32-bit `Σ1` distances (`left`
 `0xd4025efda375298a`), the 112-byte message with a 64-bit length
 field (`left` `0xfe`), the pad that omits `0x80` (`left` `0x00` at
