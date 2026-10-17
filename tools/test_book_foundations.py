@@ -1415,9 +1415,21 @@ class N14ReadyForStandards(unittest.TestCase):
             'JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md',
             'Permutation surface.',
         ))
-        self.assertNotIn('S19', records)
-        self.assertNotIn('T15', records)
-        self.assertNotIn('C9', records)
+        self.assertEqual(records['S19'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T15'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C9'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Sponge surface.',
+        ))
+        self.assertNotIn('S20', records)
+        self.assertNotIn('T16', records)
+        self.assertNotIn('C10', records)
 
 
 class J5Sha256AsWritten(unittest.TestCase):
@@ -1997,9 +2009,21 @@ class J2StandardsAsVersionedInputs(unittest.TestCase):
             'JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md',
             'Permutation surface.',
         ))
-        self.assertNotIn('S19', records)
-        self.assertNotIn('T15', records)
-        self.assertNotIn('C9', records)
+        self.assertEqual(records['S19'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T15'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C9'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Sponge surface.',
+        ))
+        self.assertNotIn('S20', records)
+        self.assertNotIn('T16', records)
+        self.assertNotIn('C10', records)
 
 
 class J3CorpusAsAcceptanceTest(unittest.TestCase):
@@ -2302,9 +2326,21 @@ class J3CorpusAsAcceptanceTest(unittest.TestCase):
             'JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md',
             'Permutation surface.',
         ))
-        self.assertNotIn('S19', records)
-        self.assertNotIn('T15', records)
-        self.assertNotIn('C9', records)
+        self.assertEqual(records['S19'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T15'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C9'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Sponge surface.',
+        ))
+        self.assertNotIn('S20', records)
+        self.assertNotIn('T16', records)
+        self.assertNotIn('C10', records)
 
 
 
@@ -2573,9 +2609,21 @@ class J4ByteOrder(unittest.TestCase):
             'JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md',
             'Permutation surface.',
         ))
-        self.assertNotIn('S19', records)
-        self.assertNotIn('T15', records)
-        self.assertNotIn('C9', records)
+        self.assertEqual(records['S19'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'National Institute of Standards and Technology.',
+        ))
+        self.assertEqual(records['T15'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Retrieved files.',
+        ))
+        self.assertEqual(records['C9'], (
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
+            'Sponge surface.',
+        ))
+        self.assertNotIn('S20', records)
+        self.assertNotIn('T16', records)
+        self.assertNotIn('C10', records)
         citation = re.compile(r'\[([STC]\d+)\]')
         for tag in citation.findall(self.text):
             self.assertIn(tag, records, f'J4 cites undefined [{tag}]')
@@ -2793,6 +2841,237 @@ class J7KeccakAndSha3(unittest.TestCase):
         self.assertLess(expected['steps-left'], expected['f1600-lane-steps'])
 
 
+class J8ShakeAndSponge(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j8_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (J8\.\d+)\.\*\*', self.text, re.M)
+        answers = re.findall(r'^\*\*(J8\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J8.{n}' for n in range(1, 9)])
+        self.assertEqual(answers, [f'J8.{n}' for n in range(1, 9)])
+        self.assertNotRegex(self.text, r'(?m)^#+ .*[Cc]hapter')
+        self.assertIn('It is not a manuscript', self.text)
+        self.assertRegex(self.text, r'(?m)^## J8: SHAKE and Sponge Modes$')
+        for number in range(1, 10):
+            self.assertRegex(self.text, rf'(?m)^### J8\.{number} ')
+        self.assertIn(
+            'The SHA-3 family consists of four cryptographic hash functions, called SHA3-224, '
+            'SHA3-256, SHA3-384, and SHA3-512, and two extendable-output functions (XOFs), '
+            'called SHAKE128 and SHAKE256.',
+            self.text,
+        )
+        self.assertIn('https://doi.org/10.6028/NIST.FIPS.202', self.text)
+        self.assertIn(
+            'https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf',
+            self.text,
+        )
+        self.assertIn(
+            '1592607831ff0908cc590632ce371c6c95e94025bb1a0c8ae90a4d0ec1ed025e',
+            self.text,
+        )
+        self.assertIn('**J8.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md#j8-shake-and-sponge-modes',
+            self.index,
+        )
+        self.assertIn('SHAKE and Sponge Modes', self.index)
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j8-shake-and-sponge-modes', anchors)
+        self.assertIn('worked-answers', anchors)
+        self.assertIn('The locked label is J8.', self.text)
+        self.assertIn('The locked label is J8.', self.index)
+        folded_titles = re.sub(r'\s+', ' ', self.text)
+        self.assertIn('Standards as Versioned Inputs', folded_titles)
+        self.assertIn('The Corpus as Acceptance Test', folded_titles)
+        self.assertIn('Byte Order and Format Boundaries', folded_titles)
+        self.assertIn('They are in this tree.', folded_titles)
+        self.assertIn('orangec 0.0.1 (Orange edition 2026; implemented slice S3u)', self.text)
+        self.assertIn('**[S19] National Institute of Standards and Technology.**', self.text)
+        self.assertIn('**[T15] Retrieved files.**', self.text)
+        self.assertIn('**[C9] Sponge surface.**', self.text)
+        self.assertIn('**Proposition J8.1.**', self.text)
+        self.assertIn('**Proposition J8.5.**', self.text)
+        prediction = self.text.find('evaluator prints `0x4c`')
+        report = self.text.find('first difference at [168]')
+        self.assertGreater(prediction, 0)
+        self.assertGreater(report, prediction)
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 7)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            ['pad', 'intd', 'zerolen', 'toomany', 'span', 'outlen', 'shake'],
+        )
+        lowered = self.text.lower()
+        self.assertNotIn('constant-time', lowered)
+        self.assertNotIn('constant time', lowered)
+        self.assertNotIn('production security', lowered)
+        self.assertNotIn('production-security', lowered)
+        self.assertNotIn('performance', lowered)
+        folded = re.sub(r'\s+', ' ', self.text)
+        allowed = {
+            'Do not call that Match verified.': 2,
+            'A Match is not called verified.': 2,
+        }
+        remainder = folded
+        for phrase, count in allowed.items():
+            self.assertEqual(remainder.count(phrase), count)
+            remainder = remainder.replace(phrase, '')
+        self.assertNotIn('verified', remainder.lower())
+        import hashlib
+        self.assertIn(hashlib.shake_128(b'').hexdigest(32), self.text)
+        self.assertIn(hashlib.shake_256(b'').hexdigest(64), self.text)
+        self.assertIn(hashlib.shake_256(b'abc').hexdigest(64), self.text)
+        self.assertIn(hashlib.shake_128(b'').hexdigest(200), self.text)
+        self.assertIn(hashlib.sha3_256(b'abc').hexdigest(), self.text)
+
+    def test_j8_ledger_recomputes_the_standard_arithmetic(self):
+        block = re.search(r'^```text\nj8-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+
+        def q_bytes(rate_bytes, message_bytes):
+            return rate_bytes - (message_bytes % rate_bytes)
+
+        def squeeze_calls(output_bytes, rate_bytes):
+            calls = 0
+            produced = 0
+            while output_bytes * 8 > produced:
+                calls += 1
+                produced += rate_bytes * 8
+            return calls
+
+        import hashlib
+        empty128 = hashlib.shake_128(b'').digest(200)
+        empty256 = hashlib.shake_256(b'').digest(64)
+        abc256 = hashlib.shake_256(b'abc').digest(64)
+        sha3_abc = hashlib.sha3_256(b'abc').digest()
+        rate128 = 1600 - 256
+        rate256 = 1600 - 512
+        rate_bytes_128 = rate128 // 8
+        rate_bytes_256 = rate256 // 8
+        q_empty_128 = q_bytes(rate_bytes_128, 0)
+        q_empty_256 = q_bytes(rate_bytes_256, 0)
+        q_abc_128 = q_bytes(rate_bytes_128, 3)
+        q_abc_256 = q_bytes(rate_bytes_256, 3)
+        n_bits_empty = 4
+        n_bits_abc = 24 + 4
+        pad_j_empty_128 = (-n_bits_empty - 2) % rate128
+        pad_j_empty_256 = (-n_bits_empty - 2) % rate256
+        pad_j_abc_128 = (-n_bits_abc - 2) % rate128
+        pad_j_abc_256 = (-n_bits_abc - 2) % rate256
+        measured = {
+            'pad-steps': 48,
+            'outlen-steps': 29,
+            'span-steps': 6,
+            'shake-steps': 919661,
+            's128-32-steps': 102093,
+            's256-64-steps': 102139,
+            's256-abc-steps': 102143,
+            's128-200-steps': 204158,
+            'domain-steps': 102143,
+            'wrong-rate-steps': 102029,
+            'trunc-steps': 102478,
+            'noreperm-steps': 102478,
+            'noreperm-left': 0x4c,
+        }
+        expected = {
+            'b': 1600,
+            'cap-128': 256,
+            'cap-256': 512,
+            'rate-128': rate128,
+            'rate-256': rate256,
+            'rate-bytes-128': rate_bytes_128,
+            'rate-bytes-256': rate_bytes_256,
+            'cap-bytes-128': 1600 // 8 - rate_bytes_128,
+            'cap-bytes-256': 1600 // 8 - rate_bytes_256,
+            'suffix-bits': 4,
+            'hash-suffix-bits': 2,
+            'xof-byte': 1 + 2 + 4 + 8 + 16,
+            'hash-byte': 2 + 4,
+            'final-byte': 0x80,
+            'q1-byte': (1 + 2 + 4 + 8 + 16) + 0x80,
+            'q-empty-128': q_empty_128,
+            'q-zeros-empty-128': q_empty_128 - 2,
+            'q-empty-256': q_empty_256,
+            'q-zeros-empty-256': q_empty_256 - 2,
+            'q-abc-128': q_abc_128,
+            'q-zeros-abc-128': q_abc_128 - 2,
+            'q-abc-256': q_abc_256,
+            'q-zeros-abc-256': q_abc_256 - 2,
+            'abc-bits': 24,
+            'n-bits-empty': n_bits_empty,
+            'n-bits-abc': n_bits_abc,
+            'pad-j-empty-128': pad_j_empty_128,
+            'pad-j-empty-256': pad_j_empty_256,
+            'pad-j-abc-128': pad_j_abc_128,
+            'pad-j-abc-256': pad_j_abc_256,
+            'block-empty-128': n_bits_empty + pad_j_empty_128 + 2,
+            'block-abc-256': n_bits_abc + pad_j_abc_256 + 2,
+            'd-32': 32,
+            'd-64': 64,
+            'd-168': 168,
+            'd-200': 200,
+            'd-512': 512,
+            'calls-32': squeeze_calls(32, rate_bytes_128),
+            'calls-168': squeeze_calls(168, rate_bytes_128),
+            'calls-200': squeeze_calls(200, rate_bytes_128),
+            'calls-512': squeeze_calls(512, rate_bytes_128),
+            'domain-index': 0,
+            'domain-left': sha3_abc[0],
+            'domain-right': abc256[0],
+            'rate-index': 0,
+            'rate-left': empty256[0],
+            'rate-right': empty128[0],
+            'trunc-index': 0,
+            'trunc-left': empty128[1],
+            'trunc-right': empty128[0],
+            'noreperm-index': rate_bytes_128,
+            'noreperm-left': measured['noreperm-left'],
+            'noreperm-right': empty128[168],
+            'instances-max': 256,
+            'instances-rejected': 257,
+            'pad-steps': measured['pad-steps'],
+            'outlen-steps': measured['outlen-steps'],
+            'span-steps': measured['span-steps'],
+            'shake-steps': measured['shake-steps'],
+            'step-budget': 1048576,
+            'steps-left': 1048576 - measured['shake-steps'],
+            's128-32-steps': measured['s128-32-steps'],
+            's256-64-steps': measured['s256-64-steps'],
+            's256-abc-steps': measured['s256-abc-steps'],
+            's128-200-steps': measured['s128-200-steps'],
+            'domain-steps': measured['domain-steps'],
+            'wrong-rate-steps': measured['wrong-rate-steps'],
+            'trunc-steps': measured['trunc-steps'],
+            'noreperm-steps': measured['noreperm-steps'],
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(
+            measured['s128-32-steps']
+            + measured['s256-64-steps']
+            + measured['s256-abc-steps']
+            + measured['s128-200-steps']
+            + measured['domain-steps']
+            + measured['wrong-rate-steps']
+            + measured['trunc-steps']
+            + measured['noreperm-steps'],
+            measured['shake-steps'],
+        )
+        self.assertLess(expected['steps-left'], expected['s128-200-steps'])
+        self.assertGreater(expected['steps-left'], expected['s128-32-steps'])
+        self.assertEqual(empty128[168], 0x76)
+        self.assertEqual(sha3_abc[0], 0x3a)
+
+
 class ManuscriptManifest(unittest.TestCase):
     def test_manifest_names_drafted_and_planned_chapters(self):
         sys_path = str(ROOT / 'tools')
@@ -2807,35 +3086,39 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * (len(drafted) - 6) + ['journeyman'] * 6,
+            ['novice'] * (len(drafted) - 7) + ['journeyman'] * 7,
         )
         self.assertEqual(
-            [chapter['id'] for chapter in drafted[-6:]],
-            ['j2', 'j3', 'j4', 'j5', 'j6', 'j7'],
+            [chapter['id'] for chapter in drafted[-7:]],
+            ['j2', 'j3', 'j4', 'j5', 'j6', 'j7', 'j8'],
         )
         self.assertEqual(
-            drafted[-6]['path'],
+            drafted[-7]['path'],
             'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
         )
         self.assertEqual(
-            drafted[-5]['path'],
+            drafted[-6]['path'],
             'docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
         )
         self.assertEqual(
-            drafted[-4]['path'],
+            drafted[-5]['path'],
             'docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md',
         )
         self.assertEqual(
-            drafted[-3]['path'],
+            drafted[-4]['path'],
             'docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
         )
         self.assertEqual(
-            drafted[-2]['path'],
+            drafted[-3]['path'],
             'docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md',
         )
         self.assertEqual(
-            drafted[-1]['path'],
+            drafted[-2]['path'],
             'docs/book/JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md',
+        )
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -2857,7 +3140,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | J2, J3, J4, J5, J6, J7 |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2, J3, J4, J5, J6, J7, J8 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')
@@ -2888,6 +3171,7 @@ class ManuscriptManifest(unittest.TestCase):
             self.assertTrue((output / 'docs' / 'book' / 'JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.html').is_file())
             self.assertTrue((output / 'docs' / 'book' / 'JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.html').is_file())
             self.assertTrue((output / 'docs' / 'book' / 'JOURNEYMAN_J7_KECCAK_P_AND_SHA3.html').is_file())
+            self.assertTrue((output / 'docs' / 'book' / 'JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.html').is_file())
             opening = (output / 'docs' / 'book' / 'NOVICE_OPENING.html').read_text(encoding='utf-8')
             self.assertIn('Draft.', opening)
             self.assertNotIn('<script', opening.lower())
