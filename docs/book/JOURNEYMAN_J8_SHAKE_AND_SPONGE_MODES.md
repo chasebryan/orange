@@ -268,11 +268,13 @@ bits of `S1`. The bits from position `r` onward were appended after
 step 10, so they are bits of `S2`, which is `f(S1)`. That is two
 calls to `f`.
 
-The four lengths in Listing J8.7 fall under this proposition. For
-SHAKE128 the rate is `1344` bits, which is `168` bytes. An output of
-`32` bytes has `d = 256 ≤ 1344`, so `f` runs once. An output of
-`168` bytes has `d = r`, and the test `d ≤ |Z|` still succeeds, so
-`f` still runs once. An output of `200` bytes has `d = 1600`. Then
+The return lengths in Listing J8.7 are `32`, `64`, `64`, and `200`
+bytes. Those four fall under this proposition. For SHAKE128 the
+rate is `1344` bits, which is `168` bytes. An output of `32` bytes
+has `d = 256 ≤ 1344`, so `f` runs once. An output of `168` bytes
+has `d = r`, and the test `d ≤ |Z|` still succeeds, so `f` still
+runs once. Listing J8.7 does not run `168` as its own spec. An
+output of `200` bytes has `d = 1600`. Then
 `1344 < 1600 ≤ 2688`, so `f` runs twice. For SHAKE256 the rate is
 `1088` bits, which is `136` bytes. An output of `64` bytes has
 `d = 512 ≤ 1088`, so `f` runs once. A length of `512` bytes on
@@ -699,6 +701,25 @@ string is the digest the corresponding passing test demands. The
 predictions are stated before the report. The passing values are
 printed here, before that section, because the report is one run of
 every test in the module.
+
+θ, ρ, π, χ, ι, `rc(t)`, and `RC` are J7's Assumption J7.4, mapped
+there to `theta`, `rho`, `pi`, `chi`, `iota`, `rc_bits`, and
+`round_constants`. This lesson does not re-prove them. The sponge
+names in Listing J8.7 are ASCII. The mapping is:
+
+```text
+KECCAK-f[1600], f (§3.4, Algorithm 8)               keccak_f
+Trunc_r, r = 1344 (Algorithm 8)                     rate168
+Trunc_d, d = 256 (Algorithm 8)                      prefix32
+Trunc_d, d = 512 (Algorithm 8)                      prefix64
+0x1F || 0x00 … || 0x80, q = 168 (Table 6)           empty128
+0x1F || 0x00 … || 0x80, q = 136 (Table 6)           empty136
+"abc" || 0x1F || 0x00 … || 0x80, q = 133 (Table 6)  abc256
+SHAKE128(M, 256), M empty (§6.2)                    shake128_empty_32
+SHAKE256(M, 512), M empty (§6.2)                    shake256_empty_64
+SHAKE256(M, 512), M = "abc" (§6.2)                  shake256_abc_64
+SHAKE128(M, 1600), M empty (§6.2)                   shake128_empty_200
+```
 
 ```orange
 edition 2026;
