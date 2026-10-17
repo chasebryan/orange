@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2, J3, J4, J5, J6, J7 | The connecting studies below |
+| Part 2, The Journeyman | J2, J3, J4, J5, J6, J7, J8 | The connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2, J3, J4, J5, J6, and J7 are drafted in this tree and unreviewed. The other
+unreviewed. J2, J3, J4, J5, J6, J7, and J8 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
@@ -322,6 +322,14 @@ Orange is the working language, not decoration around prose.
   preceding lessons in this tree. This lesson does not repeat their proofs,
   and it does not build SHAKE or HMAC.
   [Worked answers](JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md#worked-answers).
+- **J8.** [SHAKE and Sponge Modes](JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md#j8-shake-and-sponge-modes):
+  SHAKE128 and SHAKE256 as FIPS PUB 202 §6.2 writes them, the sponge
+  squeeze past one rate, and the suffix that separates SHAKE from SHA-3.
+  The six outcomes in J8 are the finish line.
+  The locked label is J8. It is not a manuscript chapter numeral. J2, J3, J4, J5, J6, and J7 are the
+  preceding lessons in this tree. This lesson does not repeat their proofs,
+  and it does not build cSHAKE, KMAC, or HMAC.
+  [Worked answers](JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md#worked-answers).
 
 ### Existing manuscript integrated here
 
@@ -474,7 +482,8 @@ integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
 J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, the 8
 lesson-J5 answers and the J5 integer ledger, the 8 lesson-J6 answers and the
-J6 integer ledger, the 8 lesson-J7 answers and the J7 integer ledger, and
+J6 integer ledger, the 8 lesson-J7 answers and the J7 integer ledger, the 8
+lesson-J8 answers and the J8 integer ledger, and
 document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
@@ -621,6 +630,26 @@ build SHAKE or HMAC. Run it in a build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j7 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j8.rs`
+reads the seven Orange listings in J8. It checks silent `check` on
+the listings that are accepted, the printed `eval` lines, and the
+printed test reports. It checks the `ORC0237`, `ORC0221`, and
+`ORC0238` diagnostics of the rejected listings on `check`, `eval`,
+and `test`. It checks four failing tests in one SHAKE module, with
+status 1 and empty standard error: the domain byte `0x06` (`left`
+`0x3a` at index 0), SHAKE128 absorbed at rate 136 (`left` `0x46` at
+index 0), the truncation that starts at index 1 (`left` `0x9c` at
+index 0), and the second block read from the capacity (first
+difference at index 168, `left` `0x4c`). A passing test in that file
+is a Match of the `Bool` the listing writes. It does not establish a
+cryptographic security claim, it does not accept OEP-0016, OEP-0017,
+OEP-0018, OEP-0020, OEP-0021, or OEP-0025, and it does not build
+cSHAKE, KMAC, or HMAC. Run it in a build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j8 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -645,7 +674,9 @@ including its Orange listings, is AI-assisted with Grok 4.7 in Cursor,
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
 owner's direction. Lesson J7, including its Orange
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
+owner's direction. Lesson J8, including its Orange
+listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
 owner's direction. The opening is owner-approved;
-continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, J6, and J7 review are
+continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, J6, J7, and J8 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.

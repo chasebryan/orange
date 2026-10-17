@@ -219,6 +219,16 @@
     },
     {
       "part": "journeyman",
+      "id": "j8",
+      "title": "J8. SHAKE and Sponge Modes",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J8_SHAKE_AND_SPONGE_MODES.md",
+      "anchor": "j8-shake-and-sponge-modes",
+      "summary": "Draft. Owner review is pending. It derives SHAKE128 and SHAKE256, the sponge squeeze past one rate, and the SHAKE suffix, from FIPS PUB 202, August 2015."
+    },
+    {
+      "part": "journeyman",
       "id": "journeyman-connecting-studies",
       "title": "Journeyman connecting studies",
       "status": "planned",
