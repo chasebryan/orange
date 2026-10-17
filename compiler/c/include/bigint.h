@@ -46,6 +46,8 @@ int big_from_u64(Arena *arena, uint64_t value, Big *out);
    stored in the arena. Returns 0 for a bad digit, an exhausted arena, or
    a magnitude past ORANGE_MAX_BITS. */
 int big_from_digits(Arena *arena, const char *text, size_t length, int negative, Big *out);
+/* Little-endian base-2^32 digits. Leading zeros are dropped. Fails above 16384 bits. */
+int big_from_limbs(Arena *arena, const uint32_t *limbs, uint32_t nlimbs, int negative, Big *out);
 
 /* Arithmetic returns 0 when the arena is exhausted or the result would
    exceed ORANGE_MAX_BITS. big_neg flips the sign of a non-zero value and

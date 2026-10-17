@@ -9,7 +9,7 @@ boundary, diagnostic codes, and deterministic token stream are permanent
 interfaces to extend rather than a disposable prototype.
 
 A standalone C frontend in [`c/`](c/README.md) checks and reference-evaluates
-the expression, binding, conversion, fixed-length array, bounded-loop,
+the expression, binding, conversion, byte order, fixed-length array, bounded-loop,
 conditional, lookup, module, residue, block, and tuple fragment (`Bool`, comparisons, Euclidean division,
 `if` / `else`, data-dependent indices proved in range, `use` with
 qualified calls `m::f(...)`, `Mod[m]`, `type` declarations, `let` bindings
