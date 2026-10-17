@@ -209,6 +209,16 @@
     },
     {
       "part": "journeyman",
+      "id": "j7",
+      "title": "J7. Keccak-p and SHA-3",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J7_KECCAK_P_AND_SHA3.md",
+      "anchor": "j7-keccak-p-and-sha-3",
+      "summary": "Draft. Owner review is pending. It derives Keccak-f at lane widths 8 and 64, and SHA3-256, from FIPS PUB 202, August 2015."
+    },
+    {
+      "part": "journeyman",
       "id": "journeyman-connecting-studies",
       "title": "Journeyman connecting studies",
       "status": "planned",
