@@ -2,8 +2,8 @@
 
 Status: provisional owner-directed frontend for the Orange 2026 expression,
 binding, conversion, array, bounded-loop, conditional, lookup, module,
-residue, block, tuple, byte-string, and size-parameter fragment (S3a through
-S3m). It does not amend D-008, does not select a D-010 output path, and does
+residue, block, tuple, byte-string, size-parameter, and byte-order fragment (S3a through
+S3n). It does not amend D-008, does not select a D-010 output path, and does
 not replace the Rust frontend.
 
 `compiler/c` is a dependency-free C11 program. It lexes, parses, checks, and
@@ -20,7 +20,7 @@ programs this slice admits.
 - `src/main.c` — process entry
 - `src/compile.c` — lexer, parser, checker, reference evaluator, module graph, and CLI
 - `src/bigint.c` — limb arithmetic and the exact-integer self-test
-- `tests/differential.py` — `check`, `eval`, and `lex` against the Rust `orangec` on the S3a through S3m fixtures
+- `tests/differential.py` — `check`, `eval`, and `lex` against the Rust `orangec` on the S3a through S3n fixtures
 
 `src/compile.c` records the slice boundary and the fail-closed forms in its file comment. That comment is a map of this frontend, not a language rule.
 
@@ -61,6 +61,7 @@ The admitted source is edition 2026. A program is a root module plus every modul
 - Instances may call one another. A cycle among them is rejected as ORC0217 and prints the chain, as in `swap[1] -> swap[2] -> swap[1]`.
 - `if c { a } else { b }` chooses one value; an `else if` chain is one conditional, and only the chosen branch is evaluated.
 - A loop's step and each branch of a conditional may begin with `let` bindings. A step's bindings run afresh at every step, a branch's only when that branch is chosen, and each name is in scope only inside its step or branch. Those bindings do not give the enclosing `if` a type of its own.
+- `x as big T` and `x as little T` pack a word or an array of words into words of another width with the same number of bits, into `Int`, or into `Mod[m]`, and unpack a number back into words. The first word is most significant for `big` and least significant for `little`.
 - `for`, `in`, `with`, `if`, and `else` are names outside those positions.
 - `true` and `false` are `Bool` values where no parameter or binding of that spelling is in scope.
 - Empty `spec` and `impl` declarations parse and have no value.
@@ -96,10 +97,10 @@ not evaluate ``. The label is `rank-2 arrays: nested-array slice`. Empty
 arrays, and a loop bound that is neither a literal nor a size, are
 rejected.
 
-Later slices are outside this frontend. Byte order, type parameters, tests,
+Later slices are outside this frontend. Type parameters, tests,
 lengths above 256, and computed shift amounts are rejected rather than
 given a new meaning. The Rust `orangec` remains the
-frontend for those slices. This frontend does not implement S3n or any later
+frontend for those slices. This frontend does not implement S3o or any later
 slice.
 
 ## What it does not claim
@@ -119,14 +120,15 @@ compiler/c/out/orangec eval path/to/file.or
 
 `make -C compiler/c test` builds an address-sanitized binary, runs the
 exact-integer self-test, and compares `check`, `eval`, and `lex` with the Rust
-`orangec` on the S3a through S3m fixtures, including ChaCha20, SHA-256,
+`orangec` on the S3a through S3n fixtures, including ChaCha20, SHA-256,
 Poly1305, X25519, ChaCha20-Poly1305, AES-128, the HMAC/HKDF program rooted at
 `valid-vectors.or`, the modular X25519, Poly1305, and field fixtures, the
 block-let X25519, SHA-256, and block fixtures, the tuple Ascon, ChaCha20,
 SHA-256, and tuple fixtures, the byte-string ChaCha20-Poly1305, HMAC-SHA-256,
 and bytes fixtures, and the sized Poly1305 program (255 instances and the
-RFC 8439 section 2.5.2 tag), HMAC-SHA-256 over sized `sha256.or`, and the
-size fixtures. The Rust binary is only a test oracle. Running the C compiler
+RFC 8439 section 2.5.2 tag), HMAC-SHA-256 over sized `sha256.or`, the
+size fixtures, and the byte-order SHA-256, SHA-512, ChaCha20, Poly1305, and
+X25519 fixtures. The Rust binary is only a test oracle. Running the C compiler
 does not require it.
 
 ## Limits
