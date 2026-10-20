@@ -5,7 +5,9 @@
 export const STRATA = ["spec", "impl", "game", "proof", "claim"];
 export const KEYWORDS = new Set(["edition", "module", ...STRATA]);
 
-const TWO = new Set(["..", "::", "&&", "||", "==", "!=", "<=", ">=", "->", "=>"]);
+// Longest match, in the same order as orangec: three bytes, then two, then one.
+const THREE = ["<<<", ">>>"];
+const TWO = new Set(["..", "++", "::", "&&", "||", "==", "!=", "<=", ">=", "<<", ">>", "->", "=>"]);
 const ONE = new Set([..."(){}[],:;.+-*/%&|^~!=<>?"]);
 const BRACKETS = new Set([..."(){}[]"]);
 const IDENT_START = /[A-Za-z_]/;
@@ -61,7 +63,17 @@ export function tokenize(text) {
     } else if (IDENT_START.test(c)) {
       while (i < n && IDENT_PART.test(text[i])) i++;
       const word = text.slice(start, i);
+      // `hex` written directly before `"` is one hex string, as in orangec.
+      if (word === "hex" && text[i] === '"') {
+        const hex = lexHexString(text, i);
+        push(hex.valid ? "string" : "error", start, hex.end);
+        i = hex.end;
+        continue;
+      }
       push(STRATA.includes(word) ? "stratum" : KEYWORDS.has(word) ? "keyword" : "ident", start, i);
+    } else if (THREE.some((spelling) => text.startsWith(spelling, i))) {
+      i += 3;
+      push("op", start, i);
     } else if (TWO.has(text.slice(i, i + 2))) {
       i += 2;
       push("op", start, i);
@@ -69,11 +81,38 @@ export function tokenize(text) {
       i++;
       push(BRACKETS.has(c) || c === ";" || c === "," ? "punct" : "op", start, i);
     } else {
-      i += c.codePointAt(0) > 0xffff ? 2 : 1;
+      const scalar = text.codePointAt(i);
+      i += scalar > 0xffff ? 2 : 1;
       push("error", start, i);
     }
   }
   return tokens;
+}
+
+// The bytes of a hex string that begins at its opening quote.
+// A hex string is pairs of digits, and spaces only between those pairs.
+function lexHexString(text, quote) {
+  let i = quote + 1;
+  let pending = false;
+  let valid = true;
+  let closed = false;
+  while (i < text.length && text[i] !== "\n" && text[i] !== "\r") {
+    const c = text[i];
+    if (c === '"') {
+      i++;
+      closed = true;
+      break;
+    }
+    if (valid) {
+      if (/[0-9A-Fa-f]/.test(c)) pending = !pending;
+      else if (c === " " && !pending) { /* a space may separate bytes */ }
+      else valid = false;
+    }
+    const scalar = text.codePointAt(i);
+    i += scalar > 0xffff ? 2 : 1;
+  }
+  if (pending) valid = false;
+  return { end: i, valid: closed && valid };
 }
 
 // Refines identifier kinds by position: declaration names, module names,
@@ -100,6 +139,18 @@ export function classify(text, tokens) {
 export function outline(text, tokens) {
   const code = tokens.filter((t) => t.kind !== "ws" && t.kind !== "comment");
   const word = (t) => (t ? text.slice(t.start, t.end) : "");
+  // Walks a matched pair, counting only that pair, so a parameter list
+  // `(x: Mod[(1 << 255) - 19])` stops at its own close.
+  const skipGroup = (index, open, close) => {
+    if (word(code[index]) !== open) return index;
+    let depth = 0;
+    for (let j = index; j < code.length; j++) {
+      const spelling = word(code[j]);
+      if (spelling === open) depth++;
+      else if (spelling === close && --depth === 0) return j + 1;
+    }
+    return code.length;
+  };
   const result = { edition: null, module: null, moduleStart: null, decls: [] };
   for (let k = 0; k < code.length; k++) {
     const t = code[k];
@@ -112,10 +163,10 @@ export function outline(text, tokens) {
       const nameToken = code[k + 1];
       const decl = { stratum: word(t), name: word(nameToken), start: t.start, nameStart: nameToken.start, nameEnd: nameToken.end, end: nameToken.end, type: null, body: null };
       let j = k + 2;
-      if (word(code[j]) === "(") {
-        while (j < code.length && word(code[j]) !== ")") j++;
-        j++;
-      }
+      // Size and type parameters, `f[n in 1..5]` and `pow[K in {F, P}]`,
+      // come before the value parameters. Their brackets can hold braces.
+      if (word(code[j]) === "[") j = skipGroup(j, "[", "]");
+      if (word(code[j]) === "(") j = skipGroup(j, "(", ")");
       if (word(code[j]) === "->") {
         const typeStart = code[j + 1];
         let m = j + 1;
