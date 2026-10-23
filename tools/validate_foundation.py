@@ -402,6 +402,7 @@ compiler/crates/orangec/tests/book_j3.rs
 compiler/crates/orangec/tests/book_j4.rs
 compiler/crates/orangec/tests/book_j5.rs
 compiler/crates/orangec/tests/book_j6.rs
+compiler/crates/orangec/tests/book_j9.rs
 compiler/crates/orangec/tests/book_novice.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
@@ -666,6 +667,7 @@ docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md
 docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md
 docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md
 docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md
+docs/book/JOURNEYMAN_J9_CHACHA20.md
 docs/book/NOVICE_LOGIC.md
 docs/book/NOVICE_N12_THE_FIRST_COMPLETE_STUDY.md
 docs/book/NOVICE_N13_MODULES_AND_PROVENANCE.md

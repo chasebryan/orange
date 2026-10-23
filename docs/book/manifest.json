@@ -209,6 +209,16 @@
     },
     {
       "part": "journeyman",
+      "id": "j9",
+      "title": "J9. ChaCha20",
+      "status": "draft",
+      "review_state": "unreviewed",
+      "path": "docs/book/JOURNEYMAN_J9_CHACHA20.md",
+      "anchor": "j9-chacha20",
+      "summary": "Draft. Owner review is pending. It derives the ChaCha20 quarter round, block function, and encryption from RFC 8439, June 2018."
+    },
+    {
+      "part": "journeyman",
       "id": "journeyman-connecting-studies",
       "title": "Journeyman connecting studies",
       "status": "planned",
