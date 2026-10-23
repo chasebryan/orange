@@ -2561,6 +2561,179 @@ def successor_bezout(integer: int, modulus: int) -> tuple[int, int]:
     return inner_y, inner_x - quotient * inner_y
 
 
+class J9ChaCha20(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (
+            ROOT / 'docs' / 'book' / 'JOURNEYMAN_J9_CHACHA20.md'
+        ).read_text(encoding='utf-8')
+        cls.index = INDEX.read_text(encoding='utf-8')
+
+    def test_j9_exercises_label_and_anchor(self):
+        exercises = re.findall(r'^\*\*Exercise (J9\.\d+)\.\*\*', self.text, re.M)
+        answers = re.findall(r'^\*\*(J9\.\d+)\.\*\*', self.text, re.M)
+        self.assertEqual(exercises, [f'J9.{n}' for n in range(1, 9)])
+        self.assertEqual(answers, [f'J9.{n}' for n in range(1, 9)])
+        self.assertNotRegex(self.text, r'(?m)^#+ .*[Cc]hapter')
+        self.assertIn('It is not a manuscript', self.text)
+        self.assertRegex(self.text, r'(?m)^## J9: ChaCha20$')
+        for number in range(1, 13):
+            self.assertRegex(self.text, rf'(?m)^### J9\.{number} ')
+        self.assertIn(
+            'The purpose of this document is to serve as a stable reference for IETF '
+            'documents making use of these algorithms.',
+            self.text,
+        )
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439', self.text)
+        self.assertIn('https://www.rfc-editor.org/rfc/rfc8439.txt', self.text)
+        self.assertIn('**J9.**', self.index)
+        self.assertIn(
+            'JOURNEYMAN_J9_CHACHA20.md#j9-chacha20',
+            self.index,
+        )
+        self.assertIn('ChaCha20', self.index)
+        headings = re.findall(r'^#{1,6} (.+)$', self.text, re.M)
+        anchors = {github_anchor(h) for h in headings}
+        self.assertIn('j9-chacha20', anchors)
+        self.assertIn('worked-answers', anchors)
+        self.assertIn('The locked label is J9.', self.text)
+        self.assertIn('The locked label is J9.', self.index)
+        folded_titles = re.sub(r'\s+', ' ', self.text)
+        self.assertIn('Name the Intermediate Step', folded_titles)
+        self.assertIn('Byte Order and Format Boundaries', folded_titles)
+        self.assertIn('Orange 2026: The Smallest Honest Slice', folded_titles)
+        self.assertIn('orangec 0.0.1 (Orange edition 2026; implemented slice S3u)', self.text)
+        self.assertIn('**[S20] Yoav Nir and Adam Langley.**', self.text)
+        self.assertIn('**[T16] Retrieved file.**', self.text)
+        self.assertIn('**[C10] ChaCha surface.**', self.text)
+        sources = re.findall(r'^```orange\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertEqual(len(sources), 11)
+        self.assertEqual(
+            [re.search(r'\nmodule (\w+)', source).group(1) for source in sources],
+            [
+                'quarter', 'on_state', 'block', 'rot15', 'big_load', 'diag_first',
+                'encrypt', 'counter_off', 'nonce_reuse', 'too_wide', 'too_many',
+            ],
+        )
+        lowered = self.text.lower()
+        self.assertNotIn('constant-time', lowered)
+        self.assertNotIn('constant time', lowered)
+        self.assertNotIn('production security', lowered)
+        self.assertNotIn('production-security', lowered)
+        folded = re.sub(r'\s+', ' ', self.text)
+        allowed = {
+            'Do not call that Match verified.': 1,
+            'A Match is not called verified.': 1,
+        }
+        remainder = folded
+        for phrase, count in allowed.items():
+            self.assertEqual(remainder.count(phrase), count, phrase)
+            remainder = remainder.replace(phrase, '')
+        self.assertNotIn('verified', remainder.lower())
+        self.assertIn('274,877,906,880', self.text)
+        self.assertIn('Poly1305', self.text)
+        self.assertNotIn('does not build Poly1305', sources[6])
+
+    def test_j9_ledger_recomputes_the_rfc_arithmetic(self):
+        block = re.search(r'^```text\nj9-ledger\n(.*?)\n```', self.text, re.M | re.S)
+        self.assertIsNotNone(block)
+        printed = {}
+        for line in block.group(1).splitlines():
+            name, value = line.split(' = ')
+            printed[name] = int(value)
+        modulus = 2 ** 32
+
+        def rotl(word, distance):
+            word &= modulus - 1
+            return ((word << distance) | (word >> (32 - distance))) & (modulus - 1)
+
+        a1_sum = 0x11111111 + 0x01020304
+        d_xor = 0x01234567 ^ 0x12131415
+        d1 = rotl(d_xor, 16)
+        c2_sum = 0xecff8273 + 0x5881c4bb
+        state_c_sum = 0x53372767 + 0xc47446a0
+        column_c_sum = 0x8c767582 + 0xdec62ed2
+        feed0 = 0x61707865 + 0x837778ab
+        feed1_sum = 0x3320646e + 0xe238d763
+        blocks = 2 ** 32 - 1
+        expected = {
+            'a1-sum': a1_sum,
+            'd-xor': d_xor,
+            'd1': d1,
+            'c2-sum': c2_sum,
+            'c2': c2_sum % modulus,
+            'state-c-sum': state_c_sum,
+            'state-c': state_c_sum % modulus,
+            'column-c-sum': column_c_sum,
+            'column-c': column_c_sum % modulus,
+            'column-a': 0xabbaa25c,
+            'feed0': feed0,
+            'feed1-sum': feed1_sum,
+            'feed1': feed1_sum % modulus,
+            'rot15-d': rotl(rotl(d_xor, 16), 31),
+            'rot15-a': 0x59d11069,
+            'diag-a': 0xc0bf2761,
+            'key-le': 0x03020100,
+            'key-be': 0x00010203,
+            'nonce-le': 0x09000000,
+            'nonce-be': 0x00000009,
+            'counter-swapped': 0x01000000,
+            'plain0': 0x4c,
+            'stream0': 0x22,
+            'cipher0': 0x4c ^ 0x22,
+            'blocks': blocks,
+            'block-bytes': 64,
+            'p-max': blocks * 64,
+            'p-full': (2 ** 32) * 64,
+            'orig-bytes': (2 ** 64 - 1) * 64,
+            'reuse': 0x01020304,
+        }
+        self.assertEqual(printed, expected)
+        self.assertEqual(expected['c2'], 0x4581472e)
+        self.assertEqual(expected['state-c'], 0x17ab6e07)
+        self.assertEqual(expected['column-c'], 0x6b3ca454)
+        self.assertEqual(expected['feed0'], 0xe4e7f110)
+        self.assertEqual(expected['feed1'], 0x15593bd1)
+        self.assertEqual(expected['rot15-d'], 0x28b90998)
+        self.assertEqual(expected['cipher0'], 0x6e)
+        self.assertEqual(expected['p-max'], 274877906880)
+        self.assertEqual(expected['p-full'], 274877906944)
+        self.assertEqual(expected['orig-bytes'], 1180591620717411303360)
+        self.assertGreaterEqual(expected['c2-sum'], modulus)
+        self.assertLess(expected['feed0'], modulus)
+        self.assertGreaterEqual(expected['feed1-sum'], modulus)
+
+    def test_j9_tags_do_not_collide_with_the_drafted_lessons(self):
+        definition = re.compile(r'\*\*\[([STC]\d+)\] ([^*]+)\*\*')
+        records = {}
+        paths = sorted((ROOT / 'docs' / 'book').glob('NOVICE*.md'))
+        paths += sorted((ROOT / 'docs' / 'book').glob('JOURNEYMAN*.md'))
+        for path in paths:
+            text = path.read_text(encoding='utf-8')
+            for match in definition.finditer(text):
+                tag, referent = match.group(1), match.group(2).strip()
+                previous = records.get(tag)
+                self.assertIsNone(
+                    previous,
+                    f'{tag} already names {previous} and also {path.name}: {referent}',
+                )
+                records[tag] = (path.name, referent)
+        lesson = 'JOURNEYMAN_J9_CHACHA20.md'
+        self.assertEqual(records['S20'], (lesson, 'Yoav Nir and Adam Langley.'))
+        self.assertEqual(records['T16'], (lesson, 'Retrieved file.'))
+        self.assertEqual(records['C10'], (lesson, 'ChaCha surface.'))
+        self.assertEqual(records['S17'][0], 'JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md')
+        self.assertNotIn('S18', records)
+        self.assertNotIn('T14', records)
+        self.assertNotIn('C8', records)
+        self.assertNotIn('S21', records)
+        self.assertNotIn('T17', records)
+        self.assertNotIn('C11', records)
+        citation = re.compile(r'\[([STC]\d+)\]')
+        for tag in citation.findall(self.text):
+            self.assertIn(tag, records, f'J9 cites undefined [{tag}]')
+
+
 class ManuscriptManifest(unittest.TestCase):
     def test_manifest_names_drafted_and_planned_chapters(self):
         sys_path = str(ROOT / 'tools')
@@ -2575,31 +2748,35 @@ class ManuscriptManifest(unittest.TestCase):
         planned = [chapter for chapter in manifest['chapters'] if chapter['status'] == 'planned']
         self.assertEqual(
             [chapter['part'] for chapter in drafted],
-            ['novice'] * (len(drafted) - 5) + ['journeyman'] * 5,
+            ['novice'] * (len(drafted) - 6) + ['journeyman'] * 6,
         )
         self.assertEqual(
-            [chapter['id'] for chapter in drafted[-5:]],
-            ['j2', 'j3', 'j4', 'j5', 'j6'],
+            [chapter['id'] for chapter in drafted[-6:]],
+            ['j2', 'j3', 'j4', 'j5', 'j6', 'j9'],
         )
         self.assertEqual(
-            drafted[-5]['path'],
+            drafted[-6]['path'],
             'docs/book/JOURNEYMAN_J2_STANDARDS_AS_VERSIONED_INPUTS.md',
         )
         self.assertEqual(
-            drafted[-4]['path'],
+            drafted[-5]['path'],
             'docs/book/JOURNEYMAN_J3_THE_CORPUS_AS_ACCEPTANCE_TEST.md',
         )
         self.assertEqual(
-            drafted[-3]['path'],
+            drafted[-4]['path'],
             'docs/book/JOURNEYMAN_J4_BYTE_ORDER_AND_FORMAT_BOUNDARIES.md',
         )
         self.assertEqual(
-            drafted[-2]['path'],
+            drafted[-3]['path'],
             'docs/book/JOURNEYMAN_J5_SHA256_AS_FIPS_180_4_WRITES_IT.md',
         )
         self.assertEqual(
-            drafted[-1]['path'],
+            drafted[-2]['path'],
             'docs/book/JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md',
+        )
+        self.assertEqual(
+            drafted[-1]['path'],
+            'docs/book/JOURNEYMAN_J9_CHACHA20.md',
         )
         self.assertEqual({chapter['part'] for chapter in planned}, {'journeyman', 'master'})
         self.assertTrue(all(chapter['review_state'] != 'reviewed' for chapter in drafted))
@@ -2621,7 +2798,7 @@ class ManuscriptManifest(unittest.TestCase):
         for chapter in drafted:
             short = chapter['title'].split('. ', 1)[-1].split(': ', 1)[-1]
             self.assertIn(short, index)
-        self.assertIn('| Part 2, The Journeyman | J2, J3, J4, J5, J6 |', index.replace('\n', ' '))
+        self.assertIn('| Part 2, The Journeyman | J2, J3, J4, J5, J6, J9 |', index.replace('\n', ' '))
         self.assertIn('| Part 3, The Master | None |', index.replace('\n', ' '))
         for name in ('NOVICE_PROGRAMMING.md', 'NOVICE_LOGIC.md', 'NOVICE_PROTECT.md'):
             text = (ROOT / 'docs' / 'book' / name).read_text(encoding='utf-8')

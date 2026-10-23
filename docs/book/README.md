@@ -10,12 +10,12 @@ book, and it is not an independent review.
 | Part | Drafted in this tree | Only planned |
 | --- | --- | --- |
 | Part 1, The Novice | The opening, Chapters 1–6, and lessons N7–N14 | No further novice lesson is named |
-| Part 2, The Journeyman | J2, J3, J4, J5, J6 | The connecting studies below |
+| Part 2, The Journeyman | J2, J3, J4, J5, J6, J9 | The connecting studies below |
 | Part 3, The Master | None | The connecting studies and the capstone dossier below |
 
 The opening was approved by the owner before the continuation. Later
 corrections in that same file, Chapters 4–6, and N7–N14 are draft and
-unreviewed. J2, J3, J4, J5, and J6 are drafted in this tree and unreviewed. The other
+unreviewed. J2, J3, J4, J5, J6, and J9 are drafted in this tree and unreviewed. The other
 Journeyman lessons and the Master lessons are not written in this tree.
 The original seventeen chapters and four appendices stay in
 [THE_ORANGE_BOOK.md](../THE_ORANGE_BOOK.md). The machine-readable index
@@ -314,6 +314,14 @@ Orange is the working language, not decoration around prose.
   preceding lessons in this tree. This lesson does not repeat their proofs,
   and it does not build HMAC.
   [Worked answers](JOURNEYMAN_J6_SHA512_AND_THE_SHA2_FAMILY.md#worked-answers).
+- **J9.** [ChaCha20](JOURNEYMAN_J9_CHACHA20.md#j9-chacha20):
+  the quarter round, the block function, and encryption, in the order
+  RFC 8439 §2 uses them, then the §2.4.2 ciphertext and the Appendix A.1
+  and A.2 vectors this lesson pins. The six outcomes in J9 are the finish
+  line. The locked label is J9. It is not a manuscript chapter numeral.
+  N7 named the quarter-round updates. J4 is the byte-order lesson. This
+  lesson does not repeat their proofs, and it does not build Poly1305.
+  [Worked answers](JOURNEYMAN_J9_CHACHA20.md#worked-answers).
 
 ### Existing manuscript integrated here
 
@@ -466,7 +474,8 @@ integer ledger, the 8 lesson-N14 answers and the N14 integer ledger, the 10
 lesson-J2 answers and the J2 integer ledger, the 12 lesson-J3 answers and the
 J3 integer ledger, the 8 lesson-J4 answers and the J4 integer ledger, the 8
 lesson-J5 answers and the J5 integer ledger, the 8 lesson-J6 answers and the
-J6 integer ledger, and document structure. Python test
+J6 integer ledger, the 8 lesson-J9 answers and the J9 integer ledger, and
+document structure. Python test
 discovery through
 `tools/tests/test_book_foundations.py` loads those checks and the two
 printed-continuation audits.
@@ -592,6 +601,28 @@ not build HMAC. Run it in a build-capable checkout:
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j6 --locked --offline
 ```
 
+The Rust integration test `compiler/crates/orangec/tests/book_j9.rs`
+reads the eleven Orange listings in J9. It checks silent `check` on
+the listings that are accepted, the printed `eval` lines, and the
+printed test reports, including the §2.1.1 quarter round, the §2.3.2
+block, the §2.4.2 ciphertext, all five Appendix A.1 keystreams, and
+Appendix A.2 vectors 1, 2, and 3. It checks the `ORC0221` and
+`ORC0238` diagnostics of the two rejected listings on `check`,
+`eval`, and `test`. It checks five failing tests, each with status 1
+and empty standard error: rotation by 15 (`left` `0x59d11069`),
+big-endian loads (`left` `0x00010203`, `left` `0x01000000`, and
+`left` `0x00000009`), the diagonal indices (`left` `0xc0bf2761`),
+counter 0 (`left` `0xe3`), and the nonce-reuse test that expects
+four zero bytes (`left` `[0x01, 0x02, 0x03, 0x04]`). A passing test
+in that file is a Match of the `Bool` the listing writes. It does
+not establish a cryptographic security claim, it does not accept
+OEP-0017, and it does not build Poly1305. Run it in a
+build-capable checkout:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test book_j9 --locked --offline
+```
+
 The existence of this test is not a claim that a run passed. The PR and
 delivery validation record identify which checks were actually executed.
 No native code generation or cryptographic security claim is added.
@@ -614,7 +645,9 @@ with Grok 4.7 in Cursor, 2026-10-05, at the owner's direction. Lesson J5,
 including its Orange listings, is AI-assisted with Grok 4.7 in Cursor,
 2026-10-09, at the owner's direction. Lesson J6, including its Orange
 listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-17, at the
+owner's direction. Lesson J9, including its Orange
+listings, is AI-assisted with Grok 4.7 in Cursor, 2026-10-23, at the
 owner's direction. The opening is owner-approved;
-continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, and J6 review are
+continuation, N8, N9, N10, N11, N12, N13, N14, J2, J3, J4, J5, J6, and J9 review are
 pending. The working names, legal boundaries and source disclosures of the
 original manuscript continue to apply.
